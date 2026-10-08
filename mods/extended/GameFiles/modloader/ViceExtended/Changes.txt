@@ -1,0 +1,13 @@
+- Added garage doors for mod garages (docks.ipl, haiti.ipl, nbeachbt.ipl, washints.ipl)
+- "nbecnssignight_nt" moved from "tobj" section to "obj" section (nbeachbt.ide)
+- Land climbs (plusroad)
+- Bryx lights
+- The Malibu Club's double doors have been removed (club.ipl)
+- object.dat: rcgrenade, ak47, m16
+- nbeachw.ide: LODngst2meshdam
+- Fixed missing canopies
+- Updated Ken's office
+- Closed ceiling for Diaz/Tommy Estate
+- Fixed the location of palm trees and fans (hotel.ipl)
+- Boards at Ammu-Nation and tool stores
+- 'ReConstucted 0.5: haitiN'

@@ -1,0 +1,35 @@
+#
+# Load IDEs first, then the models and after that the IPLs
+#
+
+# everything is loaded on a per directory basis and in alphabetical order 
+# to improve the speed of loading
+
+#
+# Object types
+#
+IDE ViceExtended\DATA\DEFAULT.IDE
+IDE ViceExtended\newVehicles\newVehicles.IDE
+
+#
+# Standard objects
+#
+# texture dictionaries
+TEXDICTION ViceExtended\MODELS\GENERIC\WHEELS.TXD
+TEXDICTION ViceExtended\MODELS\GENERIC.TXD
+
+# model data
+MODELFILE MODELS\GENERIC\AIR_VLO.DFF
+MODELFILE ViceExtended\MODELS\GENERIC\WHEELS.DFF
+MODELFILE ViceExtended\MODELS\VEHMODS\SPOILERS.DFF
+MODELFILE ViceExtended\MODELS\VEHMODS\SKIRTS.DFF
+MODELFILE ViceExtended\MODELS\VEHMODS\SCOOPS.DFF
+MODELFILE ViceExtended\MODELS\VEHMODS\VENTS.DFF
+#MODELFILE ViceExtended\MODELS\VEHMODS\SUPERCHARGERS.DFF
+#
+
+#collision data
+COLFILE 0 MODELS\COLL\VEHICLES.COL
+COLFILE 0 MODELS\COLL\WEAPONS.COL
+COLFILE 0 ViceExtended\MODELS\COLL\NEWWEAPONS.COL
+COLFILE 0 ViceExtended\newVehicles\newVehicles.COL

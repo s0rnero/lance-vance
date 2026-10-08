@@ -1,0 +1,193 @@
+NOTE: 	This file lists ONLY the default key controls - for alternate keys activated by the options, please
+		refer to the notes in the mod's INI file
+
+Setup 1:
+	ON FOOT:
+		- Left analog stick/D-Pad - Movement/Move crosshair
+		- Right analog stick - Look around
+		- Circle / B - Fire
+		- Cross / A - Sprint/Sniper zoom out
+		- Square / X - Jump/Sniper zoom in
+		- Triangle / Y - Enter vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Answer phone/Center camera/Collect pick-up
+		- R1 / RB - Target
+		- L2 / LT - Previous target/Previous weapon
+		- R2 / RT - Next target/Next weapon
+		- L3 / LS - Duck
+		- R3 / RS - Look behind
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+	IN VEHICLE:
+		- Left analog stick/D-Pad - Steer
+		- Right analog stick - Move turret
+		- Circle / B - Fire
+		- Cross / A - Accelerate
+		- Square / X - Brake
+		- Triangle / Y - Exit vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Change radio station/Next MP3 Track (hold)
+		- R1 / RB - Handbrake
+		- L2 / LT - Look left
+		- R2 / RT - Look right
+		- L2 / LT + R2 / RT - Look behind
+		- L3 / LS - Horn
+		- R3 / RS - Sub-mission/Hydraulics jump
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+
+Setup 2:
+	ON FOOT:
+		- Left analog stick - Movement/Move crosshair
+		- Right analog stick - Look around
+		- D-Pad - Move crosshair
+		- D-Pad Up - Next camera/Toggle replay (hold)
+		- D-Pad Down - Previous camera/Toggle replay (hold)
+		- Circle / B - Fire
+		- Cross / A - Sprint/Sniper zoom out
+		- Square / X - Jump/Sniper zoom in
+		- Triangle / Y - Enter vehicle
+		- Start - Pause menu
+		- L1 / LB - Answer phone/Center camera/Collect pick-up
+		- R1 / RB - Target
+		- L2 / LT - Previous target/Previous weapon
+		- R2 / RT - Next target/Next weapon
+		- L3 / LS - Duck
+		- R3 / RS - Look behind
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+	IN VEHICLE:
+		- Left analog stick - Steer
+		- Right analog stick - Move turret
+		- D-Pad Up - Next camera/Toggle replay (hold)
+		- D-Pad Down - Previous camera/Toggle replay (hold)
+		- Circle / B - Fire
+		- Cross / A - Accelerate
+		- Square / X - Brake
+		- Triangle / Y - Exit vehicle
+		- Select / Back - Change radio station/Next MP3 Track (hold)
+		- Start - Pause menu
+		- L1 / LB - Horn
+		- R1 / RB - Handbrake
+		- L2 / LT - Look left
+		- R2 / RT - Look right
+		- L2 / LT + R2 / RT - Look behind
+		- R3 / RS - Sub-mission/Hydraulics jump
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+
+Setup 3:
+	ON FOOT:
+		- Left analog stick/D-Pad - Movement/Move crosshair
+		- Right analog stick - Look around
+		- Circle / B - Sprint
+		- Cross / A - Fire
+		- Square / X - Jump/Sniper zoom out
+		- Triangle / Y - Center camera/Collect pick-up/Sniper zoom in
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Answer phone/Enter vehicle
+		- R1 / RB - Target
+		- L2 / LT - Previous target/Previous weapon
+		- R2 / RT - Next target/Next weapon
+		- L3 / LS - Duck
+		- R3 / RS - Look behind
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+	IN VEHICLE:
+		- Left analog stick/D-Pad - Steer
+		- Right analog stick - Move turret
+		- Circle / B - Fire
+		- Cross / A - Accelerate
+		- Square / X - Brake
+		- Triangle / Y - Handbrake
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Exit vehicle
+		- R1 / RB - Horn
+		- L2 / LT - Look left
+		- R2 / RT - Look right
+		- L2 / LT + R2 / RT - Look behind
+		- L3 / LS - Change radio station/Next MP3 Track (hold)
+		- R3 / RS - Sub-mission/Hydraulics jump
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+
+Setup 4:
+	ON FOOT:
+		- Left analog stick - Movement/Move crosshair
+		- Right analog stick - Look around
+		- D-Pad - Move crosshair
+		- Circle / B - Center camera/Collect pick-up
+		- Cross / A - Sprint/Sniper zoom out
+		- Square / X - Jump/Sniper zoom in
+		- Triangle / Y - Enter vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Answer phone/Target
+		- R1 / RB - Fire
+		- L2 / LT - Previous target/Previous weapon
+		- R2 / RT - Next target/Next weapon
+		- L3 / LS - Duck
+		- R3 / RS - Look behind
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+	IN VEHICLE:
+		- Left analog stick - Steer
+		- Right analog stick Up/Down - Accelerate/Brake
+		- D-Pad - Move turret
+		- Circle / B - Change radio station/Next MP3 Track (hold)
+		- Square / X - Sub-mission
+		- Triangle / Y - Exit vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Handbrake
+		- R1 / RB - Fire
+		- L2 / LT - Look left
+		- R2 / RT - Look right
+		- L2 / LT + R2 / RT - Look behind
+		- L3 / LS - Horn
+		- R3 / RS - Hydraulics jump
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+
+Setup 5 - GTA IV styled controls:
+	ON FOOT:
+		- Left analog stick - Movement/Sniper zoom
+		- Right analog stick - Look around/Move crosshair/Switch targets (when aiming)
+		- D-Pad Left - Previous weapon
+		- D-Pad Right - Next weapon
+		- Circle / B - Melee attack
+		- Cross / A - Sprint
+		- Square / X - Jump
+		- Triangle / Y - Enter vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- L1 / LB - Answer phone/Collect pick-up
+		- R1 / RB - Center camera
+		- L2 / LT - Target
+		- R2 / RT - Fire
+		- L3 / LS - Duck
+		- R3 / RS - Look behind
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)
+
+	IN VEHICLE:
+		- Left analog stick - Steer
+		- Right analog stick - Move turret
+		- D-Pad Left - Previous radio station/Previous MP3 Track (hold)
+		- D-Pad Right - Next radio station/Next MP3 Track (hold)
+		- Cross / A - Handbrake
+		- Triangle / Y - Exit vehicle
+		- Select / Back - Next camera/Toggle replay (hold)
+		- Start - Pause menu
+		- Circle / B - Fire
+		- L1 / LB - Look left
+		- R1 / RB - Look Right
+		- L2 / LT + R2 / RT - Look behind
+		- L2 / LT - Brake
+		- R2 / RT - Accelerate
+		- L3 / LS - Horn
+		- R3 / RS - Sub-mission/Hydraulics jump
+		- Home / Guide - Show Steam Overlay (if available and GuideLaunchesOverlay enabled)

@@ -1,0 +1,616 @@
+# Usage: %man ped    1  173
+# man - GroupName, ped - BlockName, 1 - InitModelIndex, 173 - GroupAnimCount
+# then there's a list of animations with id and flags(173 lines, ids from 0 to 172).
+# To add another animation, increase GroupAnimCount and add animation name at the end of the list.
+# For example: 
+# %man ped    1  174
+# ..................
+# walk_civi 173 354
+# now you can use id 173 in game.
+# DON'T FORGET TO INCREASE GroupAnimCount!
+
+%man ped    1  179
+walk_civi                                   0                                          354
+run_civi                                    1                                          354
+sprint_panic                                2                                          354
+idle_stance                                 3                                            2
+walk_start                                  4                                           64
+run_stop                                    5                                           68
+run_stopR                                   6                                           68
+idle_hbhb                                   7                                           18
+idle_hbhb                                   8                                           18
+idle_tired                                  9                                            2
+idle_armed                                 10                                           18
+idle_chat                                  11                                           18
+idle_taxi                                  12                                           24
+KO_shot_front                              13                                         4176
+KO_shot_front                              14                                         4176
+KO_shot_front                              15                                         4176
+KO_shot_front                              16                                         4176
+KO_shot_face                               17                                         4176
+KO_shot_stom                               18                                           80
+KO_shot_arml                               19                                         4112
+KO_shot_armR                               20                                         4112
+KO_shot_legl                               21                                           80
+KO_shot_legR                               22                                           80
+KD_left                                    23                                         4112
+KD_right                                   24                                         4112
+KO_skid_front                              25                                           16
+KO_spin_R                                  26                                           16
+KO_skid_back                               27                                         4112
+KO_spin_L                                  28                                           16
+SHOT_partial                               29                                         1048
+SHOT_leftP                                 30                                         1048
+SHOT_partial                               31                                         1048
+SHOT_rightP                                32                                         1048
+HIT_front                                  33                                           88
+HIT_L                                      34                                           24
+HIT_back                                   35                                           88
+HIT_R                                      36                                           24
+FLOOR_hit                                  37                                           20
+HIT_bodyblow                               38                                           88
+HIT_chest                                  39                                           88
+HIT_head                                   40                                           88
+HIT_walk                                   41                                           88
+HIT_wall                                   42                                           88
+FLOOR_hit_f                                43                                         4116
+HIT_behind                                 44                                           24
+FIGHTIDLE                                  45                                            2
+FIGHT2IDLE                                 46                                           24
+FIGHTsh_F                                  47                                           88
+FIGHTbodyblow                              48                                           24
+FIGHThead                                  49                                           24
+FIGHTkick                                  50                                           24
+FIGHTknee                                  51                                           24
+FIGHTLhook                                 52                                           24
+FIGHTpunch                                 53                                           24
+FIGHTrndhse                                54                                           88
+FIGHTlngkck                                55                                           88
+FIGHTppunch                                56                                         1044
+FIGHTjab                                   57                                           24
+FIGHTelbowL                                58                                           24
+FIGHTelbowR                                59                                           24
+FIGHTbkickL                                60                                           24
+FIGHTbkickR                                61                                           24
+bomber                                     62                                           24
+punchR                                     63                                           24
+FIGHTppunch                                64                                           24
+KICK_floor                                 65                                           24
+WEAPON_throwu                              66                                           24
+FIGHTsh_back                               67                                           88
+car_jackedRHS                              68                                           20
+car_LjackedRHS                             69                                           20
+car_jackedLHS                              70                                           20
+car_LjackedLHS                             71                                           20
+CAR_Qjack                                  72                                           24
+CAR_Qjacked                                73                                           20
+CAR_align_LHS                              74                                           24
+CAR_alignHI_LHS                            75                                           24
+CAR_open_LHS                               76                                           24
+CAR_doorlocked_LHS                         77                                           24
+CAR_pullout_LHS                            78                                           24
+CAR_pulloutL_LHS                           79                                           24
+CAR_getin_LHS                              80                                           24
+CAR_getinL_LHS                             81                                           24
+CAR_closedoor_LHS                          82                                           24
+CAR_closedoorL_LHS                         83                                           24
+CAR_rolldoor                               84                                           24
+CAR_rolldoorLO                             85                                           24
+CAR_jumpin_LHS                             86                                           24
+CAR_getout_LHS                             87                                           24
+CAR_getoutL_LHS                            88                                           24
+CAR_close_LHS                              89                                           24
+CAR_align_RHS                              90                                           24
+CAR_alignHI_RHS                            91                                           24
+CAR_open_RHS                               92                                           24
+CAR_doorlocked_RHS                         93                                           24
+CAR_pullout_RHS                            94                                           24
+CAR_pulloutL_RHS                           95                                           24
+CAR_getin_RHS                              96                                           24
+CAR_getinL_RHS                             97                                           24
+CAR_closedoor_RHS                          98                                           24
+CAR_closedoorL_RHS                         99                                           24
+CAR_shuffle_RHS                           100                                           24
+CAR_Lshuffle_RHS                          101                                           24
+CAR_sit                                   102                                            4
+CAR_Lsit                                  103                                            4
+CAR_sitp                                  104                                            4
+CAR_sitpLO                                105                                            4
+DRIVE_L                                   106                                         8212
+Drive_R                                   107                                         8212
+Drive_LO_l                                108                                         8212
+Drive_LO_R                                109                                         8212
+Driveby_L                                 110                                         8212
+Driveby_R                                 111                                         8212
+DrivebyL_L                                112                                         8212
+DrivebyL_R                                113                                         8212
+CAR_LB                                    114                                         8212
+DRIVE_BOAT                                115                                         8196
+DRIVE_BOAT_L                              116                                         8212
+DRIVE_BOAT_R                              117                                         8212
+DRIVE_BOAT_back                           118                                         8212
+BIKE_pickupR                              119                                           24
+BIKE_pickupL                              120                                           24
+BIKE_pullupR                              121                                           24
+BIKE_pullupL                              122                                           24
+BIKE_elbowR                               123                                           24
+BIKE_elbowL                               124                                           24
+BIKE_fall_off                             125                                           84
+BIKE_fallR                                126                                           84
+CAR_getout_RHS                            127                                           24
+CAR_getoutL_RHS                           128                                           24
+CAR_close_RHS                             129                                           24
+car_hookertalk                            130                                           18
+idle_stance                               131                                           16
+idle_stance                               132                                           24
+CAR_crawloutRHS                           133                                           24
+CAR_crawloutRHS                           134                                           24
+CAR_rollout_LHS                           135                                          212
+CAR_rollout_LHS                           136                                          212
+Getup                                     137                                           88
+Getup                                     138                                           88
+Getup                                     139                                           88
+Getup_front                               140                                           88
+JUMP_launch                               141                                           24
+JUMP_glide                                142                                           20
+JUMP_land                                 143                                           88
+FALL_fall                                 144                                           22
+FALL_glide                                145                                           20
+FALL_land                                 146                                           88
+FALL_collapse                             147                                           88
+FALL_back                                 148                                           20
+FALL_front                                149                                         4116
+EV_step                                   150                                           88
+EV_dive                                   151                                         4176
+XPRESSscratch                             152                                          536
+roadcross                                 153                                           18
+TURN_180                                  154                                           24
+ARRESTgun                                 155                                           80
+DROWN                                     156                                           16
+DUCK_down                                 157                                           20
+DUCK_low                                  158                                           20
+WEAPON_crouch                             159                                           20
+RBLOCK_Cshoot                             160                                           20
+handsup                                   161                                           80
+handsCOWER                                162                                           88
+FUCKU                                     163                                         1052
+PHONE_in                                  164                                           24
+PHONE_out                                 165                                           24
+PHONE_talk                                166                                           22
+SEAT_down                                 167                                           28
+SEAT_up                                   168                                           28
+SEAT_idle                                 169                                           30
+SEAT_down                                 170                                           28
+ATM                                       171                                           28
+abseil                                    172                                           20
+GunCrouchFwd                              173                                           88
+GunCrouchBwd                              174                                           88
+Crouch_Roll_L                             175                                          212
+Crouch_Roll_R                             176                                          212
+GunMove_L                                 177                                          212
+GunMove_R                                 178                                          212
+
+%van van    1    8
+VAN_openL                                 174                                           24
+VAN_getinL                                175                                           24
+VAN_closeL                                176                                           24
+VAN_getoutL                               177                                           24
+VAN_open                                  178                                           24
+VAN_getin                                 179                                           24
+VAN_close                                 180                                           24
+VAN_getout                                181                                           24
+
+%coach coach    1    5
+COACH_opnL                                182                                           24
+COACH_opnL                                183                                           24
+COACH_inL                                 184                                           24
+COACH_inL                                 185                                           24
+COACH_outL                                186                                           24
+
+%bikes bikes    1   18
+BIKEs_Ride                                187                                            4
+BIKEs_Still                               188                                         8212
+BIKEs_Left                                189                                         8208
+BIKEs_Right                               190                                         8208
+BIKEs_Back                                191                                         8208
+BIKEs_Fwd                                 192                                         8208
+BIKEs_pushes                              193                                         8214
+BIKEs_jumponR                             194                                           24
+BIKEs_jumponL                             195                                           24
+BIKEs_kick                                196                                           24
+BIKEs_hit                                 197                                           24
+BIKEs_getoffRHS                           198                                           24
+BIKEs_getoffLHS                           199                                           24
+BIKEs_getoffBACK                          200                                           88
+BIKEs_drivebyLHS                          201                                         8212
+BIKEs_drivebyRHS                          202                                         8212
+BIKEs_drivebyFT                           203                                         8212
+BIKEs_passenger                           204                                         8196
+
+%bikev bikev    1   18
+BIKEv_Ride                                187                                            4
+BIKEv_Still                               188                                         8212
+BIKEv_Left                                189                                         8208
+BIKEv_Right                               190                                         8208
+BIKEv_Back                                191                                         8208
+BIKEv_Fwd                                 192                                         8208
+BIKEv_pushes                              193                                         8214
+BIKEv_jumponR                             194                                           24
+BIKEv_jumponL                             195                                           24
+BIKEv_kick                                196                                           24
+BIKEv_hit                                 197                                           24
+BIKEv_getoffRHS                           198                                           24
+BIKEv_getoffLHS                           199                                           24
+BIKEv_getoffBACK                          200                                           88
+BIKEv_drivebyLHS                          201                                         8212
+BIKEv_drivebyRHS                          202                                         8212
+BIKEv_drivebyFT                           203                                         8212
+BIKEv_passenger                           204                                         8196
+
+%bikeh bikeh    1   18
+BIKEh_Ride                                187                                            4
+BIKEh_Still                               188                                         8212
+BIKEh_Left                                189                                         8208
+BIKEh_Right                               190                                         8208
+BIKEh_Back                                191                                         8208
+BIKEh_Fwd                                 192                                         8208
+BIKEh_pushes                              193                                         8214
+BIKEh_jumponR                             194                                           24
+BIKEh_jumponL                             195                                           24
+BIKEh_kick                                196                                           24
+BIKEh_hit                                 197                                           24
+BIKEh_getoffRHS                           198                                           24
+BIKEh_getoffLHS                           199                                           24
+BIKEh_getoffBACK                          200                                           88
+BIKEh_drivebyLHS                          201                                         8212
+BIKEh_drivebyRHS                          202                                         8212
+BIKEh_drivebyFT                           203                                         8212
+BIKEh_passenger                           204                                         8196
+
+%biked biked    1   18
+BIKEd_Ride                                187                                            4
+BIKEd_Still                               188                                         8212
+BIKEd_Left                                189                                         8208
+BIKEd_Right                               190                                         8208
+BIKEd_Back                                191                                         8208
+BIKEd_Fwd                                 192                                         8208
+BIKEd_pushes                              193                                         8214
+BIKEd_jumponR                             194                                           24
+BIKEd_jumponL                             195                                           24
+BIKEd_kick                                196                                           24
+BIKEd_hit                                 197                                           24
+BIKEd_getoffRHS                           198                                           24
+BIKEd_getoffLHS                           199                                           24
+BIKEd_getoffBACK                          200                                           88
+BIKEd_drivebyLHS                          201                                         8212
+BIKEd_drivebyRHS                          202                                         8212
+BIKEd_drivebyFT                           203                                         8212
+BIKEd_passenger                           204                                         8196
+
+%unarmed ped    1    3
+punchR                                    205                                           24
+KICK_floor                                206                                           24
+FIGHTppunch                               207                                         1048
+
+%screwdrv ped    1    5
+FIGHTbodyblow                             205                                           24
+FIGHTbodyblow                             206                                           24
+FIGHTppunch                               207                                         1048
+FIGHTIDLE                                 208                                            2
+FIGHTbodyblow                             209                                           88
+
+%knife knife    1    5
+WEAPON_knife_1                            205                                           24
+WEAPON_knife_2                            206                                           24
+knife_part                                207                                         1048
+WEAPON_knifeidle                          208                                            2
+WEAPON_knife_3                            209                                           88
+
+%baseball baseball    1    5
+WEAPON_bat_h                              205                                           24
+WEAPON_bat_v                              206                                           24
+BAT_PART                                  207                                           24
+WEAPON_bat_h                              208                                            2
+WEAPON_golfclub                           209                                           24
+
+%golfclub baseball    1    5
+WEAPON_bat_h                              205                                           24
+WEAPON_golfclub                           206                                           24
+BAT_PART                                  207                                           24
+WEAPON_bat_h                              208                                            2
+WEAPON_bat_v                              209                                           24
+
+%chainsaw chainsaw    1    3
+WEAPON_csaw                               205                                           24
+WEAPON_csawlo                             206                                           24
+csaw_part                                 207                                         1048
+
+%python python    1    4
+python_fire                               205                                           24
+python_crouchfire                         206                                           24
+python_reload                             207                                           24
+python_crouchreload                       208                                           24
+
+%colt45 colt45    1    5
+colt45_fire                               205                                           24
+colt45_crouchfire                         206                                           24
+colt45_reload                             207                                           24
+colt45_crouchreload                       208                                           24
+colt45_cop                                209                                           24
+
+%shotgun shotgun    1    2
+shotgun_fire                              205                                           24
+shotgun_crouchfire                        206                                           24
+
+%buddy buddy    1    2
+buddy_fire                                205                                           24
+buddy_crouchfire                          206                                           24
+
+%tec tec    1    4
+TEC_fire                                  205                                           24
+TEC_crouchfire                            206                                           24
+TEC_reload                                207                                           24
+TEC_crouchreload                          208                                           24
+
+%uzi uzi    1    4
+UZI_fire                                  205                                           24
+UZI_crouchfire                            206                                           24
+UZI_reload                                207                                           24
+UZI_crouchreload                          208                                           24
+
+%rifle rifle    1    4
+RIFLE_fire                                205                                           24
+RIFLE_crouchfire                          206                                           24
+RIFLE_load                                207                                           24
+RIFLE_crouchload                          208                                           24
+
+%m60 m60    1    3
+M60_fire                                  205                                           24
+M60_fire                                  206                                           24
+M60_reload                                207                                           24
+
+%sniper sniper    1    1
+WEAPON_sniper                             205                                           24
+
+%grenade grenade    1    3
+WEAPON_throw                              205                                           24
+WEAPON_throwu                             206                                           24
+WEAPON_start_throw                        207                                           24
+
+%flame flame    1    1
+FLAME_fire                                205                                           24
+
+%medic medic    1    1
+CPR                                       214                                           24
+
+%sunbathe sunbathe    1    1
+bather                                    210                                           18
+
+%playidles playidles    1    4
+stretch                                   215                                           28
+time                                      216                                           28
+shldr                                     217                                           28
+strleg                                    218                                           28
+
+%riot riot    1    7
+riot_angry                                219                                           26
+riot_angry_b                              220                                           26
+riot_chant                                221                                           26
+riot_punches                              222                                           26
+riot_shout                                223                                           26
+riot_challenge                            224                                           24
+riot_fuku                                 225                                           24
+
+%strip strip    1    7
+strip_A                                   226                                           26
+strip_B                                   227                                           26
+strip_C                                   228                                           26
+strip_D                                   229                                           26
+strip_E                                   230                                           24
+strip_F                                   231                                           26
+strip_G                                   232                                           24
+
+%lance lance    1    1
+lance                                     210                                           18
+
+%player ped    1    5
+walk_player                                 0                                          354
+run_player                                  1                                          354
+SPRINT_civi                                 2                                          354
+IDLE_STANCE                                 3                                            2
+walk_start                                  4                                           64
+
+%playerrocket ped    1    5
+walk_rocket                                 0                                          354
+run_rocket                                  1                                          354
+run_rocket                                  2                                          354
+idle_rocket                                 3                                            2
+walk_start_rocket                           4                                           64
+
+%player1armed ped    1    5
+walk_player                                 0                                          354
+run_1armed                                  1                                          354
+SPRINT_civi                                 2                                          354
+IDLE_STANCE                                 3                                            2
+walk_start                                  4                                           64
+
+%player2armed ped    1    5
+walk_armed                                  0                                          354
+run_armed                                   1                                          354
+run_armed                                   2                                          354
+idle_armed                                  3                                            2
+walk_start_armed                            4                                           64
+
+%playerBBBat ped    1    5
+walk_player                                 0                                          354
+run_player                                  1                                          354
+run_player                                  2                                          354
+IDLE_STANCE                                 3                                            2
+walk_start                                  4                                           64
+
+%playercsaw ped    1    5
+walk_csaw                                   0                                          354
+run_csaw                                    1                                          354
+run_csaw                                    2                                          354
+IDLE_csaw                                   3                                            2
+walk_start_csaw                             4                                           64
+
+%shuffle ped    1    4
+WALK_shuffle                                0                                          354
+RUN_civi                                    1                                          354
+SPRINT_civi                                 2                                          354
+IDLE_STANCE                                 3                                            2
+
+%oldman ped    1    4
+walk_old                                    0                                          354
+run_civi                                    1                                          354
+sprint_civi                                 2                                          354
+idle_stance                                 3                                            2
+
+%gang1 ped    1    4
+walk_gang1                                  0                                          354
+run_gang1                                   1                                          354
+sprint_civi                                 2                                          354
+idle_stance                                 3                                            2
+
+%gang2 ped    1    4
+walk_gang2                                  0                                          354
+run_gang1                                   1                                          354
+sprint_civi                                 2                                          354
+idle_stance                                 3                                            2
+
+%fatman ped    1    4
+walk_fat                                    0                                          354
+run_civi                                    1                                          354
+woman_runpanic                              2                                          354
+idle_stance                                 3                                            2
+
+%oldfatman ped    1    4
+walk_fatold                                 0                                          354
+run_fatold                                  1                                          354
+woman_runpanic                              2                                          354
+idle_stance                                 3                                            2
+
+%jogger ped    1    4
+JOG_maleA                                   0                                          354
+run_civi                                    1                                          354
+sprint_civi                                 2                                          354
+idle_stance                                 3                                            2
+
+%woman ped    1    4
+woman_walknorm                              0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%shopping ped    1    4
+woman_walkshop                              0                                          354
+woman_run                                   1                                          354
+woman_run                                   2                                          354
+woman_idlestance                            3                                            2
+
+%busywoman ped    1    4
+woman_walkbusy                              0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%sexywoman ped    1    4
+woman_walksexy                              0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%fatwoman ped    1    4
+walk_fat                                    0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%oldwoman ped    1    4
+woman_walkold                               0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%jogwoman ped    1    4
+JOG_maleB                                   0                                          354
+woman_run                                   1                                          354
+woman_runpanic                              2                                          354
+woman_idlestance                            3                                            2
+
+%panicchunky ped    1    4
+run_fatold                                  0                                          354
+woman_runpanic                              1                                          354
+woman_runpanic                              2                                          354
+idle_stance                                 3                                            2
+
+%skate skate    1    4
+skate_run                                   0                                          354
+skate_sprint                                1                                          354
+skate_sprint                                2                                          354
+skate_idle                                  3                                            2
+
+%playerback ped    1    5
+walk_back                                   0                                          354
+run_back                                    1                                          354
+run_back                                    2                                          354
+IDLE_STANCE                                 3                                            2
+walk_start_back                             4                                           64
+
+%playerleft ped    1    5
+walk_left                                   0                                          482
+run_left                                    1                                          482
+run_left                                    2                                          482
+IDLE_STANCE                                 3                                            2
+walk_start_left                             4                                          192
+
+%playerright ped    1    5
+walk_right                                  0                                          482
+run_right                                   1                                          482
+run_right                                   2                                          482
+IDLE_STANCE                                 3                                            2
+walk_start_right                            4                                          192
+
+%rocketback ped    1    5
+walk_rocket_back                            0                                          354
+run_rocket_back                             1                                          354
+run_rocket_back                             2                                          354
+idle_rocket                                 3                                            2
+walkst_rocket_back                          4                                           64
+
+%rocketleft ped    1    5
+walk_rocket_left                            0                                          482
+run_rocket_left                             1                                          482
+run_rocket_left                             2                                          482
+idle_rocket                                 3                                            2
+walkst_rocket_left                          4                                          192
+
+%rocketright ped    1    5
+walk_rocket_right                           0                                          482
+run_rocket_right                            1                                          482
+run_rocket_right                            2                                          482
+idle_rocket                                 3                                            2
+walkst_rocket_right                         4                                          192
+
+%csawback ped    1    5
+walk_csaw_back                              0                                          354
+run_csaw_back                               1                                          354
+run_csaw_back                               2                                          354
+idle_csaw                                   3                                            2
+walkst_csaw_back                            4                                           64
+
+%csawleft ped    1    5
+walk_csaw_left                              0                                          482
+run_csaw_left                               1                                          482
+run_csaw_left                               2                                          482
+idle_csaw                                   3                                            2
+walkst_csaw_left                            4                                          192
+
+%csawright ped    1    5
+walk_csaw_right                             0                                          482
+run_csaw_right                              1                                          482
+run_csaw_right                              2                                          482
+idle_csaw                                   3                                            2
+walkst_csaw_right                           4                                          192
+

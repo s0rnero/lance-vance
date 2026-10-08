@@ -1,0 +1,19 @@
+--ENGLISH--
+Tips and help on the mod.
+- ASI plugins written for the original game are not supported;
+- The modification garages are next to the Pay 'N' Spray garages;
+- To switch between pistol and submachine gun in a vehicle, press the change weapon keys while aiming;
+- If the wheels of the car are not repainted, you need to turn off the 'World Lightmaps' option in the graphics settings;
+- If the game crashes on startup, put NoMovies=1 in [General] in ViceEx.ini;
+- Try to use the climbing mechanics less often, otherwise there is a chance of the game crashing. I apologize for this. You can disable climbing in features.ini;
+- Are your saved photos showing a black square? Switch off anti-aliasing.
+
+--RUSSIAN--
+Советы и помощь по моду.
+- ASI-плагины, написанные для оригинальной игры, не поддерживаются;
+- Гаражи модификаций находятся рядом с гаражами Pay 'N' Spray;
+- Чтобы переключаться между пистолетом и пистолетом-пулеметом в транспорте, во время прицеливания нажимайте клавиши смены оружия;
+- Если колеса у машины не перекрашиваются, то необходимо в настройках графики отключить параметр World Lightmaps;
+- Если у вас вылетает игра при запуске, то в ViceEx.ini поставьте NoMovies=1 в разделе [General];
+- Старайтесь использовать механику перелезания реже, иначе есть вероятность вылета игры. Прошу прощение за это. В features.ini перелезания можно отключить;
+- На сохраненных фотографиях черный квадрат? Отключите сглаживание (anti-aliasing).

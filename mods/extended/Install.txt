@@ -1,0 +1,5 @@
+--ENGLISH--
+Install: Drop the contents of the "GameFiles" folder into the game folder. The game starts in ViceEx.exe.
+
+--RUSSIAN--
+Установка: Закинуть содержимое папки "GameFiles" в папку с игрой. Игра запускается через ViceEx.exe.
