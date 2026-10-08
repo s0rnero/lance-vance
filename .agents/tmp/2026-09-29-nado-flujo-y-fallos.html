@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Nado: flujo por frame y dónde falla</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.4em; } h2 { font-size: 1.1em; margin-top: 2em; }
+  table { border-collapse: collapse; width: 100%; font-size: .9em; }
+  th, td { border: 1px solid #bbb; padding: .4em .6em; text-align: left; }
+  th { background: #f0f0f0; }
+  .ok { color: #0a7a2f; font-weight: bold; } .bad { color: #b00020; font-weight: bold; }
+  .mermaid { background: #fafafa; border: 1px solid #ddd; padding: 1em; }
+</style>
+</head>
+<body>
+<h1>Nado: qué pasa en cada frame y dónde falla cada cosa</h1>
+
+<h2>1. El flujo (60 veces por segundo)</h2>
+<div class="mermaid">
+flowchart TD
+    A[Navegador pide frame] --> B[Física: gravedad + flotación<br/>¿hay agua? ¿cuánto freno?]
+    B --> C[Pose: ¿cayendo o en aire?<br/>→ muestra CAÍDA]
+    C --> D[NADO: ¿agua? ¿coche? ¿muerto?<br/>→ velocidad + giro + clip]
+    D --> E[Armas y pies: saltados si nada]
+    E --> F[Dibujo + 1 línea de traza por segundo]
+</div>
+
+<h2>2. Tus 3 síntomas, mapeados al flujo</h2>
+<table>
+<tr><th>Viste</th><th>Dónde en el flujo</th><th>Estado</th></tr>
+<tr><td>Clavado hunde 28 m</td><td><b>B</b>: el freno vertical se lo quitamos al nadador</td><td class="bad">F5 corto → falta F5b</td></tr>
+<tr><td>Pose de caída en el agua</td><td><b>C</b>: la caída se re-pide cada frame antes de que llegue <b>D</b></td><td class="ok">F4 lo cerró (sw 0.99)</td></tr>
+<tr><td>W no nadaba</td><td><b>D</b>: cancelar leía el signo al revés</td><td class="ok">F1 lo cerró</td></tr>
+</table>
+
+<h2>3. Por qué F5 se quedó corto (tu log)</h2>
+<div class="mermaid">
+flowchart LR
+    V[¿bajando más de -0.05?] -->|sí| F[FRENA ×0.9]
+    V -->|no| N[no frena]
+    N --> S[sigue bajando<br/>-0.02…-0.04]
+    S --> V
+</div>
+<p>Tus muestras bajaban justo por debajo del umbral: el freno no entraba y el descenso se auto-sostenía hasta el fondo (-15). F5b quita la puerta: frena <b>siempre que baje</b>.</p>
+
+<script>mermaid.initialize({ startOnLoad: true });</script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+{
+  "name": "agents-setup-sorno",
+  "version": "1.4.0",
+  "defaultOrigin": "https://github.com/s0rnero/agents.git",
+  "description": "Generic agent harness shared across repositories. This manifest is the source of truth for install/update: core gets overwritten, per-repo is created only if missing, generated gets regenerated, preserved is never touched. Keep package.json \"files\" mirroring core+perRepo so plans/decisions/tmp never ship.",
+  "core": [
+    ".agents/WORKFLOW.md",
+    ".agents/RULES.md",
+    ".agents/PLANS.md",
+    ".agents/plans/README.md",
+    ".agents/orchestrator/instructions.md",
+    ".agents/subagents/enrichment-process.md",
+    ".agents/subagents/executor.md",
+    ".agents/skills/README.md",
+    ".agents/bootstrap/INSTALL.md",
+    ".agents/decisions/README.md",
+    ".agents/templates/plan.md",
+    ".agents/templates/adr.md",
+    ".agents/manifest.json",
+    "scripts/setup.mjs",
+    "scripts/verify.mjs",
+    "scripts/install.sh"
+  ],
+  "perRepo": [
+    ".agents/AGENTS.md",
+    ".agents/CODING_STANDARDS.md",
+    ".agents/DESIGN.md"
+  ],
+  "generated": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".cursorrules",
+    ".github/copilot-instructions.md"
+  ],
+  "preserved": [
+    ".agents/plans/",
+    ".agents/decisions/",
+    ".agents/skills/"
+  ],
+  "coreHashes": {
+    ".agents/WORKFLOW.md": "6b382a1951a948a6b2b168802235e079066bf18f05ce96a5b220e877d1262f90",
+    ".agents/RULES.md": "051f9c09cc1d52c5a7395c7f06b4503386b0399e5009c9801e00d2e074a0c11d",
+    ".agents/PLANS.md": "9ecc41c258e41c9a27a7386fc442fadcb52ecac64e9bb791ec5057845b8eed3d",
+    ".agents/plans/README.md": "222bdec9b829d441634cf67938b0079bf7f36783fe1246e0e673e2c07d23cc7d",
+    ".agents/orchestrator/instructions.md": "6c718df66605ae2efb25b8ed0552dbceb456c23a7903a38636ed92a12aca695c",
+    ".agents/subagents/enrichment-process.md": "770ab975a7eb4a5742bd7e4d030f20ecb64a0fad16fff1853ba086ee46b10fa3",
+    ".agents/subagents/executor.md": "001cca27a9989ce8cc255d741c55fdd22e09f3b3438a86c79ee6f9cdadee50dd",
+    ".agents/skills/README.md": "41d5035d921acf55361f8df5aa1ffab440d71a2ba25cb41e2aadd32585dc84e7",
+    ".agents/bootstrap/INSTALL.md": "4050b67ab9d48019725798b6bc23c12f70d1988945931ac90bd0ae93e3ab8c2d",
+    ".agents/decisions/README.md": "d2a03f6a7bd8e5d31963324e9f4222c1c89948c1f6525720e77a7de0e10a8f9e",
+    ".agents/templates/plan.md": "62831a796dd9d465e296466031110af620ba523d6874c4ec6c406f9a4a754721",
+    ".agents/templates/adr.md": "1420a1f401f470fc3c2db790a9736ccdba75ce3dcff3d32d3fefab11ce4dc195",
+    ".agents/manifest.json": "5ebc23b2d451c0f6542d24aed1cf5d50ebc9b9feaa5deb8aa4115f6c67514fb7",
+    "scripts/setup.mjs": "590bf083c2915db58048f61cb4bc176ec1862ac7df35f7fe45eb012ff7f6f45e",
+    "scripts/verify.mjs": "cbcb7e4dfd17cc555e10728a428d3133b22803cd11e7005d5ff8d9acf537a5cd",
+    "scripts/install.sh": "b2e0ffe8409f21717ce293f41ddeff8d40ddc8984683d8e4a52b59aaf1ac3f64"
+  },
+  "origin": "C:\\Users\\s0rno\\OneDrive\\Documents\\agents"
+}
