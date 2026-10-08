@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Gauntlet</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>253</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>richfamily</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>35,70</carcol>
+		<carcol>23,70</carcol>
+		<carcol>44,70</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>273</enginefarsample>
+		<enginenearsample>9</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9200</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9800</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1850.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>33.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.550000</damagemultiplier>
+		<value>45000</value>
+		<flags>03009901</flags>
+
+		<dimensions>
+			<x>2.100000</x>
+			<y>4.700000</y>
+			<z>2.100000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.260000</y>
+			<z>0.080000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.080000</multiplier>
+			<loss>0.840000</loss>
+			<bias>0.510000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>190.000000</maxspeed>
+			<acceleration>32.200000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.400000</deceleration>
+			<bias>0.510000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.300000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.300000</upperlimit>
+			<lowerlimit>-0.200000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.400000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

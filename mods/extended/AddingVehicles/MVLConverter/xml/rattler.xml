@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Rattler</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>000000</extraflags>
+		<wheelmodel>250</wheelmodel>
+		<wheelscale>0.68</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>richfamily</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>1,1</carcol>
+		<carcol>3,3</carcol>
+		<carcol>2,4</carcol>
+		<carcol>46,39</carcol>
+		<carcol>1,29</carcol>
+		<carcol>70,29</carcol>
+		<carcol>70,46</carcol>
+		<carcol>70,39</carcol>
+		<carcol>39,70</carcol>
+		<carcol>43,37</carcol>
+		<carcol>54,54</carcol>
+		<carcol>3,6</carcol>
+		<carcol>6,6</carcol>
+		<carcol>51,34</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>273</enginefarsample>
+		<enginenearsample>9</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9200</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9800</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>2000.0</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>35.0</steeringlock>
+		<seatoffset>0.26</seatoffset>
+		<damagemultiplier>0.20</damagemultiplier>
+		<value>26000</value>
+		<flags>1000802</flags>
+
+		<dimensions>
+			<x>2.1</x>
+			<y>5.0</y>
+			<z>2.3</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.0</x>
+			<y>0.3</y>
+			<z>0.0</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.90</multiplier>
+			<loss>0.76</loss>
+			<bias>0.57</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>185.0</maxspeed>
+			<acceleration>31.0</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.1</deceleration>
+			<bias>0.52</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>2.0</forcelevel>
+			<dampening>0.12</dampening>
+			<upperlimit>0.35</upperlimit>
+			<lowerlimit>-0.29</lowerlimit>
+			<bias>0.4</bias>
+			<antidive>0.0</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

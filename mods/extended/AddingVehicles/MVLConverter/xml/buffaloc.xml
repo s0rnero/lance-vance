@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Buffalo Classic</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>253</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>2,39</carcol>
+		<carcol>9,39</carcol>
+		<carcol>17,1</carcol>
+		<carcol>21,1</carcol>
+		<carcol>33,0</carcol>
+		<carcol>37,0</carcol>
+		<carcol>41,29</carcol>
+		<carcol>56,29</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>268</enginefarsample>
+		<enginenearsample>4</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9700</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1800.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.520000</damagemultiplier>
+		<value>19000</value>
+		<flags>00000801</flags>
+
+		<dimensions>
+			<x>2.100000</x>
+			<y>5.100000</y>
+			<z>1.900000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.120000</y>
+			<z>0.100000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.840000</loss>
+			<bias>0.530000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>170.000000</maxspeed>
+			<acceleration>23.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>8.180000</deceleration>
+			<bias>0.530000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.500000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.300000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.250000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

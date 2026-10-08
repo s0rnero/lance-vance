@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Corsar</name>
+		<anims>van</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>255</wheelmodel>
+		<wheelscale>0.900000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>7,70</carcol>
+		<carcol>8,70</carcol>
+		<carcol>29,70</carcol>
+		<carcol>33,70</carcol>
+		<carcol>59,70</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>270</enginefarsample>
+		<enginenearsample>6</enginenearsample>
+		<hornsample>2</hornsample>
+		<hornfreq>17260</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>11025</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>4000.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>27.000000</steeringlock>
+		<seatoffset>0.320000</seatoffset>
+		<damagemultiplier>0.160000</damagemultiplier>
+		<value>40000</value>
+		<flags>00000000</flags>
+
+		<dimensions>
+			<x>2.400000</x>
+			<y>6.800000</y>
+			<z>2.900000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>0.200000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.650000</multiplier>
+			<loss>0.600000</loss>
+			<bias>0.480000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>160.000000</maxspeed>
+			<acceleration>15.800000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>8.400000</deceleration>
+			<bias>0.450000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.800000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.370000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

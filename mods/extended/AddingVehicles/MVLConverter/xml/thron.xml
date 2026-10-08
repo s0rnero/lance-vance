@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Thron</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>256</wheelmodel>
+		<wheelscale>0.650000</wheelscale>
+		<wheelcorrection>1.60</wheelcorrection>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<rgbcol>82,86,97,  0,0,0</rgbcol>
+		<rgbcol>66,31,33,  0,0,0</rgbcol>
+		<rgbcol>43,62,87,  0,0,0</rgbcol>
+		<rgbcol>77,50,47,  0,0,0</rgbcol>
+		<rgbcol>30,46,50,  0,0,0</rgbcol>
+		<rgbcol>72,88,83,  0,0,0</rgbcol>
+		<rgbcol>111,130,151,  0,0,0</rgbcol>
+		<rgbcol>77,98,104,  0,0,0</rgbcol>
+		<rgbcol>51,95,63,  0,0,0</rgbcol>
+		<rgbcol>170,173,142,  0,0,0</rgbcol>
+		<rgbcol>120,34,43,  0,0,0</rgbcol>
+		<rgbcol>76,117,183,  0,0,0</rgbcol>
+		<rgbcol>25,56,38,  0,0,0</rgbcol>
+		<rgbcol>147,163,150,  0,0,0</rgbcol>
+		<rgbcol>64,108,143,  0,0,0</rgbcol>
+		<rgbcol>46,91,32,  0,0,0</rgbcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>278</enginefarsample>
+		<enginenearsample>14</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>11000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9300</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1800.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>28.000000</steeringlock>
+		<seatoffset>0.360000</seatoffset>
+		<damagemultiplier>0.540000</damagemultiplier>
+		<value>19000</value>
+		<flags>00000001</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>5.000000</y>
+			<z>1.600000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.900000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.520000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>176.000000</maxspeed>
+			<acceleration>18.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>3.400000</deceleration>
+			<bias>0.600000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.000000</forcelevel>
+			<dampening>0.050000</dampening>
+			<upperlimit>0.350000</upperlimit>
+			<lowerlimit>-0.180000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>3</rear>
+		</lights>
+	</handling>
+
+</vehicle>

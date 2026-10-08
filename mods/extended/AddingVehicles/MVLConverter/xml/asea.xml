@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Declasse Asea</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.680000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>poorfamily</class>
+		<freq>6</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>37,37</carcol>
+		<carcol>42,42</carcol>
+		<carcol>53,53</carcol>
+		<carcol>62,62</carcol>
+		<carcol>7,7</carcol>
+		<carcol>10,10</carcol>
+		<carcol>11,11</carcol>
+		<carcol>15,15</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>271</enginefarsample>
+		<enginenearsample>7</enginenearsample>
+		<hornsample>6</hornsample>
+		<hornfreq>12375</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9200</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1650.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.560000</damagemultiplier>
+		<value>35000</value>
+		<flags>00008002</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>4.900000</y>
+			<z>1.600000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.840000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.510000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>170.000000</maxspeed>
+			<acceleration>20.000000</acceleration>
+			<drivetype>F</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>8.500000</deceleration>
+			<bias>0.530000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.200000</forcelevel>
+			<dampening>0.150000</dampening>
+			<upperlimit>0.270000</upperlimit>
+			<lowerlimit>-0.190000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.550000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

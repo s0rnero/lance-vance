@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Bullet</name>
+		<anims>null</anims>
+		<comprules>20479</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.820000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>7,53</carcol>
+		<carcol>3,40</carcol>
+		<carcol>35,53</carcol>
+		<carcol>40,75</carcol>
+		<carcol>42,2</carcol>
+		<carcol>46,6</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>274</enginefarsample>
+		<enginenearsample>10</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9600</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1100.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.400000</seatoffset>
+		<damagemultiplier>0.560000</damagemultiplier>
+		<value>45000</value>
+		<flags>01200182</flags>
+
+		<dimensions>
+			<x>2.300000</x>
+			<y>4.500000</y>
+			<z>1.300000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>-0.150000</y>
+			<z>-0.310000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.300000</multiplier>
+			<loss>0.890000</loss>
+			<bias>0.530000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>210.000000</maxspeed>
+			<acceleration>32.100000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>9.800000</deceleration>
+			<bias>0.530000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.600000</forcelevel>
+			<dampening>0.130000</dampening>
+			<upperlimit>0.300000</upperlimit>
+			<lowerlimit>-0.180000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.400000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Limonado</name>
+		<anims>null</anims>
+		<comprules>7952</comprules>
+		<extraflags>20000</extraflags>
+		<wheelmodel>251</wheelmodel>
+		<wheelscale>0.750000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>taxi</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>84,84</carcol>
+		<carcol>1,1</carcol>
+		<carcol>79,79</carcol>
+		<carcol>78,78</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>278</enginefarsample>
+		<enginenearsample>14</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9538</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9900</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>2300.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.720000</damagemultiplier>
+		<value>40000</value>
+		<flags>00008102</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>7.300000</y>
+			<z>1.300000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.230000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.670000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>180.000000</maxspeed>
+			<acceleration>10.000000</acceleration>
+			<drivetype>F</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.000000</deceleration>
+			<bias>0.400000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.400000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.370000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

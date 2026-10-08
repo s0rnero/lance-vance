@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>FBI Reporter</name>
+		<anims>van</anims>
+		<comprules>0</comprules>
+		<maxpassengers>3</maxpassengers>
+		<extraflags>0200</extraflags>
+		<wheelmodel>239</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>ignore</class>
+		<freq>1</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>70,70</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>275</enginefarsample>
+		<enginenearsample>11</enginenearsample>
+		<hornsample>3</hornsample>
+		<hornfreq>18000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9600</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1900.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.500000</damagemultiplier>
+		<value>26000</value>
+		<flags>00008021</flags>
+
+		<dimensions>
+			<x>2.300000</x>
+			<y>5.000000</y>
+			<z>2.300000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.970000</multiplier>
+			<loss>0.770000</loss>
+			<bias>0.510000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>150.000000</maxspeed>
+			<acceleration>25.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>8.500000</deceleration>
+			<bias>0.450000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.300000</forcelevel>
+			<dampening>0.080000</dampening>
+			<upperlimit>0.330000</upperlimit>
+			<lowerlimit>-0.250000</lowerlimit>
+			<bias>0.400000</bias>
+			<antidive>0.500000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>bike</type>
+		<name>Wayfarer Chopper</name>
+		<anims>bikeh</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelrotangle>23</wheelrotangle>
+		<wheelscale>0.670000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>79,13</carcol>
+		<carcol>84,22</carcol>
+		<carcol>7,35</carcol>
+		<carcol>11,38</carcol>
+		<carcol>19,2</carcol>
+		<carcol>22,3</carcol>
+		<carcol>36,48</carcol>
+		<carcol>53,51</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>284</enginefarsample>
+		<enginenearsample>20</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>27000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9600</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>600.000000</mass>
+		<percentsubmerged>103</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.220000</damagemultiplier>
+		<value>10000</value>
+		<flags>00010103</flags>
+
+		<dimensions>
+			<x>1.000000</x>
+			<y>2.200000</y>
+			<z>1.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.080000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.500000</multiplier>
+			<loss>0.830000</loss>
+			<bias>0.490000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>190.000000</maxspeed>
+			<acceleration>42.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>11.000000</deceleration>
+			<bias>0.560000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>0.650000</forcelevel>
+			<dampening>0.200000</dampening>
+			<upperlimit>0.090000</upperlimit>
+			<lowerlimit>-0.110000</lowerlimit>
+			<bias>0.550000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<bikehandling>
+		<leanfwdcom>0.330000</leanfwdcom>
+		<leanfwdforce>0.150000</leanfwdforce>
+		<leanbackcom>0.280000</leanbackcom>
+		<leanbackforce>0.150000</leanbackforce>
+		<maxlean>44.999996</maxlean>
+		<fullanimlean>38.000004</fullanimlean>
+		<deslean>0.930000</deslean>
+		<speedsteer>0.700000</speedsteer>
+		<slipsteer>0.500000</slipsteer>
+		<noplayercomz>0.100000</noplayercomz>
+		<wheelieang>35.000008</wheelieang>
+		<stoppieang>-40.000000</stoppieang>
+		<wheeliesteer>-0.009000</wheeliesteer>
+		<wheeliestabmult>0.700000</wheeliestabmult>
+		<stoppiestabmult>0.600000</stoppiestabmult>
+	</bikehandling>
+
+</vehicle>

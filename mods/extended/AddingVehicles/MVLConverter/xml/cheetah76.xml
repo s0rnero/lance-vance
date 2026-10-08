@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Cheetah Classic</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>250</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>25,25</carcol>
+		<carcol>36,36</carcol>
+		<carcol>52,52</carcol>
+		<carcol>3,3</carcol>
+		<carcol>53,53</carcol>
+		<carcol>76,76</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>269</enginefarsample>
+		<enginenearsample>5</enginenearsample>
+		<hornsample>6</hornsample>
+		<hornfreq>11025</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9500</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1200.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.400000</seatoffset>
+		<damagemultiplier>0.540000</damagemultiplier>
+		<value>105000</value>
+		<flags>01008181</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>4.500000</y>
+			<z>1.400000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>-0.050000</y>
+			<z>-0.250000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.200000</multiplier>
+			<loss>0.890000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>220.000000</maxspeed>
+			<acceleration>31.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.100000</deceleration>
+			<bias>0.490000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.900000</forcelevel>
+			<dampening>0.040000</dampening>
+			<upperlimit>0.270000</upperlimit>
+			<lowerlimit>-0.210000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.300000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>0</rear>
+		</lights>
+	</handling>
+
+</vehicle>

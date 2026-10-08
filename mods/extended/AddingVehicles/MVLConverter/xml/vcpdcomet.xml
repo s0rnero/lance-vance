@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>VCPD Comet</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0101</extraflags>
+		<wheelmodel>250</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>big</class>
+		<freq>1</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>1,1</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>269</enginefarsample>
+		<enginenearsample>5</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9500</hornfreq>
+		<sirensample>27</sirensample>
+		<sirenfreq>11000</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1400.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.250000</seatoffset>
+		<damagemultiplier>0.600000</damagemultiplier>
+		<value>35000</value>
+		<flags>00002103</flags>
+
+		<dimensions>
+			<x>1.900000</x>
+			<y>4.700000</y>
+			<z>1.600000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.100000</y>
+			<z>-0.300000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.900000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>200.000000</maxspeed>
+			<acceleration>28.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>11.000000</deceleration>
+			<bias>0.450000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>2.000000</forcelevel>
+			<dampening>0.150000</dampening>
+			<upperlimit>0.280000</upperlimit>
+			<lowerlimit>-0.160000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.300000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<specials>
+		<emlights>
+			<alwayson>true</alwayson>
+			<colourone>255,0,0</colourone>
+			<colourtwo>0,0,255</colourtwo>
+			
+			<posleft>
+				<x>-0.7</x>
+				<y>-0.1</y>
+				<z>0.8</z>
+			</posleft>
+			
+			<posright>
+				<x>0.7</x>
+				<y>-0.1</y>
+				<z>0.8</z>
+			</posright>
+		</emlights>
+	</specials>
+
+</vehicle>

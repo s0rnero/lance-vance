@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Roamer</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>252</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>43,43</carcol>
+		<carcol>48,48</carcol>
+		<carcol>54,54</carcol>
+		<carcol>61,61</carcol>
+		<carcol>64,64</carcol>
+		<carcol>9,9</carcol>
+		<carcol>13,13</carcol>
+		<carcol>32,32</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>278</enginefarsample>
+		<enginenearsample>14</enginenearsample>
+		<hornsample>4</hornsample>
+		<hornfreq>12170</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9400</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>2000.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.750000</damagemultiplier>
+		<value>16000</value>
+		<flags>0000000A</flags>
+
+		<dimensions>
+			<x>2.200000</x>
+			<y>5.500000</y>
+			<z>2.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.900000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.470000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>150.000000</maxspeed>
+			<acceleration>15.000000</acceleration>
+			<drivetype>F</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>5.500000</deceleration>
+			<bias>0.600000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.400000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.350000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>3</rear>
+		</lights>
+	</handling>
+
+</vehicle>

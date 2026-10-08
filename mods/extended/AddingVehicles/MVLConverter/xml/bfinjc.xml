@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>BFX Injection</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0008</extraflags>
+		<wheelmodel>238</wheelmodel>
+		<wheelscale>0.800000</wheelscale>
+		<wheelcorrection>1.30</wheelcorrection>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>5</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>54,37</carcol>
+		<carcol>13,1</carcol>
+		<carcol>25,1</carcol>
+		<carcol>38,59</carcol>
+		<carcol>42,1</carcol>
+		<carcol>46,1</carcol>
+		<carcol>55,1</carcol>
+		<carcol>2,37</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>273</enginefarsample>
+		<enginenearsample>9</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9100</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>800.000000</mass>
+		<percentsubmerged>80</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.380000</seatoffset>
+		<damagemultiplier>0.400000</damagemultiplier>
+		<value>15000</value>
+		<flags>0700A918</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>3.500000</y>
+			<z>1.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.200000</multiplier>
+			<loss>0.880000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>170.000000</maxspeed>
+			<acceleration>35.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.100000</deceleration>
+			<bias>0.550000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.300000</forcelevel>
+			<dampening>0.050000</dampening>
+			<upperlimit>0.330000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>2</rear>
+		</lights>
+	</handling>
+
+</vehicle>

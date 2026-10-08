@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Police Trooper Coupe'</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0201</extraflags>
+		<wheelmodel>251</wheelmodel>
+		<wheelscale>0.730000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>ignore</class>
+		<freq>1</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>70,38</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>274</enginefarsample>
+		<enginenearsample>10</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>10706</hornfreq>
+		<sirensample>27</sirensample>
+		<sirenfreq>10511</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1400.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>38.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.130000</damagemultiplier>
+		<value>30000</value>
+		<flags>00009002</flags>
+
+		<dimensions>
+			<x>2.100000</x>
+			<y>4.500000</y>
+			<z>1.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>-0.100000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.050000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.460000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>210.000000</maxspeed>
+			<acceleration>29.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>11.200000</deceleration>
+			<bias>0.490000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>2.100000</forcelevel>
+			<dampening>0.140000</dampening>
+			<upperlimit>0.280000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.200000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<specials>
+		<emlights>
+			<alwayson>true</alwayson>
+			<colourone>0,0,255</colourone>
+			<colourtwo>255,222,0</colourtwo>
+			
+			<posleft>
+				<x>-0.5</x>
+				<y>-0.4</y>
+				<z>0.72</z>
+			</posleft>
+			
+			<posright>
+				<x>0.5</x>
+				<y>-0.3</y>
+				<z>0.72</z>
+			</posright>
+		</emlights>
+	</specials>
+
+</vehicle>

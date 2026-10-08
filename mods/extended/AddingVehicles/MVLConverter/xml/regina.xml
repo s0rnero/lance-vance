@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Regina</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>251</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>53,32</carcol>
+		<carcol>15,32</carcol>
+		<carcol>45,32</carcol>
+		<carcol>34,30</carcol>
+		<carcol>65,32</carcol>
+		<carcol>14,32</carcol>
+		<carcol>12,32</carcol>
+		<carcol>43,32</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>275</enginefarsample>
+		<enginenearsample>11</enginenearsample>
+		<hornsample>5</hornsample>
+		<hornfreq>11000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9700</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1500.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.240000</seatoffset>
+		<damagemultiplier>0.480000</damagemultiplier>
+		<value>18000</value>
+		<flags>00000009</flags>
+
+		<dimensions>
+			<x>1.900000</x>
+			<y>4.900000</y>
+			<z>1.700000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.150000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.800000</multiplier>
+			<loss>0.850000</loss>
+			<bias>0.520000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>165.000000</maxspeed>
+			<acceleration>16.000000</acceleration>
+			<drivetype>F</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>5.000000</deceleration>
+			<bias>0.600000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.200000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.270000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.200000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

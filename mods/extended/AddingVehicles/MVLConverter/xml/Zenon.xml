@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Beach Wagon</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0008</extraflags>
+		<wheelmodel>238</wheelmodel>
+		<wheelscale>0.900000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>moped</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>58,1</carcol>
+		<carcol>2,1</carcol>
+		<carcol>5,1</carcol>
+		<carcol>18,1</carcol>
+		<carcol>32,1</carcol>
+		<carcol>45,1</carcol>
+		<carcol>13,1</carcol>
+		<carcol>34,1</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>270</enginefarsample>
+		<enginenearsample>6</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9100</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1100.000000</mass>
+		<percentsubmerged>80</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.380000</seatoffset>
+		<damagemultiplier>0.400000</damagemultiplier>
+		<value>16000</value>
+		<flags>700a808</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>3.500000</y>
+			<z>1.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.000000</multiplier>
+			<loss>0.880000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>155.000000</maxspeed>
+			<acceleration>20.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.100000</deceleration>
+			<bias>0.550000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.300000</forcelevel>
+			<dampening>0.050000</dampening>
+			<upperlimit>0.330000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>2</rear>
+		</lights>
+	</handling>
+
+</vehicle>

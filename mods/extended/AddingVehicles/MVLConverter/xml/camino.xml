@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Ruber</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>256</wheelmodel>
+		<wheelscale>0.660000</wheelscale>
+		<wheelcorrection>1.30</wheelcorrection>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>poorfamily</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>77,77</carcol>
+		<carcol>79,79</carcol>
+		<carcol>2,2</carcol>
+		<carcol>15,15</carcol>
+		<carcol>9,9</carcol>
+		<carcol>12,12</carcol>
+		<carcol>37,37</carcol>
+		<carcol>7,78</carcol>
+		<carcol>38,38</carcol>
+		<carcol>38,46</carcol>
+		<carcol>2,62</carcol>
+		<carcol>59,58</carcol>
+		<carcol>39,46</carcol>
+		<carcol>46,1</carcol>
+		<carcol>35,62</carcol>
+		<carcol>12,62</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>268</enginefarsample>
+		<enginenearsample>4</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9700</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1720.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>34.000000</steeringlock>
+		<seatoffset>0.280000</seatoffset>
+		<damagemultiplier>0.440000</damagemultiplier>
+		<value>20000</value>
+		<flags>01000A02</flags>
+
+		<dimensions>
+			<x>1.900000</x>
+			<y>5.000000</y>
+			<z>1.700000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.100000</y>
+			<z>0.150000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.780000</multiplier>
+			<loss>0.740000</loss>
+			<bias>0.520000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>154.000000</maxspeed>
+			<acceleration>18.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.200000</deceleration>
+			<bias>0.550000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.000000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.350000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.500000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

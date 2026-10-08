@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Le Chariot A1</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>250</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>1,1</carcol>
+		<carcol>79,79</carcol>
+		<carcol>20,20</carcol>
+		<carcol>39,39</carcol>
+		<carcol>47,47</carcol>
+		<carcol>3,3</carcol>
+		<carcol>2,2</carcol>
+		<carcol>7,7</carcol>
+		<carcol>57,57</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>274</enginefarsample>
+		<enginenearsample>10</enginenearsample>
+		<hornsample>6</hornsample>
+		<hornfreq>11025</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9890</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1100.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>26.000000</steeringlock>
+		<seatoffset>0.250000</seatoffset>
+		<damagemultiplier>0.500000</damagemultiplier>
+		<value>35000</value>
+		<flags>0000A102</flags>
+
+		<dimensions>
+			<x>1.900000</x>
+			<y>4.600000</y>
+			<z>1.400000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>-0.050000</y>
+			<z>-0.150000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.960000</loss>
+			<bias>0.530000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>190.000000</maxspeed>
+			<acceleration>27.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.000000</deceleration>
+			<bias>0.460000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.600000</forcelevel>
+			<dampening>0.190000</dampening>
+			<upperlimit>0.280000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.400000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

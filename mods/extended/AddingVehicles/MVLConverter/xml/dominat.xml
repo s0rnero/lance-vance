@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Vapid Dominator</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0020</extraflags>
+		<wheelmodel>250</wheelmodel>
+		<wheelscale>0.740000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>1,1</carcol>
+		<carcol>3,3</carcol>
+		<carcol>2,2</carcol>
+		<carcol>6,6</carcol>
+		<carcol>79,41</carcol>
+		<carcol>8,41</carcol>
+		<carcol>12,76</carcol>
+		<carcol>16,76</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>274</enginefarsample>
+		<enginenearsample>10</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9900</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1300.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.340000</seatoffset>
+		<damagemultiplier>0.600000</damagemultiplier>
+		<value>45000</value>
+		<flags>00209181</flags>
+
+		<dimensions>
+			<x>2.300000</x>
+			<y>4.500000</y>
+			<z>1.500000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.160000</y>
+			<z>-0.250000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.530000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>200.000000</maxspeed>
+			<acceleration>28.300000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>11.200000</deceleration>
+			<bias>0.510000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.400000</forcelevel>
+			<dampening>0.100000</dampening>
+			<upperlimit>0.320000</upperlimit>
+			<lowerlimit>-0.250000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.300000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

@@ -1,0 +1,64 @@
+Original contributors:
+Sergeanur
+aap
+Nick007J
+erorcun
+Fire-Head
+withmorten
+gennariarmando
+nrb547
+codenulls
+IlDucci
+madebr
+AGraber
+whampson
+theR4K
+Tatsh
+ThirteenAG
+unrelentingtech
+Nopey
+Nmzik
+jack9267
+rollschuh2282
+hazelnot
+guard3
+swills
+Bigbossbro08
+x87
+Cimmerian-Iter
+RuesanG
+mssx86
+cirno-999
+waleedyaseen
+GaryOderNichts
+HaydnTrigg
+Krutonium
+PerikiyoXD
+nick7
+ZLau92
+leanndroguedes
+IgorPolyakov
+davicr
+blattersturm
+
+-------------------------
+
+Vice Extended team:
+Main programming: Cowboy69
+Programming: ANTINICKNAMES, gennariarmando (_AG)
+Scripting: Cowboy69, Cleoude, RRT94
+Animation: JACKpot216, Cowboy69
+Modeling: xcold, Bryxanov1337, pylasen, ZezeF, Matt1010
+Texturing: RRT94, _AG, Matt1010
+Help and support: AnriTool, Shagg_E, VitalRus, WHTQB, Alex_Delphi
+
+Ukrainian localization files by Andrulko
+Map and radar textures was taken from 'Absolute Radar Remake Pack' by RamM_LP
+'ReConstucted 0.5: haitiN' by AnriTool
+
+Some code was taken from here:
+GPS - https://github.com/DK22Pac/plugin-sdk/tree/master/examples/GPS
+Distant lights - https://github.com/ThirteenAG/III.VC.SA.IV.Project2DFX/releases/tag/gtavc
+Modloader - https://github.com/thelink2012/modloader
+SkyGFX - https://github.com/aap/skygfx/
+Night vertex colors support - https://github.com/aap/librwgta

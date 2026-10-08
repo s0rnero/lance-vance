@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Landstalker XP</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.800000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>11,11</carcol>
+		<carcol>18,18</carcol>
+		<carcol>47,47</carcol>
+		<carcol>41,41</carcol>
+		<carcol>64,64</carcol>
+		<carcol>52,52</carcol>
+		<carcol>56,56</carcol>
+		<carcol>32,32</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>277</enginefarsample>
+		<enginenearsample>13</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9935</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1700.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>33.000000</steeringlock>
+		<seatoffset>0.270000</seatoffset>
+		<damagemultiplier>0.230000</damagemultiplier>
+		<value>25000</value>
+		<flags>0000C00B</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>5.000000</y>
+			<z>2.000000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>-0.010000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.860000</multiplier>
+			<loss>0.850000</loss>
+			<bias>0.510000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>165.000000</maxspeed>
+			<acceleration>18.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.300000</deceleration>
+			<bias>0.600000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.700000</forcelevel>
+			<dampening>0.070000</dampening>
+			<upperlimit>0.250000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.250000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

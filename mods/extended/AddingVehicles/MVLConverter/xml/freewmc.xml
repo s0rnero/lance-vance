@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>bike</type>
+		<name>WMC Sovereign</name>
+		<anims>biked</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelrotangle>23</wheelrotangle>
+		<wheelscale>0.654000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>motorbike</class>
+		<freq>10</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>79,79</carcol>
+		<carcol>84,84</carcol>
+		<carcol>7,7</carcol>
+		<carcol>11,11</carcol>
+		<carcol>19,19</carcol>
+		<carcol>22,22</carcol>
+		<carcol>36,36</carcol>
+		<carcol>53,53</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>284</enginefarsample>
+		<enginenearsample>20</enginenearsample>
+		<hornsample>5</hornsample>
+		<hornfreq>11000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9400</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>850.000000</mass>
+		<percentsubmerged>103</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.240000</damagemultiplier>
+		<value>10000</value>
+		<flags>00010103</flags>
+
+		<dimensions>
+			<x>1.200000</x>
+			<y>2.300000</y>
+			<z>1.400000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.820000</loss>
+			<bias>0.510000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>190.000000</maxspeed>
+			<acceleration>38.500000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.200000</deceleration>
+			<bias>0.560000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>0.850000</forcelevel>
+			<dampening>0.150000</dampening>
+			<upperlimit>0.150000</upperlimit>
+			<lowerlimit>-0.160000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<bikehandling>
+		<leanfwdcom>0.330000</leanfwdcom>
+		<leanfwdforce>0.150000</leanfwdforce>
+		<leanbackcom>0.300000</leanbackcom>
+		<leanbackforce>0.075000</leanbackforce>
+		<maxlean>35.000000</maxlean>
+		<fullanimlean>38.000004</fullanimlean>
+		<deslean>0.930000</deslean>
+		<speedsteer>0.800000</speedsteer>
+		<slipsteer>0.600000</slipsteer>
+		<noplayercomz>0.100000</noplayercomz>
+		<wheelieang>33.000000</wheelieang>
+		<stoppieang>-50.000000</stoppieang>
+		<wheeliesteer>-0.007000</wheeliesteer>
+		<wheeliestabmult>0.600000</wheeliestabmult>
+		<stoppiestabmult>0.400000</stoppiestabmult>
+	</bikehandling>
+
+</vehicle>

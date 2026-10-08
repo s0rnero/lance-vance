@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Dagger GTX</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>253</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>executive</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>4,4</carcol>
+		<carcol>9,9</carcol>
+		<carcol>91,91</carcol>
+		<carcol>43,43</carcol>
+		<carcol>10,10</carcol>
+		<carcol>71,71</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>273</enginefarsample>
+		<enginenearsample>9</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9200</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9800</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1800.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>33.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.550000</damagemultiplier>
+		<value>45000</value>
+		<flags>03009901</flags>
+
+		<dimensions>
+			<x>2.100000</x>
+			<y>4.500000</y>
+			<z>2.100000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>0.100000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.050000</multiplier>
+			<loss>0.840000</loss>
+			<bias>0.520000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>180.000000</maxspeed>
+			<acceleration>32.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.100000</deceleration>
+			<bias>0.520000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.200000</forcelevel>
+			<dampening>0.300000</dampening>
+			<upperlimit>0.300000</upperlimit>
+			<lowerlimit>-0.200000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.300000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

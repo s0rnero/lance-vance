@@ -1,0 +1,50 @@
+--ENGLISH--
+Adding new vehicles to the game.
+1) Vehicle model (DFF) and textures (TXD) are placed in GTAVC/ViceExtended/newVehicles/newVehicles.img;
+2) Vehicle collision (COL) is put into GTAVC/ViceExtendedtended/newVehicles/newVehicles.col using Collision File Editor II. The collision vehicle inside the col file must have the same name as in the DFF!
+3) Vehicle settings are added in GTAVC/ViceExtended/newVehicles/newVehicles.ide file.
+
+If the ID of the wheels is specified as 249 then the wheels are used from the vehicle model.
+
+The game name of the added vehicle is taken directly from its settings, bypassing GXT. If the name has spaces, use _ where spaces are (for example, Air_Ambulance).
+
+The MVLConverter folder contains the MVL transport settings converter.
+To convert settings from MVL to Vice Extended format, do the following:
+1) Drag and drop the required xml files into the xml folder;
+2) Run MVLConverter.exe;
+3) In the console window that opens, enter the start transport ID from which you want to start the countdown (for example, 6506);
+4) If everything is successful, the result will be saved in text file output.txt;
+5) Copy the output.txt file and put it into GTAVC/ViceExtended/newVehicles/newVehicles.ide.
+Note: Make sure that the resulting model name is the same as the DFF and COL name, and that the resulting texture name is the same as the TXD!
+
+In newVehicles.ide, the last parameter in 'default' is PoliceRadio. This is the type of vehicle that will be called on the police radio during a wanted. Here is the whole list of types:
+motorbike, wagon, garbagetruck, twodoor, sedan, coach, hearse, moped, plane, boat, golfcart, dinghy, offroad, sportscar, rig, tank, 
+bus, cruiser, firetruck, lowrider, van, truck, ambulance, taxi, pickup, icecream, buggy, heli, policecar, swatvan, speedboat.
+
+To spawn a new vehicle, press CTRL + M, the debug menu will open. There go to Spawn, in Select New Car ID select the desired vehicle ID and press Spawn New Car.
+
+
+--RUSSIAN--
+Добавление нового транспорта в игру.
+1) Модель (DFF) и текстуры (TXD) транспорта помещаются в GTAVC/ViceExtended/newVehicles/newVehicles.img;
+2) Коллизия (COL) транспорта помещается в файл GTAVC/ViceExtended/newVehicles/newVehicles.col с помощью Collision File Editor II. Коллизия транспорта внутри col-файла должна называться также, как и в DFF!
+3) Настройки транспорта добавляются в файле GTAVC/ViceExtended/newVehicles/newVehicles.ide.
+
+Если ID колес указан как 249, то колеса машины используются с ее модели.
+
+Игровое название добавляемого транспорта берется прямо из его настроек, минуя GXT. Если в названии есть пробелы, используйте символ _ в том месте, где стоят пробелы (например, Air_Ambulance).
+
+В папке MVLConverter находится конвертер настроек MVL-транспорта.
+Чтобы преобразовать настройки из MVL в формат Vice Extended, нужно сделать следующее:
+1) Перетащите необходимые xml-файлы в папку xml;
+2) Запустите MVLConverter.exe;
+3) В открывшемся окне консоли введите стартовый ID транспорта, с которого будет начинаться отсчет (например, 6508);
+4) Если все прошло успешно, то полученный результат сохранится в текстовый файл output.txt;
+5) Скопируйте содержимое output.txt и перенесите его в файл GTAVC/ViceExtended/newVehicles/newVehicles.ide.
+Примечание: Следите, чтобы полученное имя модели совпадало с именем DFF и COL, а также, чтобы полученное имя текстуры совпадало с TXD!
+
+В newVehicles.ide, последний параметр в default - PoliceRadio. Это тип транспорта, который будет называться на полицейской рации во время розыска. Вот весь список типов:
+motorbike, wagon, garbagetruck, twodoor, sedan, coach, hearse, moped, plane, boat, golfcart, dinghy, offroad, sportscar, rig, tank, 
+bus, cruiser, firetruck, lowrider, van, truck, ambulance, taxi, pickup, icecream, buggy, heli, policecar, swatvan, speedboat.
+
+Чтобы заспавнить новый транспорт, нажмите CTRL + M, откроется дебаг-меню. В нем зайдите в Spawn, в Select New Car ID выберите нужный ID транспорта и нажмите Spawn New Car.

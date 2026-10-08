@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Urban '82</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>251</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>58,8</carcol>
+		<carcol>2,8</carcol>
+		<carcol>18,8</carcol>
+		<carcol>32,70</carcol>
+		<carcol>45,70</carcol>
+		<carcol>13,70</carcol>
+		<carcol>34,8</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>275</enginefarsample>
+		<enginenearsample>11</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>27513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9700</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1100.000000</mass>
+		<percentsubmerged>70</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.250000</seatoffset>
+		<damagemultiplier>0.500000</damagemultiplier>
+		<value>7500</value>
+		<flags>00000001</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>3.400000</y>
+			<z>2.300000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>-0.200000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.100000</multiplier>
+			<loss>0.860000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>160.000000</maxspeed>
+			<acceleration>20.000000</acceleration>
+			<drivetype>F</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>12.000000</deceleration>
+			<bias>0.510000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.800000</forcelevel>
+			<dampening>0.070000</dampening>
+			<upperlimit>0.250000</upperlimit>
+			<lowerlimit>-0.100000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.200000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

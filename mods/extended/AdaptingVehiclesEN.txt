@@ -1,0 +1,63 @@
+--ENGLISH--
+Tutorial on adapting vehicles.
+
+1. Gas tank. Create a dummy called 'petrolcap' attached to the root dummy of the vehicle (same place as the dummy of the lights and other things).
+This dummy is needed to make the vehicle explode when shot in the gas tank.
+
+2. Engine. Creates an 'engine' dummy attached to the vehicle's root dummy. 
+Particles of smoke/fire will come out of this dummy in the game when the hood of the car is open, otherwise the smoke/fire will come out of the overheat/overheat2 dummy.
+
+3. Dammy overheat and overheat2. A 'overheat' dammy is created, attached to the root dammy of the vehicle. Small smoke/fire comes out of it when the hood is closed. It is mounted to the grille.
+If necessary, a second 'overheat2' dammy is created opposite the first dammy.
+In the case of a motorcycle, the dammy is mounted on the side of the engine (left and right).
+
+4. Steering wheel. The existing steering wheel is detached/removed. In its place a steering wheel is created as a separate object called 'steeringwheel', attached to the chassis_hi.
+The steering wheel pivot must be properly tilted for the steering wheel to rotate correctly in the game.
+
+5. The textures of the lights. In the TXD file of the vehicle is placed the texture of the lights off called 'lights' and the texture of the lights on called 'lightson'.
+
+6. Lights. The existing lights are detached/removed. In their place separate objects are created which are attached to the chassis_hi in case they should be on the body.
+If certain lights are on the front/rear bumper or on the left and right wings, they are attached to bump_front_dummy/bump_rear_dummy/wing_lf_dummy/wing_rf_dummy respectively.
+To each such object a material is assigned with a texture of switched off 'lights'. If the object has more than one material, the material with 'lights' texture should be the first in the list!
+Particle dummies are attached to the root dummy vehicle.
+
+6.1 Headlights.
+A 'headlight_l' object is created in place of the left headlight.
+In place of the right headlight an object 'headlight_r' is created.
+In the case of a motorcycle only 'headlight_l' should be used.
+If necessary, you can create a second dummy particle called 'headlights2' if, for example, the car has four headlights.
+
+6.2 Taillights.
+A 'taillight_l' object is created in the place of the left light.
+A 'taillight_r' object is created in the place of the right one.
+In the case of a motorcycle, only 'taillight_l' needs to be used.
+If necessary, you can create a second particle dummy called 'taillights2' if, for example, the car has four rear lights or the light has a conventionally rectangular shape.
+
+6.3. Brakelights.
+An object 'brakelight_l' is created at the place of the left brake light.
+A 'brakelight_r' object is created in the place of the right brake light.
+If necessary, you can create a second dummy particle called 'brakelights2'.
+
+6.4. Reversinglights.
+In the place of the left reversing light an object 'reversinglight_l' is created.
+In place of the right reversing light an object 'reversinglight_r' is created.
+If necessary, a second dummy particle named 'reversinglights2' can be created.
+
+6.5. Turn signals (indicators).
+6.5.1 Turn signals which are visible at the front and at the rear.
+The left front turn signal is called 'indicator_lf'.
+The right front turn signal is called 'indicator_rf'.
+The left rear turn signal is called 'indicator_lr'.
+The right rear turn signal is called 'indicator_rr'.
+The dummies of the front turn signals are called 'indicators_f'.
+The dummies of the rear turn signals are called 'indicators_r'.
+Note: For motorcycles, no dummy lights are used.
+6.5.2 Turn signals which are visible from the side.
+In case the car has turn signals which are located on the sides, then the number 2 must be added to the names of objects and dummies listed above. Example: object - "indicator2_lf", dummies - "indicators2_f".
+If the car has ONLY side turn signals, then for this car item 6.5.1. is ignored, i.e. all names have number 2. It is necessary for correct display of particles.
+
+6.6. The recesses for the lights. At the model itself, recesses are created in the places where the lights are located. These recesses are visible when the lights are broken.
+
+7. Vehicles with more than two colors.
+Material with a tertiary color has the following RGB color - 185, 255, 0 (from SA) or 0, 255, 255 (from MVL).
+Material with a quaternary color has the following RGB color - 255, 60, 0 (from SA).

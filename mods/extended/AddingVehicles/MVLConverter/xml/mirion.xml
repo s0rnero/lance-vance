@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Mirion</name>
+		<anims>null</anims>
+		<comprules>12272</comprules>
+		<extraflags>0</extraflags>
+		<wheelmodel>253</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>poorfamily</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>59,76</carcol>
+		<carcol>39,1</carcol>
+		<carcol>22,0</carcol>
+		<carcol>7,1</carcol>
+		<carcol>15,0</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>278</enginefarsample>
+		<enginenearsample>14</enginenearsample>
+		<hornsample>4</hornsample>
+		<hornfreq>10842</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9900</sirenfreq>
+		<doorsounds>0</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1350.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>38.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.400000</damagemultiplier>
+		<value>10000</value>
+		<flags>00000002</flags>
+
+		<dimensions>
+			<x>2.200000</x>
+			<y>4.500000</y>
+			<z>2.000000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.100000</y>
+			<z>0.020000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.000000</multiplier>
+			<loss>0.830000</loss>
+			<bias>0.550000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>155.000000</maxspeed>
+			<acceleration>19.800000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.800000</deceleration>
+			<bias>0.450000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>2.300000</forcelevel>
+			<dampening>0.090000</dampening>
+			<upperlimit>0.250000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.500000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

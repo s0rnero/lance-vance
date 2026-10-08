@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>bike</type>
+		<name>FCR 1200</name>
+		<anims>bikes</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelrotangle>23</wheelrotangle>
+		<wheelscale>0.670000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>motorbike</class>
+		<freq>7</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>1,38</carcol>
+		<carcol>3,38</carcol>
+		<carcol>50,38</carcol>
+		<carcol>63,38</carcol>
+		<carcol>0,38</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>287</enginefarsample>
+		<enginenearsample>23</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>27000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9600</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>850.000000</mass>
+		<percentsubmerged>103</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.300000</seatoffset>
+		<damagemultiplier>0.180000</damagemultiplier>
+		<value>10000</value>
+		<flags>00010102</flags>
+
+		<dimensions>
+			<x>1.200000</x>
+			<y>1.800000</y>
+			<z>1.200000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.150000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>1.800000</multiplier>
+			<loss>0.930000</loss>
+			<bias>0.490000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>229.999995</maxspeed>
+			<acceleration>71.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>21.000000</deceleration>
+			<bias>0.560000</bias>
+			<abs>1</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>0.650000</forcelevel>
+			<dampening>0.200000</dampening>
+			<upperlimit>0.090000</upperlimit>
+			<lowerlimit>-0.110000</lowerlimit>
+			<bias>0.550000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<bikehandling>
+		<leanfwdcom>0.100000</leanfwdcom>
+		<leanfwdforce>0.050000</leanfwdforce>
+		<leanbackcom>0.300000</leanbackcom>
+		<leanbackforce>0.065000</leanbackforce>
+		<maxlean>30.000000</maxlean>
+		<fullanimlean>25.000002</fullanimlean>
+		<deslean>0.930000</deslean>
+		<speedsteer>1.000000</speedsteer>
+		<slipsteer>0.700000</slipsteer>
+		<noplayercomz>0.100000</noplayercomz>
+		<wheelieang>33.000000</wheelieang>
+		<stoppieang>-55.000000</stoppieang>
+		<wheeliesteer>-0.006000</wheeliesteer>
+		<wheeliestabmult>0.500000</wheeliestabmult>
+		<stoppiestabmult>0.300000</stoppiestabmult>
+	</bikehandling>
+
+</vehicle>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>bike</type>
+		<name>Folding MiniBike</name>
+		<anims>bikev</anims>
+		<comprules>0</comprules>
+		<maxpassengers>0</maxpassengers>
+		<extraflags>0000</extraflags>
+		<wheelrotangle>16</wheelrotangle>
+		<wheelscale>0.464000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>moped</class>
+		<freq>10</freq>
+		<level>6</level>
+	</aidata>
+
+	<colors>
+		<carcol>2,37</carcol>
+		<carcol>68,78</carcol>
+		<carcol>11,79</carcol>
+		<carcol>15,8</carcol>
+		<carcol>33,37</carcol>
+		<carcol>44,78</carcol>
+		<carcol>56,79</carcol>
+		<carcol>60,8</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>285</enginefarsample>
+		<enginenearsample>21</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>31000</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9500</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>250.000000</mass>
+		<percentsubmerged>103</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.100000</seatoffset>
+		<damagemultiplier>0.110000</damagemultiplier>
+		<value>8000</value>
+		<flags>00010003</flags>
+
+		<dimensions>
+			<x>1.100000</x>
+			<y>1.700000</y>
+			<z>1.200000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>-0.110000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>2.100000</multiplier>
+			<loss>0.910000</loss>
+			<bias>0.480000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>1</numofgears>
+			<maxspeed>90.000000</maxspeed>
+			<acceleration>60.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>14.000000</deceleration>
+			<bias>0.500000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.000000</forcelevel>
+			<dampening>0.150000</dampening>
+			<upperlimit>0.120000</upperlimit>
+			<lowerlimit>-0.170000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+	<bikehandling>
+		<leanfwdcom>0.350000</leanfwdcom>
+		<leanfwdforce>0.250000</leanfwdforce>
+		<leanbackcom>0.150000</leanbackcom>
+		<leanbackforce>0.060000</leanbackforce>
+		<maxlean>35.000008</maxlean>
+		<fullanimlean>25.000002</fullanimlean>
+		<deslean>0.890000</deslean>
+		<speedsteer>0.750000</speedsteer>
+		<slipsteer>0.800000</slipsteer>
+		<noplayercomz>0.100000</noplayercomz>
+		<wheelieang>35.000008</wheelieang>
+		<stoppieang>-44.999996</stoppieang>
+		<wheeliesteer>-0.010000</wheeliesteer>
+		<wheeliestabmult>0.700000</wheeliestabmult>
+		<stoppiestabmult>0.500000</stoppiestabmult>
+	</bikehandling>
+
+</vehicle>

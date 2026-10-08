@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Walton</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>worker</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>72,72</carcol>
+		<carcol>93,93</carcol>
+		<carcol>4,4</carcol>
+		<carcol>11,11</carcol>
+		<carcol>42,42</carcol>
+		<carcol>51,51</carcol>
+		<carcol>60,60</carcol>
+		<carcol>64,64</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>278</enginefarsample>
+		<enginenearsample>14</enginenearsample>
+		<hornsample>4</hornsample>
+		<hornfreq>10540</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9935</sirenfreq>
+		<doorsounds>2</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1850.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.260000</seatoffset>
+		<damagemultiplier>0.190000</damagemultiplier>
+		<value>26000</value>
+		<flags>00000A02</flags>
+
+		<dimensions>
+			<x>2.100000</x>
+			<y>5.000000</y>
+			<z>2.100000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>0.000000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.800000</multiplier>
+			<loss>0.690000</loss>
+			<bias>0.500000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>4</numofgears>
+			<maxspeed>150.000000</maxspeed>
+			<acceleration>14.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>6.500000</deceleration>
+			<bias>0.500000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>2.000000</forcelevel>
+			<dampening>0.120000</dampening>
+			<upperlimit>0.350000</upperlimit>
+			<lowerlimit>-0.180000</lowerlimit>
+			<bias>0.400000</bias>
+			<antidive>0.000000</antidive>
+		</suspension>
+
+		<lights>
+			<front>1</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

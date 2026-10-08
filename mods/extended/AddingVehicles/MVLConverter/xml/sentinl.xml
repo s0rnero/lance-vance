@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Lampadati Komoda</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.700000</wheelscale>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>30,0</carcol>
+		<carcol>2,0</carcol>
+		<carcol>36,0</carcol>
+		<carcol>8,0</carcol>
+		<carcol>10,0</carcol>
+		<carcol>11,0</carcol>
+		<carcol>14,0</carcol>
+		<carcol>49,0</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>271</enginefarsample>
+		<enginenearsample>7</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>10706</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9600</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1400.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.560000</damagemultiplier>
+		<value>35000</value>
+		<flags>00008102</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>4.900000</y>
+			<z>1.600000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>-0.200000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.910000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.550000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>165.000000</maxspeed>
+			<acceleration>24.000000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.170000</deceleration>
+			<bias>0.550000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.300000</forcelevel>
+			<dampening>0.130000</dampening>
+			<upperlimit>0.270000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.300000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

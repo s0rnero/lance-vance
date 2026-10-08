@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Coyote</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.900000</wheelscale>
+		<wheelcorrection>1.10</wheelcorrection>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>normal</class>
+		<freq>6</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>30,65</carcol>
+		<carcol>48,65</carcol>
+		<carcol>64,68</carcol>
+		<carcol>64,71</carcol>
+		<carcol>11,73</carcol>
+		<carcol>60,68</carcol>
+		<carcol>74,64</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>268</enginefarsample>
+		<enginenearsample>4</enginenearsample>
+		<hornsample>0</hornsample>
+		<hornfreq>26513</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9700</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1400.000000</mass>
+		<percentsubmerged>85</percentsubmerged>
+		<steeringlock>35.000000</steeringlock>
+		<seatoffset>0.180000</seatoffset>
+		<damagemultiplier>0.300000</damagemultiplier>
+		<value>25000</value>
+		<flags>04002203</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>3.500000</y>
+			<z>2.200000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.000000</y>
+			<z>-0.200000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.910000</multiplier>
+			<loss>0.810000</loss>
+			<bias>0.530000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>170.000000</maxspeed>
+			<acceleration>21.000000</acceleration>
+			<drivetype>4</drivetype>
+			<enginetype>D</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>7.200000</deceleration>
+			<bias>0.400000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.600000</forcelevel>
+			<dampening>0.070000</dampening>
+			<upperlimit>0.320000</upperlimit>
+			<lowerlimit>-0.150000</lowerlimit>
+			<bias>0.350000</bias>
+			<antidive>0.400000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

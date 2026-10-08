@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="ASCII"?>
+<vehicle>
+	<basic>
+		<type>car</type>
+		<name>Remus</name>
+		<anims>null</anims>
+		<comprules>0</comprules>
+		<extraflags>0000</extraflags>
+		<wheelmodel>254</wheelmodel>
+		<wheelscale>0.720000</wheelscale>
+		<wheelcorrection>1.45</wheelcorrection>
+		<immunity>0</immunity>
+	</basic>
+
+	<aidata>
+		<class>richfamily</class>
+		<freq>10</freq>
+		<level>7</level>
+	</aidata>
+
+	<colors>
+		<carcol>77,72</carcol>
+		<carcol>3,72</carcol>
+		<carcol>41,1</carcol>
+		<carcol>79,79</carcol>
+		<carcol>79,72</carcol>
+		<carcol>39,75</carcol>
+		<carcol>38,1</carcol>
+		<carcol>35,72</carcol>
+		<carcol>51,79</carcol>
+		<carcol>14,79</carcol>
+		<carcol>7,1</carcol>
+		<carcol>12,79</carcol>
+		<carcol>45,79</carcol>
+		<carcol>53,75</carcol>
+		<carcol>55,1</carcol>
+		<carcol>54,72</carcol>
+	</colors>
+
+	<audio>
+		<enginefarsample>268</enginefarsample>
+		<enginenearsample>4</enginenearsample>
+		<hornsample>1</hornsample>
+		<hornfreq>9003</hornfreq>
+		<sirensample>0</sirensample>
+		<sirenfreq>9300</sirenfreq>
+		<doorsounds>1</doorsounds>
+	</audio>
+
+	<handling>
+		<mass>1700.000000</mass>
+		<percentsubmerged>75</percentsubmerged>
+		<steeringlock>30.000000</steeringlock>
+		<seatoffset>0.200000</seatoffset>
+		<damagemultiplier>0.650000</damagemultiplier>
+		<value>35000</value>
+		<flags>00008102</flags>
+
+		<dimensions>
+			<x>2.000000</x>
+			<y>4.900000</y>
+			<z>1.600000</z>
+		</dimensions>
+
+		<centreofmass>
+			<x>0.000000</x>
+			<y>0.200000</y>
+			<z>-0.150000</z>
+		</centreofmass>
+
+		<traction>
+			<multiplier>0.950000</multiplier>
+			<loss>0.800000</loss>
+			<bias>0.550000</bias>
+		</traction>
+
+		<transmission>
+			<numofgears>5</numofgears>
+			<maxspeed>213.000000</maxspeed>
+			<acceleration>25.400000</acceleration>
+			<drivetype>R</drivetype>
+			<enginetype>P</enginetype>
+		</transmission>
+
+		<brakes>
+			<deceleration>10.000000</deceleration>
+			<bias>0.530000</bias>
+			<abs>0</abs>
+		</brakes>
+
+		<suspension>
+			<forcelevel>1.500000</forcelevel>
+			<dampening>0.130000</dampening>
+			<upperlimit>0.230000</upperlimit>
+			<lowerlimit>-0.160000</lowerlimit>
+			<bias>0.500000</bias>
+			<antidive>0.500000</antidive>
+		</suspension>
+
+		<lights>
+			<front>0</front>
+			<rear>1</rear>
+		</lights>
+	</handling>
+
+</vehicle>

@@ -1,0 +1,190 @@
+--ENGLISH--
+
+Besides other changes which will be listed below, the mod also containts that changes and improvements, which were made by original contributors.
+
+Features in version 2510:
+- New weapon: Grenade launcher
+- Boards at Ammu-Nation and tool stores
+- Some buildings in the Little Haiti area have been changed
+Other changes in version 2510:
+- Some sounds of added weapons have been changed
+- Changed the sound of water while swimming
+- Fixed incorrect display of keys in game tips when holding down the Shift key
+- Fixed a crash that could occur when using the added Micro-UZI
+Script changes in version 2510:
+- The grenade launcher can be bought from Phil
+-------------------------
+Features in version 2506:
+- Unique newspapers after certain missions
+- Steer angle will be random when spawning a parked car
+- features.ini: Mirror mode by default
+- Fixed a crash when restarting a new game
+- Night vertex colors support for d3d9
+Other changes in version 2506:
+- HD radar
+- Dirt road near the airport
+- Aim sensitivity fix
+- AI accuracy tweaks
+- Hints in the map menu for collectible items
+- Last changes for librw from the original repository
+Script changes in version 2506:
+- Metal detector script fix
+-------------------------
+Features in version 3.0:
+- Modloader (no hot reloading for now)
+- New weapons: Desert Eagle, AK-47, Beretta, AUG, M16, Micro-UZI and Shotgun
+- Clothing store and wardrobe
+- Added in-car death animations and random behavior for dead drivers
+- Separate folder with mod files. Thanks to this, none of the original files will not be replaced during installation
+- PC key icons in game hints
+- VCPD Wintergreen police motorcycle. Can be seen in the traffic
+- Photo Mode. Activated in the pause menu
+Other changes in version 3.0:
+- Weapon sights. In the game settings you can choose three modes: Default, Simple and Complex
+- Service lights for service cars
+- Triangle above the ped's head, showing the amount of health
+- Wintergreen motorcycle
+- features.ini: Enable climbing
+- features.ini: Enable swimming
+- features.ini: Enable random tuning of traffic
+- features.ini: Enable third-person aiming from a rocket launcher
+- YCbCrCorrection from SkyGFX
+- Display collectibles on the map
+- Icons and blips in HD
+- Added Ukrainian
+- Cheat code for 4th weapon set - CRAZYTOOLS
+Script changes in version 3.0:
+- New weapons can be bought from Phil
+- New weapons are now used in some missions
+- New weapons are spread across the map
+- The autosave system has been moved to the in-game script
+- GPS in missions is now called through the game script
+-------------------------
+Features in version 2.6:
+- Ped variations
+- Distant lights. Can be disabled in features.ini
+- Radio station icons when switching radio stations
+- Borderless window mode
+Other changes in version 2.6:
+- Cops can crouch down first and then go to cover during the wanted
+- The blade physics works even when there is no player sitting in a helicopter
+- Improved textures of radio station icons
+- A projectile will explode if you shoot it
+- Object fixes
+- A gas station will explode if a vehicle crashes into it
+- You can switch weapons while holding the detonator
+- features.ini: Disable recoil when firing
+Script changes in version 2.6:
+- You can skip the opening scene outside Ken's office
+- Changed the pizza delivery man model to "burger" in the Road Kill mission
+- Added three camera pickups
+- Added smoke grenade pickup at the police station
+- Added 4 garages (modifications)
+- Changed coordinates of Haitian clothes
+- New parked cars: Ambulance and Stretch
+- Blips for pharmacies, bomb store and stadium
+- Blips for houses and businesses for sale
+- Changed Lance's model in Death Row mission
+-------------------------
+Features in version 2.5:
+- Ability to add new vehicles. In the archive with the mod there is a MVL-vehicle settings converter
+- Autosave after completing a mission
+- Saving anywhere. You must not be on a mission, not have a search level and not move
+- Some vehicles have been improved in the following
+1) Rotating steering wheel
+2) Gas tank. When shot, the car explodes
+3) Turners, which are used by NPCs and can also be used by the player
+4) Enabled texture of car lights
+5) Car lights can break on impact
+5) Smoke and engine fire comes out of the grille of the car if the bonnet is closed. On a motorbike, they come out next to it
+6) Support for four colors for added vehicles
+7) Experimental feature: Vehicle lights can break when shot at. Unfortunately, due to the nature of the collision, this does not work with all cars
+- GPS
+- In the folder with the game added a file features.ini, in which you can include the following:
+1) Vehicles do not light up when flipped
+2) Restores health to half (when player is not moving)
+3) Search stars are hidden on the screen when there is no search
+4) Remove zeros in the money in the HUD
+5) The player does not jump away from a moving car when pressing the jump button
+6) Standard cars use turn signals
+7) Camera shake at high speed
+8) Military firing from a tank at the player
+9) Disable bullet traces
+10) Change the color of the GPS by RGB
+- Ability to save photos from the camera
+- Reloading a weapon on the key
+Other changes in version 2.5:
+- Changed wheels
+- The player will come out on the right side of the bike if he turns right
+- The vehicle engine and lights are switched off when the exit button is held down
+- Pharmacy, stadium, bomb shop and business icons
+- Fixed some bugs in main.scm, added camera pickups on map
+- Land climbs
+- Added the remaining two mod garages
+- The ability to skip a phone call to a key
+- Several game limits are placed in the limits.ini file
+- Buttons for hints from PS5, PS4, Xbox One
+- Open vehicle doors can slam
+- The texture of the light cast on the surface from the headlights and taillights is separated
+- Improved translation of the mod into Russian
+- Cheat code for big heads - BIGHEADS
+- Cheat code for RC rockets - RCROCKET
+- The archive ViceEx.img was split and moved to the folder models/ViceEx
+-----------------------
+Changes in version 2.0:
+- Tuning vehicles in the garage of modifications. 
+Added modifications: change car color, spoiler, change spoiler color, side skirts, scoops on the roof and hood, 
+hood vent, change wheels and their color, tinted windows, change suspension, hydraulics, armor, improved engine, improved brakes, bulletproof tires
+- Tuned cars can be found on the streets
+- Added new vehicles
+- It is now possible to hide from the cops at any level of wanted
+- The front wheels of the car retain their current rotation after exiting the car
+- The car's wheel can fall off with a very hard impact
+- Walking on ALT for the keyboard
+Other changes in version 2.0:
+- Changes in animations
+- Added a dead zone for the left stick
+- Reduced health of police helicopter
+- Fixed a bug that could cause a bullet to pierce a car wheel through the hull
+- The AIRWAYS cheat code applies to all cars
+-----------------------
+Changes in version 1.5:
+- First-person view. Configurable in the game menu
+- Drive-by shooting
+- Movement while aiming
+- Sprint with heavy weapons
+- CLEO Redux support
+- Returned the ability to change the speed of movement and pedestrians
+- Changes in animations
+- Moving Moon. Its position depends on the position of the Sun
+Other changes in version 1.5:
+- Recoil during shooting
+- Fixed climbing, crouching and swimming animations
+- Changed idle animations of the player, weapon running animations
+- Changed aiming animations
+- New cheat code:
+AEZAKMI - cops are never wanted
+-----------------------
+Changes in version 1.0:
+- Climbing. Climbing over fences and climbing obstacles (including for NPCs)
+- Swimming. Swimming in water without the risk of dying
+- Seated movement
+- Changed aiming system. Aim while holding the button
+- More modern control. For the mouse and gamepad - the ability to separately change the sensitivity for viewing and aiming.
+Also, in the settings for the gamepad added: dead zone, vibration strength, auto-aiming and modern configuration
+- Changed wanted system. The player has the ability to hide from the police. When the cops do not see the player, they will try to find him
+- Increased spawn radius of vehicles and pedestrians
+Other changes in version 1.0:
+- Increased accuracy of NPC
+- SWAT can throw teargas to player during wanted
+- With five and six stars fly two police helicopters
+- Damage dealt to Police Maverick varies by weapon
+- Firetruck has a water cannon tower
+- Drivers react to shots
+- Wall protects against explosion
+- The particles of blood and footprints in the sand has longer lifespan
+- Added flashing lights for the FBI Car and the FBI Rancher
+- New cheat codes:
+IAMINVINCIBLE - player invulnerability
+AIRWAYS - player car starts to fly
+BIGSMOKE - give the player five teargas
