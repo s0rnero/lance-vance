@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Banco ViceEx — 13 muestras (A5)</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1c2128; --panel2: #232a33; --ink: #e8edf2;
+    --dim: #93a1af; --accent: #4da3ff; --ok: #4dc97a; --warn: #e8b34d;
+    --line: #2e3742;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 22px 60px; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 system-ui, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  .sub { color: var(--dim); margin: 0 0 14px; max-width: 72ch; }
+  .sub b { color: var(--warn); font-weight: 600; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 18px; }
+  button {
+    background: var(--panel2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 13px; font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08121e; font-weight: 600; }
+  .row {
+    display: grid;
+    grid-template-columns: 34px 62px 108px 1fr 1.1fr 210px 46px;
+    gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 12px; margin-bottom: 7px;
+  }
+  .row.playing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .idx { color: var(--dim); font-variant-numeric: tabular-nums; text-align: center; }
+  .play {
+    width: 54px; padding: 6px 0; font-size: 15px; border-radius: 8px;
+  }
+  canvas.wave { width: 108px; height: 30px; background: var(--panel2); border-radius: 6px; }
+  .name { font-weight: 600; font-size: 13px; }
+  .badge {
+    display: inline-block; background: #2c3a4d; color: var(--accent);
+    border-radius: 20px; padding: 1px 8px; font-size: 11px; margin-left: 6px;
+  }
+  .sig { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .guess { color: var(--dim); font-size: 12px; }
+  .guess b { color: var(--ok); font-weight: 600; }
+  .guess button { padding: 2px 8px; font-size: 11px; margin-left: 6px; }
+  input[type=text] {
+    width: 100%; background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 13px;
+  }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .link { text-align: center; color: var(--dim); font-size: 12px; cursor: pointer; }
+  .link input { accent-color: var(--accent); }
+  details { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  textarea {
+    width: 100%; height: 260px; margin-top: 10px; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+    font: 12px/1.5 Consolas, monospace; resize: vertical;
+  }
+  .hint { color: var(--dim); font-size: 11.5px; margin-top: 8px; }
+  .toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--ok); color: #06210f; font-weight: 600; padding: 9px 18px;
+    border-radius: 8px; opacity: 0; transition: opacity .25s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  @media (max-width: 1000px) {
+    .row { grid-template-columns: 30px 56px 1fr 1fr; }
+    .row canvas.wave, .row .link { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Banco ViceEx · 13 muestras — rellena el <code>viceex-map.tsv</code> (A5)</h1>
+<p class="sub">
+  Escucha cada muestra y escribe <b>qué es</b> (arma o efecto del mod) en la columna de la derecha.
+  Lo que dejes <b>vacío</b> se queda sonando con su equivalente de serie. En los pares enlazados
+  (🔗, mismo tamaño + Hz) lo que escribas se copia en el gemelo y al exportar se les añade «(par)».
+  Las propuestas son la clasificación por envolvente del plan <code>10</code> §A5 — <b>confírmalas o bórralas de oído</b>.
+  Tu trabajo se guarda solo en este navegador (localStorage).
+</p>
+
+<div class="toolbar">
+  <button class="primary" id="playAll">▶ Escuchar todo</button>
+  <button id="fillAll">Rellenar todo con propuestas</button>
+  <button id="clearAll">Vaciar todo</button>
+  <button id="copyTsv">Copiar TSV</button>
+  <button id="downloadTsv">Descargar viceex-map.tsv</button>
+</div>
+
+<div id="list"></div>
+
+<details open>
+  <summary>TSV generado (listo para pegar en <code>gta_vc_browser/tmp/viceex-samples/viceex-map.tsv</code>)</summary>
+  <textarea id="tsv" readonly spellcheck="false"></textarea>
+  <div class="hint">Mismo formato que la plantilla original (CRLF, índice a 2 columnas, tabuladores).
+    Si lo descargas, muévelo a <code>gta_vc_browser/tmp/viceex-samples/viceex-map.tsv</code> para dejarlo en su sitio.</div>
+</details>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+// i, fichero, segundos (texto del sdt), Hz, gemelo (-1 = suelta), firma de envolvente, propuesta visible, token propuesto
+const SAMPLES = [
+  [0,  "viceex-00.wav", "0.102", 36000, 1,  "ataque 4 ms · plano · brillo alto (ZCR 0,24) · corte seco",        "disparos ligeros — Beretta y/o Uziold",   "beretta/uziold"],
+  [1,  "viceex-01.wav", "0.102", 36000, 0,  "ataque 4 ms · plano · brillo alto (ZCR 0,18) · corte seco",        "disparos ligeros — Beretta y/o Uziold",   "beretta/uziold"],
+  [2,  "viceex-02.wav", "0.321", 33000, -1, "doble evento (15 % y 65-80 %)",                                    "bombeo/recarga (shotgun2)",               "bombeo/recarga shotgun2"],
+  [3,  "viceex-03.wav", "0.512", 22000, 4,  "ataque 1 ms · pleno 50 % y decaimiento · oscuro",                  "disparo de escopeta — Shotgun2",          "shotgun2"],
+  [4,  "viceex-04.wav", "0.512", 22000, 3,  "ataque 1 ms · pleno 50 % y decaimiento · oscuro",                  "disparo de escopeta — Shotgun2",          "shotgun2"],
+  [5,  "viceex-05.wav", "1.004", 32000, 6,  "envolvente 1 s decaimiento · ZCR 0,06 = retumbe",                  "explosión larga — granada/cohete",        "granada/cohete"],
+  [6,  "viceex-06.wav", "1.004", 32000, 5,  "envolvente 1 s decaimiento · ZCR 0,06 = retumbe",                  "explosión larga — granada/cohete",        "granada/cohete"],
+  [7,  "viceex-07.wav", "0.100", 44100, 8,  "ataque 3 ms · sostenido · oscuro (ZCR 0,11)",                      "disparo pesado — Desert Eagle",           "desert eagle"],
+  [8,  "viceex-08.wav", "0.100", 44100, 7,  "ataque 3 ms · sostenido · oscuro (ZCR 0,11)",                      "disparo pesado — Desert Eagle",           "desert eagle"],
+  [9,  "viceex-09.wav", "1.065", 22050, 10, "1 s con rebotes secundarios",                                      "2ª explosión — rcgrenade/detonación",     "rcgrenade"],
+  [10, "viceex-10.wav", "1.065", 22050, 9,  "1 s con rebotes secundarios",                                      "2ª explosión — rcgrenade/detonación",     "rcgrenade"],
+  [11, "viceex-11.wav", "0.409", 22050, -1, "pico TARDÍO (227 ms) · ruido brillante (ZCR 0,37)",                "mecanismo/recarga",                       "mecanismo/recarga"],
+  [12, "viceex-12.wav", "0.584", 22050, -1, "pico 168 ms · medio",                                              "recarga/impacto",                         "recarga/impacto"],
+];
+
+const TSV_HEADER = [
+  "# Banco ViceEx (bloque D8) — rellenado con el reproductor tools/viceex_samples.html.",
+  "#",
+  "# Una fila por muestra. Última columna: para qué es (arma o efecto del mod).",
+  "# Lo que quede vacío se queda sonando con su equivalente de serie.",
+  "# Los pares (mismo tamaño + Hz) llevan \"(par)\" al exportar si siguen enlazados.",
+  "#",
+  "#\tindice\tfichero\tsegundos\tHz\tque es (rellenar)",
+];
+
+const WAVE_DIR = "../tmp/viceex-samples/";
+const LS_KEY = "viceex-map-v1";
+const state = { texts: Array(13).fill(""), links: {} };
+SAMPLES.forEach(s => { if (s[4] >= 0) state.links[s[0]] = true; });
+
+function loadState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+    if (raw && Array.isArray(raw.texts)) {
+      for (let i = 0; i < 13; i++) state.texts[i] = raw.texts[i] || "";
+      Object.assign(state.links, raw.links || {});
+    }
+  } catch (e) { /* estado ilegible: se empieza limpio */ }
+}
+function saveState() {
+  localStorage.setItem(LS_KEY, JSON.stringify(state));
+}
+
+/* ---------- render ---------- */
+
+const listEl = document.getElementById("list");
+
+function render() {
+  listEl.innerHTML = "";
+  SAMPLES.forEach(s => {
+    const [i, file, secs, hz, twin, sig, prop, token] = s;
+    const row = document.createElement("div");
+    row.className = "row";
+    row.dataset.i = i;
+
+    const par = twin >= 0 ? `<span class="badge">par ${Math.min(i, twin)}/${Math.max(i, twin)}</span>` : "";
+
+    row.innerHTML = `
+      <div class="idx">${i}</div>
+      <button class="play" title="escuchar">▶</button>
+      <canvas class="wave" width="216" height="60"></canvas>
+      <div>
+        <div class="name">${file}${par}</div>
+        <div class="sig" title="${sig}">${secs} s · ${(hz / 1000).toLocaleString("es")} kHz · ${sig}</div>
+      </div>
+      <div class="guess">propuesta: <b>${prop}</b><button class="use">usar</button></div>
+      <input type="text" placeholder="${token}" value="${escapeAttr(state.texts[i])}" aria-label="qué es la muestra ${i}">
+      ${twin >= 0 ? `<label class="link" title="enlazar con la ${twin}"><input type="checkbox" class="linkbox" ${state.links[i] ? "checked" : ""}> 🔗</label>` : "<div></div>"}
+    `;
+
+    row.querySelector(".play").addEventListener("click", () => togglePlay(i));
+    row.querySelector(".use").addEventListener("click", () => {
+      state.texts[i] = token;
+      row.querySelector("input[type=text]").value = token;
+      saveState(); buildTsv();
+    });
+    row.querySelector("input[type=text]").addEventListener("input", ev => {
+      state.texts[i] = ev.target.value;
+      if (twin >= 0 && state.links[i]) {
+        state.texts[twin] = ev.target.value;
+        const twinInput = listEl.querySelector(`.row[data-i="${twin}"] input[type=text]`);
+        if (twinInput) twinInput.value = ev.target.value;
+      }
+      saveState(); buildTsv();
+    });
+    const linkBox = row.querySelector(".linkbox");
+    if (linkBox) linkBox.addEventListener("change", ev => {
+      state.links[i] = ev.target.checked;
+      if (twin >= 0) state.links[twin] = ev.target.checked;
+      const twinBox = listEl.querySelector(`.row[data-i="${twin}"] .linkbox`);
+      if (twinBox) twinBox.checked = ev.target.checked;
+      saveState(); buildTsv();
+    });
+
+    listEl.appendChild(row);
+    drawWave(i, row.querySelector("canvas"));
+  });
+}
+
+function escapeAttr(v) {
+  return String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+/* ---------- audio ---------- */
+
+const au = new Audio();
+let playing = -1;
+let playQueue = [];
+
+au.addEventListener("ended", () => {
+  if (playQueue.length) {
+    playQueue.shift();
+    if (playQueue.length) { playOne(playQueue[0]); return; }
+  }
+  setPlaying(-1);
+});
+au.addEventListener("pause", () => { if (au.ended) return; });
+
+function setPlaying(i) {
+  playing = i;
+  document.querySelectorAll(".row").forEach(r => {
+    const on = Number(r.dataset.i) === i;
+    r.classList.toggle("playing", on);
+    r.querySelector(".play").textContent = on ? "⏸" : "▶";
+  });
+}
+
+function playOne(i) {
+  if (playing === i && !au.paused) { au.pause(); setPlaying(-1); return; }
+  au.src = WAVE_DIR + SAMPLES[i][1];
+  au.play().catch(err => toast("No se pudo reproducir: " + err.message));
+  setPlaying(i);
+}
+
+function togglePlay(i) {
+  playQueue = [];
+  playOne(i);
+}
+
+document.getElementById("playAll").addEventListener("click", () => {
+  playQueue = SAMPLES.map(s => s[0]);
+  playOne(playQueue[0]);
+});
+
+/* ---------- ondas ---------- */
+
+let actx = null;
+async function drawWave(i, canvas) {
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await (await fetch(WAVE_DIR + SAMPLES[i][1])).arrayBuffer();
+    const audio = await actx.decodeAudioData(buf);
+    const ch = audio.getChannelData(0);
+    const W = canvas.width, H = canvas.height, mid = H / 2;
+    const step = Math.max(1, Math.floor(ch.length / W));
+    const ctx2d = canvas.getContext("2d");
+    ctx2d.fillStyle = "#4da3ff";
+    for (let x = 0; x < W; x++) {
+      let peak = 0;
+      for (let k = 0; k < step; k++) {
+        const v = Math.abs(ch[x * step + k] || 0);
+        if (v > peak) peak = v;
+      }
+      const h = Math.max(1, peak * (H - 4));
+      ctx2d.fillRect(x, mid - h / 2, 1, h);
+    }
+  } catch (e) {
+    const ctx2d = canvas.getContext("2d");
+    ctx2d.fillStyle = "#e8b34d";
+    ctx2d.font = "10px sans-serif";
+    ctx2d.fillText("sin onda", 8, canvas.height / 2 + 3);
+  }
+}
+
+/* ---------- TSV ---------- */
+
+function tsvText() {
+  const lines = TSV_HEADER.slice();
+  SAMPLES.forEach(([i, file, secs, hz, twin]) => {
+    let text = (state.texts[i] || "").trim();
+    if (text && twin >= 0 && state.links[i] && !text.includes("(par)")) text += " (par)";
+    lines.push(`${String(i).padStart(2, " ")}\t${file}\t${secs}\t${hz}\t${text}`);
+  });
+  return lines.join("\r\n") + "\r\n";
+}
+
+function buildTsv() {
+  document.getElementById("tsv").value = tsvText();
+}
+
+document.getElementById("fillAll").addEventListener("click", () => {
+  SAMPLES.forEach(([i, , , , , , , token]) => { state.texts[i] = token; });
+  saveState(); render(); buildTsv();
+  toast("Propuestas puestas — revísalas de oído");
+});
+
+document.getElementById("clearAll").addEventListener("click", () => {
+  state.texts = Array(13).fill("");
+  saveState(); render(); buildTsv();
+});
+
+document.getElementById("copyTsv").addEventListener("click", async () => {
+  const text = tsvText();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("TSV copiado al portapapeles");
+  } catch (e) {
+    const ta = document.getElementById("tsv");
+    ta.removeAttribute("readonly");
+    ta.select();
+    document.execCommand("copy");
+    ta.setAttribute("readonly", "");
+    toast("TSV copiado (método antiguo)");
+  }
+});
+
+document.getElementById("downloadTsv").addEventListener("click", () => {
+  const blob = new Blob([tsvText()], { type: "text/tab-separated-values" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "viceex-map.tsv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+  toast("Descargado — muévelo a tmp/viceex-samples/");
+});
+
+let toastTimer = null;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+loadState();
+render();
+buildTsv();
+</script>
+</body>
+</html>

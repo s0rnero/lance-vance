@@ -1,0 +1,31 @@
+# Todo lo de aquí se genera en local (build, datos derivados, dependencias).
+# El repo solo lleva código + scripts + docs. Los assets del juego JAMÁS se commitean.
+
+# Build Emscripten + artefactos
+build/
+*.js.map
+*.wasm
+*.data
+web/public/build/
+node_modules/
+
+# Copia legal del juego (el usuario la pone en assets/, ver assets/README.md)
+assets/
+!assets/README.md
+
+# Partida guardada que usa el test de regresión del slot 0 (dato del jugador:
+# la saca del navegador tools/extract-save-from-profile.mjs; nunca se commitea)
+tools/testdata/
+
+# Derivados de la copia legal (se generan con tools/, ver README.md)
+radio_light/
+streamed/
+bootseed/
+
+# Logs y salidas de diagnóstico (locales)
+*.log
+# Manifiesto de rutas (lo genera tools/gen_manifest.py)
+web/public/manifest.json
+
+# stamp del build vinculado a bootseed/ (lo escribe tools/stage_bootseed.py)
+bootseed.stamp

@@ -1,0 +1,14 @@
+{
+  "name": "gta-vc-browser",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 2077 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 2077 --strictPort"
+  },
+  "devDependencies": {
+    "vite": "^6.3.5"
+  }
+}

@@ -1,0 +1,14 @@
+/* La página de desarrollo no necesita estilos: el juego (canvas, barra rosa,
+   pantalla completa) los trae inyectados la librería (web/lib/styles.js).
+   Aquí solo lo justo para que el div ocupe la pantalla. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+}
+
+#gamelog {
+  display: none;
+}

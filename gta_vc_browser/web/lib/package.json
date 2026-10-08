@@ -1,0 +1,42 @@
+{
+  "name": "@re3/gtavc-web",
+  "version": "0.1.0",
+  "description": "GTA Vice City (reVC + Emscripten) dentro de un div, como librería: startGame({ el })",
+  "type": "module",
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./vite": {
+      "types": "./index.d.ts",
+      "default": "./vite.js"
+    },
+    "./styles": "./styles.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+
+    "styles.js",
+    "vite.js",
+    "index.d.ts",
+    "README.md"
+  ],
+  "sideEffects": [
+    "./index.js"
+  ],
+  "license": "SEE LICENSE IN ../../README.md",
+  "keywords": [
+    "gta",
+    "vice-city",
+    "revc",
+    "emscripten",
+    "webassembly",
+    "wasm",
+    "game"
+  ]
+}

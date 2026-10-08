@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>GTA Vice City en el navegador — reVC + Emscripten</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <!-- A propósito: el contenido es UN DIV. Todo lo demás (canvas, barra de
+       carga rosa, portada de partida, pantalla completa con F11, audio por
+       gesto) lo monta la librería (web/lib) dentro de este elemento.
+       Así es exactamente como se usa desde un proyecto Vue:
+         startGame({ el: document.getElementById('vc') }) -->
+  <div id="vc"></div>
+
+  <!-- Solo para desarrollo/pruebas: la librería escribe aquí el registro del
+       motor si el elemento existe (el test automático del slot 0 lo lee). -->
+  <pre id="gamelog" hidden></pre>
+
+  <script type="module" src="/src/dev.js"></script>
+</body>
+</html>
