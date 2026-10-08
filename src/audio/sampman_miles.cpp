@@ -2527,6 +2527,15 @@ cSampleManager::GetStreamedFileLength(uint8 nStream)
 }
 
 bool8
+cSampleManager::IsStreamedFileOpened(uint8 nStream)
+{
+	if ( m_bInitialised )
+		return mp3Stream[nStream] != nil;
+
+	return FALSE;
+}
+
+bool8
 cSampleManager::IsStreamPlaying(uint8 nStream)
 {
 	if ( m_bInitialised )

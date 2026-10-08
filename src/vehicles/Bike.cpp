@@ -37,6 +37,8 @@
 #include "Bike.h"
 #include "Debug.h"
 #include "SaveBuf.h"
+#include "Sprite.h"
+#include "ondemand.h"
 
 const uint32 CBike::nSaveStructSize =
 #ifdef COMPATIBLE_SAVES
@@ -80,13 +82,29 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 		m_bikeAnimType = ASSOCGRP_BIKE_STANDARD;
 		break;
 	case MI_SANCHEZ:
+	// Vice Extended: sus cuatro motos, con el grupo de animación que trae su
+	// propio `newVehicles.ide` (columna animGroup: streetfi="bikes",
+	// manchez="biked", wintergreen="bikeh", polwintergreen="biked").
+	// El port no guarda esa columna, así que el grupo va por ID de modelo,
+	// igual que los vanilla de arriba.
+	case MI_VEEXT_MANCHEZ:
+	case MI_VEEXT_POLWINTERG:
 		m_bikeAnimType = ASSOCGRP_BIKE_DIRT;
+		break;
+	case MI_VEEXT_WINTERGREEN:
+		m_bikeAnimType = ASSOCGRP_BIKE_HARLEY;
+		break;
+	case MI_VEEXT_STREETFI:
+		m_bikeAnimType = ASSOCGRP_BIKE_STANDARD;
 		break;
 	default: assert(0 && "invalid bike model ID");
 	}
 	m_vehType = VEHICLE_TYPE_BIKE;
 
 	m_fFireBlowUpTimer = 0.0f;
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase = 0.0f;
+#endif
 	m_doingBurnout = 0;
 	m_bike_flag01 = false;
 
@@ -209,6 +227,14 @@ float fFlySpeedMult = -0.6f;
 void
 CBike::ProcessControl(void)
 {
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase += CTimer::GetTimeStep();
+	if(m_fOdPhase >= 1024.0f)
+		m_fOdPhase -= 1024.0f;
+	int32 odPhase = (int32)m_fOdPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	int i;
 	float wheelRot;
 	float acceleration = 0.0f;
@@ -1087,6 +1113,26 @@ CBike::ProcessControl(void)
 #endif
 				ReduceHornCounter();
 		}else{
+#ifdef VICEEXT_POLICE_BIKE_LIGHTS
+			if(UsesSiren() && !IsAlarmOn()){
+				// Vice Extended: paridad con CAutomobile, que ya lo hace así. En
+				// un vehículo con sirena (la moto policial 6507), mantener el
+				// claxon pita y una pulsación corta conmuta la sirena. Sin esto
+				// la moto sonaba pero no se podía encender desde el manillar.
+				if(Pads[0].bHornHistory[Pads[0].iCurrHornHistory]){
+					if(Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
+					   Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-2) % CPad::HORNHISTORY_SIZE])
+						m_nCarHornTimer = 1;
+					else
+						m_nCarHornTimer = 0;
+				}else if(Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
+				         !Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+1) % CPad::HORNHISTORY_SIZE]){
+					m_nCarHornTimer = 0;
+					m_bSirenOrAlarm = !m_bSirenOrAlarm;
+				}else
+					m_nCarHornTimer = 0;
+			}else
+#endif
 #ifdef FIX_BUGS
 			if(!IsAlarmOn())
 #endif
@@ -1261,6 +1307,78 @@ CBike::ProcessControl(void)
 			}
 		}
 	}
+
+#ifdef VICEEXT_POLICE_BIKE_LIGHTS
+	// Vice Extended (D3): coronas de la sirena de la moto policial (6507).
+	// CAutomobile tiene este bloque para MI_POLICE/MI_AMBULAN/…; CBike no tenía
+	// equivalente, así que la moto del mod sonaba (tiene sirena en el banco de
+	// audio) pero no parpadeaba nada. Dos luces en la parte alta del manillar,
+	// rojo y azul alternando, con el mismo temporizador que el coche.
+	if(m_bSirenOrAlarm && GetModelIndex() == MI_VEEXT_POLWINTERG){
+#ifdef __EMSCRIPTEN__
+		// Traza acotada (20 líneas) para que una sonda pueda comprobar que este
+		// bloque se ejecuta de verdad: sin ella, "no se ve la corona" y "la
+		// sirena está apagada" se parecen demasiado en las capturas.
+		{
+			// Cadencia pensada para una sonda: cada 20 fotogramas (~3 s a 6 FPS,
+			// que es lo que da swiftshader) hay una muestra fresca de dónde cae la
+			// luz en pantalla, y el tope de líneas cubre una sesión de medida.
+			// La sonda usa la muestra de la MISMA pose de cámara que la serie de
+			// capturas: proyectar la luz desde otra pose no vale (fue el fallo del
+			// primer arnés: la mediana de todas las poses apuntaba a otro sitio).
+			static int bsiren = 0;
+			if(bsiren < 300 && (CTimer::GetFrameCounter() % 20) == 0){
+				char bs[144];
+				// `on` es la prueba que falta cuando "no se ve la corona": dice si la
+				// posición de la luz está delante de la cámara y dentro de la
+				// pantalla. Si sale on=0 siempre, el problema es el encuadre de la
+				// sonda; si sale on=1 y aun así no aparece nada, el fallo está en el
+				// camino de dibujo de las coronas.
+				CVector luz = GetMatrix() * CVector(0.32f, 0.55f, 1.05f);
+				CVector sp; float sw = 0.0f, sh = 0.0f;
+				bool onScreen = CSprite::CalcScreenCoors(luz, &sp, &sw, &sh, true);
+				sprintf(bs, "BSIREN model=%d t=%u on=%d x=%.0f y=%.0f z=%.1f",
+					(int)GetModelIndex(), CTimer::GetTimeInMilliseconds(),
+					onScreen ? 1 : 0, onScreen ? sp.x : -1.0f, onScreen ? sp.y : -1.0f,
+					onScreen ? sp.z : -1.0f);
+				ODTRACES(bs);
+				bsiren++;
+			}
+		}
+#endif
+		uint8 r, g, b;
+		uint32 timer = CTimer::GetTimeInMilliseconds() & 0x3FF; // 1023
+		if(timer < 512){
+			r = 255/6; g = 0; b = 0;
+		}else{
+			r = 0; g = 0; b = 255/6;
+		}
+		timer = CTimer::GetTimeInMilliseconds() & 0x1FF; // 511
+		if(timer < 100){
+			float f = timer/100.0f;
+			r *= f; g *= f; b *= f;
+		}else if(timer > (512-100)){
+			float f = (512-timer)/100.0f;
+			r *= f; g *= f; b *= f;
+		}
+
+		CVector pos1 = GetMatrix() * CVector(0.32f, 0.55f, 1.05f);
+		CVector pos2 = GetMatrix() * CVector(-0.32f, 0.55f, 1.05f);
+		CCoronas::RegisterCorona((uintptr)this + 21,
+			r, g, b, 255, pos1, 0.4f, 50.0f,
+			CCoronas::TYPE_STAR,
+			CCoronas::FLARE_NONE,
+			CCoronas::REFLECTION_OFF, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+		CCoronas::RegisterCorona((uintptr)this + 23,
+			r, g, b, 255, pos2, 0.4f, 50.0f,
+			CCoronas::TYPE_STAR,
+			CCoronas::FLARE_NONE,
+			CCoronas::REFLECTION_OFF, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+		CPointLights::AddLight(CPointLights::LIGHT_POINT,
+			GetPosition() + GetUp()*1.2f, CVector(0.0f, 0.0f, 0.0f), 12.0f,
+			r*0.02f, g*0.02f, b*0.02f, CPointLights::FOG_NONE, true);
+	}
+#endif
 }
 
 #pragma optimize("", on)
@@ -1283,6 +1401,11 @@ CBike::Teleport(CVector pos)
 void
 CBike::PreRender(void)
 {
+#ifdef VICEEXT_FIX_FV
+	int32 odPhase = (int32)m_fOdPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	int i;
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
@@ -1330,7 +1453,8 @@ CBike::PreRender(void)
 		CClock::GetHours() < 8 && CClock::GetMinutes() < (m_randomSeed & 0x3F) ||
 		m_randomSeed/50000.0f < CWeather::Foggyness ||
 		m_randomSeed/50000.0f < CWeather::WetRoads;
-	if(shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
+	bool forceLightsOff = false;
+	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
 		if(GetStatus() == STATUS_ABANDONED){
 			// Turn off lights on abandoned vehicles only when we they're far away
 			if(bLightsOn &&
@@ -1710,7 +1834,7 @@ CBike::PreRender(void)
 				if(dblExhaust)
 					CParticle::AddParticle(PARTICLE_EXHAUST_FUMES, pos2, dir);
 
-				if(GetStatus() == STATUS_PLAYER && (CTimer::GetFrameCounter()&3) == 0 &&
+				if(GetStatus() == STATUS_PLAYER && (odPhase&3) == 0 &&
 				   CWeather::Rain == 0.0f){
 					CVector camDist = GetPosition() - TheCamera.GetPosition();
 					if(DotProduct(GetForward(), camDist) > 0.0f ||
@@ -1814,7 +1938,8 @@ CBike::ProcessControlInputs(uint8 pad)
 {
 	float speed = DotProduct(m_vecMoveSpeed, GetForward());
 
-	if(CPad::GetPad(pad)->GetExitVehicle())
+	bool exitVehicleHeld = !!CPad::GetPad(pad)->GetExitVehicle();
+	if(exitVehicleHeld)
 		bIsHandbrakeOn = true;
 	else
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
@@ -2009,15 +2134,11 @@ CBike::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
-	if (playerInfo && !playerInfo->m_bDriveByAllowed)
-		return;
 
-	CWeapon *weapon = pDriver->GetWeapon();
-	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != 5)
-		return;
-
-	weapon->Update(pDriver->m_audioEntityId, nil);
-
+	// Sección 2 (P2): el estado del mando se calcula antes de las puertas de
+	// entrada para que la traza de la sonda vea "conduzco y disparo" también
+	// cuando el arma no pasa la puerta (esa es la línea base).
+	bool fireHeld = CPad::GetPad(0)->GetCarGunFired();
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
@@ -2032,8 +2153,20 @@ CBike::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
+	pDriver->DriveByTraceState("bike", fireHeld, lookingLeft, lookingRight);
 
-	if(lookingLeft || lookingRight || CPad::GetPad(0)->GetCarGunFired()){
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
+
+	CWeapon *weapon = pDriver->GetWeapon();
+	// Sección 2 (P2): con VICEEXT_DRIVEBY_WIDE las pistolas también disparan desde
+	// la moto (sin el define, esta llamada es el chequeo vanilla de slot 5).
+	if(!pDriver->CanDoDriveByWithCurrentWeapon())
+		return;
+
+	weapon->Update(pDriver->m_audioEntityId, nil);
+
+	if(lookingLeft || lookingRight || fireHeld){
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
 			if(anim)
@@ -2067,9 +2200,14 @@ CBike::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				weapon->FireFromCar(this, lookingLeft, lookingRight);
-				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+			if (fireHeld && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				// Sección 2 (P2): traza solo si el disparo salió (y con la animación
+				// usada: lhs/rhs/forward, nunca la de conducir).
+				// Sección 2 (P4): cadencia del arma, no los 70 ms fijos del SMG.
+				uint32 shotDelay = weapon->GetDriveByShotDelay();
+				if (weapon->FireFromCar(this, lookingLeft, lookingRight))
+					pDriver->DriveByTraceShot("bike", lookingLeft ? "lhs" : (lookingRight ? "rhs" : "forward"), shotDelay);
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + shotDelay;
 			}
 		}
 	}else{

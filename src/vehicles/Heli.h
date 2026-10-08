@@ -61,6 +61,9 @@ public:
 	uint32 m_nPoliceShoutTimer;
 	float m_fTargetOffset;
 	bool m_bTestRight;
+#ifdef VICEEXT_FIX_FV
+	float m_fOdPhase;
+#endif
 
 	static CHeli *pHelis[NUM_HELIS];
 	static int16 NumRandomHelis;

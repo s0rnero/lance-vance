@@ -40,6 +40,6 @@ const char *neoRimSkin_vert_src =
 "	v_color = clamp(v_color, 0.0, 1.0);\n"
 "	v_color *= u_matColor;\n"
 
-"	v_fog = DoFog(gl_Position.z);\n"
+"	v_fog = DoFog(gl_Position.w);\n"
 "}\n"
 ;

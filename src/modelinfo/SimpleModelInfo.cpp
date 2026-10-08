@@ -115,24 +115,30 @@ CSimpleModelInfo::IncreaseAlpha(void)
 float
 CSimpleModelInfo::GetLodDistance(int i)
 {
-	return m_lodDistances[i] * TheCamera.LODDistMultiplier;
+	// D10 (sección 1, 21/09): el jugador quiere 20 m más de modelo "bueno" antes
+	// de que entre el LOD. El margen va SUMADO (no multiplicado) para que sean
+	// 20 m reales en todas las distancias de dibujado, y se aplica al mismo
+	// valor que usan a la vez la decisión de dibujado y la petición de modelos,
+	// para que no se pida tarde lo que luego se dibuja de cerca.
+	return m_lodDistances[i] * TheCamera.LODDistMultiplier + VICEEXT_LOD_EXTRA;
 }
 
 float
 CSimpleModelInfo::GetNearDistance(void)
 {
-	return m_lodDistances[2] * TheCamera.LODDistMultiplier;
+	return m_lodDistances[2] * TheCamera.LODDistMultiplier + VICEEXT_LOD_EXTRA;
 }
 
 float
 CSimpleModelInfo::GetLargestLodDistance(void)
 {
 	float d;
+	// (D10) mismo margen que GetLodDistance, para que pedir y dibujar coincidan
 	if(m_firstDamaged == 0 || m_isDamaged)
 		d = m_lodDistances[m_numAtomics-1];
 	else
 		d = m_lodDistances[m_firstDamaged-1];
-	return d * TheCamera.LODDistMultiplier;
+	return d * TheCamera.LODDistMultiplier + VICEEXT_LOD_EXTRA;
 }
 
 RpAtomic*

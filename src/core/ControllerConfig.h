@@ -59,12 +59,18 @@ enum e_ControllerAction
 	NETWORK_TALK,
 	PED_1RST_PERSON_LOOK_UP,
 	PED_1RST_PERSON_LOOK_DOWN,
-	_CONTROLLERACTION_36,					// Unused
+	PED_TOGGLE_1RST_PERSON,				// Sección 3, C1: antes `_CONTROLLERACTION_36` ("Unused"); mismo hueco
 	TOGGLE_DPAD,
 	SWITCH_DEBUG_CAM_ON,
 	TAKE_SCREEN_SHOT,
 	SHOW_MOUSE_POINTER_TOGGLE,
-	UNKNOWN_ACTION,
+	PED_RELOAD,					// Sección 3, C3.1: antes `UNKNOWN_ACTION` (hueco sin uso); mismo índice
+	PED_WALK,						// ClassicAXIS C17 `WalkKey` (`ClassicAxisVC.ini:9` = `LALT`, `NULL` = desactivar).
+								// AL FINAL a propósito: `PED_RELOAD` ya ocupó el último hueco y reindexar el
+								// enum rompería las configs de controles guardadas del jugador.
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	SKIP_PHONE_CALL,
+#endif
 	MAX_CONTROLLERACTIONS,
 };
 
@@ -183,6 +189,17 @@ public:
 
 	bool  GetIsKeyboardKeyDown    (RsKeyCodes keycode);
 	bool  GetIsKeyboardKeyJustDown(RsKeyCodes keycode);
+
+	// Sección 3 (VICEEXT, 21/09): pulsación de la tecla de una acción con
+	// **respaldo**. La configuración de controles que el navegador guarda entre
+	// sesiones pisa los valores por defecto al cargarse: si el fichero se guardó
+	// con un build ANTERIOR a la existencia de la acción, al cargar no toca
+	// asignarle nada (queda `rsNULL`) y la acción deja de tener tecla para
+	// siempre. Medido en la partida del jugador: `VICEEXT reload key tecla=1056`
+	// es `rsNULL`, y la V del conmutador de 1ª persona nunca llegaba al motor.
+	// Con el respaldo, si la acción no tiene tecla asignada se acepta la tecla
+	// histórica (`fallbackKey`); si el jugador la rebindea, manda su elección.
+	bool  ViceExtActionKeyJustDown(e_ControllerAction action, int32 fallbackKey);
 	bool  GetIsMouseButtonDown    (RsKeyCodes keycode);
 	bool  GetIsMouseButtonUp      (RsKeyCodes keycode);
 
@@ -210,6 +227,12 @@ public:
 
 	int32 GetNumOfSettingsForAction(e_ControllerAction action);
 	void  GetWideStringOfCommandKeys(uint16 action, wchar *text, uint16 leight);
+#ifdef VICEEXT_HINT_KEYS
+	// D7 (sección 1): el código de tecla ("VK", el mismo con el que su
+	// `pcbtns.txd` nombra sus iconos) con el que está configurada esa acción, o
+	// 0 si no hay icono posible (rueda del ratón, mando).
+	int32 GetKeyIconCodeForAction(uint16 action);
+#endif
 	int32 GetControllerKeyAssociatedWithAction(e_ControllerAction action, eControllerType type);
 
 	void  UpdateJoyButtonState(int32 padnumber);

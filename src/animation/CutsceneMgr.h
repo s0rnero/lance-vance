@@ -1,5 +1,23 @@
 #pragma once
 #include "CutsceneObject.h"
+#include "ondemand.h"   // web: avisar a la página de que se está CARGANDO
+
+// --------------------------------------------------------------------------
+// Web: una cinemática se comporta como una CARGA.
+//
+// El motor publica su estado una vez por frame (window.__vcInGame), pero la
+// cinemática se PREPARA dentro de un frame: el script pide y carga en bloque la
+// escena (sala, actores, audio) antes de que IsRunning() sea true. Si en ese
+// hueco la página cree que está "jugando", aplaza los ficheros (contesta "no
+// está") y el resultado es la escena vacía: mundo negro, props vencidos, sin
+// audio. Con esto se avisa en el instante en que empieza el procesado.
+// --------------------------------------------------------------------------
+static inline void vcCutscenePublishLoading(void)
+{
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ try { window.__vcInGame = false; } catch (e) {} });
+#endif
+}
 
 #define CUTSCENENAMESIZE 8
 
@@ -28,7 +46,7 @@ public:
 	static CDirectory *ms_pCutsceneDir;
 	static uint32 ms_cutsceneLoadStatus;
 
-	static void StartCutsceneProcessing() { ms_cutsceneProcessing = true; }
+	static void StartCutsceneProcessing() { ms_cutsceneProcessing = true; vcCutscenePublishLoading(); }
 	static bool IsRunning(void) { return ms_running; }
 	static bool HasLoaded(void) { return ms_loaded; }
 	static bool IsCutsceneProcessing(void) { return ms_cutsceneProcessing; }

@@ -6,6 +6,37 @@ class CPad;
 class CCopPed;
 class CWanted;
 
+// ClassicAXIS · sección 2, bloque C7: las escopetas del mod (y la nueva
+// `SHOTGUN2`) apuntan aunque su `weapon.dat` no traiga `WEAPONFLAG_CANAIM`.
+#ifdef VICEEXT_SHOTGUN_AIM
+inline bool ViceExtCanAim(eWeaponType type, CWeaponInfo *info)
+{
+	switch (type) {
+	case WEAPONTYPE_SHOTGUN:
+	case WEAPONTYPE_STUBBY_SHOTGUN:
+	case WEAPONTYPE_SPAS12_SHOTGUN:
+	case WEAPONTYPE_SHOTGUN2:	// arma nueva del mod
+		return true;
+	default:
+		return info->IsFlagSet(WEAPONFLAG_CANAIM);
+	}
+}
+#else
+#define ViceExtCanAim(type, info) ((info)->IsFlagSet(WEAPONFLAG_CANAIM))
+#endif
+
+inline bool ViceExtAimHeavy(eWeaponType type)
+{
+	switch (type) {
+	case WEAPONTYPE_AK47:
+	case WEAPONTYPE_M16:
+	case WEAPONTYPE_STEYR:
+		return true;
+	default:
+		return false;
+	}
+}
+
 class CPlayerPed : public CPed
 {
 public:
@@ -59,6 +90,7 @@ public:
 	CPlayerPed();
 	~CPlayerPed();
 	void SetMoveAnim() { };
+	bool CanSprintWithCurrentWeapon(void);	// Vice Extended v1.5 (armas pesadas)
 
 	void ReApplyMoveAnims(void);
 	void ClearWeaponTarget(void);
@@ -70,6 +102,43 @@ public:
 	void MakeChangesForNewWeapon(eWeaponType);
 	void SetInitialState(void);
 	void ProcessControl(void);
+#ifdef VICEEXT_MANUAL_RELOAD
+	bool ViceExtTryManualReload(void); // Sección 3, C3.1: recarga a mano
+#endif
+#ifdef VICEEXT_SWIMMING
+	bool ViceExtSwimControl(CPad *padUsed); // Sección 3, C4: nadar
+	static bool ViceExtIsSwimming(void);    // H2: la cámara va a la superficie
+#endif
+#ifdef VICEEXT_AIM_WALK
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	// ClassicAXIS: el control de apuntado del mod (Main.cpp:1203-1461) y la
+	// adquisición del objetivo blando de ratón (Main.cpp:1474-1517).
+	void ViceExtProcessPlayerPedControl(void);
+	void ViceExtFind3rdPersonMouseTarget(void);
+	void ViceExtPrepareMove(CPad *padUsed);
+	bool ViceExtGetMove(CVector2D &direction, float &speedGame) const;
+	bool ViceExtMoveWalkaround(void) const;
+	int ViceExtStickBlocked(void) const;
+#endif
+	void ViceExtAimDirTrace(CPad *padUsed); // R9: medir desviación del apuntado
+#endif
+#ifdef __EMSCRIPTEN__
+	void ViceExtPedAtTrace(void);             // R19: posición y velocidad real (todas las sondas)
+	void ViceExtWeaponInfoOf(eWeaponType);    // R13/ve37: ficha WINFO de un arma concreta (arnés web)
+#endif
+#ifdef VICEEXT_CROUCH
+	bool ViceExtCrouchControl(CPad *padUsed); // Sección 3, C5: agachado
+	static bool ViceExtIsCrouched(void);      // R6: la cámara baja su objetivo agachado
+	static float ViceExtCrouchBlend(void);
+	void ViceExtCrouchLimitSpeed(void);       // R6: tope 0,5 m/s tras el control normal
+	void ViceExtCrouchAnim(void);             // R6b: el clip de agachado manda sobre el de serie
+	float ViceExtCrouchMoveSpeed(void);       // R21b: m/s del clip de agachado en uso (ritmo incluido)
+	bool ViceExtCrouchSideHeading(float &odDir); // R26: rumbo MUNDO al que girar a los lados (R29: ya no es static, lee ViceExtIsAiming)
+	bool ViceExtIsAiming(void); // R29/G: API unica del "estoy apuntando" (rueda, pose, giro y CROUCH2 la leen sola)
+#endif
+#ifdef VICEEXT_CLIMB
+	bool ViceExtClimbControl(CPad *padUsed);   // Sección 2, E1: escalar
+#endif
 	void ClearAdrenaline(void);
 	void UseSprintEnergy(void);
 	class CPlayerInfo *GetPlayerInfoForThisPlayerPed();

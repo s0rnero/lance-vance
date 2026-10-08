@@ -24,6 +24,7 @@
 #include "Shadows.h"
 #include "PointLights.h"
 #include "Coronas.h"
+#include "ondemand.h" // web: ODTRACES -> odtrace.log (R11 SVLIGHTS; C3.4 la usa tras su define)
 #include "SpecialFX.h"
 #include "WaterCannon.h"
 #include "WaterLevel.h"
@@ -74,6 +75,9 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_fFireBlowUpTimer = 0.0f;
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase = 0.0f;
+#endif
 	m_doingBurnout = 0;
 	bTaxiLight = m_sAllTaxiLights;
 	bFixedColour = false;
@@ -258,6 +262,14 @@ CVector vecDAMAGE_ENGINE_POS_BIG(-0.5f, -0.3f, 0.0f);
 void
 CAutomobile::ProcessControl(void)
 {
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase += CTimer::GetTimeStep();
+	if(m_fOdPhase >= 1024.0f)
+		m_fOdPhase -= 1024.0f;
+	int32 odPhase = (int32)m_fOdPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	int i;
 	float wheelRot;
 	CColModel *colModel;
@@ -1416,13 +1428,17 @@ CAutomobile::ProcessControl(void)
 			else
 #endif
 			{
-				// Speed up rotor
+				// PORTADO -- FramerateVigilante (MIT, (c) 2023 GTA modding): spool por tiempo.
+				// Gemelo del de la IA (CarCtrl.cpp): a 120 fps despegaba en ~1,8 s vs ~4,4 s a 50.
+				// Medible: PASS = mismo tiempo de spool a 35 y a 120 fps.
+#ifdef VICEEXT_FIX_FV
 				if (m_aWheelSpeed[1] < 0.22f && !bIsInWater) {
 					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
-						m_aWheelSpeed[1] += 0.003f;
+						m_aWheelSpeed[1] += 0.003f * CTimer::GetTimeStep();
 					else
-						m_aWheelSpeed[1] += 0.001f;
+						m_aWheelSpeed[1] += 0.001f * CTimer::GetTimeStep();
 				}
+#endif
 
 				// Fly
 				if (m_aWheelSpeed[1] > 0.15f) {
@@ -1522,7 +1538,6 @@ CAutomobile::ProcessControl(void)
 	}
 
 
-
 	// Process car on fire
 	// A similar calculation of damagePos is done elsewhere for smoke
 
@@ -1583,7 +1598,7 @@ CAutomobile::ProcessControl(void)
 	ProcessDelayedExplosion();
 
 
-	if(m_bSirenOrAlarm && (CTimer::GetFrameCounter()&7) == 5 &&
+	if(m_bSirenOrAlarm && (odPhase&7) == 5 &&
 	   UsesSiren() && GetModelIndex() != MI_MRWHOOP)
 		CCarAI::MakeWayForCarWithSiren(this);
 
@@ -1716,9 +1731,406 @@ CAutomobile::ProcessControl(void)
 				bRenderScorched = true;
 			}
 	}
+
+#ifdef VICEEXT_TURN_SIGNALS
+	// Sección 3, bloque C3.4 (v2.5 "Turners, which are used by NPCs and can also
+	// be used by the player"): intermitentes del jugador y de los NPC que estén
+	// cerca. APAGADO por defecto en config.h, por paridad con su features.ini
+	// (StandardCarsUseTurnSignals=0).
+	// NOTA de propiedad: este es el único bloque añadido a Automobile.cpp por la
+	// sección 3 (avisado en .agents/HISTORIAL.md); el resto del fichero es de la
+	// sección 2.
+	ViceExtProcessTurnSignals();
+#endif
 }
 
+#ifdef VICEEXT_TURN_SIGNALS
+// Sección 3, bloque C3.4: intermitentes del coche del JUGADOR mientras gira el
+// volante. Se dibujan como coronas naranjas en los dummies del modelo
+// (`indicator_lf/lr/rf/rr`, `indicator2_*` y, si no hay, `indicators_f/r`), que
+// es lo que traen los vehículos adaptados del mod. No se toca la IA (los NPC
+// los usan en el mod; aquí queda pendiente y anotado en el historial).
+// Presupuesto de intermitentes para los coches de la IA: la piscina de coronas
+// es de 56 para todo el juego (CCoronas), así que no se puede encender a todo el
+// tráfico a la vez. Como mucho 2 coches de la IA por fotograma, y sólo los que
+// estén cerca del jugador (donde se ven).
+static uint32 s_viceExtTurnNpcFrame = 0;
+static int s_viceExtTurnNpcBudget = 0;
+
+#ifdef __EMSCRIPTEN__
+static void ViceExtP4TurnersEmit(CVehicle *car, int odIsPlayer, int odSide, int odFound, const char *odMotivo, float odSteer, float odAnchorErr);
+#endif
+
+void
+CAutomobile::ViceExtProcessTurnSignals(void)
+{
+	if (m_fHealth < 250.0f)	// ardiendo: las luces ya no importan
+		return;
+
+	// El jugador siempre; los NPC del mod también los usan (v2.5 "Turners, which
+	// are used by NPCs and can also be used by the player"), con presupuesto.
+	bool odIsPlayer = GetStatus() == STATUS_PLAYER;
+	if (!odIsPlayer) {
+		if (pDriver == nil || pDriver->IsPlayer()) {
+#ifdef __EMSCRIPTEN__
+			ViceExtP4TurnersEmit(this, 0, 0, 0, "sinconductor", 0.0f, 0.0f);
+#endif
+			return;	// aparcado o sin conductor
+		}
+		if ((TheCamera.GetPosition() - GetPosition()).Magnitude() > 40.0f) {
+#ifdef __EMSCRIPTEN__
+			ViceExtP4TurnersEmit(this, 0, 0, 0, "lejos", 0.0f, 0.0f);
+#endif
+			return;
+		}
+		if (CTimer::GetFrameCounter() != s_viceExtTurnNpcFrame) {
+			s_viceExtTurnNpcFrame = CTimer::GetFrameCounter();
+			s_viceExtTurnNpcBudget = 2;
+		}
+		if (s_viceExtTurnNpcBudget <= 0) {
+#ifdef __EMSCRIPTEN__
+			ViceExtP4TurnersEmit(this, 0, 0, 0, "sincupo", 0.0f, 0.0f);
+#endif
+			return;
+		}
+	}
+
+	// Giro del volante (el jugador lo pone en ProcessControlInputs; la IA, en
+	// su camino). Los intermitentes son de giro, no de frenada.
+	float steer = m_fSteerInput;
+	const char *odMotivo = "input";
+	if (!odIsPlayer && steer > -0.25f && steer < 0.25f) {
+		steer = m_fSteerAngle;
+		odMotivo = "ia";
+	}
+	const int side = steer > 0.25f ? +1 : (steer < -0.25f ? -1 : 0);
+	if (side == 0) {
+#ifdef __EMSCRIPTEN__
+		ViceExtP4TurnersEmit(this, odIsPlayer ? 1 : 0, 0, 0, "singiro", steer, 0.0f);
+#endif
+		return;
+	}
+	if (!odIsPlayer)
+		s_viceExtTurnNpcBudget--;
+
+	// Parpadeo lento (~1,5 Hz): encendido la mitad del ciclo.
+	if ((CTimer::GetTimeInMilliseconds() & 0x3FF) > 512) {
+#ifdef __EMSCRIPTEN__
+		ViceExtP4TurnersEmit(this, odIsPlayer ? 1 : 0, side, 0, "parpadeo", steer, 0.0f);
+#endif
+		return;
+	}
+
+	static const char *leftNames[] =  { "indicator_lf", "indicator_lr", "indicator2_lf", "indicator2_lr", "indicators_f", "indicators_r" };
+	static const char *rightNames[] = { "indicator_rf", "indicator_rr", "indicator2_rf", "indicator2_rr", "indicators_f", "indicators_r" };
+	const char **names = side > 0 ? rightNames : leftNames;
+
+	int found = 0;
+	float odAnchorErr = 0.0f;
+	for (int i = 0; i < 6; i++) {
+		RwFrame *frame = FindDummyFrame(names[i]);
+		if (frame == nil)
+			continue;
+		CMatrix m(RwFrameGetLTM(frame));
+		CVector odAnchor = m.GetPosition();
+		RpAtomic *odAtomic = (RpAtomic*)GetFirstObject(frame);
+		if (odAtomic != nil && RpAtomicGetGeometry(odAtomic) != nil) {
+			RwSphere *odSph = RpAtomicGetBoundingSphere(odAtomic);
+			odAnchor = m * CVector(odSph->center.x, odSph->center.y, odSph->center.z);
+		}
+		odAnchorErr = (odAnchor - m.GetPosition()).Magnitude();
+		CCoronas::RegisterCorona((uintptr)this + 41 + i,
+			255, 140, 0, 255, odAnchor, 0.35f, 50.0f,
+			CCoronas::TYPE_STAR,
+			CCoronas::FLARE_NONE,
+			CCoronas::REFLECTION_OFF, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+		found++;
+	}
+#ifdef __EMSCRIPTEN__
+	// DIAG acotado: confirma que el modelo trae dummies de intermitente y que
+	// el bloque corre. Una línea cada ~2 s como mucho.
+	{
+		static uint32 lastTrace = 0;
+		if (found == 0 || CTimer::GetTimeInMilliseconds() - lastTrace > 2000) {
+			lastTrace = CTimer::GetTimeInMilliseconds();
+			ViceExtP4TurnersEmit(this, odIsPlayer ? 1 : 0, side, found, found > 0 ? "ok" : odMotivo, steer, odAnchorErr);
+		}
+	}
+#endif
+}
+#endif
+
 #pragma optimize("", on)
+
+// R11 (5ª partida): LUCES DE SERVICIO del coche de policía por DUMMIES.
+//
+// El mod trae su propio `police.dff` con los dummies `servicelights`,
+// `servicelights_1..3` (el .dff servido NO trae `_0`; sí trae un
+// `servicelight` singular) y el método de la comunidad ("Custom Police Lights")
+// es colocar las luces leyéndolos del clump. Las coronas estaban clavadas por
+// modelo y posición fija y con su geometría caían donde no toca (se ven
+// destellos pero no la barra).
+//
+// §6 (7ª partida: `SVLIGHTS dummies=0` con el 156 que SÍ los trae, una sola
+// vez = quedó cacheado): dos cosas.
+// 1. El fallo NO se cachea: si la primera búsqueda da 0 (clump aún no listo,
+//    instancia LOD, lo que sea) se reintenta cada 5 s en vez de devolver false
+//    para siempre. Sólo los aciertos (n>0) quedan fijos (los locales son
+//    iguales para todas las instancias del mismo .dff).
+// 2. El buscador (`CVehicle::FindDummyFrame`) YA es recursivo de verdad:
+//    en librw `forAllChildren` PARA con retorno nil y SIGUE con no-nil (al
+//    revés que RW original), y el callback devuelve nil al encontrar (para) y
+//    `frame` si no (sigue); lo prueba el propio `petrolcap` del mismo 156
+//    (`gastank hit model=156 reserva=0` en la misma partida). No se toca.
+// Sin dummies se devuelve false y el llamador cae a las posiciones fijas de
+// serie. `*outOn` dice si el modelo trae `servicelightson` (marca de encendido
+// del mod; hoy sólo va a la traza: el que decide sigue siendo
+// `m_bSirenOrAlarm`).
+// R11c (10ª partida): la posición de la barra NO está en los marcos
+// `servicelights_*`. El mod coloca esas mallas por VÉRTICES y sus marcos (igual
+// que los `extra*` que las contienen) están en (0,0,0): con el dummy la corona
+// saldría en el centro del coche, a ras de suelo. El ancla buena es la **esfera
+// envolvente** del atomic de las luces (viene en coordenadas del modelo) más y
+// menos su radio sobre el eje derecho del coche: así vale para las tres
+// variantes de barra del `police.dff` y para la `_0` de ambulancia y bomberos,
+// sin tocar datos. La variante se identifica con los extras elegidos
+// (`m_aExtras`, que `CVehicle::SetModelIndex` copia de `ms_compsUsed` justo
+// después de crear la instancia): dos policías pueden llevar barras distintas.
+struct OdServiceCache {
+	int model;
+	int extras0, extras1;
+	int which;	// nombre que apareció (0..5), para la traza
+	int n;
+	CVector local[1];	// centro de las luces, en coordenadas del coche
+	float radius;
+	int hasOn;
+};
+static OdServiceCache s_odSvcCache[8];
+static bool s_odSvcInit = false;
+#ifdef __EMSCRIPTEN__
+static uint32 s_odSvcRetry = 0;
+#endif
+
+#ifdef __EMSCRIPTEN__
+static bool
+ViceExtP4ServiceColdLocal(CVehicle *car, CVector &odLocal)
+{
+	static const char *odNames[6] = {
+		"servicelights", "servicelights_1", "servicelights_2",
+		"servicelights_3", "servicelights_0", "servicelight"
+	};
+	for (int d = 0; d < 6; d++) {
+		RwFrame *f = car->FindDummyFrame(odNames[d]);
+		if (f == nil)
+			continue;
+		CMatrix lm(RwFrameGetLTM(f));
+		RpAtomic *atomic = (RpAtomic*)GetFirstObject(f);
+		if (atomic != nil && RpAtomicGetGeometry(atomic) != nil) {
+			RwSphere *sph = RpAtomicGetBoundingSphere(atomic);
+			odLocal = Invert(car->GetMatrix()) * (lm * CVector(sph->center.x, sph->center.y, sph->center.z));
+		} else {
+			odLocal = Invert(car->GetMatrix()) * lm.GetPosition();
+		}
+		return true;
+	}
+	return false;
+}
+
+#define VICEEXT_P4_EMIT(odGen, odBuf, ...) do { int odP4_ret = snprintf(odBuf, sizeof(odBuf), __VA_ARGS__); if (odP4_ret < 0 || odP4_ret >= (int)sizeof(odBuf)) { char odP4_of[220]; snprintf(odP4_of, sizeof odP4_of, "P4 kind=overflow schema=1 gen=%u frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)(odGen), (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odBuf), odP4_ret); ODTRACES(odP4_of); } else { ODTRACES(odBuf); } } while (0)
+static void
+ViceExtP4ServiceEmit(CVehicle *car, int odHot, int odN, int odVar, int odHasOn, const CVector &odLocal, float odAnchorError)
+{
+	static uint32 s_odP4SvcMs = 0;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odNow < s_odP4SvcMs && odNow + 60000 >= s_odP4SvcMs)
+		return;
+	if (s_odP4SvcMs != 0 && odNow < s_odP4SvcMs + 2000)
+		return;
+	s_odP4SvcMs = odNow;
+	CVector odWorld = car->GetMatrix() * odLocal;
+	CVector odPos = car->GetPosition();
+	CVector odFwd = car->GetForward();
+	char t[560];
+	VICEEXT_P4_EMIT(1, t,  "P4 kind=service schema=1 gen=1 frame=%u sim=%.4f case=7 id=0 vehicle=%u model=%d siren=%d var=%d selectedBars=%d visibleLenses=%d anchorError=%.4f registered=0 cache=%s world=%.4f,%.4f,%.4f carPos=%.4f,%.4f,%.4f carRot=%.4f,%.4f,%.4f hasOnDummy=%d local=%.4f,%.4f,%.4f damage=%d",
+		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, (unsigned)(uintptr)car, car->GetModelIndex(),
+		car->m_bSirenOrAlarm ? 1 : 0, odVar, odN > 0 ? 1 : 0, odN > 0 ? 2 : 0, odAnchorError,
+		odHot ? "hot" : "cold",
+		odWorld.x, odWorld.y, odWorld.z, odPos.x, odPos.y, odPos.z,
+		odFwd.x, odFwd.y, odFwd.z, odHasOn, odLocal.x, odLocal.y, odLocal.z,
+		(car->m_fHealth < 1000.0f) ? 1 : 0);
+	
+}
+
+static void
+ViceExtP4TurnersEmit(CVehicle *car, int odIsPlayer, int odSide, int odFound, const char *odMotivo, float odSteer, float odAnchorErr)
+{
+	static uint32 odNegMs = 0;
+	static uint32 odPosMs = 0;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odFound > 0) {
+		if (odNow < odPosMs + 1000 && odNow + 60000 >= odPosMs)
+			return;
+		odPosMs = odNow;
+	} else {
+		if (odNow < odNegMs + 5000 && odNow + 60000 >= odNegMs)
+			return;
+		odNegMs = odNow;
+	}
+	char t[240];
+	VICEEXT_P4_EMIT(1, t, "P4 kind=turners schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 quien=%s model=%d side=%d luces=%d motivo=%s steer=%.3f anchorErr=%.4f carPos=%.3f,%.3f,%.3f",
+		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f,
+		odIsPlayer ? "jugador" : "npc", (int)car->GetModelIndex(),
+		odSide, odFound, odMotivo, odSteer, odAnchorErr,
+		car->GetPosition().x, car->GetPosition().y, car->GetPosition().z);
+}
+#endif
+
+static bool
+ViceExtServiceLightWorldPos(CVehicle *car, CVector &out1, CVector &out2, int *outN, int *outOn)
+{
+	int model = car->GetModelIndex();
+	int extras0 = (int)car->m_aExtras[0];
+	int extras1 = (int)car->m_aExtras[1];
+	if (!s_odSvcInit) {
+		for (int k = 0; k < 8; k++)
+			s_odSvcCache[k].model = -1;
+		s_odSvcInit = true;
+	}
+	for (int k = 0; k < 8; k++) {
+		if (s_odSvcCache[k].model == model && s_odSvcCache[k].extras0 == extras0 &&
+		    s_odSvcCache[k].extras1 == extras1 && s_odSvcCache[k].n > 0) {
+			OdServiceCache *hit = &s_odSvcCache[k];
+			CVector center = car->GetMatrix() * hit->local[0];
+			CVector right = CrossProduct(car->GetUp(), car->GetForward());
+			out1 = center - right * hit->radius;
+			out2 = center + right * hit->radius;
+			if (outN) *outN = hit->n;
+			if (outOn) *outOn = hit->hasOn;
+#ifdef __EMSCRIPTEN__
+			{
+				CVector odCold;
+				float odErr = 0.0f;
+				if (ViceExtP4ServiceColdLocal(car, odCold))
+					odErr = (hit->local[0] - odCold).Magnitude();
+				ViceExtP4ServiceEmit(car, 1, hit->n, hit->which, hit->hasOn, hit->local[0], odErr);
+			}
+#endif
+#ifdef __EMSCRIPTEN__
+			{
+				static uint32 odNextSvc = 0;
+				uint32 odNow = CTimer::GetTimeInMilliseconds();
+				if (odNow < odNextSvc && odNow + 60000 >= odNextSvc) {}
+				else {
+					odNextSvc = odNow + 2000;
+					char t[200];
+					snprintf(t, sizeof t, "SVLIGHTS model=%d dummies=%d on=%d var=%d extras=%d,%d radio=%.2f pos=%.2f,%.2f,%.2f",
+						model, hit->n, hit->hasOn, hit->which, extras0, extras1, hit->radius,
+						out1.x, out1.y, out1.z);
+					ODTRACES(t);
+				}
+			}
+#endif
+			return true;
+		}
+	}
+	// Sin acierto cacheado: buscar (la primera vez siempre; luego como mucho
+	// cada 5 s, para no recorrer el clump por frame).
+#ifdef __EMSCRIPTEN__
+	{
+		uint32 odNow = CTimer::GetTimeInMilliseconds();
+		if (odNow < s_odSvcRetry && odNow + 60000 >= s_odSvcRetry) {
+			if (outN) *outN = 0;
+			if (outOn) *outOn = 0;
+			return false;
+		}
+		s_odSvcRetry = odNow + 5000;
+	}
+#endif
+	// Nombres del binario del mod; el .dff servido trae `servicelights`,
+	// `servicelights_1..3` (sin `_0`) y un `servicelight` singular: se buscan
+	// todos y valen los 4 primeros (los que interpola la sirena).
+	static const char *odNames[6] = {
+		"servicelights", "servicelights_1", "servicelights_2",
+		"servicelights_3", "servicelights_0", "servicelight"
+	};
+	// El primer nombre que aparezca ES la variante presente (los extras son
+	// mutuamente excluyentes: el policía trae una de las tres barras, no tres).
+	CVector center;
+	float radius = 0.7f;
+	int which = -1;
+	int n = 0;
+	for (int d = 0; d < 6 && which == -1; d++) {
+		RwFrame *f = car->FindDummyFrame(odNames[d]);
+		if (f == nil)
+			continue;
+		CMatrix lm(RwFrameGetLTM(f));
+		RpAtomic *atomic = (RpAtomic*)GetFirstObject(f);
+		if (atomic != nil && RpAtomicGetGeometry(atomic) != nil) {
+			RwSphere *sph = RpAtomicGetBoundingSphere(atomic);
+			CVector odWorld = lm * CVector(sph->center.x, sph->center.y, sph->center.z);
+			CMatrix odInv = Invert(car->GetMatrix());
+			center = odInv * odWorld;
+			radius = sph->radius;
+		} else {
+			CMatrix odInv = Invert(car->GetMatrix());
+			center = odInv * lm.GetPosition();
+		}
+		// Barra de un solo faro (o esfera degenerada): separación de serie.
+		if (radius < 0.35f) radius = 0.7f;
+		if (radius > 1.1f) radius = 1.1f;
+		which = d;
+		n = 1;
+	}
+	RwFrame *on = car->FindDummyFrame("servicelightson");
+	int hasOn = (on != nil) ? 1 : 0;
+	if (n > 0) {
+		// Acierto: se cachea por (modelo, extras elegidos) — el local es el
+		// centro en coordenadas del coche, misma convención que el camino
+		// fijo: `GetMatrix() * local`.
+		OdServiceCache *free = nil;
+		for (int k = 0; k < 8; k++) {
+			if (s_odSvcCache[k].model == -1 && free == nil)
+				free = &s_odSvcCache[k];
+		}
+		if (free != nil) {
+			free->model = model;
+			free->extras0 = extras0;
+			free->extras1 = extras1;
+			free->which = which;
+			free->n = n;
+			free->hasOn = hasOn;
+			free->radius = radius;
+			free->local[0] = center;
+		}
+		// En este primer frame el mundo va directo (desde el siguiente, el
+		// local cacheado).
+		CVector world = car->GetMatrix() * center;
+		CVector right = CrossProduct(car->GetUp(), car->GetForward());
+		out1 = world - right * radius;
+		out2 = world + right * radius;
+		if (outN) *outN = n;
+		if (outOn) *outOn = hasOn;
+#ifdef __EMSCRIPTEN__
+		if (n > 0)
+			ViceExtP4ServiceEmit(car, 0, n, which, hasOn, center, 0.0f);
+#endif
+	} else {
+		if (outN) *outN = 0;
+		if (outOn) *outOn = hasOn;
+	}
+#ifdef __EMSCRIPTEN__
+	{
+		char t[200];
+		snprintf(t, sizeof t, "SVLIGHTS model=%d dummies=%d on=%d var=%d extras=%d,%d radio=%.2f pos=%.2f,%.2f,%.2f",
+			model, n, hasOn, which, extras0, extras1, radius,
+			n > 0 ? center.x : 0.0f,
+			n > 0 ? center.y : 0.0f,
+			n > 0 ? center.z : 0.0f);
+		ODTRACES(t);
+	}
+#endif
+	return n > 0;
+}
 
 void
 CAutomobile::Teleport(CVector pos)
@@ -1738,6 +2150,11 @@ CAutomobile::Teleport(CVector pos)
 void
 CAutomobile::PreRender(void)
 {
+#ifdef VICEEXT_FIX_FV
+	int32 odPhase = (int32)m_fOdPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	int i, j, n;
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
@@ -2039,7 +2456,7 @@ CAutomobile::PreRender(void)
 						}
 					}
 
-					if(GetStatus() == STATUS_PLAYER && (CTimer::GetFrameCounter()&3) == 0 &&
+					if(GetStatus() == STATUS_PLAYER && (odPhase&3) == 0 &&
 					   CWeather::Rain == 0.0f && i == 0){
 						CVector camDist = GetPosition() - TheCamera.GetPosition();
 						if(DotProduct(GetForward(), camDist) > 0.0f ||
@@ -2069,6 +2486,21 @@ CAutomobile::PreRender(void)
 
 
 	// Siren and taxi lights
+#ifdef __EMSCRIPTEN__
+	switch (GetModelIndex()) {
+	case MI_FIRETRUCK:
+	case MI_AMBULAN:
+	case MI_POLICE:
+	case MI_ENFORCER: {
+		CVector odP1, odP2;
+		int odN = 0, odOn = 0;
+		ViceExtServiceLightWorldPos(this, odP1, odP2, &odN, &odOn);
+		break;
+	}
+	default:
+		break;
+	}
+#endif
 	switch(GetModelIndex()){
 	case MI_FIRETRUCK:
 	case MI_AMBULAN:
@@ -2079,6 +2511,12 @@ CAutomobile::PreRender(void)
 			uint8 r1, g1, b1;
 			uint8 r2, g2, b2;
 			uint8 r, g, b;
+			// R11: tamaño/alcance de la corona. La vía por dummies (barra del
+			// mod) usa una corona mayor; la fija de serie queda como estaba.
+			// `odFromDummies`: esas posiciones ya vienen en mundo.
+			float odCoronaSize = 0.4f;
+			float odCoronaRange = 50.0f;
+			bool odFromDummies = false;
 
 			switch(GetModelIndex()){
 			case MI_FIRETRUCK:
@@ -2086,18 +2524,59 @@ CAutomobile::PreRender(void)
 				pos2 = CVector(-1.1f, 1.7f, 2.0f);
 				r1 = 255; g1 = 0; b1 = 0;
 				r2 = 255; g2 = 255; b2 = 0;
+				// Tanda 2 (luces de servicio): el .dff trae servicelights_0 colgado de
+				// chassis_dummy (verificado en datos); mismo metodo que R11 (ve24): si se
+				// encuentran, mandan los dummies; si no, las fijas de serie.
+				{
+					CVector odP1, odP2;
+					int odN = 0, odOn = 0;
+					if (ViceExtServiceLightWorldPos(this, odP1, odP2, &odN, &odOn) && odN > 0) {
+						pos1 = odP1;
+						pos2 = odP2;
+						odCoronaSize = 0.55f;
+						odCoronaRange = 60.0f;
+						odFromDummies = true;
+					}
+				}
 				break;
 			case MI_AMBULAN:
 				pos1 = CVector(1.1f,  0.9f, 1.6f);
 				pos2 = CVector(-1.1f, 0.9f, 1.6f);
 				r1 = 255; g1 = 0; b1 = 0;
 				r2 = 255; g2 = 255; b2 = 255;
+				// Tanda 2 (luces de servicio): idem MI_FIRETRUCK (servicelights_0 en datos).
+				{
+					CVector odP1, odP2;
+					int odN = 0, odOn = 0;
+					if (ViceExtServiceLightWorldPos(this, odP1, odP2, &odN, &odOn) && odN > 0) {
+						pos1 = odP1;
+						pos2 = odP2;
+						odCoronaSize = 0.55f;
+						odCoronaRange = 60.0f;
+						odFromDummies = true;
+					}
+				}
 				break;
 			case MI_POLICE:
 				pos1 = CVector(0.7f,  -0.4f, 1.0f);
 				pos2 = CVector(-0.7f, -0.4f, 1.0f);
 				r1 = 255; g1 = 0; b1 = 0;
 				r2 = 0; g2 = 0; b2 = 255;
+				// R11: el `police.dff` del mod trae los dummies de las luces
+				// de servicio: usar SUS posiciones (la barra) en vez de las
+				// fijas, que con su geometría caen donde no toca. Vienen ya en
+				// coordenadas de mundo (no pasarlas por GetMatrix otra vez).
+				{
+					CVector odP1, odP2;
+					int odN = 0, odOn = 0;
+					if (ViceExtServiceLightWorldPos(this, odP1, odP2, &odN, &odOn) && odN > 0) {
+						pos1 = odP1;
+						pos2 = odP2;
+						odCoronaSize = 0.55f;
+						odCoronaRange = 60.0f;
+						odFromDummies = true;
+					}
+				}
 				break;
 			case MI_ENFORCER:
 				pos1 = CVector(1.1f,  0.8f, 1.2f);
@@ -2142,8 +2621,12 @@ CAutomobile::PreRender(void)
 				pos + GetUp()*2.0f, CVector(0.0f, 0.0f, 0.0f), 12.0f,
 				r*0.02f, g*0.02f, b*0.02f, CPointLights::FOG_NONE, true);
 
-			pos1 = GetMatrix() * pos1;
-			pos2 = GetMatrix() * pos2;
+			// R11: las fijas son locales (hay que llevarlas a mundo); las de
+			// dummies ya vienen en mundo.
+			if (!odFromDummies) {
+				pos1 = GetMatrix() * pos1;
+				pos2 = GetMatrix() * pos2;
+			}
 
 			for(i = 0; i < 4; i++){
 				uint8 sirenTimer = ((CTimer::GetTimeInMilliseconds() + (i<<6))>>8) & 3;
@@ -2153,7 +2636,7 @@ CAutomobile::PreRender(void)
 				case 0:
 					CCoronas::RegisterCorona((uintptr)this + 21 + i,
 						r1, g1, b1, 255,
-						pos, 0.4f, 50.0f,
+						pos, odCoronaSize, odCoronaRange,
 						CCoronas::TYPE_STAR,
 						i == 1 ? CCoronas::FLARE_HEADLIGHTS : CCoronas::FLARE_NONE,
 						CCoronas::REFLECTION_OFF, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
@@ -2161,25 +2644,35 @@ CAutomobile::PreRender(void)
 				case 2:
 					CCoronas::RegisterCorona((uintptr)this + 21 + i,
 						r2, g2, b2, 255,
-						pos, 0.4f, 50.0f,
+						pos, odCoronaSize, odCoronaRange,
 						CCoronas::TYPE_STAR,
 						CCoronas::FLARE_NONE,
 						CCoronas::REFLECTION_OFF, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 					break;
 				default:
-					CCoronas::UpdateCoronaCoors((uintptr)this + 21 + i, pos, 50.0f, 0.0f);
+					CCoronas::UpdateCoronaCoors((uintptr)this + 21 + i, pos, odCoronaRange, 0.0f);
 					break;
 				}
 			}
 		}
 		break;
 
+	// Sección 2 (P5): `fbicar` (147, "FBI Washington") es vehículo policial en los
+	// datos (`default.ide`, flags=7 -> `CVehicle::bIsLawEnforcer`) y `UsesSiren()`
+	// ya lo daba por policía, pero este switch no lo contemplaba: la sirena sonaba,
+	// despejaba el tráfico (`CarAI::MakeWayForCarWithSiren`) y **no tenía ni una
+	// corona**. Se le da el mismo tratamiento que a su hermano `fbiranch` (misma
+	// luz, misma posición). Aviso de límites: `predator` (lancha, 160) y `chopper`
+	// (helicóptero, 165) siguen sin coronas: no pasan por esta función (barco y
+	// heli tienen su propio `ProcessControl`) y quedan anotados en el plan.
+	case MI_FBICAR:
 	case MI_FBIRANCH:
 	case MI_VICECHEE:
 		if(m_bSirenOrAlarm){
-			CVector pos = GetMatrix() * CVector(0.4f, 0.6f, 0.3f);
-			if(CTimer::GetTimeInMilliseconds() & 0x100 &&
-			   DotProduct(GetForward(), GetPosition() - TheCamera.GetPosition()) < 0.0f)
+			CVector pos = GetModelIndex() == MI_FBIRANCH
+				? GetMatrix() * CVector(0.5f, 1.12f, 0.5f)
+				: GetMatrix() * CVector(0.4f, 0.8f, 0.25f);
+			if(CTimer::GetTimeInMilliseconds() & 0x100)
 				if(GetModelIndex() == MI_VICECHEE)
 					CCoronas::RegisterCorona((uintptr)this + 21,
 						255, 70, 70, 255,
@@ -2231,7 +2724,8 @@ CAutomobile::PreRender(void)
 		CClock::GetHours() < 8 && CClock::GetMinutes() < (m_randomSeed & 0x3F) ||
 		m_randomSeed/50000.0f < CWeather::Foggyness ||
 		m_randomSeed/50000.0f < CWeather::WetRoads;
-	if(shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
+	bool forceLightsOff = false;
+	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
 		if(GetStatus() == STATUS_ABANDONED){
 			// Turn off lights on abandoned vehicles only when we they're far away
 			if(bLightsOn &&
@@ -3095,7 +3589,8 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 {
 	float speed = DotProduct(m_vecMoveSpeed, GetForward());
 
-	if(!CPad::GetPad(pad)->GetExitVehicle() ||
+	bool exitVehicleHeld = !!CPad::GetPad(pad)->GetExitVehicle();
+	if(!exitVehicleHeld ||
 	   pDriver && pDriver->m_pVehicleAnim && (pDriver->m_pVehicleAnim->animId == ANIM_STD_ROLLOUT_LHS ||
 	                                          pDriver->m_pVehicleAnim->animId == ANIM_STD_ROLLOUT_RHS))
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
@@ -3856,15 +4351,13 @@ CAutomobile::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim = nil;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
-	if (playerInfo && !playerInfo->m_bDriveByAllowed)
-		return;
 
-	CWeapon *weapon = pDriver->GetWeapon();
-	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN)
-		return;
-
-	weapon->Update(pDriver->m_audioEntityId, nil);
-
+	// Sección 2 (P2): el estado del mando se calcula ANTES de las puertas de
+	// entrada porque la traza de la sonda (una línea por segundo) tiene que ver
+	// "conduzco y disparo" también cuando el arma no pasa la puerta: eso es la
+	// línea base contra la que se compara la mecánica. Mismos valores, mismo orden
+	// de decisión que antes (solo se adelanta el cálculo).
+	bool fireHeld = CPad::GetPad(0)->GetCarGunFired();
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
@@ -3879,6 +4372,18 @@ CAutomobile::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
+	pDriver->DriveByTraceState("car", fireHeld, lookingLeft, lookingRight);
+
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
+
+	CWeapon *weapon = pDriver->GetWeapon();
+	// Sección 2 (P2): con VICEEXT_DRIVEBY_WIDE las pistolas también disparan desde
+	// el coche (sin el define, esta llamada es el chequeo vanilla de slot 5).
+	if(!pDriver->CanDoDriveByWithCurrentWeapon())
+		return;
+
+	weapon->Update(pDriver->m_audioEntityId, nil);
 
 	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 	AnimationId leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
@@ -3905,9 +4410,18 @@ CAutomobile::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				weapon->FireFromCar(this, lookingLeft, true);
-				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+			if (fireHeld && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				// Sección 2 (P2): la traza va DESPUÉS del disparo y solo si salió, así
+				// que una línea `DRIVEBY shot` es un disparo de verdad (y lleva la
+				// animación usada: la prueba de que no es la de conducir).
+				// Sección 2 (P4): la cadencia sale del ARMA (weapon.dat) y no de un
+				// 70 ms fijo (era la del SMG: con pistola disparaba como metralleta).
+				uint32 shotDelay = weapon->GetDriveByShotDelay();
+				if (weapon->FireFromCar(this, lookingLeft, true))
+					pDriver->DriveByTraceShot("car", pDriver->m_pMyVehicle->bLowVehicle
+						? (lookingLeft ? "left-lo" : "right-lo")
+						: (lookingLeft ? "left" : "right"), shotDelay);
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + shotDelay;
 			}
 		}
 	}else{

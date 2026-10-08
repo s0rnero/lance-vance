@@ -2000,9 +2000,9 @@ CShadows::CastShadowEntityXY(CEntity *pEntity,  float fStartX, float fStartY, fl
 
 						CVector p = List[idx];
 						
-						List[idx].x = p.y * pEntity->GetForward().x + p.x * pEntity->GetRight().x + pEntity->GetPosition().x;
-						List[idx].y = p.y * pEntity->GetForward().y + p.x * pEntity->GetRight().y + pEntity->GetPosition().y;
-						List[idx].z = p.z + pEntity->GetPosition().z;
+						List[idx].x = p.y * pEntity->GetForward().x + p.x * pEntity->GetRight().x + p.z * pEntity->GetUp().x + pEntity->GetPosition().x;
+						List[idx].y = p.y * pEntity->GetForward().y + p.x * pEntity->GetRight().y + p.z * pEntity->GetUp().y + pEntity->GetPosition().y;
+						List[idx].z = p.z * pEntity->GetUp().z + pEntity->GetPosition().z;
 					}
 
 					

@@ -1278,8 +1278,34 @@ bool CStream::Open(const char* filename, uint32 overrideSampleRate)
 #ifdef AUDIO_OAL_USE_MPG123
 	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".mp3")], ".mp3"))
 		m_pSoundFile = new CMP3File(m_aFilename);
-	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".adf")], ".adf"))
-		m_pSoundFile = new CADFFile(m_aFilename);
+	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".adf")], ".adf")){
+		// Web: aceptar tanto ADF original (XOR 0x22) como MP3 plano con
+		// extensión .adf (conversión ligera estilo revcDOS: ffmpeg 22kHz).
+		// Sniff previo del sync MP3 (0xFFE) para no escupir errores de
+		// mpg123 al probar el lector equivocado. Nativo intacto.
+		bool isPlainMp3 = false;
+		FILE *sniff = fopen(m_aFilename, "rb");
+		if(sniff){
+			// MP3 plano: sync 0xFFE o etiqueta ID3 (nuestros convertidos
+			// llevan ID3 y el sniff viejo los mandaba al lector XOR,
+			// que escupía el error "junk" y costaba una apertura fallida).
+			uint8 hdr[10];
+			size_t n = fread(hdr, 1, sizeof(hdr), sniff);
+			if(n >= 2 && ((hdr[0] == 0xFF && (hdr[1] & 0xE0) == 0xE0) ||
+			   (n >= 3 && hdr[0] == 'I' && hdr[1] == 'D' && hdr[2] == '3')))
+				isPlainMp3 = true;
+			fclose(sniff);
+		}
+		if(isPlainMp3)
+			m_pSoundFile = new CMP3File(m_aFilename);
+		else{
+			m_pSoundFile = new CADFFile(m_aFilename);
+			if(m_pSoundFile && !m_pSoundFile->IsOpened()){
+				delete m_pSoundFile;
+				m_pSoundFile = new CMP3File(m_aFilename);
+			}
+		}
+	}
 #endif
 	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".vb")], ".VB"))
 		m_pSoundFile = new CVbFile(m_aFilename, overrideSampleRate);
@@ -1704,20 +1730,40 @@ void CStream::Update()
 		}
 #endif
 
-		ALint totalBuffers[2] = {0, 0};
-		ALint buffersProcessed[2] = {0, 0};
+	ALint totalBuffers[2] = {0, 0};
+	ALint buffersProcessed[2] = {0, 0};
 
-		// Relying a lot on left buffer states in here
+	// Relying a lot on left buffer states in here
 
-		do
-		{
-			//alSourcef(m_pAlSources[0], AL_ROLLOFF_FACTOR, 0.0f);
-			alGetSourcei(m_pAlSources[0], AL_BUFFERS_QUEUED, &totalBuffers[0]);
-			alGetSourcei(m_pAlSources[0], AL_BUFFERS_PROCESSED, &buffersProcessed[0]);
-			//alSourcef(m_pAlSources[1], AL_ROLLOFF_FACTOR, 0.0f);
-			alGetSourcei(m_pAlSources[1], AL_BUFFERS_QUEUED, &totalBuffers[1]);
-			alGetSourcei(m_pAlSources[1], AL_BUFFERS_PROCESSED, &buffersProcessed[1]);
-		} while (buffersProcessed[0] != buffersProcessed[1]);
+#ifdef __EMSCRIPTEN__
+	// Web: los dos sources estéreo pueden desincronizarse (Web Audio) o el
+	// bridge JS puede no escribir el out-param; eso dejaba este do/while
+	// girando para siempre (freeze en cinemáticas con speech). Acotar y, si
+	// persiste el desacuerdo, seguir con el izquierdo como ya hace el resto.
+	int syncTries = 0;
+#endif
+	do
+	{
+		//alSourcef(m_pAlSources[0], AL_ROLLOFF_FACTOR, 0.0f);
+		alGetSourcei(m_pAlSources[0], AL_BUFFERS_QUEUED, &totalBuffers[0]);
+		alGetSourcei(m_pAlSources[0], AL_BUFFERS_PROCESSED, &buffersProcessed[0]);
+		//alSourcef(m_pAlSources[1], AL_ROLLOFF_FACTOR, 0.0f);
+		alGetSourcei(m_pAlSources[1], AL_BUFFERS_QUEUED, &totalBuffers[1]);
+		alGetSourcei(m_pAlSources[1], AL_BUFFERS_PROCESSED, &buffersProcessed[1]);
+#ifdef __EMSCRIPTEN__
+		if (++syncTries >= 8) {
+			if (buffersProcessed[0] != buffersProcessed[1]) {
+				static int desyncLog = 0;
+				if (++desyncLog % 300 == 1)
+					printf("[audio] sources desync, sigo con izquierdo (%d vs %d)\n",
+						(int)buffersProcessed[0], (int)buffersProcessed[1]);
+				buffersProcessed[1] = buffersProcessed[0];
+				totalBuffers[1] = totalBuffers[0];
+			}
+			break;
+		}
+#endif
+	} while (buffersProcessed[0] != buffersProcessed[1]);
 
 		assert(buffersProcessed[0] == buffersProcessed[1]);
 

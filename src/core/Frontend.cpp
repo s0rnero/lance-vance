@@ -4,6 +4,10 @@
 #include "common.h"
 #ifndef PS2_MENU
 #include "crossplatform.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include "ondemand.h"
+#endif
 #include "platform.h"
 #include "Frontend.h"
 #include "Font.h"
@@ -462,6 +466,15 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	m_nMenuFadeAlpha = 0;
 	m_nOptionHighlightTransitionBlend = 0;
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
+
+	// TRAZA (sección 3, bloque C2): cambios de pantalla del front-end. Las
+	// sondas headless no pueden ver el menú, así que dejan aquí su rastro
+	// (`scr` = eMenuScreen, `only` = menú de guardado de zona).
+	{
+		char t[96];
+		snprintf(t, sizeof t, "FEMENU scr=%d opt=%d only=%d", m_nCurrScreen, m_nCurrOption, (int)m_OnlySaveMenu);
+		ODTRACES(t);
+	}
 }
 
 CMenuManager::CMenuManager()
@@ -925,6 +938,8 @@ CMenuManager::DoSettingsBeforeStartingAGame()
 	DMAudio.Service();
 	m_bShutDownFrontEndRequested = true;
 	m_bWantToRestart = true;
+	TheCamera.m_fMouseAccelHorzntl = 0.0025f;
+	TheCamera.m_fMouseAccelVertical = 0.003f;
 	DMAudio.SetEffectsFadeVol(0);
 	DMAudio.SetMusicFadeVol(0);
 	for (int i = 0; i < NUM_RADIOS; i++)
@@ -1063,7 +1078,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 			wchar* rightText = nil;
 			wchar* leftText;
-			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_9) {
 				CFont::SetColor(CRGBA(0, 0, 0, FadeIn(255)));
 				CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 				CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
@@ -1108,18 +1123,41 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 			if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action != MENUACTION_LABEL && aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName[0] != '\0') {
 
-				if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+				// Sección 3, bloque C2b (20/09): el número de RANURA se saca de la
+				// entrada, no de su posición en la lista. Hacía falta para poner la
+				// fila del autoguardado **la primera** (antes coincidía por
+				// casualidad: entrada i = ranura i, así que mover la fila habría
+				// enseñado el nombre y la fecha de otra partida).
+				int odEntrySlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
+				if (odEntrySlot >= SAVESLOT_1 && odEntrySlot <= SAVESLOT_9) {
+					int odSlot = odEntrySlot - SAVESLOT_1;
 					CFont::SetRightJustifyOff();
 
 					leftText = nil;
-					if (Slots[i] == SLOT_OK) {
-						leftText = GetNameOfSavedGame(i);
-						rightText = GetSavedGameDateAndTime(i);
+					if (Slots[odSlot] == SLOT_OK) {
+						leftText = GetNameOfSavedGame(odSlot);
+						rightText = GetSavedGameDateAndTime(odSlot);
 					}
 
 					if (!leftText || leftText[0] == '\0') {
-						sprintf(gString, "FEM_SL%d", i + 1);
-						leftText = TheText.Get(gString);
+#ifdef VICEEXT_AUTOSAVE
+						if (odEntrySlot == SAVESLOT_9) {
+							// El jugador quiere leer "autoguardado" aquí. El GXT del mod
+							// sólo trae `FEM_SL9` (y en inglés: "Autosave File Not
+							// Present"), así que de momento se pinta el rótulo propio
+							// (el texto del motor es `uint16_t`, de ahí la tabla a mano);
+							// la clave traducida en los 6 idiomas es DATO y va pedida a
+							// la sección 1 (ver el plan de la sección 3, C2b).
+							static wchar odAutosaveLabel[] = {
+								'A','U','T','O','G','U','A','R','D','A','D','O', 0
+							};
+							leftText = odAutosaveLabel;
+						} else
+#endif
+						{
+							sprintf(gString, "FEM_SL%d", odSlot + 1);
+							leftText = TheText.Get(gString);
+						}
 					}
 				} else {
 					leftText = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName);
@@ -1418,7 +1456,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					int saveSlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
 						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS ||
-						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8
+						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
 #endif
@@ -1498,7 +1536,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					if (rightText) {
 						CFont::SetCentreOff();
 						CFont::SetRightJustifyOn();
-						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_9) {
 							CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 							CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
 						} else {
@@ -2437,6 +2475,19 @@ CMenuManager::DrawBackground(bool transitionCall)
 			m_nOptionHighlightTransitionBlend = 0;
 	}
 
+	// ---------------------------------------------------------------------------
+	// PORTADO — SilentPatch (MIT, © 2024 Adrian Zdanowicz "Silent")
+	//   https://github.com/CookiePLMonster/SilentPatch
+	//   SilentPatchVC/SilentPatchVC.cpp:2384 («OutroSplashFix» — «Fix the outro
+	//   splash flickering for a frame when fading in»)
+	// Qué se toma: la idea (el alfa del fade nunca debe salir de [0,255]).
+	//   Adaptación: el mod parchea el setter RGBA del binario original
+	//   (mov al → mov eax para no truncar a 8 bits); aquí se clampea el paso
+	//   del fade en origen (Min(..., 255)) — mismo criterio que
+	//   m_firstStartCounter — para que 240+20 no cruce a 260 (frame con alfa
+	//   260: el splash truncado a uint8 sale con alfa 4 y el logo VC con 251).
+	// Medible: criterio PASS = fundido del outro sin frame claro (jugador).
+	// ---------------------------------------------------------------------------
 	static uint32 LastFade = 0;
 
 	if (m_nMenuFadeAlpha < 255) {
@@ -2444,7 +2495,7 @@ CMenuManager::DrawBackground(bool transitionCall)
 		if (CTimer::GetTimeInMillisecondsPauseMode() - LastFade > 30
 			|| forceFadeInCounter > 30
 			) {
-			m_nMenuFadeAlpha += 20;
+			m_nMenuFadeAlpha = Min(m_nMenuFadeAlpha + 20, 255);
 			if (m_firstStartCounter < 255) {
 				m_firstStartCounter = Min(m_firstStartCounter + 20, 255);
 			}
@@ -3287,6 +3338,12 @@ CMenuManager::SaveSettings()
 #else
 	m_lastWorking3DAudioProvider = m_nPrefsAudio3DProviderIndex;
 	SaveINISettings();
+#endif
+#ifdef __EMSCRIPTEN__
+	// Web: /userfiles es IDBFS; persistir ajustes al momento (el sync de
+	// beforeunload casi nunca completa). Punto único: todo cambio de
+	// ajustes pasa por SaveSettings().
+	EM_ASM({ try { OD.syncUserfiles('settings'); } catch (e) { console.log('[od] flush settings no disponible'); } });
 #endif
 }
 
@@ -4762,7 +4819,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
 
-				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8) {
+				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9) {
 					m_nCurrSaveSlot = saveSlot - SAVESLOT_1;
 					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
 						if (m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
@@ -4776,6 +4833,17 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			}
 			case MENUACTION_NEWGAME:
 				DoSettingsBeforeStartingAGame();
+#ifdef __EMSCRIPTEN__
+				// TRAZA FUSIONADA: petición de NEW GAME (sin load). Distingue
+				// wipes legítimos (usuario) de espurios en odtrace.log.
+				{
+					char t[160];
+					snprintf(t, sizeof t, "WR newgame-req screen=%d load=%d",
+						m_nCurrScreen, (int)m_bWantToLoad);
+					ODTRACES(t);
+					printf("[want] %s\n", t);
+				}
+#endif
 				break;
 #ifdef LEGACY_MENU_OPTIONS
 			case MENUACTION_RELOADIDE:
@@ -4783,6 +4851,16 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				break;
 #endif
 			case MENUACTION_RESUME_FROM_SAVEZONE:
+#ifdef VICEEXT_SAVE_ANYWHERE
+				// Sección 3: "cancelar"/"aceptar" de las pantallas de guardado.
+				// Desde una zona de guardado se sale al juego (de serie). Si el
+				// menú de guardado se abrió desde el menú de pausa ("Saving
+				// anywhere"), vuelve al menú de pausa.
+				if (!m_OnlySaveMenu) {
+					SwitchToNewScreen(MENUPAGE_PAUSE_MENU);
+					break;
+				}
+#endif
 				RequestFrontEndShutDown();
 				break;
 			case MENUACTION_LOADRADIO:
@@ -4808,7 +4886,57 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
 
+#ifdef VICEEXT_AUTOSAVE
+				// Sección 3, C2b (20/09): la ranura del autoguardado NO se puede
+				// pisar con un guardado normal (lo pidió el jugador: "ese slot no
+				// se podrá rescibir por una partida de carga normal, sólo el
+				// autoguardado podría hacerlo"). La pantalla de guardar ya no la
+				// lista; esto es el cinturón de seguridad del camino del opcode.
+				if (saveSlot == SAVESLOT_9 && !ViceExtAutosaveInProgress) {
+#ifdef __EMSCRIPTEN__
+					{
+						char t[120];
+						snprintf(t, sizeof t, "VICEEXT save-anywhere rechazado motivo=ranura-autosave slot=%d", saveSlot);
+						ODTRACES(t);
+					}
+#endif
+					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
+					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
+					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_SAV", 8);
+					break;
+				}
+#endif
 				if (saveSlot >= 2 && saveSlot <= 9) {
+#ifdef VICEEXT_SAVE_ANYWHERE
+					// Sección 3 (Vice Extended, v2.5 "Saving anywhere"): si NO venimos
+					// de una zona de guardado (eso es `m_OnlySaveMenu`), antes de
+					// pisar la ranura se exigen las tres condiciones del mod (sin
+					// misión, sin nivel de búsqueda y parado). Si no se cumplen, se
+					// avisa con FES_SAV ("You cannot save the game at this time").
+					if (!m_OnlySaveMenu && !ViceExtCanSaveAnywhere()) {
+						SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
+						strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
+						strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_SAV", 8);
+#ifdef __EMSCRIPTEN__
+						// TRAZA (C2): guardado en cualquier sitio RECHAZADO. Una línea por
+						// intento del jugador; con ella se distingue "el guardado rechazó"
+						// de "el menú no llegó a abrirse".
+						{
+							char t[128];
+							snprintf(t, sizeof t, "VICEEXT save-anywhere rechazado opt=%d slot=%d", m_nCurrOption, saveSlot);
+							ODTRACES(t);
+						}
+#endif
+						break;
+					}
+#ifdef __EMSCRIPTEN__
+					{
+						char t[128];
+						snprintf(t, sizeof t, "VICEEXT save-anywhere aceptado opt=%d zona=%d", m_nCurrOption, (int)m_OnlySaveMenu);
+						ODTRACES(t);
+					}
+#endif
+#endif
 					m_nCurrSaveSlot = m_nCurrOption;
 					SwitchToNewScreen(MENUPAGE_SAVE_OVERWRITE_CONFIRM);
 				}
@@ -5019,10 +5147,10 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		if (!goBack) {
 #ifdef FIX_BUGS
 			int saveSlot = aScreens[currScreen].m_aEntries[currOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[currOption] != SLOT_OK)
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9 && Slots[currOption] != SLOT_OK)
 #else
 			int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[m_nCurrOption] != SLOT_OK)
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9 && Slots[m_nCurrOption] != SLOT_OK)
 #endif
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_FAIL, 0);
 			else
@@ -5457,7 +5585,9 @@ CMenuManager::ProcessFileActions()
 			}
 			if (doingMissionRetry) {
 				RetryMission(MISSION_RETRY_TYPE_BEGIN_RESTARTING);
-				m_nCurrSaveSlot = SLOT_COUNT;
+				// Sección 3: la ranura del quicksave de misión (fichero 9), que es
+				// la que escribe SaveGameForPause(SAVE_TYPE_QUICKSAVE_FOR_*).
+				m_nCurrSaveSlot = PAUSE_SAVE_SLOT;
 				doingMissionRetry = false;
 			}
 #endif
@@ -5473,9 +5603,19 @@ CMenuManager::ProcessFileActions()
 				if (!m_bGameNotLoaded)
 					MessageScreen("FELD_WR", true);
 #endif
-				DoSettingsBeforeStartingAGame();
-				m_bWantToLoad = true;
-			} else
+			DoSettingsBeforeStartingAGame();
+			m_bWantToLoad = true;
+#ifdef __EMSCRIPTEN__
+			// TRAZA FUSIONADA: petición de LOAD (pantalla + slot). Va a odtrace.
+			{
+				char t[160];
+				snprintf(t, sizeof t, "WR load-req screen=%d slot=%d load=%d",
+					m_nCurrScreen, m_nCurrSaveSlot, (int)m_bWantToLoad);
+				ODTRACES(t);
+				printf("[want] %s\n", t);
+			}
+#endif
+		} else
 				SwitchToNewScreen(MENUPAGE_NEW_GAME);
 
 			break;
@@ -5592,6 +5732,16 @@ CMenuManager::SwitchMenuOnAndOff()
 				m_bMenuActive = true;
 			else
 				m_bMenuActive = !m_bMenuActive;
+
+			// TRAZA (sección 3, bloque C2): apertura/cierre del menú. Desde una
+			// sonda headless Escape no siempre llega al motor, así que ésta es la
+			// prueba de que el menú de pausa se abrió de verdad.
+			{
+				char t[96];
+				snprintf(t, sizeof t, "FEMENU open=%d esc=%d start=%d", (int)m_bMenuActive,
+					(int)CPad::GetPad(0)->GetEscapeJustDown(), (int)CPad::GetPad(0)->GetStartJustDown());
+				ODTRACES(t);
+			}
 
 			if (m_bMenuActive) {
 				if (_InputMouseNeedsExclusive()) {
@@ -5764,16 +5914,30 @@ CMenuManager::DrawQuitGameScreen(void)
 	int alpha = m_nMenuFadeAlpha;
 #endif
 
+	// ---------------------------------------------------------------------------
+	// PORTADO — SilentPatch (MIT, © 2024 Adrian Zdanowicz "Silent")
+	//   https://github.com/CookiePLMonster/SilentPatch
+	//   SilentPatchVC/SilentPatchVC.cpp:4086 («Correct the duration of the outro
+	//   splash to 2.5 seconds»)
+	// Qué se toma: la idea y los números (75 ticks × ~33 ms ≈ 2,5 s a cualquier
+	//   fps). Adaptación: el mod parchea dos constantes del binario original
+	//   (tick 10→32 ms, cuenta 150→75); aquí se cambian las mismas constantes en
+	//   origen y se desactiva MUCH_SHORTER_OUTRO_SCREEN (config.h:454) para que el
+	//   outro dure lo legible en vez de 750 ms.
+	// Medible: criterio PASS = el splash del outro se ve ≈2,5 s y sale solo
+	//   (jugador; el tick usa GetTimeInMillisecondsPauseMode ⇒ sin fps fijos).
+	// ---------------------------------------------------------------------------
 #ifndef MUCH_SHORTER_OUTRO_SCREEN
 	static uint32 lastTickIncrease = 0;
-	if (alpha == 255 && CTimer::GetTimeInMillisecondsPauseMode() - lastTickIncrease > 10) {
+	// SilentPatch :4086 — el tick original (>10 ms) daba 1,5-5 s según fps
+	if (alpha == 255 && CTimer::GetTimeInMillisecondsPauseMode() - lastTickIncrease > 32) {
 		exitSignalTimer++;
 		lastTickIncrease = CTimer::GetTimeInMillisecondsPauseMode();
 	}
 #else
 	static uint32 firstTick = CTimer::GetTimeInMillisecondsPauseMode();
 	if (alpha == 255 && CTimer::GetTimeInMillisecondsPauseMode() - firstTick > 750) {
-		exitSignalTimer = 150;
+		exitSignalTimer = 75;
 	}
 #endif
 	static CSprite2d *splash = nil;
@@ -5790,7 +5954,7 @@ CMenuManager::DrawQuitGameScreen(void)
 #endif
 
 	splash->Draw(CRect(MENU_X_LEFT_ALIGNED(0.f), 0, MENU_X_RIGHT_ALIGNED(0.f), SCREEN_HEIGHT), CRGBA(255, 255, 255, alpha));
-	if (alpha == 255 && exitSignalTimer == 150)
+	if (alpha == 255 && exitSignalTimer == 75)
 		RsEventHandler(rsQUITAPP, nil);
 
 	m_bShowMouse = false;

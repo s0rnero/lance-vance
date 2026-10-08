@@ -18,8 +18,10 @@
 #include "GenericGameStorage.h"
 #endif
 #include "Messages.h"
+#include "ondemand.h"
 #include "Pad.h"
 #include "Particle.h"
+#include "PedArbiter.h"
 #include "Phones.h"
 #include "Population.h"
 #include "Pools.h"
@@ -1002,7 +1004,9 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 		// PC shit
 		static int nCounter = 0;
 		nCounter = Max(0, nCounter - 1);
-		if (!pPed->GetWeapon()->IsTypeMelee() && !bTargetting) {
+		bool bAimCam = TheCamera.Using1stPersonWeaponMode() || TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam();
+		bool bSwimAim = ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR);
+		if (!pPed->GetWeapon()->IsTypeMelee() && !bTargetting && bAimCam && !bSwimAim) {
 			if ((pTestedPed->GetPosition() - TheCamera.GetPosition()).Magnitude() < 10.0f) {
 				CVector vTestedPos(pTestedPed->GetPosition().x, pTestedPed->GetPosition().y, pTestedPed->GetPosition().z + 0.4);
 				CVector vScreenPos;
@@ -1025,6 +1029,13 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 					}
 				}
 			}
+		}
+		{
+			char tt[128];
+			snprintf(tt, sizeof tt, "TGTGUN base=%d heur=%d aimcam=%d nado=%d melee=%d",
+				(int)bTargetting, nCounter, (int)bAimCam, (int)bSwimAim,
+				(int)pPed->GetWeapon()->IsTypeMelee());
+			ODTRACES(tt);
 		}
 		UpdateCompareFlag(bTargetting);
 		return 0;

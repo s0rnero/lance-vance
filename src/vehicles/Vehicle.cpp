@@ -32,6 +32,7 @@
 #include "Timecycle.h"
 #include "Weather.h"
 #include "Coronas.h"
+#include "NodeName.h"
 #include "SaveBuf.h"
 
 bool CVehicle::bWheelsOnlyCheat;
@@ -1172,6 +1173,14 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 	case WEAPONTYPE_MINIGUN:
 	case WEAPONTYPE_HELICANNON:
 	case WEAPONTYPE_UZI_DRIVEBY:
+	// Vice Extended (balas como su arma de serie equivalente)
+	case WEAPONTYPE_BERETTA:
+	case WEAPONTYPE_DESERT_EAGLE:
+	case WEAPONTYPE_SHOTGUN2:
+	case WEAPONTYPE_UZIOLD:
+	case WEAPONTYPE_AK47:
+	case WEAPONTYPE_M16:
+	case WEAPONTYPE_STEYR:
 		if (bBulletProof)
 			return;
 		bFrightensDriver = true;
@@ -1204,9 +1213,11 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		int accuracy = 0;
 		switch(weaponType){
 		case WEAPONTYPE_COLT45:
+		case WEAPONTYPE_BERETTA:	// Vice Extended
 			accuracy = 10;
 			break;
 		case WEAPONTYPE_PYTHON:
+		case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
 			if(!((CPed*)damagedBy)->IsPlayer())
 				accuracy = 64;
 			break;
@@ -1214,6 +1225,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		case WEAPONTYPE_STUBBY_SHOTGUN:
 		case WEAPONTYPE_M60:
 		case WEAPONTYPE_HELICANNON:
+		case WEAPONTYPE_SHOTGUN2:	// Vice Extended
 			accuracy = 25;
 			break;
 		case WEAPONTYPE_TEC9:
@@ -1221,10 +1233,14 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		case WEAPONTYPE_SILENCED_INGRAM:
 		case WEAPONTYPE_MP5:
 		case WEAPONTYPE_UZI_DRIVEBY:
+		case WEAPONTYPE_UZIOLD:	// Vice Extended
 			accuracy = 15;
 			break;
 		case WEAPONTYPE_M4:
 		case WEAPONTYPE_RUGER:
+		case WEAPONTYPE_AK47:	// Vice Extended
+		case WEAPONTYPE_M16:
+		case WEAPONTYPE_STEYR:
 			if(!((CPed*)damagedBy)->IsPlayer())
 				accuracy = 15;
 			break;
@@ -1431,6 +1447,36 @@ CVehicle::ExtinguishCarFire(void)
 	}
 }
 
+// Sección 3: busca recursivamente un frame por nombre en el clump del vehículo
+// (mismo patrón que CClumpModelInfo::FindFrameFromNameWithoutIdCB, pero
+// público). Lo usan el depósito de gasolina (C3.3) y los intermitentes (C3.4).
+struct ViceExtFrameSearch {
+	const char *name;
+	RwFrame *found;
+};
+
+static RwFrame *ViceExtFindDummyFrameCB(RwFrame *frame, void *data)
+{
+	ViceExtFrameSearch *search = (ViceExtFrameSearch*)data;
+	char *nodeName = GetFrameNodeName(frame);
+	if (nodeName && !CGeneral::faststricmp(nodeName, search->name)) {
+		search->found = frame;
+		return nil;
+	}
+	RwFrameForAllChildren(frame, ViceExtFindDummyFrameCB, data);
+	return search->found ? nil : frame;
+}
+
+RwFrame *
+CVehicle::FindDummyFrame(const char *name)
+{
+	if (GetClump() == nil)
+		return nil;
+	ViceExtFrameSearch search = { name, nil };
+	RwFrameForAllChildren(RpClumpGetFrame(GetClump()), ViceExtFindDummyFrameCB, &search);
+	return search.found;
+}
+
 bool
 CVehicle::ShufflePassengersToMakeSpace(void)
 {
@@ -1583,6 +1629,9 @@ CVehicle::IsLawEnforcementVehicle(void)
 	case MI_BARRACKS:
 	case MI_FBIRANCH:
 	case MI_VICECHEE:
+#ifdef VICEEXT_POLICE_BIKE
+	case MI_VEEXT_POLWINTERG:
+#endif
 		return true;
 	default:
 		return false;
@@ -1602,6 +1651,12 @@ CVehicle::UsesSiren(void)
 	case MI_PREDATOR:
 	case MI_FBIRANCH:
 	case MI_VICECHEE:
+#ifdef VICEEXT_POLICE_BIKE_LIGHTS
+	// Vice Extended: la moto policial (6507) del mod. Sin esta entrada la
+	// moto no tiene sirena: ni se conmuta con el claxon, ni suena, ni entra
+	// en el camino de las coronas (CarCtrl/CarAI también se guían por aquí).
+	case MI_VEEXT_POLWINTERG:
+#endif
 		return true;
 	default:
 		return false;

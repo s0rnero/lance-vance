@@ -9,21 +9,39 @@ enum Config {
 	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
-	MAX_CDIMAGES = 8, // additional cdimages
+	// Vice Extended añade 8 IMG propias (anims/generic/objects/peds/player/
+	// radar/vehicles/weapons) además de gta3.img. Con 8 el CdStreamAddImage
+	// petaba en el ASSERT; 12 deja margen. Coste: gOdLoose[] + un fd por imagen.
+	MAX_CDIMAGES = 12, // additional cdimages
 	MAX_CDCHANNELS = 5,
 
-	MODELINFOSIZE = 6500,	// 4900 on PS2
-	TXDSTORESIZE = 1385,
-	COLSTORESIZE = 31,
+	// Vice Extended usa IDs por encima de 6500 (armas 6661-6669, coches
+	// 6500-6599). Sin subirlo, esos IDs caen fuera de ms_modelInfoPtrs y de
+	// ms_aInfoForModel: modelo/colisión nulos o tabla corrupta.
+	MODELINFOSIZE = 6700,	// 6500 vanilla, 4900 on PS2
+	// Contador de slots de TXD. El gta3.dir del port tiene 1389 entradas .txd
+	// tras importar weapons.img (pack 3) y newVehicles.img (pack 4): con 1385
+	// (que era el número justo antes de estos packs) `CTxdStore::AddTxdSlot`
+	// revienta con ASSERT(def) al cargar el directorio. Margen para los bloques
+	// que quedan (el resto de IMG del mod traen más TXD).
+	TXDSTORESIZE = 1500,
+	// 31 = las 30 .col de los mapas + GENERIC.COL (justo al límite). Vice
+	// Extended añade bryx.col, plusroad.col (objects.img) y newgen.col
+	// (COLFILE): 34 slots -> sin subirlo, CColStore::AddColSlot peta
+	// (ASSERT(def) en ColStore.cpp:48) al cargar el directorio de la IMG.
+	COLSTORESIZE = 48,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,
 
 	SIMPLEMODELSIZE = 3885,
 	TIMEMODELSIZE = 385,
 	CLUMPMODELSIZE = 5,
-	WEAPONMODELSIZE = 37,
+	// 37 armas de serie (258-294) + las 10 del mod (6660-6669, sección `weap`
+	// de su default.ide). Sin este hueco, CModelInfo::AddWeaponModel no puede
+	// crear sus CWeaponModelInfo y SetWeaponInfo escribe sobre un puntero nulo.
+	WEAPONMODELSIZE = 47,
 	PEDMODELSIZE = 130,
-	VEHICLEMODELSIZE = 110,
+	VEHICLEMODELSIZE = 130, // 110 vanilla; el mod añade coches
 	TWODFXSIZE = 1210,
 
 	MAXVEHICLESLOADED = 50, // 70 on mobile
@@ -34,7 +52,7 @@ enum Config {
 	NUMPTRNODES = 50000,
 	NUMENTRYINFOS = 3200,
 	NUMPEDS = 140,
-	NUMVEHICLES = 110,
+	NUMVEHICLES = 130, // 110 vanilla; limits.ini del mod pide 130
 	NUMBUILDINGS = 7000,
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
@@ -43,8 +61,14 @@ enum Config {
 	NUMCOLMODELS = 4400,
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
-	NUMANIMBLOCKS = 35,
-	NUMANIMATIONS = 450,
+	// 29 bloques de serie (28 .ifp de gta3.img + ped.ifp) + 3 del mod
+	// (deagle/steyr/rocket) + margen. cuts.img no cuenta: CutsceneMgr carga
+	// un IFP a la vez.
+	NUMANIMBLOCKS = 40,
+	// 410 de serie + 38 nuevas del ped.ifp del mod + 24 de sus bloques de
+	// moto + 2 de buddy + 12 de deagle/steyr/rocket = 486, con margen para
+	// un bloque de cuts a la vez.
+	NUMANIMATIONS = 512,
 
 	NUMTEMPOBJECTS = 40,
 
@@ -351,6 +375,91 @@ enum Config {
 #define BIND_VEHICLE_FIREWEAPON // Adds ability to rebind fire key for 'in vehicle' controls
 #define BUTTON_ICONS // use textures to show controller buttons
 
+// Vice Extended: paridad con su `features.ini` (el mod lo trae con esto puesto).
+// Cada define replica un toggle SUYO que se puede reproducir con código local;
+// los que están en 0 en su ini no se portan y los que piden su renderer o el
+// taller de tuning quedan fuera (ver .agents/plans/vice-extended-inclusion.md).
+#define VICEEXT_SWIMMING		// EnableSwimming=1: nadar sin morir (el jugador no se ahoga)
+#define VICEEXT_RECOIL			// RecoilWhenFiring=1: el disparo acusa retroceso
+#define VICEEXT_NO_CAR_BOUNCE	// PlayerDoesntBounceAwayFromMovingCar=1
+#define VICEEXT_SPRINT_HEAVY	// v1.5: esprintar con armas pesadas
+#define VICEEXT_POLICE_BIKE_LIGHTS // 6507: sirena (coronas rojo/azul) en la moto policial
+#define VICEEXT_HIDE_COPS		// v1.0 "Changed wanted system": esconderse de la policía (sección 2, bloque P1)
+#define VICEEXT_FIRST_PERSON	// v1.5 "First-person view": conmutador de vista en 1ª persona (sección 3, bloque C1)
+#define VICEEXT_DRIVEBY_WIDE	// v1.5 "Drive-by shooting": las pistolas (una mano) valen también para disparar desde coche/moto/barco (sección 2, bloque P2)
+#define VICEEXT_WEAPON_SIGHTS	// columna 27 de su weapon.dat ("weapon sight") + su weaponSights.txd (sección 1, bloque D6)
+#define VICEEXT_HINT_KEYS		// v3.0 "PC key icons in game hints": los avisos pintan el icono de la tecla (su pcbtns.txd) en vez de su nombre (sección 1, bloque D7)
+#define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
+#define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
+#define VICEEXT_MANUAL_RELOAD	// v2.5 "Reloading a weapon on the key": recarga con tecla (R por defecto) (sección 3, bloque C3.1)
+#define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
+#define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
+#define VICEEXT_CROUCH			// v1.5 "Fixed ... crouching animations": agachado a pie con la tecla de la acción PED_DUCK (C) (sección 3, bloque C5)
+// R14 (12ª partida, 22/09): cuánto baja el OBJETIVO de la cámara mientras se
+// está agachado. Vive aquí porque lo usan los dos procesos de cámara (la bajada)
+// y la traza `CROUCH2` de PlayerPed.cpp (el valor que se está aplicando).
+// Historia: −0,55 (R6/H1) daba un descenso MEDIDO de sólo 0,27 m —al bajar el
+// objetivo, la cámara se separa del ped y vuelve a subir—, así que el bloque H
+// del verificador lo marcaba como "la cámara no baja agachado".
+//
+// R22 (18ª partida, 23/09): vuelve a −0,55 y el bloque H mide bien. El −0,95 se
+// puso porque con −0,55 el descenso medido se quedaba en 0,27 m: se le subió la
+// constante al doble hasta pasar el umbral del test, que es la forma más rápida
+// de romper la cámara. Y la rompió: con −0,95 el objetivo cae POR DEBAJO de la
+// cabeza agachada (la cabeza baja 0,55 m), la cámara apunta al cuerpo y, en la
+// cámara de apuntar (mucho más cerca), termina DENTRO del ped. Medido en la
+// partida del jugador (18ª): agachado + apuntar (botón derecho), `camdist=0,61`
+// en vez de los ~2 m de la cámara de apuntar, y la captura del arnés sale con
+// Tommy llenando la pantalla. Ahora la constante es la bajada REAL de la cabeza
+// y el test mide lo que de verdad importa: que la cámara no acabe dentro del
+// cuerpo (`camdist` ≥ 1,5 m agachado, con y sin apuntado).
+#define VICEEXT_CROUCH_CAM_DROP	0.55f
+#define VICEEXT_CLIMB			// bloque E1 (su features.ini trae EnableClimbing=0, pero el jugador lo pidió):
+							// saltar mirando a un borde bajo trepa con los clips CLIMB_* del mod (sección 2)
+#define VICEEXT_AIM_WALK		// v1.5: apuntando solo se camina (nunca correr/esprintar) y el agachado de
+							// andar del mod (Crouch_forward/backward) — sección 2, 5ª partida
+#define VICEEXT_ROCKET_3RD_PERSON // v3.0 "Enable third-person aiming from a rocket launcher" (su
+							// features.ini: RocketLauncherThirdPersonAiming=1): el lanzacohetes apunta en
+							// TERCERA persona (no entra en el modo francotirador/1ª persona que clava al
+							// jugador en el sitio) y se puede andar apuntando. El misil sigue saliendo
+							// hacia donde mira la cámara (`ProjectileInfo` usa su matriz).
+// ClassicAXIS (gennariarmando/DK22Pac, SIN LICENSE → reimplementación con atribución):
+// su sección [ClassicAxis] del INI de 2022 (`mods/Classic AXIS/ClassicAxisVC.ini`)
+// y su ley de cámara propia de apuntado (`CamNew.cpp Process_AimWeapon`,
+// cláusula 2 / ítem 4 del 12-handoff). Sin este define no se compila ninguna
+// de las leyes de ClassicAXIS (plan `apuntado-classicaxis-100` §10.2, B0-B11).
+// Lo que NO entra, y por qué (decisiones del jugador del 27/09):
+//   · Stick crudo sin zona muerta  → se queda `LookAroundLeftRight()` (§5.4b)
+//   · `modernCamera`              → fuera, además su default se desconoce (§5.4c)
+//   · Acelerador horizontal para el ratón vertical → fuera, es un typo del mod (§5.4d)
+//   · Botón de recentrar        → fuera, el jugador lo quitó en ve65 (§5.4e)
+//   · `StoriesAimingCoords`       → sin conmutador natural, sin implementación (§9)
+//   · Ley de coche                → se queda la nuestra, no es del mod (§5.1a)
+//   · Near-clip dual              → es del GeniusZ, otro carril (§5.6)
+#define VICEEXT_AIM_CLASSICAXIS
+#define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
+#define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
+#define VICEEXT_BIKE_EXIT_SIDE
+
+#define VICEEXT_FIX_SILENTPATCH
+#define VICEEXT_FIX_WFP
+#define VICEEXT_FIX_FV
+#define VICEEXT_FIX_FV_ROTOR
+#define VICEEXT_POLICE_BIKE
+#define VICEEXT_NO_WHEEL_PIERCE
+#define VICEEXT_SKIP_PHONE_CALL
+
+// D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
+// LOD (petición del jugador: "que el LOD sea de más metros, +20"). Se suma a la
+// distancia de dibujado de cada modelo, así que son 20 m reales en todas.
+#define VICEEXT_LOD_EXTRA 20.0f
+// v2.5 "Remove zeros in the money in the HUD" (su features.ini:
+// `RemoveMoneyZerosInTheHud`). El HUD de reVC/VC pinta el dinero con ancho fijo
+// de 8 digitos y ceros a la izquierda (`$00001234`); con esto sale `$1234`.
+#define VICEEXT_MONEY_NO_ZEROS
+
+#define VICEEXT_PEDARBITER
+
 // Hud, frontend and radar
 #define PC_MENU
 #define FIX_RADAR			// use radar size from early version before R* broke it
@@ -367,7 +476,9 @@ enum Config {
 #	define TRIANGLE_BACK_BUTTON
 //#	define CIRCLE_BACK_BUTTON
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
-#define MUCH_SHORTER_OUTRO_SCREEN
+// PORTADO (SilentPatch :4086, ver CMenuManager::DrawQuitGameScreen): el outro
+// dura ≈2,5 s legibles (75 ticks × 33 ms) en vez de 750 ms.
+//#define MUCH_SHORTER_OUTRO_SCREEN
 // #define XBOX_MESSAGE_SCREEN			// Blue background, no "saved successfully press OK" screen etc.
 #	define CUSTOM_FRONTEND_OPTIONS
 
@@ -445,12 +556,19 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 #define AUDIO_CACHE // cache sound lengths to speed up the cold boot
 #define PS2_AUDIO_CHANNELS // increases the maximum number of audio channels to PS2 value of 43 (PC has 28 originally)
 #define PS2_AUDIO_PATHS // changes audio paths for cutscenes and radio to PS2 paths (needs vbdec on MSS builds)
+#ifdef __EMSCRIPTEN__
+	// PC retail assets ship .mp3/.wav (.adf radio), not PS2 .vb: use PC tables.
+	#undef PS2_AUDIO_PATHS
+#endif
 //#define AUDIO_OAL_USE_SNDFILE // use libsndfile to decode WAVs instead of our internal decoder
 #define AUDIO_OAL_USE_MPG123 // use mpg123 to support mp3 files
 #define PAUSE_RADIO_IN_FRONTEND // pause radio when game is paused
 #define ATTACH_RELEASING_SOUNDS_TO_ENTITIES // sounds would follow ped and vehicles coordinates if not being queued otherwise
 #define USE_TIME_SCALE_FOR_AUDIO // slow down/speed up sounds according to the speed of the game
+#ifndef __EMSCRIPTEN__
 #define MULTITHREADED_AUDIO // for streams. requires C++11 or later
+#endif
+// Web monohilo (como dos.zone): audio sincrono, sin std::thread.
 
 #ifdef AUDIO_OPUS
 #define AUDIO_OAL_USE_OPUS // enable support of opus files
@@ -490,6 +608,13 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 
 #ifdef __SWITCH__
 	#define USE_UNNAMED_SEM // named semaphores are unsupported on the switch
+#endif
+
+#ifdef __EMSCRIPTEN__
+	#define USE_UNNAMED_SEM // sem_open() is unsupported under Emscripten/pthreads
+	// Web/MEMFS: no generar models/txd.img (1.2GB regenerados en RAM en cada arranque);
+	// las texturas se cargan sueltas con decode DXT por software (gl3raster).
+	#undef USE_TXD_CDIMAGE
 #endif
 
 #endif // VANILLA_DEFINES

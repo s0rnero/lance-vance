@@ -88,6 +88,9 @@ public:
 	uint8 m_nDriveWheelsOnGroundPrev;
 	float m_fGasPedalAudio;
 	tWheelState m_aWheelState[2];
+#ifdef VICEEXT_FIX_FV
+	float m_fOdPhase;
+#endif
 
 	CBike(int32 id, uint8 CreatedBy);
 

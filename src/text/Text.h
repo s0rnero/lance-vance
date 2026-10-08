@@ -26,7 +26,7 @@ public:
 
 	CKeyArray(void) : entries(nil), numEntries(0) {}
 	~CKeyArray(void) { Unload(); }
-	void Load(size_t length, int file, size_t *offset);
+	size_t Load(size_t length, int file, size_t *offset); // D19: devuelve los bytes leidos
 	void Unload(void);
 	void Update(wchar *chars);
 	CKeyEntry *BinarySearch(const char *key, CKeyEntry *entries, int16 low, int16 high);
@@ -45,7 +45,7 @@ public:
 
 	CData(void) : chars(nil), numChars(0) {}
 	~CData(void) { Unload(); }
-	void Load(size_t length, int file, size_t* offset);
+	size_t Load(size_t length, int file, size_t* offset); // D19: devuelve los bytes leidos
 	void Unload(void);
 };
 
@@ -92,7 +92,7 @@ public:
 	wchar GetUpperCase(wchar c);
 	void UpperCase(wchar *s);
 	void GetNameOfLoadedMissionText(char *outName);
-	void ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *bytes_read);
+	size_t ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *bytes_read); // D18: devuelve los bytes leidos (0 = fin de fichero)
 	void LoadMissionText(char *MissionTableName);
 };
 

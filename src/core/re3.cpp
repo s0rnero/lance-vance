@@ -194,7 +194,15 @@ CustomFrontendOptionsPopulate(void)
 #define MINI_CASE_SENSITIVE
 #include "ini.h"
 
-mINI::INIFile ini("reVC.ini");
+mINI::INIFile ini(
+#ifdef __EMSCRIPTEN__
+	// Absolute: mINI reopens per read/write and the game's CWD changes all
+	// the time; /userfiles is IDBFS-persisted (see gta_vc_browser).
+	"/userfiles/reVC.ini"
+#else
+	"reVC.ini"
+#endif
+);
 mINI::INIStructure cfg;
 
 bool ReadIniIfExists(const char *cat, const char *key, uint32 *out)
@@ -322,7 +330,12 @@ const char *iniControllerActions[] = { "PED_FIREWEAPON", "PED_CYCLE_WEAPON_RIGHT
 	"VEHICLE_ACCELERATE", "VEHICLE_BRAKE", "VEHICLE_CHANGE_RADIO_STATION", "VEHICLE_HORN", "TOGGLE_SUBMISSIONS", "VEHICLE_HANDBRAKE", "PED_1RST_PERSON_LOOK_LEFT",
 	"PED_1RST_PERSON_LOOK_RIGHT", "VEHICLE_LOOKLEFT", "VEHICLE_LOOKRIGHT", "VEHICLE_LOOKBEHIND", "VEHICLE_TURRETLEFT", "VEHICLE_TURRETRIGHT", "VEHICLE_TURRETUP", "VEHICLE_TURRETDOWN",
 	"PED_CYCLE_TARGET_LEFT", "PED_CYCLE_TARGET_RIGHT", "PED_CENTER_CAMERA_BEHIND_PLAYER", "PED_LOCK_TARGET", "NETWORK_TALK", "PED_1RST_PERSON_LOOK_UP", "PED_1RST_PERSON_LOOK_DOWN",
-	"_CONTROLLERACTION_36", "TOGGLE_DPAD", "SWITCH_DEBUG_CAM_ON", "TAKE_SCREEN_SHOT", "SHOW_MOUSE_POINTER_TOGGLE", "UNKNOWN_ACTION" };
+	"_CONTROLLERACTION_36", "TOGGLE_DPAD", "SWITCH_DEBUG_CAM_ON", "TAKE_SCREEN_SHOT", "SHOW_MOUSE_POINTER_TOGGLE", "UNKNOWN_ACTION",
+	"PED_WALK"
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	,"SKIP_PHONE_CALL"
+#endif
+ }; // ClassicAXIS C17 `WalkKey`: al final para no desalinear el array con el enum
 
 const char *iniControllerTypes[] = { "kbd:", "2ndKbd:", "mouse:", "joy:" };
 
@@ -495,6 +508,27 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("Controller", "HeadBob1stPerson", &TheCamera.m_bHeadBob);
 	ReadIniIfExists("Controller", "HorizantalMouseSens", &TheCamera.m_fMouseAccelHorzntl);
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	// ClassicAXIS · sección [ClassicAxis] del INI de 2022 del mod, nombres verbatim.
+	// `ForceAutoAim` y los demás `bool` se leen como `bool*`; al guardar se
+	// promocionan a `int32` porque `StoreIni` no tiene sobrecarga `bool`.
+	// Si el INI no trae la sección se quedan los defaults del literal de
+	// `Camera.cpp`, que son los del mod.
+	ReadIniIfExists("ClassicAxis", "ForceAutoAim", &CCamera::s_viceExtAim.forceAutoAim);
+	ReadIniIfExists("ClassicAxis", "LockOnTargetType", &CCamera::s_viceExtAim.lockOnTargetType);
+	ReadIniIfExists("ClassicAxis", "ShowTriangleForMouseRecruit", &CCamera::s_viceExtAim.showTriangle);
+	ReadIniIfExists("ClassicAxis", "CameraCrosshairMultX", &CCamera::s_viceExtAim.crosshairMultX);
+	ReadIniIfExists("ClassicAxis", "CameraCrosshairMultY", &CCamera::s_viceExtAim.crosshairMultY);
+	ReadIniIfExists("ClassicAxis", "StoriesPointingArm", &CCamera::s_viceExtAim.storiesPointingArm);
+	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityX", &CCamera::s_viceExtAim.stickSensX);
+	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityY", &CCamera::s_viceExtAim.stickSensY);
+	ReadIniIfExists("ClassicAxis", "ZoomForAssaultRifles", &CCamera::s_viceExtAim.zoomForAssaultRifles);
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+	ReadIniIfExists("FirstPerson", "Near Clip on foot", &CCamera::s_viceExt1PNearClipOnFoot);
+	ReadIniIfExists("FirstPerson", "Near Clip in vehicle", &CCamera::s_viceExt1PNearClipInCar);
+	ReadIniIfExists("FirstPerson", "Mouse Sensitive", &CCamera::s_viceExt1PMouseSens);
+#endif
 	ReadIniIfExists("Controller", "InvertMouseVertically", &MousePointerStateHelper.bInvertVertically);
 	ReadIniIfExists("Controller", "DisableMouseSteering", &CVehicle::m_bDisableMouseSteering);
 	ReadIniIfExists("Controller", "Vibration", &FrontEndMenuManager.m_PrefsUseVibration);
@@ -604,6 +638,20 @@ void SaveINISettings()
 #endif
 	StoreIni("Controller", "HeadBob1stPerson", TheCamera.m_bHeadBob);
 	StoreIni("Controller", "HorizantalMouseSens", TheCamera.m_fMouseAccelHorzntl);
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	// ClassicAXIS · la misma sección, escritura. Guardar estos valores es lo que
+	// hace que un jugador que edite el INI a mano vea que se respeta: si la sección
+	// existe en su fichero, `LoadINISettings` gana antes de que se guarde nada.
+	StoreIni("ClassicAxis", "ForceAutoAim", (int32)CCamera::s_viceExtAim.forceAutoAim);
+	StoreIni("ClassicAxis", "LockOnTargetType", CCamera::s_viceExtAim.lockOnTargetType);
+	StoreIni("ClassicAxis", "ShowTriangleForMouseRecruit", (int32)CCamera::s_viceExtAim.showTriangle);
+	StoreIni("ClassicAxis", "CameraCrosshairMultX", CCamera::s_viceExtAim.crosshairMultX);
+	StoreIni("ClassicAxis", "CameraCrosshairMultY", CCamera::s_viceExtAim.crosshairMultY);
+	StoreIni("ClassicAxis", "StoriesPointingArm", (int32)CCamera::s_viceExtAim.storiesPointingArm);
+	StoreIni("ClassicAxis", "RightAnalogStickSensitivityX", CCamera::s_viceExtAim.stickSensX);
+	StoreIni("ClassicAxis", "RightAnalogStickSensitivityY", CCamera::s_viceExtAim.stickSensY);
+	StoreIni("ClassicAxis", "ZoomForAssaultRifles", (int32)CCamera::s_viceExtAim.zoomForAssaultRifles);
+#endif
 	StoreIni("Controller", "InvertMouseVertically", MousePointerStateHelper.bInvertVertically);
 	StoreIni("Controller", "DisableMouseSteering", CVehicle::m_bDisableMouseSteering);
 	StoreIni("Controller", "Vibration", FrontEndMenuManager.m_PrefsUseVibration);
@@ -983,6 +1031,17 @@ DebugMenuPopulate(void)
 				return;
 			SpawnCar(spawnCarId);
 		});
+		// Vice Extended: sus vehículos van después del rango vanilla, así que el
+		// selector de arriba no llega a ellos.
+		static const char *veextCarnames[] = {
+			"Streetfighter", "Perennial", "Trashmaster", "Hellenbach",
+			"Premier", "Manchez", "WinterGreen", "VCPD WinterGreen"
+		};
+		static int spawnVeextId = MI_VEEXT_FIRST_VEHICLE;
+		e = DebugMenuAddVar("Spawn", "Spawn ViceEx Car ID", &spawnVeextId, nil, 1,
+			MI_VEEXT_FIRST_VEHICLE, MI_VEEXT_LAST_VEHICLE, veextCarnames);
+		DebugMenuEntrySetWrap(e, true);
+		DebugMenuAddCmd("Spawn", "Spawn ViceEx Car", [](){ SpawnCar(spawnVeextId); });
 		static uint8 dummy;
 		carCol1 = DebugMenuAddVar("Spawn", "First colour", &dummy, nil, 1, 0, 255, nil);
 		carCol2 = DebugMenuAddVar("Spawn", "Second colour", &dummy, nil, 1, 0, 255, nil);
@@ -1232,9 +1291,22 @@ void re3_assert(const char *expr, const char *filename, unsigned int lineno, con
 
 	abort();
 #else
+#ifdef __EMSCRIPTEN__
+	// Web: un assert en ruta caliente (p. ej. reintento de carga por frame)
+	// inundaba consola + gamelog hasta matar la pestaña. Primeros 30
+	// completos, luego silencio (el juego sigue).
+	static int odAssertCount = 0;
+	if (odAssertCount < 30) {
+		odAssertCount++;
+		printf("\nREVC ASSERT FAILED\n\tFile: %s\n\tLine: %d\n\tFunction: %s\n\tExpression: %s\n",filename,lineno,func,expr);
+		if (odAssertCount == 30)
+			printf("(más asserts silenciados en web)\n");
+	}
+#else
 	// TODO
 	printf("\nREVC ASSERT FAILED\n\tFile: %s\n\tLine: %d\n\tFunction: %s\n\tExpression: %s\n",filename,lineno,func,expr);
 	assert(false);
+#endif
 #endif
 }
 #endif

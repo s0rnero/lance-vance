@@ -23,6 +23,7 @@
 #include "TempColModels.h"
 #include "WaterLevel.h"
 #include "World.h"
+#include "ondemand.h"
 
 #define OBJECT_REPOSITION_OFFSET_Z 2.0f
 
@@ -367,13 +368,28 @@ CWorld::ProcessLineOfSightSectorList(CPtrList &list, const CColLine &line, CColP
 			} else if(e->bUsesCollision)
 				colmodel = CModelInfo::GetColModel(e->GetModelIndex());
 
-			if(colmodel && CCollision::ProcessLineOfSight(line, e->GetMatrix(), *colmodel, point, mindist,
-			                                              ignoreSeeThrough, ignoreShootThrough))
+			bool chassisHit = colmodel && CCollision::ProcessLineOfSight(line, e->GetMatrix(), *colmodel, point, mindist,
+                                                             ignoreSeeThrough, ignoreShootThrough);
+			if(chassisHit)
 				entity = e;
 			if(carTyres && ((CVehicle*)e)->SetUpWheelColModel(&tyreCol) && CCollision::ProcessLineOfSight(line, e->GetMatrix(), tyreCol, tyreColPoint, tyreDist, false, ignoreShootThrough)){
 				float dp1 = DotProduct(line.p1 - line.p0, e->GetRight());
 				float dp2 = DotProduct(point.point - e->GetPosition(), e->GetRight());
-				if(tyreDist < mindist || dp1 < -0.85f && dp2 > 0.0f || dp1 > 0.85f && dp2 < 0.0f){
+#ifdef VICEEXT_NO_WHEEL_PIERCE
+				bool wheelWins = tyreDist < mindist || dp1 < -0.85f && dp2 > 0.0f || dp1 > 0.85f && dp2 < 0.0f ||
+					(chassisHit && (tyreColPoint.point - point.point).Magnitude() <= 0.5f);
+#else
+				bool wheelWins = tyreDist < mindist || dp1 < -0.85f && dp2 > 0.0f || dp1 > 0.85f && dp2 < 0.0f;
+#endif
+				if(wheelWins){
+#ifdef __EMSCRIPTEN__
+					{
+						char t[192];
+						snprintf(t, sizeof t, "SHOT rueda model=%d dist=%.2f pieza=%d",
+							(int)e->GetModelIndex(), (tyreColPoint.point - line.p0).Magnitude(), (int)tyreColPoint.pieceB);
+						ODTRACES(t);
+					}
+#endif
 					mindist = tyreDist;
 					point = tyreColPoint;
 					entity = e;
@@ -2091,9 +2107,18 @@ CWorld::Process(void)
 		CMessages::Process();
 		Players[PlayerInFocus].Process();
 		CRecordDataForChase::SaveOrRetrieveCarPositions();
-		if((CTimer::GetFrameCounter() & 7) == 1) {
+#ifdef VICEEXT_FIX_FV
+		static float odFallenPhase = 0.0f;
+		odFallenPhase += CTimer::GetTimeStep();
+		if(odFallenPhase >= 1024.0f)
+			odFallenPhase -= 1024.0f;
+		int32 odPhase = (int32)odFallenPhase;
+#else
+		int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
+		if((odPhase & 7) == 1) {
 			RemoveFallenPeds();
-		} else if((CTimer::GetFrameCounter() & 7) == 5) {
+		} else if((odPhase & 7) == 5) {
 			RemoveFallenCars();
 		}
 	}

@@ -10,6 +10,7 @@
 #include "CarCtrl.h"
 #include "CivilianPed.h"
 #include "Clock.h"
+#include "ControllerConfig.h"
 #include "CopPed.h"
 #include "Debug.h"
 #include "DMAudio.h"
@@ -17,8 +18,11 @@
 #include "FileMgr.h"
 #include "Frontend.h"
 #include "General.h"
-#ifdef MISSION_REPLAY
+#if defined(MISSION_REPLAY) || defined(VICEEXT_AUTOSAVE)
 #include "GenericGameStorage.h"
+#endif
+#if defined(__EMSCRIPTEN__) && (defined(VICEEXT_AUTOSAVE) || defined(VICEEXT_SKIP_PHONE_CALL))
+#include "ondemand.h" // web: ODTRACES -> odtrace.log (sección 3, C2)
 #endif
 #include "HandlingMgr.h"
 #include "Heli.h"
@@ -64,6 +68,11 @@ int32 CTheScripts::MultiScriptArray[MAX_NUM_MISSION_SCRIPTS];
 tBuildingSwap CTheScripts::BuildingSwapArray[MAX_NUM_BUILDING_SWAPS];
 CEntity* CTheScripts::InvisibilitySettingArray[MAX_NUM_INVISIBILITY_SETTINGS];
 CStoredLine CTheScripts::aStoredLines[MAX_NUM_STORED_LINES];
+#ifdef VICEEXT_AUTOSAVE
+// Sección 3 (Vice Extended): autosave de fin de misión (ver Script3.cpp y el
+// COMMAND_TERMINATE_THIS_SCRIPT de este fichero).
+bool ViceExtAutosavePending = false;
+#endif
 bool CTheScripts::DbgFlag;
 uint32 CTheScripts::OnAMissionFlag;
 int32 CTheScripts::StoreVehicleIndex;
@@ -884,6 +893,28 @@ void CTheScripts::Process()
 	DrawScriptSpheres();
 	if (FailCurrentMission)
 		--FailCurrentMission;
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	if (FailCurrentMission == 0 && IsPlayerOnAMission() &&
+		(AudioManager.m_bIsMissionAudioPhoneCall[0] || AudioManager.m_bIsMissionAudioPhoneCall[1])) {
+		if (ControlsManager.ViceExtActionKeyJustDown(SKIP_PHONE_CALL, rsENTER)) {
+			FailCurrentMission = 2;
+			MissionSkipLevel = 0;
+			DMAudio.ClearMissionAudio(0);
+			DMAudio.ClearMissionAudio(1);
+#ifdef __EMSCRIPTEN__
+			{
+				char t[192];
+				snprintf(t, sizeof t, "CALL skip tecla=%d slot0=%d slot1=%d fail=%d",
+					(int)ControlsManager.GetControllerKeyAssociatedWithAction(SKIP_PHONE_CALL, KEYBOARD),
+					(int)AudioManager.m_bIsMissionAudioPhoneCall[0],
+					(int)AudioManager.m_bIsMissionAudioPhoneCall[1],
+					(int)FailCurrentMission);
+				ODTRACES(t);
+			}
+#endif
+		}
+	}
+#endif
 	if (UseTextCommands){
 		for (int i = 0; i < MAX_NUM_INTRO_TEXT_LINES; i++)
 			IntroTextLines[i].Reset();
@@ -985,8 +1016,27 @@ void CRunningScript::Process()
 	if (m_bMissionFlag && CTheScripts::FailCurrentMission == 1 && m_nStackPointer == 1)
 		SetIP(m_anStack[--m_nStackPointer]);
 	if (CTimer::GetTimeInMilliseconds() >= m_nWakeTime){
+#ifdef __EMSCRIPTEN__
+		// D14: cota de seguridad. Un guion que no avanza NUNCA es un bucle
+		// infinito: el SCM es cooperative y procesa hasta que la instrucción
+		// le dice que espere. Si un opcode se queda en 0 devolviendo "no
+		// terminado" (o gira sobre sí mismo) la pestaña se muere sin error.
+		// Con el tope, el guion corta, la traza deja constancia (comando/IP) y
+		// el juego sigue vivo; el opcode culpable queda identificado en el log.
+		static const int OD_MAX_CMDS = 200000;
+		int odCmds = 0;
+		while (!ProcessOneCommand()) {
+			if (++odCmds > OD_MAX_CMDS) {
+				printf("[od-trace] SCMLOOP guion=%s ip=%d cmds=%d: cortado\n", m_abScriptName, (int)(m_nIp - (uint32)(size_t)CTheScripts::ScriptSpace), odCmds);
+				ODTRACES("SCMLOOP cortado");
+				m_nWakeTime = CTimer::GetTimeInMilliseconds() + 500;
+				return;
+			}
+		}
+#else
 		while (!ProcessOneCommand())
 			;
+#endif
 		return;
 	}
 	if (!m_bSkipWakeTime)
@@ -1549,10 +1599,35 @@ int8 CRunningScript::ProcessCommands0To99(int32 command)
 		m_bIsActive = false;
 #ifdef MISSION_REPLAY
 		if (m_bMissionFlag) {
-			CPlayerInfo* pPlayerInfo = &CWorld::Players[CWorld::PlayerInFocus];
-#if 0 // makeing autosave is pointless and is a bit buggy
-			if (pPlayerInfo->m_pPed->GetPedState() != PED_DEAD && pPlayerInfo->m_WBState == WBSTATE_PLAYING && !m_bDeatharrestExecuted)
-				SaveGameForPause(SAVE_TYPE_QUICKSAVE);
+#ifdef VICEEXT_AUTOSAVE
+			// Sección 3 (Vice Extended, v2.5 "Autosave after completing a
+			// mission"): la misión se dio por superada (lo apunta
+			// COMMAND_REGISTER_MISSION_PASSED) y su script acaba de terminar,
+			// así que `bAlreadyRunningAMissionScript` ya está limpio y
+			// SaveGameForPause escribe de verdad. Va a la ranura 9
+			// (GTAVCsf9.b), la que el menú de carga lista como autosave; no pisa
+			// ninguna de las 8 ranuras del jugador.
+			if (ViceExtAutosavePending) {
+				ViceExtAutosavePending = false;
+				// C2b: la marca deja que el camino del guardado acepte la ranura 9,
+				// que para cualquier otro guardado es de sólo lectura.
+				ViceExtAutosaveInProgress = true;
+				bool ok = SaveGameForPause(SAVE_TYPE_QUICKSAVE);
+				ViceExtAutosaveInProgress = false;
+#ifdef __EMSCRIPTEN__
+				// DIAG (sección 3, C2): una línea por misión superada, en la traza que
+				// ya usa el port. Confirma en una partida real que el autosave corrió
+				// y a qué fichero fue (GTAVCsf9.b = ranura 9 del menú de carga).
+				{
+					char t[160];
+					snprintf(t, sizeof t, "VICEEXT autosave ok=%d slot=%d file=GTAVCsf%d.b mision=%s",
+						(int)ok, PAUSE_SAVE_SLOT, PAUSE_SAVE_SLOT + 1, CStats::LastMissionPassedName);
+					ODTRACES(t);
+				}
+#else
+				(void)ok;
+#endif
+			}
 #endif
 			oldTargetX = oldTargetY = 0.0f;
 			if (AllowMissionReplay == MISSION_RETRY_STAGE_WAIT_FOR_SCRIPT_TO_TERMINATE)

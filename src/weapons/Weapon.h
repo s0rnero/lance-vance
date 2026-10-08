@@ -34,12 +34,28 @@ public:
 	static void InitialiseWeapons(void);
 	static void ShutdownWeapons  (void);
 	static void UpdateWeapons    (void);
+#ifdef VICEEXT_RECOIL
+	// Recoil diagnóstico/gameplay; la muestra de input corre una vez por tick.
+	static void ViceExtRecoilUpdate(void);
+	static void ViceExtRecoilKick(eWeaponType type, CWeaponInfo *info, bool fromVehicle,
+		int32 ammoClip, int32 ammoTotal, int32 state);
+	static void ViceExtRecoilFireAttempt(eWeaponType type, int32 ammoClip, int32 ammoTotal, int32 state);
+	static bool ViceExtRecoilTraceEnabled(void);
+	static void ViceExtRecoilTrace(const char *event);
+	static void ViceExtRecoilBegin(float &alpha, bool reset, int32 mode, const char *source);
+	static void ViceExtRecoilApply(float &alpha, float manualDeltaRad, float inputY,
+		const char *source, int32 mode, float minAlpha, float maxAlpha);
+	static void ViceExtRecoilRecordControl(float deltaAlphaRad, float inputY, const char *source, int32 mode,
+		float residualBeforeRad, float residualAfterRad, float alphaRad, const char *reason);
+#endif
 	
 	void Initialise(eWeaponType type, int32 ammo);
 	void Shutdown();
 	
 	bool Fire          (CEntity *shooter, CVector *fireSource);
 	bool FireFromCar   (CVehicle *shooter, bool left, bool right);
+	// Sección 2 (P4): cadencia del disparo desde vehículo (vanilla: 70 ms fijos).
+	uint32 GetDriveByShotDelay(void);
 	bool FireMelee     (CEntity *shooter, CVector &fireSource);
 	bool FireInstantHit(CEntity *shooter, CVector *fireSource);
 	
@@ -74,7 +90,7 @@ public:
 	static void BlowUpExplosiveThings(CEntity *thing);
 	bool HasWeaponAmmoToBeUsed(void);
 	
-	static bool IsShotgun(int weapon) { return weapon == WEAPONTYPE_SHOTGUN || weapon == WEAPONTYPE_SPAS12_SHOTGUN || weapon == WEAPONTYPE_STUBBY_SHOTGUN; }
+	static bool IsShotgun(int weapon) { return weapon == WEAPONTYPE_SHOTGUN || weapon == WEAPONTYPE_SPAS12_SHOTGUN || weapon == WEAPONTYPE_STUBBY_SHOTGUN || weapon == WEAPONTYPE_SHOTGUN2; } // SHOTGUN2: Vice Extended
 
 	static bool ProcessLineOfSight(CVector const &point1, CVector const &point2, CColPoint &point, CEntity *&entity, eWeaponType type, CEntity *shooter, bool checkBuildings, bool checkVehicles, bool checkPeds, bool checkObjects, bool checkDummies, bool ignoreSeeThrough, bool ignoreSomeObjects);
 
@@ -86,5 +102,10 @@ public:
 #endif
 };
 VALIDATE_SIZE(CWeapon, 0x18);
+
+#ifdef VICEEXT_RECOIL
+// Cada solicitud de disparo se encola y Cam.cpp la consume exactamente una vez.
+void ViceExtRecoilAlphaAdd(float rad, uint32 shotSeq);
+#endif
 
 void FireOneInstantHitRound(CVector *source, CVector *target, int32 damage);

@@ -196,8 +196,7 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   rsRCTRL,    KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   ' ',        OPTIONAL_EXTRA);
 															                      
-	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  rsENTER,    KEYBOARD);
-	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  'F',        OPTIONAL_EXTRA);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  'F',        KEYBOARD);
 										    					                  
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  rsUP,       KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  'W',        OPTIONAL_EXTRA);
@@ -288,7 +287,33 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETDOWN,                  rsPADRIGHT, KEYBOARD);
 										    
 	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   rsHOME,     KEYBOARD);
-	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   'V',        OPTIONAL_EXTRA);
+	// Sección 3, bloque C1b (20/09): la 'V' era el extra de "cambiar cámara" y el
+	// jugador la usa para la 1ª persona (pulsó V en partida y no pasó nada porque
+	// el conmutador estaba en B). "Cambiar cámara" se queda en su tecla principal
+	// (rsHOME) y 'V' pasa al conmutador; las dos siguen siendo rebindables.
+
+	// Sección 3, bloque C1: conmutador de vista en 1ª persona (tecla por defecto V;
+	// se puede rebindar en el menú de controles como cualquier otra acción).
+	SetControllerKeyAssociatedWithAction    (PED_TOGGLE_1RST_PERSON,             'V',        KEYBOARD);
+
+	// Sección 3, bloque C3.1: recarga manual (v2.5 "Reloading a weapon on the
+	// key"). 'R' está libre a pie: VEHICLE_CHANGE_RADIO_STATION también la usa,
+	// pero es un mando de vehículo (OPTIONAL_EXTRA) y sólo se lee conduciendo.
+	SetControllerKeyAssociatedWithAction    (PED_RELOAD,                        'R',        KEYBOARD);
+
+	// ClassicAXIS C17 `WalkKey` (Main.cpp:1196-1201, 1215-1217): con la tecla de
+	// andar pulsada la velocidad es 0, para poder caminar en vez de correr. El
+	// default es el del mod, `LALT` (`ClassicAxisVC.ini:9`), que en nuestro
+	// `RsKeyCodes` es `rsLALT` = 1051 (`skeleton.h:173`): el token `LALT` del INI
+	// se resuelve a ese mismo código, así que la acción es rebindable como
+	// cualquier otra y sale con su nombre en el menú de controles.
+	// Su `NULL` = desactivar (comentario del propio INI del mod) es la tecla 0:
+	// lo comprueba el consumidor en `PlayerPed.cpp` (`if (odWalk && ...)`).
+	SetControllerKeyAssociatedWithAction    (PED_WALK,                          rsLALT,     KEYBOARD);
+
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	SetControllerKeyAssociatedWithAction    (SKIP_PHONE_CALL,                     rsENTER,    KEYBOARD);
+#endif
 
 	for (int32 i = 0; i < MAX_SIMS; i++)
 	{
@@ -518,6 +543,12 @@ void CControllerConfigManager::InitialiseControllerActionNameArray()
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_RIGHT);
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_UP);
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_DOWN);
+	SETACTIONNAME(PED_TOGGLE_1RST_PERSON); // Sección 3, C1: conmutador de 1ª persona
+	SETACTIONNAME(PED_RELOAD); // Sección 3, C3.1: recarga manual
+	SETACTIONNAME(PED_WALK); // ClassicAXIS C17: tecla de andar (default LALT)
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	SETACTIONNAME(SKIP_PHONE_CALL);
+#endif
 	SETACTIONNAME(SHOW_MOUSE_POINTER_TOGGLE);
 	SETACTIONNAME(CAMERA_CHANGE_VIEW_ALL_SITUATIONS);
 	SETACTIONNAME(PED_FIREWEAPON);
@@ -668,6 +699,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown(int32 button, 
 		}
 
 		int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
+		// R5: trampa del pad comprobada (blog de 1ª persona sobre este motor):
+		// con `firstPerson` los controles se restringen a "sólo zoom" (saltar,
+		// entrar al coche y demás dejan de funcionar). Nuestro conmutador pide
+		// MODE_1STPERSON_RUNABOUT, que a propósito NO está en esta lista: el
+		// jugador anda de lado/atrás, salta y sube al coche dentro del modo.
 		if (   mode == CCam::MODE_1STPERSON
 			|| mode == CCam::MODE_SNIPER
 			|| mode == CCam::MODE_ROCKETLAUNCHER
@@ -1175,6 +1211,24 @@ void CControllerConfigManager::AffectPadFromKeyBoard()
 		else if ( !GetIsKeyboardKeyDown((RsKeyCodes)extrakey))
 			AffectControllerStateOn_ButtonUp(key, OPTIONAL_EXTRA);
 	}
+}
+
+// Sección 3 (VICEEXT, 21/09): ver la declaración en ControllerConfig.h.
+bool
+CControllerConfigManager::ViceExtActionKeyJustDown(e_ControllerAction action, int32 fallbackKey)
+{
+	int32 key = GetControllerKeyAssociatedWithAction(action, KEYBOARD);
+	if (key != rsNULL && key != 0 && GetIsKeyboardKeyJustDown((RsKeyCodes)key))
+		return true;
+
+	// Sin tecla asignada (config de controles guardada antes de que la acción
+	// existiera): la acción es inalcanzable con el teclado, así que se acepta la
+	// tecla histórica de respaldo. R5/R10: vale también `1056` explícito
+	// (`rsNULL` = 1056, es lo que imprime el log: `tecla=1056`).
+	if (key == rsNULL || key == 0 || key == 1056)
+		return GetIsKeyboardKeyJustDown((RsKeyCodes)fallbackKey);
+
+	return false;
 }
 
 void CControllerConfigManager::AffectPadFromMouse()
@@ -1921,6 +1975,9 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case SWITCH_DEBUG_CAM_ON:
 	case TAKE_SCREEN_SHOT:
 	case SHOW_MOUSE_POINTER_TOGGLE:
+#ifdef VICEEXT_SKIP_PHONE_CALL
+	case SKIP_PHONE_CALL:
+#endif
 		return ACTIONTYPE_COMMON;
 		break;
 
@@ -1970,6 +2027,9 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case PED_LOCK_TARGET:
 	case PED_1RST_PERSON_LOOK_UP:
 	case PED_1RST_PERSON_LOOK_DOWN:
+	case PED_TOGGLE_1RST_PERSON: // Sección 3, C1
+	case PED_RELOAD: // Sección 3, C3.1: recarga manual (misma clasificación: a pie)
+	case PED_WALK: // ClassicAXIS C17: tecla de andar (es de a pie, como la recarga)
 		return ACTIONTYPE_1RST3RDPERSON;
 		break;
 
@@ -2788,6 +2848,104 @@ int32 CControllerConfigManager::GetControllerKeyAssociatedWithAction(e_Controlle
 {
 	return m_aSettings[action][type].m_Key;
 }
+
+#ifdef VICEEXT_HINT_KEYS
+// D7 (sección 1): su `pcbtns.txd` nombra cada icono con el **código de tecla de
+// Windows** ("1" = botón izquierdo, "8" = retroceso, "13" = intro, "16" =
+// mayúsculas, "27" = esc, "32" = espacio, "65".."90" = letras, "96".."105" =
+// teclado numérico, "112".."123" = F1..F12). El port no guarda ese código:
+// guarda el **carácter** para las teclas imprimibles (0..255) y las constantes
+// `rs*` (>= 1000) para el resto. Esto traduce de uno al otro; 0 = sin icono
+// (y entonces el aviso sigue mostrando el nombre de la tecla en texto, como
+// antes de este bloque).
+static int32
+ViceExtKeyToVK(int32 key, eControllerType type)
+{
+	if (key == rsNULL)
+		return 0;
+
+	if (type == MOUSE) {
+		switch (key) {
+		case rsMOUSELEFTBUTTON:  return 1;	// VK_LBUTTON
+		case rsMOUSERIGHTBUTTON: return 2;	// VK_RBUTTON
+		case rsMOUSMIDDLEBUTTON: return 4;	// VK_MBUTTON
+		default: return 0;                  // rueda / X1 / X2: sin icono
+		}
+	}
+
+	// Teclas imprimibles: el VK de una letra es su mayúscula; los dígitos y la
+	// puntuación básica coinciden con su ASCII.
+	if (key > 0 && key < 128) {
+		if (key >= 'a' && key <= 'z')
+			return key - 'a' + 'A';
+		return key;
+	}
+
+	switch (key) {
+	// Función, edición y navegación
+	case rsESC:      return 27;
+	case rsF1: case rsF2: case rsF3: case rsF4: case rsF5: case rsF6:
+	case rsF7: case rsF8: case rsF9: case rsF10: case rsF11: case rsF12:
+		return 112 + (key - rsF1);
+	case rsINS:      return 45;
+	case rsDEL:      return 46;
+	case rsHOME:     return 36;
+	case rsEND:      return 35;
+	case rsPGUP:     return 33;
+	case rsPGDN:     return 34;
+	case rsUP:       return 38;
+	case rsDOWN:     return 40;
+	case rsLEFT:     return 37;
+	case rsRIGHT:    return 39;
+	// Teclado numérico
+	case rsDIVIDE:   return 111;
+	case rsTIMES:    return 106;
+	case rsPLUS:     return 107;
+	case rsMINUS:    return 109;
+	case rsPADDEL:   return 110;
+	case rsPADINS:   return 96;
+	case rsPADEND:   return 97;
+	case rsPADDOWN:  return 98;
+	case rsPADPGDN:  return 99;
+	case rsPADLEFT:  return 100;
+	case rsPAD5:     return 101;
+	case rsPADRIGHT: return 102;
+	case rsPADHOME:  return 103;
+	case rsPADUP:    return 104;
+	case rsPADPGUP:  return 105;
+	case rsPADENTER: return 13;
+	case rsNUMLOCK:  return 144;
+	// Modificadores y bloques
+	case rsSCROLL:   return 145;
+	case rsPAUSE:    return 19;
+	case rsBACKSP:   return 8;
+	case rsTAB:      return 9;
+	case rsCAPSLK:   return 20;
+	case rsENTER:    return 13;
+	case rsLSHIFT: case rsRSHIFT: case rsSHIFT: return 16;
+	case rsLCTRL:  case rsRCTRL:               return 17;
+	case rsLALT:   case rsRALT:                return 18;
+	case rsLWIN:     return 91;
+	case rsRWIN:     return 92;
+	case rsAPPS:     return 93;
+	default:         return 0;
+	}
+}
+
+int32 CControllerConfigManager::GetKeyIconCodeForAction(uint16 action)
+{
+	// Mismo orden de preferencia que GetWideStringOfCommandKeys: primero el
+	// teclado, luego su tecla extra opcional y por último el ratón.
+	static const eControllerType tipos[] = { KEYBOARD, OPTIONAL_EXTRA, MOUSE };
+
+	for (int i = 0; i < ARRAY_SIZE(tipos); i++) {
+		int32 vk = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, tipos[i]), tipos[i]);
+		if (vk > 0)
+			return vk;
+	}
+	return 0;
+}
+#endif
 
 void CControllerConfigManager::UpdateJoyButtonState(int32 padnumber)
 {

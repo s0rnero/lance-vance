@@ -28,6 +28,9 @@
 #include "RoadBlocks.h"
 #include "Timer.h"
 #include "TrafficLights.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 #include "Streaming.h"
 #include "VisibilityPlugins.h"
 #include "Vehicle.h"
@@ -109,9 +112,18 @@ int32 CCarCtrl::LoadedCarsArray[TOTAL_CUSTOM_CLASSES][MAX_CAR_MODELS_IN_ARRAY];
 CVehicle* apCarsToKeep[MAX_CARS_TO_KEEP];
 uint32 aCarsToKeepTime[MAX_CARS_TO_KEEP];
 
+#ifdef VICEEXT_FIX_FV
+static float ms_odSpawnPhase = 0.0f;
+#endif
+
 void
 CCarCtrl::GenerateRandomCars()
 {
+#ifdef VICEEXT_FIX_FV
+	ms_odSpawnPhase += CTimer::GetTimeStep();
+	if(ms_odSpawnPhase >= 1024.0f)
+		ms_odSpawnPhase -= 1024.0f;
+#endif
 	if (CCutsceneMgr::IsRunning()) {
 		CountDownToCarsAtStart = 2;
 		return;
@@ -134,6 +146,11 @@ void
 CCarCtrl::GenerateOneRandomCar()
 {
 	static int32 unk = 0;
+#ifdef VICEEXT_FIX_FV
+	int32 odSpawnPhase = (int32)ms_odSpawnPhase;
+#else
+	int32 odSpawnPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	bool bTopDownCamera = false;
 	CPlayerInfo* pPlayer = &CWorld::Players[CWorld::PlayerInFocus];
 	CVector vecTargetPos = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
@@ -193,7 +210,7 @@ CCarCtrl::GenerateOneRandomCar()
 		testForCollision = true;
 		frontX = TheCamera.CamFrontXNorm;
 		frontY = TheCamera.CamFrontYNorm;
-		switch (CTimer::GetFrameCounter() & 1) {
+		switch (odSpawnPhase & 1) {
 		case 0:
 			/* Spawn a vehicle relatively far away from player. */
 			/* Forward to his current direction (camera direction). */
@@ -215,7 +232,7 @@ CCarCtrl::GenerateOneRandomCar()
 		frontX = vecPlayerVehicleSpeed.x / fPlayerVehicleSpeed;
 		frontY = vecPlayerVehicleSpeed.y / fPlayerVehicleSpeed;
 		testForCollision = false;
-		switch (CTimer::GetFrameCounter() & 3) {
+		switch (odSpawnPhase & 3) {
 		case 0:
 		case 1:
 			/* Spawn a vehicle in a very narrow gap in front of a player */
@@ -244,7 +261,7 @@ CCarCtrl::GenerateOneRandomCar()
 		frontX = vecPlayerVehicleSpeed.x / fPlayerVehicleSpeed;
 		frontY = vecPlayerVehicleSpeed.y / fPlayerVehicleSpeed;
 		testForCollision = false;
-		switch (CTimer::GetFrameCounter() & 3) {
+		switch (odSpawnPhase & 3) {
 		case 0:
 			/* Spawn a vehicle in a very narrow gap in front of a player */
 			angleLimit = 0.85f; /* approx 30 degrees */
@@ -273,7 +290,7 @@ CCarCtrl::GenerateOneRandomCar()
 		testForCollision = true;
 		frontX = TheCamera.CamFrontXNorm;
 		frontY = TheCamera.CamFrontYNorm;
-		switch (CTimer::GetFrameCounter() & 1) {
+		switch (odSpawnPhase & 1) {
 		case 0:
 			/* Spawn a vehicle relatively far away from player. */
 			/* Forward to his current direction (camera direction). */
@@ -631,6 +648,21 @@ CCarCtrl::GenerateOneRandomCar()
 	}
 	pVehicleModel->AvoidSameVehicleColour(&pVehicle->m_currentColour1, &pVehicle->m_currentColour2);
 	CWorld::Add(pVehicle);
+#ifdef __EMSCRIPTEN__
+	// Traza del tráfico (bloque D4): un coche de la calle acaba de entrar en el
+	// mundo. Es la medición directa de QUÉ modelos circulan: contar `TXDIN` no
+	// vale, porque un modelo que ya está residente no vuelve a pedir su TXD y el
+	// tráfico recicla justo los modelos que tiene cargados.
+	{
+		static int ntrafico = 0;
+		if (ntrafico < 20000) {
+			char tt[96];
+			snprintf(tt, sizeof tt, "CARSPAWN model=%d clase=%d", carModel, carClass);
+			ODTRACES(tt);
+			ntrafico++;
+		}
+	}
+#endif
 	if (carClass == COPS || carClass == COPS_BOAT)
 		CCarAI::AddPoliceCarOccupants(pVehicle);
 	else {
@@ -744,11 +776,65 @@ int32
 CCarCtrl::ChooseCarRating(CZoneInfo* pZoneInfo)
 {
 	int rnd = CGeneral::GetRandomNumberInRange(0, 1000);
+	int32 rating = FIRST_CAR_RATING + NUM_CAR_CLASSES - 1;
 	for (int i = 0; i < NUM_CAR_CLASSES - 1; i++) {
-		if (rnd < pZoneInfo->carThreshold[i])
-			return i;
+		if (rnd < pZoneInfo->carThreshold[i]) {
+			rating = i;
+			break;
+		}
 	}
-	return FIRST_CAR_RATING + NUM_CAR_CLASSES - 1;
+#ifdef __EMSCRIPTEN__
+	// D4 (sección 1): la mezcla de tráfico la fijan los umbrales de la zona (los
+	// pone el script con SetZoneCivilianCarInfo). Sin esto no se puede saber si un
+	// vehículo del mod "no sale" porque su modelo no carga o porque su CLASE no
+	// se sortea en esa zona: los 8 umbrales en crudo dicen exactamente qué clases
+	// son alcanzables (un umbral repetido = clase con probabilidad cero).
+	{
+		static int odZonas = 0;
+		if (odZonas < 3) {
+			odZonas++;
+			char tz[200];
+			snprintf(tz, sizeof tz, "CARZONE umbrales=%d,%d,%d,%d,%d,%d,%d,%d",
+				pZoneInfo->carThreshold[0], pZoneInfo->carThreshold[1], pZoneInfo->carThreshold[2],
+				pZoneInfo->carThreshold[3], pZoneInfo->carThreshold[4], pZoneInfo->carThreshold[5],
+				pZoneInfo->carThreshold[6], pZoneInfo->carThreshold[7]);
+			ODTRACES(tz);
+		}
+		// (20/09) Primera versión del corte, y no servía: imprimía "cuando cambia
+		// la clase", pero la clase se sortea al azar en cada intento, así que
+		// cambiaba CASI SIEMPRE (medido el 21/09: 66.525 líneas de 87.116 sorteos;
+		// el log seguía ahogado).
+		//
+		// (21/09) Ahora: las primeras 12 tiradas, la PRIMERA vez que aparece cada
+		// clase (en pocas líneas se ve qué clases son alcanzables en la zona) y un
+		// recuento completo cada 4096 sorteos (`CARRATECNT`), que es el dato que
+		// de verdad hace falta para saber la mezcla con la que reparte la calle.
+		static int odSorteos = 0;
+		static int odConteo[NUM_CAR_CLASSES] = { 0 };
+		static bool odVisto[NUM_CAR_CLASSES] = { false };
+		int odN = ++odSorteos;
+		bool odPrimera = false;
+		if (rating >= 0 && rating < NUM_CAR_CLASSES) {
+			odConteo[rating]++;
+			odPrimera = !odVisto[rating];
+			odVisto[rating] = true;
+		}
+		if (odN <= 12 || odPrimera) {
+			char tr[128];
+			snprintf(tr, sizeof tr, "CARRATE rating=%d n=%d primera=%d", rating, odN, odPrimera ? 1 : 0);
+			ODTRACES(tr);
+		}
+		if (odN % 4096 == 0) {
+			char tc[240];
+			int n = snprintf(tc, sizeof tc, "CARRATECNT n=%d", odN);
+			for (int c = 0; c < NUM_CAR_CLASSES && n > 0 && n < (int)sizeof(tc) - 12; c++)
+				if (odConteo[c])
+					n += snprintf(tc + n, sizeof tc - n, " c%d=%d", c, odConteo[c]);
+			ODTRACES(tc);
+		}
+	}
+#endif
+	return rating;
 }
 
 int32
@@ -834,12 +920,50 @@ CCarCtrl::RemoveFromLoadedVehicleArray(int mi, int32 rating)
 int32
 CCarCtrl::ChooseCarModelToLoad(int rating)
 {
+#ifdef __EMSCRIPTEN__
+	// D4 (sección 1, web): qué modelo pide el cargador.
+	//
+	// El original elige UNIFORME entre todos los modelos de la clase, así que un
+	// modelo concreto entra en la calle sólo si le toca entre ~40. Con el
+	// temporizador de 11,7 s por modelo eso son minutos por modelo (y en el
+	// navegador, con menos fotogramas, bastantes más): medido, de los 7 vehículos
+	// nuevos del mod sólo 2-3 llegaban a circular.
+	//
+	// Aquí se sortea con el MISMO peso que el juego ya usa para elegir entre los
+	// vehículos cargados: la frecuencia de `default.ide` (`m_frequency`, la
+	// columna que el mod sube a 100 en los suyos). Así el fondo converge al
+	// reparto que dice el dato y las frecuencias que subimos temporalmente para
+	// ver los vehículos nuevos sirven también para CARGARLOS.
+	int32 total = TotalNumOfCarsOfRating[rating];
+	if(total > 0){
+		int32 sum = 0;
+		int32 i;
+		for(i = 0; i < total; i++)
+			sum += ((CVehicleModelInfo*)CModelInfo::GetModelInfo(CarArrays[rating][i]))->m_frequency;
+		if(sum > 0){
+			int32 rnd = CGeneral::GetRandomNumberInRange(0, sum);
+			int32 acc = 0;
+			for(i = 0; i < total; i++){
+				acc += ((CVehicleModelInfo*)CModelInfo::GetModelInfo(CarArrays[rating][i]))->m_frequency;
+				if(rnd < acc)
+					return CarArrays[rating][i];
+			}
+		}
+	}
+#endif
 	return CarArrays[rating][CGeneral::GetRandomNumberInRange(0, TotalNumOfCarsOfRating[rating])];
 }
 
 int32
 CCarCtrl::ChoosePoliceCarModel(void)
 {
+#ifdef VICEEXT_POLICE_BIKE
+	CStreaming::RequestModel(MI_VEEXT_POLWINTERG, STREAMFLAGS_DEPENDENCY);
+	if (FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 &&
+		CStreaming::HasModelLoaded(MI_VEEXT_POLWINTERG) &&
+		(CGeneral::GetRandomNumber() & 3) == 0)
+		return MI_VEEXT_POLWINTERG;
+#endif
 	if (FindPlayerPed()->m_pWanted->AreMiamiViceRequired() &&
 #ifdef FIX_BUGS
 		(CTimer::GetTimeInMilliseconds() > LastTimeMiamiViceGenerated + 120000 || LastTimeMiamiViceGenerated == 0) &&
@@ -919,7 +1043,16 @@ CCarCtrl::RemoveDistantCars()
 void
 CCarCtrl::RemoveCarsIfThePoolGetsFull(void)
 {
-	if ((CTimer::GetFrameCounter() & 7) != 3)
+#ifdef VICEEXT_FIX_FV
+	static float odPoolPhase = 0.0f;
+	odPoolPhase += CTimer::GetTimeStep();
+	if(odPoolPhase >= 1024.0f)
+		odPoolPhase -= 1024.0f;
+	int32 odPhase = (int32)odPoolPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
+	if ((odPhase & 7) != 3)
 		return;
 	if (CPools::GetVehiclePool()->GetNoOfFreeSpaces() >= 8)
 		return;
@@ -2641,10 +2774,19 @@ float CCarCtrl::FindMaxSteerAngle(CVehicle* pVehicle)
 	return pVehicle->GetModelIndex() == MI_ENFORCER ? 0.7f : DEFAULT_MAX_STEER_ANGLE;
 }
 
+// ----------------------------------------------------------------------------
+// PORTADO — FramerateVigilante (MIT, © 2023 GTA modding (Junior_Djjr))
+//   https://github.com/GTAmodding/FramerateVigilante
+//   FramerateVigilante/FramerateVigilante.cpp ("constantes por-frame" * ms_fTimeStep)
+// Qué se toma: el spool del heli IA se sumaba por frame. Adaptación: * CTimer::GetTimeStep()
+//   (igual a 50 fps; topes 0.22/0.15 sin cambios).
+// ----------------------------------------------------------------------------
 void CCarCtrl::SteerAIHeliTowardsTargetCoors(CAutomobile* pHeli)
 {
 	if (pHeli->m_aWheelSpeed[1] < 0.22f)
-		pHeli->m_aWheelSpeed[1] += 0.001f;
+#ifdef VICEEXT_FIX_FV
+		pHeli->m_aWheelSpeed[1] += 0.001f * CTimer::GetTimeStep();
+#endif
 	if (pHeli->m_aWheelSpeed[1] < 0.15f)
 		return;
 	CVector2D vecToTarget = pHeli->AutoPilot.m_vecDestinationCoors - pHeli->GetPosition();

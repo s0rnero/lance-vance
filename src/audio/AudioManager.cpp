@@ -11,6 +11,9 @@
 #include "Camera.h"
 #include "World.h"
 #include "ZoneCull.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 cAudioManager AudioManager;
 
@@ -76,6 +79,9 @@ cAudioManager::Initialise()
 				MusicManager.Initialise();
 			}
 		}
+#ifdef __EMSCRIPTEN__
+		printf("[web] audiomanager init ok\n");
+#endif
 	}
 }
 
@@ -197,6 +203,19 @@ cAudioManager::DestroyEntity(int32 id)
 {
 	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed) {
 		m_asAudioEntities[id].m_bIsUsed = FALSE;
+#ifdef __EMSCRIPTEN__
+		// Web: al morir la entidad, parar sus loops huerfanos (claxon/motores
+		// que quedaban sonando infinito al despawnear el coche).
+		for (uint32 i = 0; i < NUM_CHANNELS_GENERIC; i++) {
+			if (m_asActiveSamples[i].m_nSampleIndex != NO_SAMPLE &&
+			    m_asActiveSamples[i].m_nEntityIndex == id &&
+			    m_asActiveSamples[i].m_nLoopCount != 1) {
+				SampleManager.StopChannel(i);
+				m_asActiveSamples[i].m_nSampleIndex = NO_SAMPLE;
+				m_asActiveSamples[i].m_nEntityIndex = AEHANDLE_NONE;
+			}
+		}
+#endif
 		for (uint32 i = 0; i < m_nAudioEntitiesCount; ++i) {
 			if (id == m_aAudioEntityOrderList[i]) {
 				if (i < NUM_AUDIOENTITIES - 1)
@@ -1339,6 +1358,72 @@ cAudioManager::ProcessActiveQueues()
 	for (uint8 i = 0; i < m_nActiveSamples; i++) {
 		if (m_asActiveSamples[i].m_nSampleIndex != NO_SAMPLE && m_asActiveSamples[i].m_bIsBeingPlayed)
 			SampleManager.SetChannelFrequency(i, m_asActiveSamples[i].m_nFrequency * timeScale);
+	}
+#endif
+
+#ifdef __EMSCRIPTEN__
+	// DIAG + red de seguridad "bucle del Malibú": cualquier sonido que quede
+	// sonando en bucle infinito (m_nLoopCount == 0) se registra al empezar, con
+	// un latido cada 2 s y otra línea al terminar: dice QUÉ sample suena, en qué
+	// canal, quién lo emite (entidad + tipo) y cuánto lleva. Se corta en dos
+	// casos: emisor huérfano (nadie puede pararlo) o loop inaudible (volumen 0)
+	// durante 25 s (el que se queda pegado al pasar por una zona, p.ej. Malibú).
+	{
+		static struct { uint8 on; uint32 t0, last, silent; } wl[NUM_CHANNELS];
+		uint32 now = CTimer::GetTimeInMilliseconds();
+		for (uint8 i = 0; i < m_nActiveSamples; i++) {
+			tSound &as = m_asActiveSamples[i];
+			int32 ent = as.m_nEntityIndex;
+			bool8 entUsed = (ent >= 0 && ent < NUM_AUDIOENTITIES) ? m_asAudioEntities[ent].m_bIsUsed : FALSE;
+			int32 entType = (ent >= 0 && ent < NUM_AUDIOENTITIES) ? (int32)m_asAudioEntities[ent].m_nType : -1;
+			bool8 playingLoop = as.m_nSampleIndex != NO_SAMPLE && as.m_nLoopCount == 0 &&
+			                    SampleManager.GetChannelUsedFlag(i);
+			if (playingLoop && ent >= 0 && !entUsed) {
+				// Emisor huérfano: no hay nada que pueda seguir pidiendo este
+				// sonido. Cortarlo (mismo criterio que DestroyEntity).
+				char t[160];
+				snprintf(t, sizeof t, "LOOPORPHAN ch=%u sfx=%u ent=%d type=%d dursec=%u",
+					i, (uint32)as.m_nSampleIndex, ent, entType,
+					wl[i].on ? (now - wl[i].t0) / 1000 : 0);
+				ODTRACES(t);
+				SampleManager.StopChannel(i);
+				as.m_nSampleIndex = NO_SAMPLE;
+				as.m_nEntityIndex = AEHANDLE_NONE;
+				wl[i].on = 0;
+				wl[i].silent = 0;
+				continue;
+			}
+			if (playingLoop) {
+				if (as.m_nVolume == 0) {
+					if (wl[i].silent == 0) wl[i].silent = now;
+				} else
+					wl[i].silent = 0;
+			}
+			if (playingLoop && wl[i].silent != 0 && now - wl[i].silent > 25000) {
+				// Loop que ya no se oye (fuera de alcance) y sigue vivo: se
+				// queda pegado para siempre. Si alguien lo vuelve a pedir, se
+				// re-arranca solo.
+				char t[176];
+				snprintf(t, sizeof t, "LOOPKILL ch=%u sfx=%u ent=%d type=%d dursec=%u silentsec=%u",
+					i, (uint32)as.m_nSampleIndex, ent, entType,
+					wl[i].on ? (now - wl[i].t0) / 1000 : 0, (now - wl[i].silent) / 1000);
+				ODTRACES(t);
+				SampleManager.StopChannel(i);
+				as.m_nSampleIndex = NO_SAMPLE;
+				as.m_nEntityIndex = AEHANDLE_NONE;
+				wl[i].on = 0;
+				wl[i].silent = 0;
+				continue;
+			}
+			if (playingLoop && !wl[i].on) {
+				// Estado del watchdog (LOOPKILL/ORPHAN); las trazas
+				// START/ALIVE/END se retiraron (higiene de log, fluides-v2).
+				wl[i].on = 1; wl[i].t0 = now; wl[i].last = now; wl[i].silent = 0;
+			} else if (wl[i].on) {
+				wl[i].on = 0;
+				wl[i].silent = 0;
+			}
+		}
 	}
 #endif
 

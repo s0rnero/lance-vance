@@ -119,9 +119,9 @@ public:
 	static CPickup *FindPickUpForThisObject(CEntity*);
 };
 
-extern uint16 AmmoForWeapon[WEAPONTYPE_TOTALWEAPONS + 1];
-extern uint16 AmmoForWeapon_OnStreet[WEAPONTYPE_TOTALWEAPONS + 1];
-extern uint16 CostOfWeapon[WEAPONTYPE_TOTALWEAPONS + 3];
+extern uint16 AmmoForWeapon[WEAPONTYPE_TOTALALLTYPES];
+extern uint16 AmmoForWeapon_OnStreet[WEAPONTYPE_TOTALALLTYPES];
+extern uint16 CostOfWeapon[WEAPONTYPE_TOTALALLTYPES + 3];
 
 extern int32 CollectPickupBuffer;
 

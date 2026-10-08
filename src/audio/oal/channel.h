@@ -4,7 +4,9 @@
 #include "oal/oal_utils.h"
 #include <AL/al.h>
 #include <AL/alext.h>
+#ifndef __EMSCRIPTEN__
 #include <AL/efx.h>
+#endif
 
 
 class CChannel
@@ -40,6 +42,7 @@ public:
 	void SetGain(float gain);
 	void SetVolume(int32 vol);
 	void SetSampleData(void *_data, size_t _DataSize, int32 freq);
+	bool UsesData(void *p, size_t n);
 	void SetCurrentFreq(uint32 freq);
 	void SetLoopCount(int32 count);
 	void SetLoopPoints(ALint start, ALint end);

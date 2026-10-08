@@ -1002,6 +1002,20 @@ public:
 
 	void ReplaceWeaponWhenExitingVehicle(void);
 	void RemoveWeaponWhenEnteringVehicle(void);
+
+	// Sección 2 (P2) — drive-by ampliado. `CanDoDriveByWithCurrentWeapon` es la
+	// puerta que usan los tres DoDriveByShootings (CAutomobile/CBike/CBoat) y sin
+	// VICEEXT_DRIVEBY_WIDE equivale EXACTAMENTE al chequeo vanilla de slot 5;
+	// `KeepsWeaponInHandWhileDriving` dice si el arma se queda visible en la mano
+	// al entrar al vehículo (falso sin el define -> vanilla).
+	bool CanDoDriveByWithCurrentWeapon(void);
+	bool KeepsWeaponInHandWhileDriving(void);
+
+	// Traza de la sonda de drive-by (tools/driveby-smoke-test.mjs): estado 1 vez
+	// por segundo, una línea por disparo y una por entrada/salida de vehículo.
+	void DriveByTraceState(const char *vehClass, bool fireHeld, bool lookLeft, bool lookRight);
+	void DriveByTraceShot(const char *vehClass, const char *anim, uint32 shotDelayMs);
+	void DriveByTraceVehicleWeapon(const char *phase, const char *outcome);
 	bool IsNotInWreckedVehicle()
 	{
 		return m_pMyVehicle != nil && ((CEntity*)m_pMyVehicle)->GetStatus() != STATUS_WRECKED;
@@ -1053,6 +1067,17 @@ public:
 		else
 			return (AnimationId)0;
 	}
+
+	// R28 (26/09): ¿este ped lleva puesta la pose de disparo AGACHADO? En VC el
+	// motor lo decide con dos banderas (`bIsDucking` + `bCrouchWhenShooting`), pero
+	// el agachado del port no las usa: R6 limpia `bIsDucking` al agacharse (es la
+	// que clava al jugador en el sitio), asi que el motor no veia nada y seguia
+	// eligiendo los clips DE PIE (`colt45_fire` en vez de `colt45_crouchfire`).
+	// Con este predicado el motor elige los de agachado en los sitios donde los
+	// decide (PedFight: SetPointGunAt, SetAttack, Attack, FinishedAttackCB,
+	// FinishedReloadCB) sin tocar `bIsDucking`. Implementado en `PlayerPed.cpp`
+	// (necesita `CPlayerPed`, que este header no puede incluir).
+	bool ViceExtCrouchShooting(void) const;
 
 	static AnimationId GetReloadAnim(CWeaponInfo* weapon) {
 		if (weapon->IsFlagSet(WEAPONFLAG_RELOAD))
@@ -1190,3 +1215,4 @@ VALIDATE_SIZE(CPed, 0x5F4);
 
 bool IsPedPointerValid(CPed*);
 bool IsPedPointerValid_NotInWorld(CPed*);
+void particleProduceFootSplash(CPed* ped, CVector const& pos, float size, int times, CRGBA const& color);

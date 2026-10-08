@@ -144,6 +144,21 @@ public:
 	static void DrawButton(float x, float y);
 #endif // BUTTON_ICONS
 
+#ifdef VICEEXT_HINT_KEYS
+	// D7 (sección 1): iconos de TECLA para los avisos ("PC key icons in game
+	// hints", su v3.0). Las texturas de su `pcbtns.txd` se llaman con el código
+	// de tecla en decimal, así que el sprite se crea bajo demanda y se cachea
+	// (`255` = el índice más alto posible).
+	static CSprite2d KeyIconSprite[256];
+	static bool KeyIconSearched[256];
+	static int32 KeyIconsSlot;
+	static int KeyIconCode;   // el `~K<vk>~` que se está dibujando ahora (0 = no hay)
+
+	static void LoadKeyIcons(void);
+	static bool HasKeyIcon(int vk);
+	static void DrawKeyIcon(float x, float y);
+#endif
+
 
 	static void Initialise(void);
 	static void Shutdown(void);

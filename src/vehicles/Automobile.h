@@ -77,6 +77,9 @@ public:
 	uint8 m_nDriveWheelsOnGroundPrev;
 	float m_fGasPedalAudio;
 	tWheelState m_aWheelState[4];
+#ifdef VICEEXT_FIX_FV
+	float m_fOdPhase;
+#endif
 
 	static bool m_sAllTaxiLights;
 
@@ -132,6 +135,12 @@ public:
 	void SetupSuspensionLines(void);
 	void ScanForCrimes(void);
 	void BlowUpCarsInPath(void);
+#ifdef VICEEXT_TURN_SIGNALS
+	// Sección 3, bloque C3.4: intermitentes (coronas en los objetos/dummies
+	// `indicator*` del modelo) del coche del jugador y de los NPC cercanos.
+	// Define APAGADO por defecto (paridad con StandardCarsUseTurnSignals=0).
+	void ViceExtProcessTurnSignals(void);
+#endif
 	bool HasCarStoppedBecauseOfLight(void);
 	void SetBusDoorTimer(uint32 timer, uint8 type);
 	void ProcessAutoBusDoors(void);

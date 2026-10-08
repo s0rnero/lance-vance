@@ -10,11 +10,50 @@
 #include "ControllerConfig.h"
 
 #include "Font.h"
+#ifdef VICEEXT_HINT_KEYS
+#include "ondemand.h" // D7: traza de verificación (HINTKEY)
+#include <stdio.h>   // D7: snprintf del código de tecla
+#endif
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h" // R3: la traza de textos va por el mismo canal (SCRTXT)
+#include "Script.h"   // R3: "¿hay misión activa?" (CTheScripts)
+#include <stdio.h>
+#endif
 
 tMessage CMessages::BriefMessages[NUMBRIEFMESSAGES];
 tPreviousBrief CMessages::PreviousBriefs[NUMPREVIOUSBRIEFS];
 tBigMessage CMessages::BIGMessages[NUMBIGMESSAGES];
 char CMessages::PreviousMissionTitle[16]; // unused
+
+#ifdef __EMSCRIPTEN__
+// ---------------------------------------------------------------------------
+// R3 (plan 06, 5ª partida): los textos que salen solos.
+//
+// El jugador los vio "aparecer y desaparecer muy rápido" sin estar en misión, y
+// en la traza **no había ni una línea de texto**: era imposible saber quién los
+// pedía. Esta traza deja constancia de cada mensaje ENCOLADO (no de cada frame
+// pintado) con su clave GXT, su duración, su canal y si hay misión activa, que
+// es lo que permite rastrear el origen (la clave se busca en el .gxt y el canal
+// distingue mensaje breve, grande o ayuda). Una línea por mensaje, como mucho.
+// ---------------------------------------------------------------------------
+static void ViceExtTraceText(const char *canal, wchar *msg, uint32 time, int flag)
+{
+	static uint32 s_odN = 0;
+	char txt[110];
+	int n = 0;
+	if (msg) {
+		for (const wchar *p = msg; *p && n < (int)sizeof(txt) - 1; p++) {
+			wchar c = *p;
+			txt[n++] = (c >= 32 && c < 127) ? (char)c : '.';
+		}
+	}
+	txt[n] = '\0';
+	char t[220];
+	snprintf(t, sizeof t, "SCRTXT n=%u canal=%s clave=\"%s\" time=%u flag=%d mis=%d",
+		++s_odN, canal, txt, (unsigned)time, flag, (int)CTheScripts::IsPlayerOnAMission());
+	ODTRACES(t);
+}
+#endif
 
 void
 CMessages::Init()
@@ -191,6 +230,9 @@ CMessages::AddMessage(wchar *msg, uint32 time, uint16 flag)
 void
 CMessages::AddMessageJumpQ(wchar *msg, uint32 time, uint16 flag)
 {
+#ifdef __EMSCRIPTEN__
+	ViceExtTraceText("brief", msg, time, (int)flag);   // R3
+#endif
 	wchar outstr[512]; // unused
 	WideStringCopy(outstr, msg, 256);
 	InsertPlayerControlKeysInString(outstr);
@@ -273,6 +315,9 @@ CMessages::ClearSmallMessagesOnly()
 void
 CMessages::AddBigMessage(wchar *msg, uint32 time, uint16 style)
 {
+#ifdef __EMSCRIPTEN__
+	ViceExtTraceText("big", msg, time, (int)style);   // R3
+#endif
 	wchar outstr[512]; // unused
 	WideStringCopy(outstr, msg, 256);
 	InsertPlayerControlKeysInString(outstr);
@@ -294,6 +339,9 @@ CMessages::AddBigMessage(wchar *msg, uint32 time, uint16 style)
 void
 CMessages::AddBigMessageQ(wchar *msg, uint32 time, uint16 style)
 {
+#ifdef __EMSCRIPTEN__
+	ViceExtTraceText("bigQ", msg, time, (int)style);   // R3
+#endif
 	wchar outstr[512]; // unused
 	WideStringCopy(outstr, msg, 256);
 	InsertPlayerControlKeysInString(outstr);
@@ -465,16 +513,55 @@ CMessages::InsertPlayerControlKeysInString(wchar *str)
 			for (int32 cont = 0; cont < MAX_CONTROLLERACTIONS && !done; cont++) {
 				uint16 contSize = GetWideStringLength(ControlsManager.m_aActionNames[cont]);
 				if (contSize != 0) {
-					if (WideStringCompare(&str[i], ControlsManager.m_aActionNames[cont], contSize)) {
-						done = true;
-						ControlsManager.GetWideStringOfCommandKeys(cont, keybuf, 256);
-						uint16 keybuf_size = GetWideStringLength(keybuf);
-						for (uint16 j = 0; j < keybuf_size; j++) {
-							*(_outstr++) = keybuf[j];
-							keybuf[j] = '\0';
+				if (WideStringCompare(&str[i], ControlsManager.m_aActionNames[cont], contSize)) {
+					done = true;
+#ifdef VICEEXT_HINT_KEYS
+					// D7 (sección 1): v3.0 del mod, "PC key icons in game hints". Si su
+					// `pcbtns.txd` trae icono para la tecla de esa acción, el aviso lleva
+					// la marca `~K<vk>~` (la pinta `CFont`) en vez del nombre de la
+					// tecla; si no lo trae (rueda del ratón, mando, tecla rara), se
+					// sigue escribiendo el nombre, que es lo que hacía antes.
+					{
+						int32 vk = ControlsManager.GetKeyIconCodeForAction(cont);
+						bool hay = vk > 0 && CFont::HasKeyIcon(vk);
+						static uint32 odHint = 0;
+						static int32 odUltimaAccion = -1;
+						static int32 odUltimoVK = -1;
+						if ((int32)cont != odUltimaAccion || vk != odUltimoVK) {
+							odUltimaAccion = cont;
+							odUltimoVK = vk;
+							if (odHint++ < 200) {
+								char tt[160];
+								char nombre[40];
+								int j;
+								for (j = 0; j < 39 && ControlsManager.m_aActionNames[cont][j]; j++)
+									nombre[j] = (char)ControlsManager.m_aActionNames[cont][j];
+								nombre[j] = '\0';
+								snprintf(tt, sizeof tt, "HINTKEY accion=%s vk=%d icono=%d", nombre, vk, hay ? 1 : 0);
+								ODTRACES(tt);
+							}
 						}
-						i += contSize + 1;
+						if (hay) {
+							char num[8];
+							snprintf(num, sizeof num, "%d", vk);
+							*(_outstr++) = '~';
+							*(_outstr++) = 'K';
+							for (char *q = num; *q; q++)
+								*(_outstr++) = *q;
+							*(_outstr++) = '~';
+							i += contSize + 1;
+							continue;
+						}
 					}
+#endif
+					ControlsManager.GetWideStringOfCommandKeys(cont, keybuf, 256);
+					uint16 keybuf_size = GetWideStringLength(keybuf);
+					for (uint16 j = 0; j < keybuf_size; j++) {
+						*(_outstr++) = keybuf[j];
+						keybuf[j] = '\0';
+					}
+					i += contSize + 1;
+				}
 				}
 			}
 		} else {
@@ -678,6 +765,9 @@ CMessages::AddMessageWithString(wchar *text, uint32 time, uint16 flag, wchar *st
 void
 CMessages::AddMessageJumpQWithString(wchar *text, uint32 time, uint16 flag, wchar *str)
 {
+#ifdef __EMSCRIPTEN__
+	ViceExtTraceText("brief+str", text, time, (int)flag);   // R3
+#endif
 	wchar outstr[512]; // unused
 	WideStringCopy(outstr, text, 256);
 	InsertStringInString(outstr, str);

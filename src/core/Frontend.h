@@ -170,6 +170,7 @@ enum eSaveSlot
 	SAVESLOT_6,
 	SAVESLOT_7,
 	SAVESLOT_8,
+	SAVESLOT_9, // autosave (sección 3, VICEEXT_AUTOSAVE): fichero GTAVCsf9.b
 	SAVESLOT_LABEL = 36
 };
 

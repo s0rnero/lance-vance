@@ -21,6 +21,7 @@ public:
 	void SetTexture(const char *name);
 	void SetTexture(const char *name, const char *mask);
 	void SetAddressing(RwTextureAddressMode addr);
+	static void SetScriptSpriteScale(bool on);
 	void Draw(float x, float y, float w, float h, const CRGBA &col);
 	void Draw(const CRect &rect, const CRGBA &col);
 	void Draw(const CRect &rect, const CRGBA &col,

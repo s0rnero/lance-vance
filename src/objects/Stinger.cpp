@@ -36,7 +36,7 @@ CStingerSegment::~CStingerSegment()
 
 CStinger::CStinger()
 {
-	bIsDeployed = false;
+	memset(this, 0, sizeof(*this));
 }
 
 void
@@ -97,6 +97,7 @@ CStinger::Remove()
 #endif
 	}
 	bIsDeployed = false;
+	m_nSpikeState = STINGERSTATE_NONE;
 }
 
 void
@@ -120,6 +121,9 @@ CStinger::Deploy(CPed *pPed)
 void
 CStinger::CheckForBurstTyres()
 {
+	if (pSpikes[0] == nil)
+		return;
+
 	CVector firstPos = pSpikes[0]->GetPosition();
 	firstPos.z += 0.2f;
 	CVector lastPos = pSpikes[NUM_STINGER_SEGMENTS - 1]->GetPosition();
@@ -158,6 +162,8 @@ CStinger::CheckForBurstTyres()
 					vecWheelPos = pBike->m_aWheelColPoints[wheelId].point;
 
 				for (int32 spike = 0; spike < NUM_STINGER_SEGMENTS; spike++) {
+					if (pSpikes[spike] == nil)
+						continue;
 					if ((pSpikes[spike]->GetPosition() - vecWheelPos).Magnitude() < maxWheelDistToSpike) {
 						if (pBike) {
 							if (wheelId < 2)
@@ -193,6 +199,7 @@ CStinger::Process()
 		if (pOwner != nil
 			&& !pOwner->bInVehicle
 			&& pOwner->GetPedState() == PED_DEPLOY_STINGER
+			&& RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_STD_THROW_UNDER) != nil
 			&& RpAnimBlendClumpGetAssociation(pOwner->GetClump(), ANIM_STD_THROW_UNDER)->currentTime > 0.39f)
 		{
 			m_nSpikeState = STINGERSTATE_DEPLOYING;

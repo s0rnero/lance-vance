@@ -33,6 +33,8 @@
 #include "Debug.h"
 #include "GenericGameStorage.h"
 #include "Camera.h"
+#include "PedArbiter.h"
+#include "ondemand.h"
 
 enum
 {
@@ -81,9 +83,75 @@ float CCamera::m_fMouseAccelVertical;
 float CCamera::m_f3rdPersonCHairMultX;
 float CCamera::m_f3rdPersonCHairMultY;
 
+// ClassicAXIS · defaults de los ajustes, verbatim del INI del mod salvo
+// `zoomForAssaultRifles` (decisión del jugador, §5.3a). Están escritos aquí y en
+// `CCamera::Init` para que el motor arranque bien aunque el INI no traiga la sección.
+CAimClassicAxisSettings CCamera::s_viceExtAim = {
+	false,	// forceAutoAim
+	1,		// lockOnTargetType
+	true,	// showTriangle
+	0.53f,	// crosshairMultX
+	0.4f,	// crosshairMultY
+	false,	// storiesPointingArm
+	1.0f,	// stickSensX
+	1.0f,	// stickSensY
+	true	// zoomForAssaultRifles (decisión 5.3a, no default del mod)
+};
+bool    CCamera::s_viceExtAimLawActive = false;
+bool    CCamera::s_viceExtAimSwitchSpeed = false;
+int16   CCamera::s_viceExtAimPrevCamMode = CCam::MODE_NONE;
+float   CCamera::s_viceExtAimPrevHor = 0.0f;
+float   CCamera::s_viceExtAimPrevVer = 0.0f;
+CEntity *CCamera::s_viceExtAimMouseTarget = nil;
+uint32  CCamera::s_viceExtAimLockOnUntil = 0;
+CVector CCamera::s_viceExtAimLastLockPos;
+CRGBA   CCamera::s_viceExtAimLastLockCol;
+bool    CCamera::s_viceExtAimForceRealMoveAnim = false;
+CVector CCamera::s_viceExtAimViewDir(0.0f, 0.0f, 0.0f);
+bool    CCamera::s_viceExtAimViewPending = false;
+int16   CCamera::s_viceExtAimViewMode = CCam::MODE_NONE;
+
 #ifdef IMPROVED_CAMERA
 #define KEYJUSTDOWN(k) ControlsManager.GetIsKeyboardKeyJustDown((RsKeyCodes)k)
 #define KEYDOWN(k) ControlsManager.GetIsKeyboardKeyDown((RsKeyCodes)k)
+#endif
+
+#ifdef VICEEXT_FIRST_PERSON
+// Sección 3, bloque C1: conmutador de vista en primera persona.
+// El "peek" de serie (m_bFirstPersonBeingUsed, más abajo en CamControl) sólo se
+// abre con el palo de mirar, se cae solo a los 2,85 s, no deja caminar y, con el
+// ratón (ajuste por defecto del port), ni siquiera llega a abrirse porque está
+// detrás de !Using3rdPersonMouseCam(). Este conmutador mantiene la vista hasta
+// que el jugador la apague, deja caminar dentro de ella y se cierra al apuntar,
+// al subir a un coche y al perder el control del ped.
+bool CCamera::m_bViceExt1stPersonView = false;
+// ¿Está pulsada ahora mismo la acción del conmutador (rebindable, por defecto V)?
+//
+// C1b-3 (21/09, 6ª partida): la tecla se lee con **respaldo**. La config de
+// controles que el port guarda en el navegador (IndexedDB) se carga por encima de
+// los valores por defecto, y si se guardó con un build anterior a la existencia
+// de esta acción, ésta queda SIN tecla (`rsNULL`) para siempre: el jugador pulsó
+// V "mil veces" y el motor no vio ni una (`1p key` nunca salió en su log). Es el
+// mismo fallo que ya se corrigió en la recarga con R (`reload key tecla=1056`, y
+// 1056 es `rsNULL`). `ViceExtActionKeyJustDown` acepta la tecla histórica cuando
+// la acción no tiene ninguna asignada, y respeta el rebindeo si lo hay.
+//
+// R13 (10ª partida, 21/09 noche): la tecla se lee **siempre** por la acción Y
+// por la 'V' cruda. Datos de la partida (`ve25`, log `04-04-07`): CERO líneas
+// `VICEEXT 1p key` en toda la sesión, con `CAM1P ... v=0` en las dos muestras,
+// mientras el jugador juró haber pulsado V. La lectura dependía de lo que el
+// navegador tenga guardado en IndexedDB: si la acción quedó con OTRA tecla (la
+// config se guardó cuando el hueco era la tecla `B` de la primera versión),
+// `ViceExtActionKeyJustDown` mira esa otra tecla y la 'V' no llega nunca —ni
+// entra en el respaldo, que sólo actúa cuando la acción está SIN tecla. Con la
+// 'V' cruda sumada a la acción, el conmutador funciona con cualquier config
+// guardada y sigue respetando el rebindeo (las dos teclas valen).
+#define VICEEXT_1P_TOGGLE_JUSTDOWN() \
+	(ControlsManager.ViceExtActionKeyJustDown(PED_TOGGLE_1RST_PERSON, 'V') || \
+	 ControlsManager.GetIsKeyboardKeyJustDown((RsKeyCodes)'V'))
+#endif
+
+#ifdef IMPROVED_CAMERA
 #define CTRLJUSTDOWN(key) \
 	       ((KEYDOWN(rsLCTRL) || KEYDOWN(rsRCTRL)) && KEYJUSTDOWN((RsKeyCodes)key) || \
 	        (KEYJUSTDOWN(rsLCTRL) || KEYJUSTDOWN(rsRCTRL)) && KEYDOWN((RsKeyCodes)key))
@@ -241,11 +309,49 @@ CCamera::Init(void)
 	m_uiTransitionState = 0;
 	m_uiTimeTransitionStart = 0;
 	m_bLookingAtPlayer = true;
-	m_f3rdPersonCHairMultX = 0.53f;
-	m_f3rdPersonCHairMultY = 0.4f;
+	// ClassicAXIS CameraCrosshairMultX/Y (Main.cpp:284-285, ini :13-14). El mod los
+	// reescribe CADA FRAME en su hook de camControl; aquí se leen una vez al cargar,
+	// que es el mismo valor en partida (no hay menú en juego para cambiarlos).
+	// Consecuencia que hay que vigilar (§5.4): al ser `static`, el valor vale también
+	// para la mira 3.ª persona del HUD (Hud.cpp:390-391) y para la aritmética de
+	// puntería (Camera.cpp:4236) — igual que en el mod, que también los
+	// sobreescribe globalmente. Si el jugador cambia el INI verá que también mueve
+	// la mira del HUD.
+	m_f3rdPersonCHairMultX = s_viceExtAim.crosshairMultX;
+	m_f3rdPersonCHairMultY = s_viceExtAim.crosshairMultY;
+	// ClassicAXIS: el estado de la ley arranca limpio en cada `Init`; los 9 ajustes
+	// NO se tocan aquí (viven en el literal de arriba y los sobreescribe `re3.cpp`
+	// si el INI trae la sección `ClassicAxis`).
+	s_viceExtAimLawActive = false;
+	s_viceExtAimSwitchSpeed = false;
+	s_viceExtAimPrevCamMode = CCam::MODE_NONE;
+	s_viceExtAimPrevHor = 0.0f;
+	s_viceExtAimPrevVer = 0.0f;
+	s_viceExtAimMouseTarget = nil;
+	s_viceExtAimLockOnUntil = 0;
+	s_viceExtAimForceRealMoveAnim = false;
+	s_viceExtAimViewDir = CVector(0.0f, 0.0f, 0.0f);
+	s_viceExtAimViewPending = false;
+	s_viceExtAimViewMode = CCam::MODE_NONE;
+	s_viceExtAimMouseTarget = nil;
 	m_fAvoidTheGeometryProbsTimer = 0.0f;
 	m_nAvoidTheGeometryProbsDirn = 0;
 }
+
+// B4 (spec GeniusZ 1a persona: near-clip separado a pie/en coche). Sin valores
+// publicados del FirstPerson.cfg del mod, ambos arrancan del DEFAULT_NEAR de
+// serie: el mecanismo queda (cada camino usa el suyo) y la calibración es
+// pendiente (ver informe). Consts a propósito, no defines: la tarea pide no
+// añadir defines salvo necesidad.
+float CCamera::s_viceExt1PNearClipOnFoot = DEFAULT_NEAR;
+float CCamera::s_viceExt1PNearClipInCar = DEFAULT_NEAR;
+float CCamera::s_viceExt1PMouseSens = 1.0f;
+CVector CCamera::s_viceExt1PVehicleOffset(0.0f, 0.0f, 0.0f);
+
+#define ViceExtNearClipOnFoot CCamera::s_viceExt1PNearClipOnFoot
+#define ViceExtNearClipInCar CCamera::s_viceExt1PNearClipInCar
+
+
 
 void
 CCamera::Process(void)
@@ -258,6 +364,31 @@ CCamera::Process(void)
 	float deltaBeta = 0.0f;
 	bool lookLRBVehicle = false;
 	CVector CamFront, CamUp, CamRight, CamSource, Target;
+
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	// ClassicAXIS \u00b7 `AIMCFG`: los 9 ajustes de la secci\u00f3n [ClassicAxis], UNA vez
+	// (no 1 Hz: son valores de carga, no una medida). Se emite aqu\u00ed, en el primer
+	// `Process` y no en `Init`, porque `LoadINISettings` (`Frontend.cpp:3218`) y
+	// `TheCamera.Init()` (`Game.cpp:474`) no tienen orden garantizado entre s\u00ed: en
+	// `Process` el INI ya est\u00e1 le\u00eddo con seguridad. Si el INI no trae la secci\u00f3n,
+	// salen los defaults verbatim del mod (`Camera.cpp`, literal de los `static`).
+	// Criterio del verificador: `forceauto=0 lock=1 tri=1 mcx=0.530 mcy=0.400
+	// brazo=0 sensx=1.00 sensy=1.00 fov=1`.
+	{
+		static bool s_odAimCfgDone = false;
+		if (!s_odAimCfgDone) {
+			s_odAimCfgDone = true;
+			char t[190];
+			snprintf(t, sizeof t, "AIMCFG forceauto=%d lock=%d tri=%d mcx=%.3f mcy=%.3f brazo=%d sensx=%.2f sensy=%.2f fov=%d ley=%d",
+				(int)s_viceExtAim.forceAutoAim, (int)s_viceExtAim.lockOnTargetType,
+				(int)s_viceExtAim.showTriangle, s_viceExtAim.crosshairMultX,
+				s_viceExtAim.crosshairMultY, (int)s_viceExtAim.storiesPointingArm,
+				s_viceExtAim.stickSensX, s_viceExtAim.stickSensY,
+				(int)s_viceExtAim.zoomForAssaultRifles, (int)m_bJustInitalised);
+			ODTRACES(t);
+		}
+	}
+#endif
 
 	m_bJust_Switched = false;
 	m_RealPreviousCameraPosition = GetPosition();
@@ -294,7 +425,9 @@ CCamera::Process(void)
 	}
 #endif
 
-	RwCameraSetNearClipPlane(Scene.camera, DEFAULT_NEAR);
+	// B4: near-clip dual (ver consts arriba): en coche se usa el de coche para no
+	// clipar techos/interiores al resolver colisiones.
+	RwCameraSetNearClipPlane(Scene.camera, (pTargetEntity && pTargetEntity->IsVehicle()) ? ViceExtNearClipInCar : ViceExtNearClipOnFoot);
 
 	if(Cams[ActiveCam].Front.x == 0.0f && Cams[ActiveCam].Front.y == 0.0f)
 		oldBeta = 0.0f;
@@ -723,6 +856,12 @@ CCamera::CamControl(void)
 
 		// Vehicle target
 		if(pTargetEntity->IsVehicle()){
+#ifdef VICEEXT_FIRST_PERSON
+			// Sección 3, bloque C1: al subir a un coche se vuelve a 3ª persona.
+			if (CCamera::m_bViceExt1stPersonView)
+				ViceExtPedRelease(PEDLANE_LEY, PEDCAP_CAMARA);
+			CCamera::m_bViceExt1stPersonView = false;
+#endif
 #ifdef GTA_TRAIN
 			if(((CVehicle*)pTargetEntity)->IsTrain()){
 				if(!m_bTargetJustBeenOnTrain){
@@ -1011,6 +1150,112 @@ CCamera::CamControl(void)
 
 			ReqMode = CCam::MODE_FOLLOWPED;
 
+			// Sección 3, bloque C1: traza de diagnóstico del "peek" de 1ª persona.
+			// No emite una línea por frame: sólo la primera vez que se evalúa la
+			// puerta y cada vez que cambia el estado o la configuración. La leen
+			// las sondas (tools/firstperson-smoke-test.mjs) para saber si el motor
+			// entra en 1ª persona, con qué ajustes y durante cuánto.
+			{
+				// Vigilamos el estado del peek y, aparte, las teclas de mirar del
+				// numérico (4/6/8/5) y el stick del estado de teclado: así la traza
+				// distingue "la tecla no llega al pad" de "llega pero el binding no
+				// la convierte en mirar" y de "hay mirar pero la puerta lo bloquea".
+			struct SOdCam1P { int fp, mouse3d, ctrl, mode, sc, csx, csy, ksx, ksy, num, keys, spd, camx, camz, tog, togkey, v; };
+			static SOdCam1P s_odLast = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+				CPad *p0 = CPad::GetPad(0);
+				CControllerState &cs = p0->NewState;
+				CControllerState &ks = p0->PCTempKeyState;
+				SOdCam1P now = { 0 };
+				now.fp = (int)m_bFirstPersonBeingUsed;
+				now.mouse3d = (int)Cams[0].Using3rdPersonMouseCam();
+				now.ctrl = (int)FrontEndMenuManager.m_ControlMethod;
+				now.mode = (int)Cams[ActiveCam].Mode;
+				now.sc = (int)m_bEnable1rstPersonCamCntrlsScript;
+				now.csx = (int)cs.RightStickX;
+				now.csy = (int)cs.RightStickY;
+				now.ksx = (int)ks.RightStickX;
+				now.ksy = (int)ks.RightStickY;
+				now.num = (p0->GetPad4() ? 1 : 0) | (p0->GetPad6() ? 2 : 0)
+				        | (p0->GetPad8() ? 4 : 0) | (p0->GetPad5() ? 8 : 0);
+				// "¿llegan las teclas al motor?": W, Escape y flechas arriba/abajo.
+				now.keys = (p0->GetChar('W') ? 1 : 0) | (p0->GetEscape() ? 2 : 0)
+				         | (p0->GetUp() ? 4 : 0) | (p0->GetDown() ? 8 : 0);
+				// Velocidad a pie cuantizada: prueba de que el jugador anda dentro del
+				// modo (la traza sólo emite al cambiar algo).
+				now.spd = (int)(FindPlayerPed()->m_fMoveSpeed * 100.0f);
+				// Posición de la cámara en decenas de metro: si una cámara se va al
+				// garete (p.ej. 1ª persona mal calculada), el último renglón lo enseña.
+				{
+					CVector odcam = TheCamera.GetPosition();
+					now.camx = (int)(odcam.x / 10.0f);
+					now.camz = (int)(odcam.z / 10.0f);
+				}
+#ifdef VICEEXT_FIRST_PERSON
+				// C1: estado del conmutador y si su tecla está pulsada en este frame
+				// (la misma señal que consume el motor, no una tecla fija).
+				// R5: además la tecla CRUDA 'V' (si la acción quedó sin binding en
+				// una config guardada vieja, el conmutador no la ve pero la V sí
+				// llega al motor: así una pulsación perdida es visible).
+				now.tog = CCamera::m_bViceExt1stPersonView ? 1 : 0;
+				now.togkey = VICEEXT_1P_TOGGLE_JUSTDOWN() ? 1 : 0;
+				now.v = ControlsManager.GetIsKeyboardKeyJustDown((RsKeyCodes)'V') ? 1 : 0;
+#ifdef __EMSCRIPTEN__
+				// R13: la tecla que el navegador tiene GUARDADA para esta acción, una
+				// sola vez por sesión. Si no es 'V' (86) ni 1056 (`rsNULL`), ahí está
+				// el motivo de que pulsar V no hiciera nada: la config guardada manda.
+				{
+					static bool s_odBindLogged = false;
+					if (!s_odBindLogged) {
+						s_odBindLogged = true;
+						char odb2[160];
+						snprintf(odb2, sizeof odb2, "VICEEXT 1p bind tecla=%d (86='V', 1056=rsNULL) vdown=%d",
+							ControlsManager.GetControllerKeyAssociatedWithAction(PED_TOGGLE_1RST_PERSON, KEYBOARD),
+							(int)now.v);
+						ODTRACES(odb2);
+					}
+				}
+#endif
+#else
+				now.v = 0;
+#endif
+				// Ruido (20/09): la traza emitía en cada cambio de velocidad a pie
+				// —2.589 líneas en 10 min de partida normal, y el log se comparte
+				// con las otras dos secciones—. Con C1 ya cerrado y verificado,
+				// ahora sólo escribe si el modo está ENCENDIDO (ahí siguen haciendo
+				// falta los renglones de "anda dentro del modo") o si cambia algo
+				// del propio conmutador (tog/mode/fp): dos líneas por conmutación y
+				// cero ruido mientras el modo está apagado.
+				// R5: ADEMÁS escribe al pulsar (aunque el conmutador no se aplique):
+				// una pulsación perdida hoy es invisible y no hay dato para decidir
+				// entre "la tecla no llega" y "la puerta la bloquea".
+				bool odPressed = false;
+#ifdef VICEEXT_FIRST_PERSON
+				odPressed = (now.togkey != 0 || now.v != 0);
+#endif
+				bool odInteresting = now.tog != 0 || odPressed
+				    || now.tog != s_odLast.tog || now.mode != s_odLast.mode || now.fp != s_odLast.fp;
+				if(odInteresting && (odPressed || memcmp(&now, &s_odLast, sizeof(now)) != 0)){
+					char odb[400];
+					snprintf(odb, sizeof(odb),
+						"CAM1P fp=%d ctrl=%d mouse3d=%d mode=%d sc=%d keys=%d speed=%.2f spd=%d cam=%d,%d since=%u stick=%d,%d kstick=%d,%d num=%d lstick=%d,%d btn=%d%d%d%d shk=%d tog=%d togkey=%d v=%d",
+						now.fp, now.ctrl, now.mouse3d, now.mode, now.sc, now.keys, FindPlayerPed()->m_fMoveSpeed, now.spd,
+						now.camx * 10, now.camz * 10,
+						(unsigned)(CTimer::GetTimeInMilliseconds() - m_uiFirstPersonCamLastInputTime),
+						now.csx, now.csy, now.ksx, now.ksy, now.num,
+						(int)cs.LeftStickX, (int)cs.LeftStickY,
+						(int)(cs.Square != 0), (int)(cs.Triangle != 0), (int)(cs.Cross != 0), (int)(cs.Circle != 0),
+						(int)(cs.RightShock != 0),
+#ifdef VICEEXT_FIRST_PERSON
+						now.tog, now.togkey, now.v
+#else
+						0, 0, now.v
+#endif
+						);
+					ODTRACES(odb);
+					s_odLast = now;
+				}
+			}
+
 			// Check 1st person mode
 			if((m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) && pTargetEntity->IsPed() &&
 			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) && !Cams[0].Using3rdPersonMouseCam()
@@ -1044,6 +1289,109 @@ CCamera::CamControl(void)
 				ReqMode = CCam::MODE_1STPERSON;
 				CPad::GetPad(0)->DisablePlayerControls |= PLAYERCONTROL_CAMERA;
 			}
+
+#ifdef VICEEXT_FIRST_PERSON
+		// Sección 3, bloque C1: el conmutador de vista en 1ª persona.
+		// - Se enciende/apaga con la acción rebindable PED_TOGGLE_1RST_PERSON
+		//   (tecla V por defecto, con respaldo a 'V' si la config guardada la
+		//   dejó sin tecla: ver ViceExtActionKeyJustDown).
+			// - Mientras esté encendido se pide MODE_1STPERSON_RUNABOUT (la 1ª persona
+			//   de PC, CCam::Process_1rstPersonPedOnPC: cámara en la cabeza, mirada con
+			//   ratón y punto de mira) en vez del MODE_1STPERSON del peek, que sólo
+			//   mira con el palo derecho y caduca a los 2,85 s.
+			// - No caduca por tiempo ni al caminar: el jugador anda hacia donde mira
+			//   (en 1ª persona el control a pie es relativo a la cámara).
+			// - Se cierra al apuntar con mira (TargetJustDown), al perder el control
+			//   del ped (coche, muerte, detención, cinemática) y en CCamera::Restore.
+		// C1b (20/09): la pulsación se registra SIEMPRE, aunque el modo no pueda
+		// aplicarse. En la partida real del jugador no había UNA sola línea que
+		// dijera si la tecla llegaba al motor (pulsó V y no pasó nada), así que
+		// la traza contesta eso: `key` sale con la tecla vista y con el estado
+		// que decide si el conmutador puede aplicarse.
+		// R5b (21/09, 7ª partida): la pulsación se lee UNA vez y el conmutador se
+		// acciona en el FLANCO, con antirrebote.
+		//
+		// Lo que pasó de verdad en la partida (log `01-23-46`, 7 min): 46 líneas
+		// `VICEEXT 1p key ... tog=0` y `tog=1` NI UNA VEZ; CAM1P con `tog=0` en las
+		// 62 muestras. La tecla SÍ llegaba (la traza es de la misma macro que
+		// conmuta), así que el fallo estaba en la puerta: la traza y la puerta
+		// llamaban a `VICEEXT_1P_TOGGLE_JUSTDOWN()` por separado y la primera
+		// consumía el "justo ahora" (acción o respaldo), dejando `false` a la
+		// segunda, que es la que de verdad conmuta. Ahora se lee una sola vez.
+		//
+		// El antirrebote de 300 ms cubre el otro caso posible: si esa lectura fuese
+		// de nivel (tecla mantenida: `now.v=1` salía en tres segundos seguidos), el
+		// modo parpadearía 60 veces por segundo y no se vería nada tampoco.
+		bool odTogglePress = VICEEXT_1P_TOGGLE_JUSTDOWN() != 0;
+		static uint32 s_odToggleLast = 0;
+		uint32 odToggleNow = CTimer::GetTimeInMilliseconds();
+		if(odToggleNow < s_odToggleLast) s_odToggleLast = 0;   // reloj retrocedió
+		bool odToggleEdge = odTogglePress && (odToggleNow - s_odToggleLast > 300);
+		if(odToggleEdge) s_odToggleLast = odToggleNow;
+		if(odTogglePress){
+			char odt[160];
+			snprintf(odt, sizeof odt, "VICEEXT 1p key ctrl=%d wide=%d look=%d fp=%d mode=%d tog=%d",
+				(int)FindPlayerPed()->IsPedInControl(), (int)m_WideScreenOn, (int)m_bLookingAtPlayer,
+				(int)m_bFirstPersonBeingUsed, Cams[ActiveCam].Mode, (int)CCamera::m_bViceExt1stPersonView);
+			ODTRACES(odt);
+		}
+		// R5: puerta alineada con la cámara de ratón de este port. El peek de
+		// serie exige `!Cams[0].Using3rdPersonMouseCam()` y con ratón nunca entra;
+		// el conmutador no debe heredar ese bloqueo: con cámara de ratón también
+		// conmuta (es justo la configuración por defecto: Standard + ratón).
+		// R5b (9ª partida): `bFreeCam` NO debe cerrar esta puerta. En este port
+		// `bFreeCam` encendido es el estado normal (cámara moderna de ratón a pie
+		// y de coche tipo SA), y con él la puerta daba `puerta=0` en las 11
+		// pulsaciones de la partida (log `1p set ... free=1`), así que la V no
+		// hacía nada. Con cámara de ratón activa se permite siempre; sin ella
+		// (cámara libre de verdad) se sigue exigiendo el control por script.
+		bool odCamaraLibre = (ViceExtPedOwner(PEDCAP_CAMARA) == PEDLANE_MOTOR || ViceExtPedOwner(PEDCAP_CAMARA) == PEDLANE_LEY);
+		bool odGate1p = odCamaraLibre && ((m_bLookingAtPlayer || Cams[0].Using3rdPersonMouseCam())) && !m_WideScreenOn && !CReplay::IsPlayingBack()
+#ifdef FREE_CAM
+		   && (!CCamera::bFreeCam || Cams[0].Using3rdPersonMouseCam() || m_bEnable1rstPersonCamCntrlsScript)
+#endif
+		   && !m_bFirstPersonBeingUsed;
+		if(odGate1p){
+				if(odToggleEdge){
+					CCamera::m_bViceExt1stPersonView = !CCamera::m_bViceExt1stPersonView;
+					if (CCamera::m_bViceExt1stPersonView)
+						ViceExtPedClaim(PEDLANE_LEY, PEDCAP_CAMARA);
+					else
+						ViceExtPedRelease(PEDLANE_LEY, PEDCAP_CAMARA);
+				}
+			}
+			if(!FindPlayerPed()->IsPedInControl() || CPad::GetPad(0)->TargetJustDown()){
+				if (CCamera::m_bViceExt1stPersonView)
+					ViceExtPedRelease(PEDLANE_LEY, PEDCAP_CAMARA);
+				CCamera::m_bViceExt1stPersonView = false;
+			}
+			if(CCamera::m_bViceExt1stPersonView)
+				// Sin `DisablePlayerControls |= PLAYERCONTROL_CAMERA` (eso es cosa del
+				// peek de serie): cualquier bit de DisablePlayerControls hace que
+				// CPad::GetPedWalkUpDown/LeftRight y TargetJustDown devuelvan 0, y con
+				// él puesto el jugador no anda ni el apuntado saca del modo.
+				ReqMode = CCam::MODE_1STPERSON_RUNABOUT;
+#ifdef __EMSCRIPTEN__
+		// R5b: el RESULTADO de la pulsación. Sin esto, un "no pasó nada" en el
+		// juego no decía nada desde el log; ahora dice si la puerta cerró
+		// (`puerta=0`), si quedó encendido (`tog=1`) y por qué se canceló.
+		if(odTogglePress){
+			char odt2[200];
+			snprintf(odt2, sizeof odt2, "VICEEXT 1p set puerta=%d flanco=%d tog=%d incontrol=%d target=%d replay=%d free=%d wide=%d look=%d fp=%d mode=%d",
+				(int)odGate1p, (int)odToggleEdge, (int)CCamera::m_bViceExt1stPersonView,
+				(int)FindPlayerPed()->IsPedInControl(), (int)CPad::GetPad(0)->TargetJustDown(),
+				(int)CReplay::IsPlayingBack(),
+#ifdef FREE_CAM
+				(int)CCamera::bFreeCam,
+#else
+				-1,
+#endif
+				(int)m_WideScreenOn, (int)m_bLookingAtPlayer, (int)m_bFirstPersonBeingUsed,
+				Cams[ActiveCam].Mode);
+			ODTRACES(odt2);
+		}
+#endif
+#endif
 
 			// Zoom value
 			if(PedZoomIndicator == CAM_ZOOM_1)
@@ -1086,6 +1434,7 @@ CCamera::CamControl(void)
 
 			WellBufferMe(CloseInPedHeightTarget, &Cams[ActiveCam].m_fCloseInPedHeightOffset, &Cams[ActiveCam].m_fCloseInPedHeightOffsetSpeed, 0.1f, 0.025f, false);
 
+#ifndef VICEEXT_AIM_CLASSICAXIS
 			// Check if entering fight cam
 			if(!m_bFirstPersonBeingUsed){
 				if(FindPlayerPed()->GetPedState() == PED_FIGHT && !m_bUseMouse3rdPerson)
@@ -1094,6 +1443,23 @@ CCamera::CamControl(void)
 				   FindPlayerPed()->GetPedState() == PED_ATTACK && !m_bUseMouse3rdPerson)
 					ReqMode = CCam::MODE_FIGHT_CAM;
 			}
+#else
+			// PORTADO — ClassicAXIS (MIT, © 2022 Classic Axis VC Team)
+			//   gta_vc_browser/tmp/extsrc/classicaxis_Main.cpp:113-117
+			//   («No fight cam» — plugin::patch::Nop(0x4715D9, 9) y
+			//    plugin::patch::Nop(0x471613, 9))
+			// Qué se toma: el mod anula los DOS puntos donde el juego entra en la
+			//   cámara de pelea. Son exactamente los dos `ReqMode = MODE_FIGHT_CAM` de
+			//   este bloque (uno para `PED_FIGHT`, otro para el bate de béisbol en
+			//   `PED_ATTACK`), así que el nop 1:1 con los dos nops del mod.
+			//   Con esto la cámara NUNCA entra en `MODE_FIGHT_CAM`: se queda en la de
+			//   perseguir, que es el comportamiento que quiere el mod.
+			// Adaptación: en vez de nopear bytes, se apaga el bloque entero tras el
+			//   `ifndef` de la feature, que es el equivalente en fuente.
+			// Medible: criterio PASS = pelear a puños o con bate NO cambia la
+			//   cámara a `MODE_FIGHT_CAM` (FALLO si al pegar cambia el encuadre).
+			(void)0;
+#endif
 
 			// Garage cam
 			CAttributeZone *stairsZone = nil;
@@ -2165,6 +2531,13 @@ CCamera::Restore(void)
 
 	m_bEnable1rstPersonCamCntrlsScript = false;
 	m_bAllow1rstPersonWeaponsCamera = false;
+#ifdef VICEEXT_FIRST_PERSON
+	// Sección 3, bloque C1: no dejar la 1ª persona pegada al devolverle la cámara
+	// al juego (morir, cargar partida, cinemáticas, scripts).
+	if (CCamera::m_bViceExt1stPersonView)
+		ViceExtPedRelease(PEDLANE_LEY, PEDCAP_CAMARA);
+	CCamera::m_bViceExt1stPersonView = false;
+#endif
 	m_bUseScriptZoomValuePed = false;
 	m_bUseScriptZoomValueCar = false;
 	m_bStartInterScript = true;
@@ -2505,6 +2878,24 @@ CCamera::StartTransition(int16 newMode)
 		m_uiTransitionDurationTargetCoors = m_uiTransitionDuration;
 		m_fFractionInterToStopMovingTarget = m_fFractionInterToStopMoving;
 		m_fFractionInterToStopCatchUpTarget = m_fFractionInterToStopCatchUp;
+	}
+
+	// ClassicAXIS C6 (Main.cpp:227-248): al conmutar a la ley de apuntado (o al
+	// volver a la de a pie) la transición del mod dura 500 ms con parada
+	// temprana, para que entrar y salir del apuntado no de un tirón. Va AL FINAL
+	// de la función porque StartTransition sobrescribe esos cuatro números en
+	// dos sitios (:2711-2716 y :2750-2766), y FUERA del `if(m_bLookingAtPlayer)`
+	// porque al volver a la cámara ese `if` ya es true y pondría 600/0.0/1.0.
+	// `MODE_AIMING` NO se añade a las listas de clasificación de :2501-2512 ni al
+	// `switch(Cams[ActiveCam].Mode)` de :2561-2684: el mod no tiene esa
+	// clasificación y este override ya fija los cuatro valores.
+	if (s_viceExtAimSwitchSpeed
+	    && (newMode == CCam::MODE_AIMING || newMode == CCam::MODE_FOLLOWPED)) {
+		m_uiTransitionDuration = 500;
+		m_uiTransitionDurationTargetCoors = 500;
+		m_fFractionInterToStopMoving = 0.1f;
+		m_fFractionInterToStopCatchUp = 0.9f;
+		s_viceExtAimSwitchSpeed = false;   // flag de UN tiro (Main.cpp:1240)
 	}
 }
 
@@ -3637,6 +4028,12 @@ CCamera::LoadPathSplines(int file)
 			n = 0;
 		}
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[od] splines loaded frames=%.0f,%.0f,%.0f\n",
+		m_arrPathArray[0].m_arr_PathData ? m_arrPathArray[0].m_arr_PathData[0] : -1.0f,
+		m_arrPathArray[1].m_arr_PathData ? m_arrPathArray[1].m_arr_PathData[0] : -1.0f,
+		m_arrPathArray[2].m_arr_PathData ? m_arrPathArray[2].m_arr_PathData[0] : -1.0f);
+#endif
 }
 
 void
@@ -3969,8 +4366,8 @@ CCamera::Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, 
 		target = dist*Cams[ActiveCam].CamTargetEntity->GetForward() + source;
 		return false;
 	}else{
-		float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * Cams[ActiveCam].FOV * CDraw::GetAspectRatio());
-		float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * Cams[ActiveCam].FOV);
+	float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * Cams[ActiveCam].FOV * CDraw::GetAspectRatio());
+	float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * Cams[ActiveCam].FOV);
 		source = Cams[ActiveCam].Source;
 		target = Cams[ActiveCam].Front;
 		target += Cams[ActiveCam].Up * Tan(angleY);
@@ -3985,11 +4382,28 @@ CCamera::Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, 
 float
 CCamera::Find3rdPersonQuickAimPitch(void)
 {
-	float clampedFrontZ = Clamp(Cams[ActiveCam].Front.z, -1.0f, 1.0f);
-
-	float rot = Asin(clampedFrontZ);
-
-	return -(DEGTORAD(((0.5f - m_f3rdPersonCHairMultY) * 1.8f * 0.5f * Cams[ActiveCam].FOV)) + rot);
+	// PORTADO — ClassicAXIS (sin LICENSE, gennariarmando/DK22Pac) — Main.cpp:1464
+	//   «static float Find3rdPersonQuickAimPitch(float y)»
+	// Qué se toma: el pitch del brazo. El mod pasa un `y` que NO USA (su cuerpo lee
+	//   `m_f3rdPersonCHairMultY` del sitio, :1468); nuestra firma ya no lo tiene
+	//   (Camera.h:625), así que la misma cuenta cabe igual, sin tocar los 5 callsites.
+	//   El `0.01403292f` es el número a copiar tal cual (mod :1467).
+	// Adaptación, y NO es cosmetico (cambia el resultado, no la forma):
+	//   (a) el factor de la retícula pasa de (0.5 - multY) a (0.5 - multY + 0.5 -
+	//       multY) = (1 - 2*multY), o sea el DOBLE, y se divide por el aspect ratio
+	//       (mod :1469);
+	//   (b) el término angular pasa de Asin(Front.z) (el rumbo real de la cámara) al
+	//       Ángulo de la ley (mod :1471).
+	// OJO: los 5 callsites (PedFight.cpp:365/376/1049, PlayerPed.cpp:1742/1780) están
+	//   dentro de `if(Using3rdPersonMouseCam())`, que exige MODE_FOLLOWPED, así que
+	//   mientras la ley ClassicAXIS esté activa NO corren: el cambio solo se nota en
+	//   el primer frame de volver a MODE_FOLLOWPED. Es lo correcto (el mod tiene el
+	//   mismo solape) y se dice para que no parezca un cambio sin efecto.
+	// Medible: §8.3 — `AIMIK pitch=` y el `Alpha` de `AIMCAM` dan la igualdad
+	//   `pitch == -(Atan(...) + Alpha)`, que es la única forma de medirla.
+	float tanHalf = Tan(DEGTORAD(Cams[ActiveCam].FOV) * 0.5f * 0.01403292f);
+	return -(Atan(tanHalf * (0.5f - m_f3rdPersonCHairMultY + 0.5f - m_f3rdPersonCHairMultY)
+	                    * (1.0f / CDraw::GetAspectRatio())) + Cams[ActiveCam].Alpha);
 }
 
 bool

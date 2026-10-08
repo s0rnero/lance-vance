@@ -7,6 +7,12 @@
 #include "FileMgr.h"
 #endif
 #include "Timer.h"
+#include "ondemand.h" // R3b: caza-todo de textos dibujados (SCRTXT3)
+#include <string.h>  // R3b: strcmp/strncpy del dedupe de la traza
+#ifdef VICEEXT_HINT_KEYS
+#include "TxdStore.h" // D7: el TXD de iconos de tecla
+#include <stdio.h>   // D7: snprintf del nombre de la textura (cÃ³digo de tecla)
+#endif
 
 void
 AsciiToUnicode(const char *src, wchar *dst)
@@ -71,7 +77,7 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		18, 10, 17, 17, 17, 17, 17, 15, 12, 16,  5, 30, 30, 30, 30, 30,
 		//   A,  B,  C,  D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,
 		12, 16, 19, 16, 19, 18, 18, 17, 22, 11, 17, 18, 18, 30, 22, 19,
-		//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, ??, ??, ??,  ¡,  \,
+		//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, ??, ??, ??,  ï¿½,  \,
 		#ifdef FIX_BUGS
 		22, 19, 19, 20, 18, 19, 19, 29, 19, 18, 19, 19, 33, 33, 10, 19,
 		#else
@@ -81,11 +87,11 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		12, 14, 11, 11, 16, 11, 12, 14, 14, 10, 13, 12, 10, 19, 18, 12,
 		//p, q,  r,  s,  t,  u,  v,  w,  x,  y,  z, ??, ??, ??, ??, ??,
 		16, 13, 13, 11, 12, 15, 12, 15, 13, 12, 12, 37, 33, 37, 35, 37,
-		//À, Á,  Â,  Ä,  Æ,  Ç,  È,  É,  Ê,  Ë,  Ì,  Í,  Î,  Ï,  Ò,  Ó,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		16, 16, 16, 16, 33, 17, 18, 18, 18, 18, 11, 11, 11, 11, 19, 19,
-		//Ô, Ö,  Ù,  Ú,  Û,  Ü,  ß,  à,  á,  â,  ä,  æ,  ç,  è,  é,  ê,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		19, 19, 19, 19, 19, 19, 15, 14, 14, 14, 14, 20, 14, 11, 11, 11,
-		//ë, ì,  í,  î,  ï,  ò,  ó,  ô,  ö,  ù,  ú,  û,  ü,  Ñ,  ñ,  ¿,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		#ifdef FIX_BUGS
 		11, 10, 10, 10, 10, 12, 12, 12, 12, 15, 15, 15, 15, 22, 18, 21,
 		#else
@@ -110,7 +116,7 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		20,  7, 20, 20, 21, 20, 20, 19, 21, 20,  8, 30, 24, 30, 24, 19,
 		//TM,A,  B,  C,  D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,
 		20, 22, 22, 21, 22, 18, 18, 22, 22,  9, 14, 21, 18, 27, 21, 24,
-		//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, *I,  \, *I,  ¡,  °,
+		//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, *I,  \, *I,  ï¿½,  ï¿½,
 		#ifdef FIX_BUGS
 		22, 22, 23, 20, 19, 23, 22, 31, 23, 23, 21, 25, 13, 30,  7, 19,
 		#else
@@ -120,11 +126,11 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		10, 17, 17, 16, 17, 17, 11, 17, 17,  7,  7, 18,  7, 25, 17, 17,
 		//p, q,  r,  s,  t,  u,  v,  w,  x,  y,  z, *I, *I, $2, (2, )2,
 		17, 17, 11, 17, 11, 17, 18, 25, 19, 18, 17, 28, 26, 20, 15, 15,
-		//À, Á,  Â,  Ä,  Æ,  Ç,  È,  É,  Ê,  Ë,  Ì,  Í,  Î,  Ï,  Ò,  Ó,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		20, 20, 20, 20, 29, 22, 19, 19, 19, 19,  9,  9,  9,  9, 23, 23,
-		//Ô, Ö,  Ù,  Ú,  Û,  Ü,  ß,  à,  á,  â,  ä,  æ,  ç,  è,  é,  ê,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		23, 23, 24, 24, 24, 24, 20, 19, 17, 17, 17, 30, 16, 17, 17, 17,
-		//ë, ì,  í,  î,  ï,  ò,  ó,  ô,  ö,  ù,  ú,  û,  ü,  Ñ,  ñ,  ¿,
+		//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 		#ifdef FIX_BUGS
 		17, 11, 11, 15, 12, 17, 17, 17, 17, 17, 17, 17, 17, 21, 17, 19,
 		#else
@@ -134,9 +140,9 @@ int16 CFont::Size[MAX_FONTS][210] = {
 		20, 18, 19, 19, 21, 19, 19, 19, 19, 19, 16, 19, 19, 19, 20, 19,
 		//F2,G2,H2, I2, J2, K2, L2, M2, N2, O2, P2, Q2, R2, S2, T2, U2,
 		16, 19, 19,  9, 19, 20, 14, 29, 19, 19, 19, 19, 19, 19, 21, 19,
-		//V2,W2,X2, Y2, Z2, À2, Á2, Â2, Ä2, Æ2, Ç2, È2, É2, Ê2, Ë2, Ì2,
+		//V2,W2,X2, Y2, Z2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2,
 		20, 32, 20, 19, 19, 19, 19, 19, 19, 29, 19, 19, 19, 19, 19,  9,
-		//Í2,Î2,Ï2, Ò2, Ó2, Ô2, Ö2, Ù2, Ú2, Û2, Ü2, ß2, Ñ2, ¿2, '2, .2,
+		//ï¿½2,ï¿½2,ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, '2, .2,
 		#ifdef FIX_BUGS
 		 9,  9,  9, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 10,  9,
 		#else
@@ -191,17 +197,17 @@ int16 CFont::Size[MAX_FONTS][210] = {
 			18, 10, 17, 17, 17, 17, 17, 15, 12, 16,  5, 30, 30, 30, 30, 30,
 			//   A,  B,  C,  D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,
 			12, 16, 19, 16, 19, 18, 18, 17, 22, 11, 17, 18, 18, 30, 22, 19,
-			//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, ??, ??, ??,  ¡,  \,
+			//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, ??, ??, ??,  ï¿½,  \,
 			22, 19, 19, 20, 18, 19, 19, 29, 19, 18, 19, 19, 33, 33, 10, 19,
 			//??,a,  b,  c,  d,  e,  f,  g,  h,  i,  j,  k,  l,  m,  n,  o,
 			12, 14, 11, 11, 16, 11, 12, 14, 14, 10, 13, 12, 10, 19, 18, 12,
 			//p, q,  r,  s,  t,  u,  v,  w,  x,  y,  z, ??, ??, ??, ??, ??,
 			16, 13, 13, 11, 12, 15, 12, 15, 13, 12, 12, 37, 33, 37, 35, 37,
-			//À, Á,  Â,  Ä,  Æ,  Ç,  È,  É,  Ê,  Ë,  Ì,  Í,  Î,  Ï,  Ò,  Ó,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			16, 16, 16, 16, 33, 17, 18, 18, 18, 18, 11, 11, 11, 11, 19, 19,
-			//Ô, Ö,  Ù,  Ú,  Û,  Ü,  ß,  à,  á,  â,  ä,  æ,  ç,  è,  é,  ê,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			19, 19, 19, 19, 19, 19, 15, 14, 14, 14, 14, 20, 14, 11, 11, 11,
-			//ë, ì,  í,  î,  ï,  ò,  ó,  ô,  ö,  ù,  ú,  û,  ü,  Ñ,  ñ,  ¿,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			11, 10, 10, 10, 10, 12, 12, 12, 12, 15, 15, 15, 15, 22, 18, 21,
 			//i,BLANKS
 			10, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19,
@@ -222,25 +228,25 @@ int16 CFont::Size[MAX_FONTS][210] = {
 			20,  7, 20, 20, 21, 20, 20, 19, 21, 20,  8, 30, 24, 30, 24, 19,
 			//TM,A,  B,  C,  D,  E,  F,  G,  H,  I,  J,  K,  L,  M,  N,  O,
 			20, 22, 22, 21, 22, 18, 18, 22, 22,  9, 14, 21, 18, 27, 21, 24,
-			//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, *I,  \, *I,  ¡,  °,
+			//P, Q,  R,  S,  T,  U,  V,  W,  X,  Y,  Z, *I,  \, *I,  ï¿½,  ï¿½,
 			22, 22, 23, 20, 19, 23, 22, 31, 23, 23, 21, 25, 13, 30,  7, 19,
 			//(C),a, b,  c,  d,  e,  f,  g,  h,  i,  j,  k,  l,  m,  n,  o,
 			10, 17, 17, 16, 17, 17, 11, 17, 17,  7,  7, 18,  7, 25, 17, 17,
 			//p, q,  r,  s,  t,  u,  v,  w,  x,  y,  z, *I, *I, $2, (2, )2,
 			17, 17, 11, 17, 11, 17, 18, 25, 19, 18, 17, 28, 26, 20, 15, 15,
-			//À, Á,  Â,  Ä,  Æ,  Ç,  È,  É,  Ê,  Ë,  Ì,  Í,  Î,  Ï,  Ò,  Ó,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			20, 20, 20, 20, 29, 22, 19, 19, 19, 19,  9,  9,  9,  9, 23, 23,
-			//Ô, Ö,  Ù,  Ú,  Û,  Ü,  ß,  à,  á,  â,  ä,  æ,  ç,  è,  é,  ê,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			23, 23, 24, 24, 24, 24, 20, 19, 17, 17, 17, 30, 16, 17, 17, 17,
-			//ë, ì,  í,  î,  ï,  ò,  ó,  ô,  ö,  ù,  ú,  û,  ü,  Ñ,  ñ,  ¿,
+			//ï¿½, ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,  ï¿½,
 			17, 11, 11, 15, 12, 17, 17, 17, 17, 17, 17, 17, 17, 21, 17, 19,
 			//02,12,22, 32, 42, 52, 62, 72, 82, 92, :2, A2, B2, C2, D2, E2,
 			20, 18, 19, 19, 21, 19, 19, 19, 19, 19, 16, 19, 19, 19, 20, 19,
 			//F2,G2,H2, I2, J2, K2, L2, M2, N2, O2, P2, Q2, R2, S2, T2, U2,
 			16, 19, 19,  9, 19, 20, 14, 29, 19, 19, 19, 19, 19, 19, 21, 19,
-			//V2,W2,X2, Y2, Z2, À2, Á2, Â2, Ä2, Æ2, Ç2, È2, É2, Ê2, Ë2, Ì2,
+			//V2,W2,X2, Y2, Z2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2,
 			20, 32, 20, 19, 19, 19, 19, 19, 19, 29, 19, 19, 19, 19, 19,  9,
-			//Í2,Î2,Ï2, Ò2, Ó2, Ô2, Ö2, Ù2, Ú2, Û2, Ü2, ß2, Ñ2, ¿2, '2, .2,
+			//ï¿½2,ï¿½2,ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, ï¿½2, '2, .2,
 			 9,  9,  9, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 10,  9,
 			//space, unprop
 			10, 20
@@ -300,6 +306,13 @@ CSprite2d CFont::ButtonSprite[MAX_BUTTON_ICONS];
 int CFont::PS2Symbol = BUTTON_NONE;
 int CFont::ButtonsSlot = -1;
 #endif // BUTTON_ICONS
+
+#ifdef VICEEXT_HINT_KEYS
+CSprite2d CFont::KeyIconSprite[256];
+bool CFont::KeyIconSearched[256];
+int32 CFont::KeyIconsSlot = -1;
+int CFont::KeyIconCode = 0;
+#endif
 
 void
 CFont::Initialise(void)
@@ -461,6 +474,18 @@ CFont::Shutdown(void)
 		ButtonsSlot = -1;
 	}
 #endif
+#ifdef VICEEXT_HINT_KEYS
+	if (KeyIconsSlot != -1) {
+		for (int i = 1; i < 256; i++) {
+			if (KeyIconSearched[i])
+				KeyIconSprite[i].Delete();
+			KeyIconSearched[i] = false;
+		}
+		CTxdStore::RemoveTxdSlot(KeyIconsSlot);
+		KeyIconsSlot = -1;
+	}
+	KeyIconCode = 0;
+#endif
 	Sprite[0].Delete();
 	Sprite[1].Delete();
 #ifdef MORE_LANGUAGES
@@ -484,7 +509,74 @@ CFont::InitPerFrame(void)
 #ifdef BUTTON_ICONS
 	PS2Symbol = BUTTON_NONE;
 #endif
+#ifdef VICEEXT_HINT_KEYS
+	KeyIconCode = 0;
+#endif
 }
+
+#ifdef VICEEXT_HINT_KEYS
+// D7 (secciÃ³n 1): carga, una sola vez, el TXD con los iconos de tecla del mod
+// (`models/pcbtns.txd`). Se llama desde CHud::Initialise.
+void
+CFont::LoadKeyIcons(void)
+{
+	if (KeyIconsSlot == -1)
+		KeyIconsSlot = CTxdStore::AddTxdSlot("pcbtns");
+	CTxdStore::LoadTxd(KeyIconsSlot, "MODELS/PCBTNS.TXD");
+	CTxdStore::AddRef(KeyIconsSlot);
+}
+
+// El sprite de un cÃ³digo de tecla, creado a la primera y cacheado. Devuelve si
+// esa tecla tiene icono en su TXD: si no lo tiene (o el TXD no estÃ¡), el aviso
+// sigue mostrando el nombre de la tecla en texto.
+bool
+CFont::HasKeyIcon(int vk)
+{
+	if (vk <= 0 || vk > 255)
+		return false;
+	if (KeyIconsSlot == -1)
+		return false;
+	if (!KeyIconSearched[vk]) {
+		KeyIconSearched[vk] = true;
+		char name[8];
+		snprintf(name, sizeof name, "%d", vk);
+		CTxdStore::PushCurrentTxd();
+		CTxdStore::SetCurrentTxd(KeyIconsSlot);
+		KeyIconSprite[vk].SetTexture(name, nil);
+		CTxdStore::PopCurrentTxd();
+	}
+	return KeyIconSprite[vk].m_pTexture != nil;
+}
+
+void
+CFont::DrawKeyIcon(float x, float y)
+{
+	if (KeyIconCode <= 0 || !HasKeyIcon(KeyIconCode))
+		return;
+	if (x <= 0.0f || x > SCREEN_WIDTH || y <= 0.0f || y > SCREEN_HEIGHT)
+		return;
+
+	// Misma caja que los iconos de mando (`DrawButton`): asÃ­ el icono de tecla
+	// ocupa el mismo hueco en el texto que ocupaba su nombre.
+	CRect rect;
+	rect.left = x;
+	rect.top = RenderState.scaleY + RenderState.scaleY + y;
+	rect.right = RenderState.scaleY * 17.0f + x;
+	rect.bottom = RenderState.scaleY * 19.0f + y;
+
+	int vertexAlphaState;
+	void *raster;
+	RwRenderStateGet(rwRENDERSTATEVERTEXALPHAENABLE, &vertexAlphaState);
+	RwRenderStateGet(rwRENDERSTATETEXTURERASTER, &raster);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
+	if (RenderState.bIsShadow)
+		KeyIconSprite[KeyIconCode].Draw(rect, RenderState.color);
+	else
+		KeyIconSprite[KeyIconCode].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)vertexAlphaState);
+}
+#endif // VICEEXT_HINT_KEYS
 
 #ifdef BUTTON_ICONS
 void
@@ -682,6 +774,13 @@ CFont::RenderFontBuffer()
 				PS2Symbol = BUTTON_NONE;
 			}
 #endif
+#ifdef VICEEXT_HINT_KEYS
+			if(KeyIconCode > 0) {
+				DrawKeyIcon(textPosX, textPosY);
+				textPosX += RenderState.scaleY * 17.0f;
+				KeyIconCode = 0;
+			}
+#endif
 			if (bFlash) {
 				if (CTimer::GetTimeInMilliseconds() - Details.nFlashTimer > 300) {
 					Details.bFlashState = !Details.bFlashState;
@@ -839,6 +938,54 @@ CFont::PrintStringFromBottom(float x, float y, wchar *str)
 	PrintString(x, y, str);
 }
 
+#ifdef __EMSCRIPTEN__
+// R3b (21/09, 7Âª partida): "textos al azar abajo, en blanco, como los de una
+// misiÃ³n, salen unos fotogramas y desaparecen".
+//
+// La traza de encolado (SCRTXT, Messages.cpp) sÃ³lo cubre cuatro funciones y en
+// la partida del jugador todas sus lÃ­neas eran de trucos y de `^ELIMINADO!`, asÃ­
+// que los textos de abajo vienen por OTRO camino (las variantes con nÃºmero o con
+// cadena, el *brief* de misiÃ³n, o un `CFont::PrintString` directo de cualquier
+// bloque) y encima el HUD repinta cada frame.
+//
+// Ã‰ste es el punto FINAL del dibujo: todo texto de la mitad inferior de la
+// pantalla queda registrado con su contenido literal, asÃ­ que el prÃ³ximo log
+// nombra al culpable sin adivinar. El ruido se contiene con dedupe (texto +
+// banda de 16 px) y como mucho dos lÃ­neas por segundo.
+static void
+ViceExtTraceBottomText(float x, float y, wchar *s)
+{
+	if (s == nil || y < SCREEN_HEIGHT * 0.5f)
+		return;
+	char txt[64];
+	int n = 0;
+	for (const wchar *p = s; *p && n < (int)sizeof(txt) - 1; p++) {
+		wchar c = *p;
+		txt[n++] = (c >= 32 && c < 127) ? (char)c : '.';
+	}
+	txt[n] = '\0';
+	if (n == 0)
+		return;
+	static char s_odLast[64] = { 0 };
+	static float s_odLastY = 0.0f;
+	static uint32 s_odNext = 0;
+	int banda = (int)(y / 16.0f);
+	uint32 ahora = CTimer::GetTimeInMilliseconds();
+	bool distinto = strcmp(s_odLast, txt) != 0 || banda != (int)(s_odLastY / 16.0f);
+	if (distinto) {
+		strncpy(s_odLast, txt, sizeof s_odLast - 1);
+		s_odLast[sizeof s_odLast - 1] = '\0';
+		s_odLastY = y;
+	}
+	if (!distinto && (int32)(ahora - s_odNext) < 0)
+		return;
+	s_odNext = ahora + 500;
+	char t[190];
+	snprintf(t, sizeof t, "SCRTXT3 x=%.0f y=%.0f texto=\"%s\"", x, y, txt);
+	ODTRACES(t);
+}
+#endif
+
 void
 CFont::PrintString(float xstart, float ystart, wchar *s)
 {
@@ -850,6 +997,10 @@ CFont::PrintString(float xstart, float ystart, wchar *s)
 	wchar *start, *t;
 
 	Details.bFlash = false;
+
+#ifdef __EMSCRIPTEN__
+	ViceExtTraceBottomText(xstart, ystart, s);
+#endif
 
 	if(*s == '*')
 		return;
@@ -1432,6 +1583,22 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 {
 	Details.anonymous_23 = false;
 	wchar *s = str + 1;
+#ifdef VICEEXT_HINT_KEYS
+	// D7 (secciÃ³n 1): `~K<vk>~` = "aquÃ­ va el icono de la tecla <vk>". Se
+	// reconoce siempre (las demÃ¡s marcas del original sÃ³lo se miran cuando hay
+	// un color activo, y esa condiciÃ³n no la puedo dar por supuesta). El `while`
+	// de abajo salta hasta el `~` de cierre, asÃ­ que el texto no cambia.
+	if (*s == 'K') {
+		int vk = 0;
+		wchar *p = s + 1;
+		while (*p >= '0' && *p <= '9') {
+			vk = vk * 10 + (*p - '0');
+			p++;
+		}
+		if (vk > 0 && vk <= 255)
+			KeyIconCode = vk;
+	}
+#endif
 	if (Details.color.r || Details.color.g || Details.color.b)
 	{
 		switch (*s)
@@ -1519,7 +1686,14 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
+		case 'K':
+#ifdef VICEEXT_HINT_KEYS
+			// D7 (secciÃ³n 1): `~K<n>~` es un icono de TECLA del mod, no el botÃ³n L1
+			// del mando. Se reconoce por el dÃ­gito que sigue a la K.
+			if (s[1] >= '0' && s[1] <= '9')
+				break;
+#endif
+			PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;
@@ -1572,7 +1746,12 @@ CFont::ParseToken(wchar *s, bool japShit)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
+		case 'K':
+#ifdef VICEEXT_HINT_KEYS
+			if (s[1] >= '0' && s[1] <= '9') // D7: icono de tecla, no el botÃ³n L1
+				break;
+#endif
+			PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;
@@ -1698,7 +1877,12 @@ CFont::ParseToken(wchar *s)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K': PS2Symbol = BUTTON_L1; break;
+		case 'K':
+#ifdef VICEEXT_HINT_KEYS
+			if (s[1] >= '0' && s[1] <= '9') // D7: icono de tecla, no el botÃ³n L1
+				break;
+#endif
+			PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;

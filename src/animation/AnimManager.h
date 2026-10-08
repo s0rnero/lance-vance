@@ -69,6 +69,21 @@ enum AssocGroupId
 	ASSOCGRP_CHAINSAWRIGHT,
 #endif
 
+	// Vice Extended: grupos de animación nuevos (bloques deagle/steyr/rocket
+	// de su anims.img). Van al final para no desplazar los IDs existentes,
+	// que sí pueden estar en partidas guardadas.
+	ASSOCGRP_DEAGLE,
+	ASSOCGRP_STEYR,
+	ASSOCGRP_ROCKET,
+
+	// Sección 3 (20/09): grupos propios para los clips del `ped.ifp` del mod
+	// que el port no usaba (nadar = C4, agachado = C5). También al final.
+	ASSOCGRP_PLAYERSWIM,
+	ASSOCGRP_PLAYERCROUCH,
+
+	// Sección 2 (21/09): escalada (bloque opcional E1). También al final.
+	ASSOCGRP_PLAYERCLIMB,
+
 	NUM_ANIM_ASSOC_GROUPS
 };
 

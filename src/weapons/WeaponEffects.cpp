@@ -68,7 +68,9 @@ CWeaponEffects::ClearCrossHair(void)
 void
 CWeaponEffects::Render(void)
 {
-	static float aCrossHairSize[WEAPONTYPE_TOTALWEAPONS] =
+	// WEAPONTYPE_TOTALALLTYPES: las armas nuevas del mod también se indexan
+	// aquí con FindPlayerPed()->GetWeapon()->m_eWeaponType.
+	static float aCrossHairSize[WEAPONTYPE_TOTALALLTYPES] =
 	{
 		1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
 		0.4f, 0.4f,
@@ -80,7 +82,11 @@ CWeaponEffects::Render(void)
 		1.0f,
 		0.6f,
 		0.7f,
-		0.0f, 0.0f
+		0.0f, 0.0f,
+		// 37..47: tipos de daño (nunca dibujan mira)
+		1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+		// Vice Extended (48..56)
+		0.4f, 0.4f, 0.5f, 0.9f, 0.5f, 0.5f, 0.5f, 0.1f, 0.0f
 	};
 
 

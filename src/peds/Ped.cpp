@@ -6,6 +6,9 @@
 #include "RpAnimBlend.h"
 #include "Bones.h"
 #include "Ped.h"
+#include "PlayerPed.h"
+#include "PedArbiter.h"   // R18d: el nado del jugador (CPlayerPed::ViceExtIsSwimming) decide la flotación
+#include "ondemand.h"  // web: ODTRACES -> odtrace.log (sección 2 / P2)
 #include "AnimBlendAssociation.h"
 #include "Fire.h"
 #include "DMAudio.h"
@@ -1447,8 +1450,29 @@ CPed::CalculateNewVelocity(void)
 		m_moved = m_moved * (1 / 100.0f);
 	}
 
-	if ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
-		|| FindPlayerPed() != this || !CanStrafeOrMouseControl()) {
+	// R21b (23/09): el agachado propio NO se salta este corte. El corte separa el
+	// control "moderno" (ratón en 3ra persona) del de siempre, y APUNTANDO la
+	// cámara cambia de modo (`camdist` medido: 0,61 m en vez de 3,56), así que se
+	// tomaba el `return` y el bloque R20c (que es quien pone el desplazamiento
+	// agachado) no corría: medido, apuntando agachado y con el mando de lado el ped
+	// se quedaba clavado con `m_fMoveSpeed` a 0,9 (pulsación 127) y el clip
+	// `Crouch_Roll_L` puesto. Con el agachado se pasa de largo (salvo en la cámara
+	// de 1ª persona de armas, donde no debe moverse nadie).
+	bool odCrouchMove = false;
+#ifdef VICEEXT_CROUCH
+	odCrouchMove = FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsCrouched()
+		&& !TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn();
+#endif
+
+	bool odAimMove = false;
+#ifdef VICEEXT_CROUCH
+	odAimMove = FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsAiming()
+		&& !TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn();
+#endif
+
+	if (!odCrouchMove && !odAimMove
+	    && ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
+		|| FindPlayerPed() != this || !CanStrafeOrMouseControl())) {
 
 		if (FindPlayerPed() == this)
 			FindPlayerPed()->m_fWalkAngle = 0.0f;
@@ -1465,11 +1489,197 @@ CPed::CalculateNewVelocity(void)
 		localWalkAngle -= PI;
 	}
 
-	// Interestingly this part is responsible for diagonal walking.
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	static float s_odMagHold = 0.0f;
+	CVector2D odPlayerDir(0.0f, 0.0f);
+	float odPlayerSpeed = 0.0f;
+	bool odPlayerDirOk = false;
+	if (FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtGetMove(odPlayerDir, odPlayerSpeed))
+		odPlayerDirOk = true;
+	if (odPlayerDirOk) {
+		if (odPlayerSpeed > 0.01f)
+			s_odMagHold = odPlayerSpeed;
+		else if (pedSpeed > 0.01f)
+			s_odMagHold = pedSpeed;
+		float odUseSpeed = (odPlayerSpeed > 0.01f) ? odPlayerSpeed
+			: (pedSpeed > 0.01f ? pedSpeed : s_odMagHold);
+		TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = odUseSpeed;
+		m_moved = odPlayerDir * odUseSpeed;
+		int odSrc = (odPlayerSpeed > 0.01f) ? 0 : ((pedSpeed > 0.01f) ? 2 : ((s_odMagHold > 0.01f) ? 1 : 3));
+		static int s_odApplySig = -1;
+		static uint32 s_odApplyFrames = 0;
+		int odApplySig = odSrc | (bIsDucking ? 8 : 0);
+		if (odApplySig == s_odApplySig)
+			++s_odApplyFrames;
+		else {
+			s_odApplySig = odApplySig;
+			s_odApplyFrames = 1;
+		}
+#ifdef __EMSCRIPTEN__
+		{
+			float odMagNow = m_moved.Magnitude();
+			float odDirErr = 0.0f;
+			if (odMagNow > 0.0001f && odPlayerDir.Magnitude() > 0.0001f)
+				odDirErr = RADTODEG(Abs(CGeneral::LimitRadianAngle(
+					CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, m_moved.x, m_moved.y) -
+					CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odPlayerDir.x, odPlayerDir.y))));
+			char t[320];
+			snprintf(t, sizeof t, "P4 kind=move_apply schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 src=%d spdReq=%.4f spdEff=%.4f mag=%.4f dir=%.4f frames=%u duck=%d aim=%d crouch=%d stickBlocked=%d",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				odSrc, pedSpeed, odUseSpeed, odMagNow, odDirErr, (unsigned)s_odApplyFrames, bIsDucking ? 1 : 0,
+				((CPlayerPed*)this)->ViceExtIsAiming() ? 1 : 0, ((CPlayerPed*)this)->ViceExtIsCrouched() ? 1 : 0,
+				((CPlayerPed*)this)->ViceExtStickBlocked());
+			ODTRACES(t);
+		}
+#endif
+	} else
+#endif
 	if (localWalkAngle > -DEGTORAD(50.0f) && localWalkAngle < DEGTORAD(50.0f)) {
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		s_odMagHold = 0.0f;
+#endif
 		TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = pedSpeed;
 		m_moved = CVector2D(-Sin(walkAngle), Cos(walkAngle)) * pedSpeed;
 	}
+
+#ifdef VICEEXT_CROUCH
+	// R20c (22/09, 16ª partida): AGACHADO, el desplazamiento lo manda el MANDO.
+	//
+	// Este bloque es "el caminar en diagonal": con |localWalkAngle| < 50° el
+	// motor sustituye el avance de la RAÍZ del clip por el rumbo del mando (y por
+	// eso las diagonales ya iban bien). Con el mando de LADO, `localWalkAngle`
+	// vale ±90° y el motor esperaba que el clip de costado trajera la traslación
+	// — así funciona con `walk_left`/`walk_right` de pie. Agachado NO hay tal
+	// clip en el `ped.ifp` del mod (medido: `Crouch_Roll_L/R` viajan en el eje Y,
+	// −2,17/+2,25 m; de lado sólo tienen 0,22 m), así que sin esto pulsar
+	// izquierda hacía andar al ped hacia delante o hacia atrás (medido: 179,6°
+	// respecto a su rumbo).
+	//
+	// Se aplica la misma fórmula para las 8 direcciones: es el modelo de SA (la
+	// pose la pone el clip, la velocidad y la dirección las pone el código), y la
+	// velocidad sigue siendo la del clip (`pedSpeed` sale de `m_moved`, o sea del
+	// avance de la raíz de la pose que toca).
+	if (FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsCrouched()) {
+		CPad *odPad = CPad::GetPad(0);
+		// 60 = el mando a tope en unidades del pad (`PAD_MOVE_TO_GAME_WORLD_MOVE`
+		// de PlayerPed.cpp, que es de otro fichero): aquí se pide un cuarto.
+		if (odPad && CVector2D(odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown()).Magnitude() > 16.0f) {   // spec sa-crouch deadzone +-16
+			// R22 (18ª partida, 23/09): LA VELOCIDAD ES LA OBJETIVO, NO LA DEL CLIP.
+			//
+			// Antes esto cogía `pedSpeed` (el avance de la raíz del clip en uso):
+			// 3,58 m/s con `Crouch_Forward` y 1,85 con `Crouch_Backward`, o sea el
+			// agachado andando MÁS que el `walk` de serie y a la mitad de velocidad
+			// yendo hacia atrás — el jugador: "se mueve a una super velocidad sin
+			// razón". Ahora manda `ViceExtCrouchMoveSpeed()` y el RITMO del clip se
+			// calcula de esa velocidad (`ViceExtCrouchRateFor`), así que los pies
+			// avanzan lo mismo que el ped y no hay patinaje. Cuando el ped va
+			// apuntando agachado el motor no da avance (la pose parcial se come la
+			// traslación), y con esto da igual: la velocidad no depende del clip.
+			//
+			// R25 (23/09, 19ª partida): LAS UNIDADES. ERA EL FALLO DE LA "SUPER
+			// VELOCIDAD", y llevaba tres rondas escondido.
+			//
+			// Aquí se escribía `0,90` creyendo que `m_vecMoveSpeed` va en m/s, y NO
+			// va: el motor mueve la posición con `Translate(m_vecMoveSpeed *
+			// CTimer::GetTimeStep())` (`CPhysical::ApplyMoveSpeed`, Physical.cpp) y
+			// `GetTimeStep()` vale ~1,0 a 50 fps, así que la unidad es "metros por
+			// frame de 50 fps" = m/s ÷ 50. Medido en la traza `CROUCHMOVE` del propio
+			// jugador: con `obj=0,90` el ped hizo **331,51 m en 7,38 s = 44,90 m/s** y
+			// `mvec` salía 0,90 — exactamente ×50. (Y la rueda de lado, 2,35 en esas
+			// unidades: 117 m/s, de ahí el "me muero si camino hacia a un lado".)
+			//
+			// El nadado ya lo hacía bien (ver `CPlayerPed::ViceExtSwimMove`), y el
+			// proyecto ya traía la constante para esto (`control/CarCtrl.h`).
+			float odMps = ((CPlayerPed*)this)->ViceExtCrouchMoveSpeed();   // m/s
+			float odSpeed;
+			if (odMps < 0.05f)
+				odSpeed = pedSpeed;   // reserva: sin clip conocido, lo que dé el motor
+			else
+				odSpeed = odMps * METERS_PER_SECOND_TO_GAME_SPEED;   // m/s -> unidad del motor
+			// R26 (giro a los lados): el avance va en base CAMARA (el rumbo
+			// mundo del helper), no en base cuerpo. Mientras el cuerpo mira a
+			// la camara coinciden; una vez girado 90 grados, la base cuerpo
+			// daria el avance desplazado otros 90 (el circulo del handoff 6.5).
+			float odMoveDir = walkAngle;
+			float odSideDir = 0.0f;
+#ifdef VICEEXT_AIM_CLASSICAXIS
+			CVector2D odCDir(0.0f, 0.0f);
+			float odCSpeed = 0.0f;
+			bool odCDirOk = ((CPlayerPed*)this)->ViceExtGetMove(odCDir, odCSpeed);
+			if (odCSpeed > 0.01f)
+				odSpeed = odCSpeed;
+#endif
+			if (((CPlayerPed*)this)->ViceExtCrouchSideHeading(odSideDir)) {
+				odMoveDir = odSideDir;
+				// R29 (27/09, sintoma F): el giro ya NO es un snap (R26d ponia
+				// `Cur = Dest` de golpe y el cuerpo "saltaba"). Se fija SOLO el
+				// DESTINO en base MUNDO (una vez por peticion, sin realimentar
+				// con `m_fRotationCur`: handoff 6.5) y el motor gira el cuerpo
+				// hacia el a su ritmo (`m_headingRate`, STAT_PLAYER: 15
+				// grados/frame, el `hdgr=15` de la traza): la vuelta de 90
+				// grados dura ~6 frames, sin snap visible.
+				m_fRotationDest = odSideDir;
+				// R29: con el ped "en control" el giro del motor YA corre (el
+				// bloque de arriba, con la misma puerta `IsPedInControl()`);
+				// cuando no lo esta (ataque/recarga) se ejecuta aqui con el
+				// MISMO ritmo, o el destino se quedaria sin cumplir (el "rumbo
+				// fijo" de ve52-ve54).
+				if (!IsPedInControl()) {
+					float odNeed = CGeneral::LimitRadianAngle(odSideDir - m_fRotationCur);
+					float odStep = DEGTORAD(m_headingRate) * CTimer::GetTimeStep();
+					if (Abs(odNeed) <= odStep)
+						m_fRotationCur = odSideDir;
+					else
+						m_fRotationCur = CGeneral::LimitRadianAngle(m_fRotationCur + (odNeed > 0.0f ? odStep : -odStep));
+					SetHeading(m_fRotationCur);
+				}
+			}
+			TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = odSpeed;
+#ifdef VICEEXT_AIM_CLASSICAXIS
+			if (odCDirOk) {
+				m_moved = odCDir * odSpeed;
+				if (!IsPedInControl()) {
+					float odNeed = CGeneral::LimitRadianAngle(odCDir.Heading() - m_fRotationCur);
+					float odStep = DEGTORAD(m_headingRate) * CTimer::GetTimeStep();
+					if (Abs(odNeed) <= odStep)
+						m_fRotationCur = odCDir.Heading();
+					else
+						m_fRotationCur = CGeneral::LimitRadianAngle(m_fRotationCur + (odNeed > 0.0f ? odStep : -odStep));
+					SetHeading(m_fRotationCur);
+				}
+			} else
+#endif
+			m_moved = CVector2D(-Sin(odMoveDir), Cos(odMoveDir)) * odSpeed;
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_AIM_CLASSICAXIS
+			{
+				static int s_odCrouchApplySig = -1;
+				static float s_odCrouchApplySim = 0.0f;
+				int odCSig = (odCDirOk ? 0 : 2) | (odCSpeed > 0.01f ? 16 : 0);
+				float odCSim = CTimer::GetTimeInMilliseconds() * 0.001f;
+				if (odCSig != s_odCrouchApplySig || odCSim - s_odCrouchApplySim >= 1.0f) {
+					s_odCrouchApplySig = odCSig;
+					s_odCrouchApplySim = odCSim;
+					float odMagNow = m_moved.Magnitude();
+					float odDirErr = 0.0f;
+					if (odMagNow > 0.0001f && odCDirOk && odCDir.Magnitude() > 0.0001f)
+						odDirErr = RADTODEG(Abs(CGeneral::LimitRadianAngle(
+							CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, m_moved.x, m_moved.y) -
+							CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odCDir.x, odCDir.y))));
+					char t[320];
+					snprintf(t, sizeof t, "P4 kind=move_apply schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 src=%d spdReq=%.4f spdEff=%.4f mag=%.4f dir=%.4f frames=0 duck=%d aim=%d crouch=1 stickBlocked=%d",
+						(unsigned)CTimer::GetFrameCounter(), odCSim,
+						odCDirOk ? 0 : 2, pedSpeed, odSpeed, odMagNow, odDirErr, bIsDucking ? 1 : 0,
+						((CPlayerPed*)this)->ViceExtIsAiming() ? 1 : 0,
+						((CPlayerPed*)this)->ViceExtStickBlocked());
+					ODTRACES(t);
+				}
+			}
+#endif
+#endif
+		}
+	}
+#endif
 
 	CAnimBlendAssociation *idleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE);
 	CAnimBlendAssociation *fightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_IDLE);
@@ -1479,7 +1689,58 @@ CPed::CalculateNewVelocity(void)
 	if(!fightAssoc)
 		fightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_MELEE_IDLE_FIGHTMODE);
 
-	if ((!idleAssoc || idleAssoc->blendAmount < 0.5f) && !fightAssoc && !bIsDucking) {
+	bool odLegsBodyOwned = false;
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	odLegsBodyOwned = odPlayerDirOk && FindPlayerPed() == this
+		&& ((CPlayerPed*)this)->ViceExtMoveWalkaround();
+#endif
+#ifdef __EMSCRIPTEN__
+	{
+		static int s_odLegsSig = -1;
+		int odLegsSig = (odLegsBodyOwned ? 1 : 0) | (bIsDucking ? 2 : 0)
+			| (idleAssoc != nil ? 4 : 0) | (fightAssoc != nil ? 8 : 0);
+		if (odLegsSig != s_odLegsSig) {
+			s_odLegsSig = odLegsSig;
+			const char *odLegsNom = "?";
+			float odLegsW = 0.0f;
+			const char *odLegsPoseNom = "-";
+			float odLegsPoseW = 0.0f;
+			for (CAnimBlendAssociation *odLA = RpAnimBlendClumpGetFirstAssociation(GetClump());
+			     odLA; odLA = RpAnimBlendGetNextAssociation(odLA)) {
+				if (odLA->blendAmount <= 0.0f)
+					continue;
+				const char *odLNom = (odLA->hierarchy && odLA->hierarchy->name) ? odLA->hierarchy->name : "?";
+				if (odLA->IsPartial()) {
+					if (odLA->blendAmount > odLegsPoseW) {
+						odLegsPoseW = odLA->blendAmount;
+						odLegsPoseNom = odLNom;
+					}
+				} else if (odLA->blendAmount > odLegsW) {
+					odLegsW = odLA->blendAmount;
+					odLegsNom = odLNom;
+				}
+			}
+			char t[440];
+			snprintf(t, sizeof t, "P4 kind=legs schema=1 gen=1 frame=%u sim=%.4f case=6 id=0 body=%.1f leg=%.1f mis=%.1f skip=%d duck=%d nom=%s peso=%.2f posenom=%s posepeso=%.2f aim=%d",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				RADTODEG(m_fRotationCur), RADTODEG(localWalkAngle),
+				RADTODEG(Abs(CGeneral::LimitRadianAngle(m_fRotationCur - walkAngle))),
+				odLegsBodyOwned ? 1 : 0, bIsDucking ? 1 : 0,
+				odLegsNom, odLegsW, odLegsPoseNom, odLegsPoseW,
+				(IsPlayer() && ((CPlayerPed*)this)->ViceExtIsAiming()) ? 1 : 0);
+			ODTRACES(t);
+		}
+	}
+#endif
+	if (odLegsBodyOwned) {
+		float odLegYaw = localWalkAngle;
+		if (odLegYaw < -DEGTORAD(100.0f))
+			odLegYaw += PI;
+		else if (odLegYaw > DEGTORAD(100.0f))
+			odLegYaw -= PI;
+		if (!bIsDucking && odLegYaw > -DEGTORAD(50.0f) && odLegYaw < DEGTORAD(50.0f))
+			bDontAcceptIKLookAts = true;
+	} else if ((!idleAssoc || idleAssoc->blendAmount < 0.5f) && !fightAssoc && !bIsDucking) {
 		LimbOrientation newUpperLegs;
 		newUpperLegs.yaw = localWalkAngle;
 
@@ -1654,8 +1915,13 @@ CPed::ProcessBuoyancy(void)
 		color.g = (0.5f * CTimeCycle::GetDirectionalBlue() + CTimeCycle::GetAmbientBlue()) * 127.5f;
 		color.b = (0.5f * CTimeCycle::GetDirectionalGreen() + CTimeCycle::GetAmbientGreen()) * 127.5f;
 		color.a = CGeneral::GetRandomNumberInRange(48.0f, 96.0f);
+		bool odSwimmingPlayer = false;
+#ifdef VICEEXT_SWIMMING
+		odSwimmingPlayer = IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO);
+#endif
 		bIsInWater = true;
-		ApplyMoveForce(buoyancyImpulse);
+		if (!odSwimmingPlayer)
+			ApplyMoveForce(buoyancyImpulse);
 		if (!DyingOrDead()) {
 			if (bTryingToReachDryLand) {
 				if (buoyancyImpulse.z / m_fMass > GRAVITY * 0.4f * CTimer::GetTimeStep()) {
@@ -1679,17 +1945,24 @@ CPed::ProcessBuoyancy(void)
 			}
 		}
 		float speedMult = 0.0f;
-		if (buoyancyImpulse.z / m_fMass > GRAVITY * CTimer::GetTimeStep()
-			|| mod_Buoyancy.m_waterlevel > GetPosition().z + 0.6f) {
+#ifdef VICEEXT_SWIMMING
+		if (odSwimmingPlayer && m_vecMoveSpeed.z < 0.0f)
+			m_vecMoveSpeed.z *= pow(0.9f, CTimer::GetTimeStep());
+#endif
+		if (!odSwimmingPlayer
+			&& (buoyancyImpulse.z / m_fMass > GRAVITY * CTimer::GetTimeStep()
+				|| mod_Buoyancy.m_waterlevel > GetPosition().z + 0.6f)) {
 			speedMult = pow(0.9f, CTimer::GetTimeStep());
 			m_vecMoveSpeed.x *= speedMult;
 			m_vecMoveSpeed.y *= speedMult;
 			m_vecMoveSpeed.z *= speedMult;
 			bIsStanding = false;
 			bIsDrowning = true;
-			InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
+			if (!odSwimmingPlayer)
+				InflictDamage(nil, WEAPONTYPE_DROWNING, 3.0f * CTimer::GetTimeStep(), PEDPIECE_TORSO, 0);
 		}
-		if (buoyancyImpulse.z / m_fMass > GRAVITY * 0.25f * CTimer::GetTimeStep()) {
+		if (!odSwimmingPlayer
+			&& buoyancyImpulse.z / m_fMass > GRAVITY * 0.25f * CTimer::GetTimeStep()) {
 			if (speedMult == 0.0f) {
 				speedMult = pow(0.9f, CTimer::GetTimeStep());
 			}
@@ -2562,7 +2835,7 @@ CPed::ProcessControl(void)
 			if (IsPedInControl() && !bIsStanding && !m_pDamageEntity) {
 				if (m_attachedTo) {
 					bIsInTheAir = false;
-				} else if (CheckIfInTheAir()) {
+				} else if (!ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO) && CheckIfInTheAir()) {
 					SetInTheAir();
 					bHeadStuckInCollision = false;
 				}
@@ -3096,8 +3369,8 @@ CPed::ProcessEntityCollision(CEntity *collidingEnt, CColPoint *collidingPoints)
 	return ourCollidedSpheres;
 }
 
-static void
-particleProduceFootSplash(CPed *ped, CVector const &pos, float size, int times)
+void
+particleProduceFootSplash(CPed *ped, CVector const &pos, float size, int times, CRGBA const &color)
 {
 	for (int i = 0; i < times; i++) {
 		CVector adjustedPos = pos;
@@ -3105,7 +3378,7 @@ particleProduceFootSplash(CPed *ped, CVector const &pos, float size, int times)
 		adjustedPos.y += CGeneral::GetRandomNumberInRange(-0.1f, 0.1f);
 
 		CVector direction = ped->GetForward() * -0.05f;
-		CParticle::AddParticle(PARTICLE_RAIN_SPLASHUP, adjustedPos, direction, nil, size, CRGBA(32, 32, 32, 32), 0, 0, CGeneral::GetRandomNumber() & 1, 200);
+		CParticle::AddParticle(PARTICLE_RAIN_SPLASHUP, adjustedPos, direction, nil, size, color, 0, 0, CGeneral::GetRandomNumber() & 1, 200);
 	}
 }
 
@@ -3278,7 +3551,14 @@ CPed::PlayFootSteps(void)
 						particleProduceFootDust(this, adjustedFootPos, 0.0f, 4);
 
 				} else if (stepPart == 2) {
-					particleProduceFootSplash(this, adjustedFootPos, 0.15f, 4);
+					{
+			CRGBA odC;
+			odC.red = (uint8)((0.5f * CTimeCycle::GetDirectionalRed() + CTimeCycle::GetAmbientRed()) * 127.5f);
+			odC.green = (uint8)((0.5f * CTimeCycle::GetDirectionalGreen() + CTimeCycle::GetAmbientGreen()) * 127.5f);
+			odC.blue = (uint8)((0.5f * CTimeCycle::GetDirectionalBlue() + CTimeCycle::GetAmbientBlue()) * 127.5f);
+			odC.alpha = (uint8)CGeneral::GetRandomNumberInRange(64, 96);
+			particleProduceFootSplash(this, adjustedFootPos, 0.22f, 6, odC);
+		}
 				}
 			}
 		}
@@ -3906,7 +4186,21 @@ bool
 CPed::CanStrafeOrMouseControl(void)
 {
 #ifdef FREE_CAM
-	if (CCamera::bFreeCam)
+	// Sección 1 (9ª partida, 21/09): CAUSA RAÍZ de media lista de fallos.
+	//
+	// En la partida, `bFreeCam` está ENCENDIDO: en este port significa "cámara
+	// moderna" (la de ratón a pie y la de coche tipo SA, `Process_FollowCar_SA`),
+	// no "cámara libre de depuración". Y aquí se cortaba el control de ratón
+	// SIEMPRE, con lo que caían los tres sitios que encaran al jugador con la
+	// cámara:
+	//   - Cam.cpp:1621 y Cam.cpp:4009 (rumbo del ped = rumbo de la cámara),
+	//   - PlayerPed::ProcessAnimGroups (grupos de strafe PLAYERLEFT/RIGHT).
+	// Medido en el log: `AIMDIR desv` hasta 86° con las armas del mod ("el arma
+	// apunta a un costado"), el pase a pie con ratón no corría (de ahí el "va
+	// raro" agachado y el nado que no va hacia donde se mira) y la 1ª persona
+	// quedaba bloqueada por la misma marca. Sólo se corta si NO hay cámara de
+	// ratón: ahí `bFreeCam` sí es la cámara libre de verdad.
+	if (CCamera::bFreeCam && !CCamera::m_bUseMouse3rdPerson)
 		return false;
 #endif
 	return m_nPedState == PED_NONE || m_nPedState == PED_IDLE || m_nPedState == PED_FLEE_POS || m_nPedState == PED_FLEE_ENTITY ||
@@ -4626,7 +4920,7 @@ CPed::GiveWeapon(eWeaponType weaponType, uint32 ammo, bool unused)
 
 	if (m_weapons[slot].m_eWeaponType == weaponType) {
 		GetWeapon(slot).m_nAmmoTotal += ammo;
-		if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
+		if (IsWeaponType(weaponType) && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
 
 			// Looks like abandoned idea. This block never runs, ms_aMaxAmmoForWeapon is always -1.
 			GetWeapon(slot).m_nAmmoTotal = Min(CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType], GetWeapon(slot).m_nAmmoTotal);
@@ -4697,7 +4991,7 @@ CPed::GrantAmmo(eWeaponType weaponType, uint32 ammo)
 		return;
 
 	GetWeapon(slot).m_nAmmoTotal += ammo;
-	if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
+	if (IsWeaponType(weaponType) && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
 
 		// Looks like abandoned idea. This block never runs, ms_aMaxAmmoForWeapon is always -1.
 		GetWeapon(slot).m_nAmmoTotal = Min(CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType], GetWeapon(slot).m_nAmmoTotal);
@@ -4717,7 +5011,7 @@ CPed::SetAmmo(eWeaponType weaponType, uint32 ammo)
 		return;
 
 	GetWeapon(slot).m_nAmmoTotal = ammo;
-	if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
+	if (IsWeaponType(weaponType) && weaponType > WEAPONTYPE_UNARMED && CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType] >= 0) {
 
 		// Looks like abandoned idea. This block never runs, ms_aMaxAmmoForWeapon is always -1.
 		GetWeapon(slot).m_nAmmoTotal = Min(CWeaponInfo::ms_aMaxAmmoForWeapon[weaponType], GetWeapon(slot).m_nAmmoTotal);
@@ -4743,32 +5037,174 @@ CPed::ClearWeapons(void)
 	SetCurrentWeapon(WEAPONTYPE_UNARMED);
 }
 
+// ---------------------------------------------------------------------------
+// Sección 2 (P2) — drive-by ampliado (VICEEXT_DRIVEBY_WIDE) y su traza.
+// La traza sale por ODTRACES a odtrace.log (igual que la de P1 en Wanted.cpp) y
+// la lee tools/driveby-smoke-test.mjs. El tag de sesión lo pone la sonda en
+// window.__vcDriveByTag: el dev server comparte UN odtrace.log entre pestañas y
+// los tres agentes, así que sin etiqueta las líneas se mezclan.
+static unsigned
+DriveByTraceTag(void)
+{
+	return (unsigned)EM_ASM_INT({ return (window.__vcDriveByTag | 0); });
+}
+
+// Una línea por segundo con el estado del drive-by. Va DELIBERADAMENTE antes de
+// las puertas de entrada de los tres DoDriveByShootings: así la sonda ve
+// "conduzco, disparo y llevo el slot 3" también en la build SIN el define, que
+// es la línea base contra la que se compara la mecánica.
+void
+CPed::DriveByTraceState(const char *vehClass, bool fireHeld, bool lookLeft, bool lookRight)
+{
+	// El bloque de 1 s de los tres DoDriveByShootings se ejecuta en CADA frame:
+	// aquí se filtra a una línea por segundo (mismo criterio que P1).
+	static uint32 lastTrace = 0;
+	if (CTimer::GetTimeInMilliseconds() < lastTrace + 1000)
+		return;
+	lastTrace = CTimer::GetTimeInMilliseconds();
+
+	CWeapon *weapon = GetWeapon();
+	char line[220];
+	snprintf(line, sizeof(line), "DRIVEBY state tag=%u t=%u veh=%s wep=%d slot=%d ammo=%d fire=%d lookL=%d lookR=%d model=%d speed=%.1f",
+		DriveByTraceTag(), (unsigned)CTimer::GetTimeInMilliseconds(), vehClass,
+		(int)weapon->m_eWeaponType, CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot,
+		(int)weapon->m_nAmmoTotal, fireHeld ? 1 : 0, lookLeft ? 1 : 0, lookRight ? 1 : 0,
+		m_pMyVehicle ? (int)m_pMyVehicle->GetModelIndex() : -1,
+		m_pMyVehicle ? m_pMyVehicle->m_vecMoveSpeed.Magnitude() : 0.0f);
+	ODTRACES(line);
+}
+
+// Una línea por disparo: qué arma (y de qué slot), qué animación de drive-by se
+// usó -> "left"/"right" + "-lo" si el coche es bajo, y "forward"/"lhs"/"rhs" en
+// la moto, y **`delay=` la cadencia aplicada en ms** (P4: 70 = SMG vanilla; 210 =
+// Colt45/Beretta por `weapon.dat`). Es la prueba de que NO se está usando la
+// animación de conducir ni la cadencia del SMG con una pistola.
+void
+CPed::DriveByTraceShot(const char *vehClass, const char *anim, uint32 shotDelayMs)
+{
+	CWeapon *weapon = GetWeapon();
+	char line[200];
+	snprintf(line, sizeof(line), "DRIVEBY shot tag=%u t=%u veh=%s wep=%d slot=%d anim=%s delay=%u ammo=%d",
+		DriveByTraceTag(), (unsigned)CTimer::GetTimeInMilliseconds(), vehClass,
+		(int)weapon->m_eWeaponType, CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot,
+		anim, (unsigned)shotDelayMs, (int)weapon->m_nAmmoTotal);
+	ODTRACES(line);
+}
+
+// Entrada/salida de vehículo del jugador: qué pasó con el arma en la mano.
+// `rev` es la revisión del código de este bloque: la etiqueta `JS build=` del log
+// NO cambia al recomponer sólo el wasm, así que sin esto no se puede saber qué
+// binario corrió (rev=2 = pistola en la mano antes del cambio a la SMG).
+#define VICEEXT_DRIVEBY_REV 2
+// `outcome` es "switch-smg" (vanilla: hay slot 5 y me cambio a él),
+// "keep-weapon" (P2: se queda la pistola en la mano), "remove-model" (vanilla:
+// se esconde el arma), "restore-stored" (al salir vuelve el arma guardada),
+// "keep-smg" (la SMG sigue en la mano) o "add-model" (al salir se la vuelve a
+// poner la que se escondió).
+void
+CPed::DriveByTraceVehicleWeapon(const char *phase, const char *outcome)
+{
+	CWeapon *weapon = GetWeapon();
+	char line[200];
+	snprintf(line, sizeof(line), "DRIVEBY %s tag=%u t=%u wep=%d slot=%d ammo=%d rev=%d outcome=%s",
+		phase, DriveByTraceTag(), (unsigned)CTimer::GetTimeInMilliseconds(),
+		(int)weapon->m_eWeaponType, CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot,
+		(int)weapon->m_nAmmoTotal, VICEEXT_DRIVEBY_REV, outcome);
+	ODTRACES(line);
+}
+
+// ¿Sirve el arma que lleva AHORA este ped para disparar desde un vehículo? Sin
+// VICEEXT_DRIVEBY_WIDE es exactamente el chequeo vanilla de los tres
+// DoDriveByShootings (slot de subfusil), así que las llamadas no cambian nada.
+bool
+CPed::CanDoDriveByWithCurrentWeapon(void)
+{
+	int slot = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nWeaponSlot;
+	if (slot == WEAPONSLOT_SUBMACHINEGUN)
+		return true;
+#ifdef VICEEXT_DRIVEBY_WIDE
+	// Vice Extended (v1.5 "Drive-by shooting", sección 2 / P2): la pistola (una
+	// mano) también vale. Rifle y lanzacohetes (dos manos) NO: el mod tampoco los
+	// da en drive-by y la animación lateral está hecha para una sola mano.
+	if (slot == WEAPONSLOT_HANDGUN && GetWeapon()->m_nAmmoTotal > 0)
+		return true;
+#endif
+	return false;
+}
+
+// Con VICEEXT_DRIVEBY_WIDE, ¿el arma que el jugador lleva en la mano se queda
+// visible en el vehículo en vez de esconderla? Vanilla la esconde con todo lo
+// que no sea slot 5 (y al salir la vuelve a poner). Falso siempre sin el define,
+// así que las dos funciones de abajo siguen comportándose como vanilla.
+bool
+CPed::KeepsWeaponInHandWhileDriving(void)
+{
+#ifdef VICEEXT_DRIVEBY_WIDE
+	if (IsPlayer()) {
+		CPlayerInfo *playerInfo = ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed();
+		if (playerInfo && playerInfo->m_bDriveByAllowed && CanDoDriveByWithCurrentWeapon())
+			return true;
+	}
+#endif
+	return false;
+}
+
 void
 CPed::RemoveWeaponWhenEnteringVehicle(void)
 {
-	if (IsPlayer() && HasWeaponSlot(5) && GetWeapon(5).m_nAmmoTotal > 0 && ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed()->m_bDriveByAllowed) {
+	// Sección 2 (P2): ¿esta arma se queda en la mano para el drive-by ampliado?
+	bool keepsWeapon = KeepsWeaponInHandWhileDriving();
+	const char *outcome;
+
+	// P2 — la pistola EN LA MANO gana al cambio automático a la SMG del vanilla:
+	// si el motor cambiara de arma al entrar, la pistola no se elegiría nunca en
+	// la práctica (riesgo que el plan ya había medido). Con la pistola en la mano
+	// no hay nada que guardar ni que cambiar: se queda tal cual.
+	if (IsPlayer() && keepsWeapon && GetWeaponSlot(GetWeapon()->m_eWeaponType) == WEAPONSLOT_HANDGUN) {
+		outcome = "keep-weapon";
+	} else if (IsPlayer() && HasWeaponSlot(5) && GetWeapon(5).m_nAmmoTotal > 0 && ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed()->m_bDriveByAllowed) {
 		if (m_storedWeapon == WEAPONTYPE_UNIDENTIFIED)
 			m_storedWeapon = GetWeapon()->m_eWeaponType;
 		SetCurrentWeapon(GetWeapon(5).m_eWeaponType);
+		outcome = "switch-smg";
+	} else if (keepsWeapon) {
+		outcome = "keep-weapon";
 	} else {
 		CWeaponInfo *ourWeapon = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
 		RemoveWeaponModel(ourWeapon->m_nModelId);
+		outcome = "remove-model";
 	}
+
+	if (IsPlayer())
+		DriveByTraceVehicleWeapon("enter", outcome);
 }
 void
 CPed::ReplaceWeaponWhenExitingVehicle(void)
 {
 	eWeaponType weaponType = GetWeapon()->m_eWeaponType;
+	// Sección 2 (P2): espejo de la decisión de entrada (si el arma se quedó en la
+	// mano, no hay que volver a ponérsela -> el modelo se duplicaría).
+	bool keepsWeapon = KeepsWeaponInHandWhileDriving();
+	const char *outcome;
 
 	// If it's Uzi, we may have stored weapon. Uzi is the only gun we can use in car.
 	if (IsPlayer() && GetWeaponSlot(weaponType) == WEAPONSLOT_SUBMACHINEGUN) {
 		if (m_storedWeapon != WEAPONTYPE_UNIDENTIFIED) {
 			SetCurrentWeapon(m_storedWeapon);
 			m_storedWeapon = WEAPONTYPE_UNIDENTIFIED;
+			outcome = "restore-stored";
+		} else {
+			outcome = "keep-smg";
 		}
+	} else if (keepsWeapon) {
+		outcome = "keep-weapon";
 	} else {
 		AddWeaponModel(CWeaponInfo::GetWeaponInfo(weaponType)->m_nModelId);
+		outcome = "add-model";
 	}
+
+	if (IsPlayer())
+		DriveByTraceVehicleWeapon("exit", outcome);
 }
 
 void
@@ -5334,6 +5770,43 @@ CPed::InTheAir(void)
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_AIM_CLASSICAXIS
+static bool s_odJumpOn = false;
+static CVector s_odJumpFrom(0.0f, 0.0f, 0.0f);
+static float s_odJumpSim = 0.0f;
+static float s_odJumpDirX = 0.0f;
+static float s_odJumpDirY = 0.0f;
+static int s_odJumpLr = 0;
+static int s_odJumpUd = 0;
+
+static void
+ViceExtP4JumpEnd(CPed *odPed, const char *odCause)
+{
+	if (!s_odJumpOn)
+		return;
+	s_odJumpOn = false;
+	CVector odTo = odPed->GetPosition();
+	float odSim = CTimer::GetTimeInMilliseconds() * 0.001f;
+	float odDx = odTo.x - s_odJumpFrom.x;
+	float odDy = odTo.y - s_odJumpFrom.y;
+	float odDist = Sqrt(odDx * odDx + odDy * odDy);
+	float odDirErr = 0.0f;
+	if (odDist > 0.0001f && (s_odJumpDirX != 0.0f || s_odJumpDirY != 0.0f)) {
+		float odWant = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, s_odJumpDirX, s_odJumpDirY);
+		float odGot = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odDx, odDy);
+		odDirErr = RADTODEG(Abs(CGeneral::LimitRadianAngle(odGot - odWant)));
+	}
+	char t[400];
+	snprintf(t, sizeof t, "P4 kind=jump_end schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 cause=%s lr=%d ud=%d req=%.6f,%.6f,0.000000 from=%.4f,%.4f,%.4f to=%.4f,%.4f,%.4f dist=%.4f elapsed=%.4f dirErr=%.4f",
+		(unsigned)CTimer::GetFrameCounter(), odSim, odCause, s_odJumpLr, s_odJumpUd,
+		s_odJumpDirX, s_odJumpDirY, s_odJumpFrom.x, s_odJumpFrom.y, s_odJumpFrom.z,
+		odTo.x, odTo.y, odTo.z, odDist, odSim - s_odJumpSim, odDirErr);
+	ODTRACES(t);
+}
+#endif
+#endif
+
 void
 CPed::SetLanding(void)
 {
@@ -5367,6 +5840,11 @@ CPed::SetLanding(void)
 	landAssoc->SetFinishCallback(PedLandCB, this);
 	bIsInTheAir = false;
 	bIsLanding = true;
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	ViceExtP4JumpEnd(this, "suelo");
+#endif
+#endif
 }
 
 void
@@ -9175,6 +9653,41 @@ CPed::SetJump(void)
 		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAUNCH, 8.0f);
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		if (IsPlayer() && !((CPlayerPed*)this)->ViceExtIsAiming()) {
+			CVector2D odJumpDir(0.0f, 0.0f);
+			float odJumpSpeed = 0.0f;
+			if (((CPlayerPed*)this)->ViceExtGetMove(odJumpDir, odJumpSpeed) && odJumpDir.MagnitudeSqr() > 0.0001f)
+				m_fRotationDest = odJumpDir.Heading();
+		}
+#endif
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_AIM_WALK
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		{
+			CPad *odPad = CPad::GetPad(0);
+			CVector2D odDir(0.0f, 0.0f);
+			float odSpd = 0.0f;
+			bool odMarch = IsPlayer() && ((CPlayerPed*)this)->ViceExtGetMove(odDir, odSpd);
+			float odLrNow = odPad ? odPad->GetPedWalkLeftRight() : 0.0f;
+			float odUdNow = odPad ? odPad->GetPedWalkUpDown() : 0.0f;
+			s_odJumpOn = true;
+			s_odJumpFrom = GetPosition();
+			s_odJumpSim = CTimer::GetTimeInMilliseconds() * 0.001f;
+			s_odJumpDirX = odDir.x;
+			s_odJumpDirY = odDir.y;
+			s_odJumpLr = (odLrNow < 0.0f) ? -1 : ((odLrNow > 0.0f) ? 1 : 0);
+			s_odJumpUd = (odUdNow < 0.0f) ? -1 : ((odUdNow > 0.0f) ? 1 : 0);
+			char t[240];
+			snprintf(t, sizeof t, "P4 kind=jump schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 lr=%.2f ud=%.2f rumbo=%.4f dirX=%.4f dirY=%.4f march=%d",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				odLrNow, odUdNow,
+				m_fRotationCur, odDir.x, odDir.y, odMarch ? 1 : 0);
+			ODTRACES(t);
+		}
+#endif
+#endif
+#endif
 	}
 }
 
@@ -9206,6 +9719,11 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 		handsCoverAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		handsCoverAssoc->SetFinishCallback(FinishHitHeadCB, ped);
 		ped->bIsLanding = true;
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		ViceExtP4JumpEnd(ped, "choque");
+#endif
+#endif
 		return;
 	}
 
@@ -9226,8 +9744,23 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 	else
 		ped->ApplyMoveForce(0.0f, 0.0f, 4.5f);
 	
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	CVector2D odMarch(0.0f, 0.0f);
+	float odMarchSpeed = 0.0f;
+	bool odMarchOk = ped->IsPlayer() && ((CPlayerPed*)ped)->ViceExtGetMove(odMarch, odMarchSpeed)
+		&& odMarch.MagnitudeSqr() > 0.0001f;
+	if (odMarchOk)
+		odMarch.Normalise();
+#endif
+
 	if (sq(velocityFromAnim) > ped->m_vecMoveSpeed.MagnitudeSqr2D() || ped->m_pCurrentPhysSurface) {
 
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		if (odMarchOk) {
+				ped->m_vecMoveSpeed.x = velocityFromAnim * odMarch.x;
+			ped->m_vecMoveSpeed.y = velocityFromAnim * odMarch.y;
+		} else
+#endif
 #ifdef FREE_CAM
 		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {
 #else
@@ -9246,6 +9779,18 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 			ped->m_vecMoveSpeed.y += ped->m_pCurrentPhysSurface->m_vecMoveSpeed.y;
 		}
 	}
+
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	if (odMarchOk) {
+		float odKeep = CVector2D(ped->m_vecMoveSpeed.x, ped->m_vecMoveSpeed.y).Magnitude();
+		float odApply = (odKeep > velocityFromAnim) ? odKeep : velocityFromAnim;
+		ped->m_vecMoveSpeed.x = odApply * odMarch.x;
+		ped->m_vecMoveSpeed.y = odApply * odMarch.y;
+		ped->m_fRotationCur = odMarch.Heading();
+		ped->m_fRotationDest = ped->m_fRotationCur;
+		ped->SetHeading(ped->m_fRotationCur);
+	}
+#endif
 
 	ped->bIsStanding = false;
 	ped->bIsInTheAir = true;

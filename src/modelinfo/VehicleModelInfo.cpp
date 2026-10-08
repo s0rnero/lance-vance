@@ -196,11 +196,62 @@ CVehicleModelInfo::DeleteRwObject(void)
 	CClumpModelInfo::DeleteRwObject();
 }
 
+// Vice Extended (R11b, 10ª partida): los extras (`extra1..6`) NO siempre son una
+// sola malla. El `police.dff` del mod cuelga de `extra1..3` las lentes de las
+// luces de servicio (`servicelights_1..3`, cada una con su propia malla) y
+// `PreprocessHierarchy` saca esos extras del clump para guardarlos en
+// `m_comps`. Clonando sólo el atomic del extra —lo que hacía este código— los
+// hijos se quedaban fuera: la barra salía SIN lentes y
+// `CVehicle::FindDummyFrame` no encontraba ningún `servicelights_*` (traza
+// `SVLIGHTS model=156 dummies=0` en todas las partidas). Ahora se clona el
+// subárbol completo del marco del componente. Mismo patrón que
+// `RecurseFrameChildrenToCloneCB` (PedFight.cpp), que clona partes de ped.
+static RpClump *gViceExtCompClump;	// clump al que van los clones
+
+static RwObject*
+ViceExtCloneCompAtomicCB(RwObject *object, void *data)
+{
+	RpAtomic *atomic = RpAtomicClone((RpAtomic*)object);
+	RpAtomicSetFrame(atomic, (RwFrame*)data);
+	RpClumpAddAtomic(gViceExtCompClump, atomic);
+	return object;
+}
+
+static RwFrame*
+ViceExtCloneCompFrameCB(RwFrame *frame, void *data)
+{
+	RwFrame *newFrame = RwFrameCreate();
+	RwFrameAddChild((RwFrame*)data, newFrame);
+	RwFrameTransform(newFrame, RwFrameGetMatrix(frame), rwCOMBINEREPLACE);
+	// El NOMBRE no viaja solo: `RwFrameCreate` deja el marco vacío y el plugin
+	// de nombres sólo se rellena al clonar marcos de verdad o al leer el .dff.
+	// Sin esta copia los hijos se llamarían "" y `FindDummyFrame` seguiría sin
+	// ver los `servicelights_*` (que es justo lo que se está arreglando).
+	if (GetFrameNodeName(frame) != nil)
+		strncpy(GetFrameNodeName(newFrame), GetFrameNodeName(frame), 23);
+	RwFrameForAllObjects(frame, ViceExtCloneCompAtomicCB, newFrame);
+	RwFrameForAllChildren(frame, ViceExtCloneCompFrameCB, newFrame);
+	return newFrame;	// no-nil = sigue con los hermanos (librw para con nil)
+}
+
+// Clona un componente al clump de la instancia: su atomic y todo su subárbol
+// (los dummies de las luces de servicio viven ahí).
+static RwFrame*
+ViceExtCloneComponent(RpClump *clump, RpAtomic *comp)
+{
+	RwFrame *src = RpAtomicGetFrame(comp);
+	RwFrame *dst = RwFrameCreate();
+	RwFrameTransform(dst, RwFrameGetMatrix(src), rwCOMBINEREPLACE);
+	gViceExtCompClump = clump;
+	RwFrameForAllObjects(src, ViceExtCloneCompAtomicCB, dst);
+	RwFrameForAllChildren(src, ViceExtCloneCompFrameCB, dst);
+	return dst;
+}
+
 RwObject*
 CVehicleModelInfo::CreateInstance(void)
 {
 	RpClump *clump;
-	RpAtomic *atomic;
 	RwFrame *clumpframe, *f;
 	int32 comp1, comp2;
 
@@ -210,26 +261,14 @@ CVehicleModelInfo::CreateInstance(void)
 
 		comp1 = ChooseComponent();
 		if(comp1 != -1 && m_comps[comp1]){
-			atomic = RpAtomicClone(m_comps[comp1]);
-			f = RwFrameCreate();
-			RwFrameTransform(f,
-				RwFrameGetMatrix(RpAtomicGetFrame(m_comps[comp1])),
-				rwCOMBINEREPLACE);
-			RpAtomicSetFrame(atomic, f);
-			RpClumpAddAtomic(clump, atomic);
+			f = ViceExtCloneComponent(clump, m_comps[comp1]);
 			RwFrameAddChild(clumpframe, f);
 		}
 		ms_compsUsed[0] = comp1;
 
 		comp2 = ChooseSecondComponent();
 		if(comp2 != -1 && m_comps[comp2]){
-			atomic = RpAtomicClone(m_comps[comp2]);
-			f = RwFrameCreate();
-			RwFrameTransform(f,
-				RwFrameGetMatrix(RpAtomicGetFrame(m_comps[comp2])),
-				rwCOMBINEREPLACE);
-			RpAtomicSetFrame(atomic, f);
-			RpClumpAddAtomic(clump, atomic);
+			f = ViceExtCloneComponent(clump, m_comps[comp2]);
 			RwFrameAddChild(clumpframe, f);
 		}
 		ms_compsUsed[1] = comp2;
@@ -1133,9 +1172,32 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 		for(i = 0; i < wheelmi->m_numAtomics; i++)
 			SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
 	}
+#ifdef VICEEXT_FIX_SILENTPATCH
+	static const char *const odCompExceptions[] = { "stallion", "mesa" };
+	const int odNumCompExc = (int)(sizeof(odCompExceptions) / sizeof(odCompExceptions[0]));
+	bool odCompExcluded = false;
+	for(i = 0; i < odNumCompExc; i++){
+		if(!CGeneral::faststricmp(odCompExceptions[i], GetModelName())) {
+			odCompExcluded = true;
+			break;
+		}
+	}
+	if(false && !odCompExcluded)
+	for(i = 0; i < m_numComps; i++){
+		if(m_comps[i])
+			SetEnvironmentMapCB(m_comps[i], nil);
+	}
+#endif
 
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::AttachVehiclePipe(m_clump);
+#ifdef VICEEXT_FIX_SILENTPATCH
+	if(false && !odCompExcluded)
+	for(i = 0; i < m_numComps; i++){
+		if(m_comps[i])
+			CustomPipes::AttachVehiclePipe(m_comps[i]);
+	}
+#endif
 #endif
 }
 

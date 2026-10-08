@@ -17,14 +17,23 @@
 #include "Text.h"
 #include "Timer.h"
 #include "Script.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"   // R3: traza de textos en pantalla (SCRTXT)
+#include <stdio.h>
+#endif
 #include "TxdStore.h"
 #include "User.h"
 #include "World.h"
+#include "PedArbiter.h"
 #include "CutsceneMgr.h"
 #include "Stats.h"
 #include "main.h"
 #include "General.h"
 #include "VarConsole.h"
+#include "ondemand.h" // D4/D6/D7: trazas de verificación
+#ifdef VICEEXT_WEAPON_SIGHTS
+#include "WeaponInfo.h" // D6: mira por arma (columna 27 de su weapon.dat)
+#endif
 
 #if defined(FIX_BUGS)
 	#define SCREEN_SCALE_X_FIX(a) SCREEN_SCALE_X(a)
@@ -216,6 +225,150 @@ RwTexture *gpLaserSightTex;
 RwTexture *gpLaserDotTex;
 RwTexture *gpViewFinderTex;
 
+#ifdef VICEEXT_WEAPON_SIGHTS
+// D6 (sección 1): miras propias del mod, `weaponSights.txd`, indexadas por la
+// columna 27 de su `weapon.dat` (1 dot, 2 pistol, 3 SMG, 4 shotgun, 5 rifle,
+// 6 heavy, 7 rocket). El 0 es "este arma no trae mira propia".
+static const char *ViceExtSightNames[] = {
+	nil, "sightDot", "sightPistol", "sightSMG", "sightShotgun", "sightRifle", "sightHeavy", "sightRocket"
+};
+static CSprite2d ViceExtSightSprites[8];
+static int ViceExtSightsLoaded = 0;
+
+static bool
+ViceExtHasWeaponSight(void)
+{
+	CPed *odPed = FindPlayerPed();
+	if (odPed == nil || odPed->GetWeapon() == nil)
+		return false;
+	CWeaponInfo *odWi = CWeaponInfo::GetWeaponInfo((eWeaponType)odPed->GetWeapon()->m_eWeaponType);
+	if (odWi == nil)
+		return false;
+	int odSight = odWi->m_nSight;
+	return odSight >= 1 && odSight <= 7 && ViceExtSightSprites[odSight].m_pTexture != nil;
+}
+
+// D6b (sección 1, 20/09): ¿toca pintar mira AHORA MISMO?
+//
+// El HUD de serie dibuja la cruz mientras llevas un arma de una mano con la
+// cámara de ratón (Using3rdPersonMouseCam), estés apuntando o no. El jugador lo
+// quiere al revés: la mira aparece **al apuntar** (botón derecho del ratón o
+// Supr, ambos son PED_LOCK_TARGET) y desaparece al soltar. Se mantienen las
+// vistas donde la mira ES la cámara (francotirador, M16/ministry en 1ª persona,
+// cámaras) y el drive-by desde un vehículo.
+// R13 (10ª partida): POR QUÉ se pinta la mira, cuando se pinta. El jugador dice
+// que la mira sale "con el arma en la mano siempre, no sólo al apuntar"; con
+// este motivo (1=conduciendo, 2=modo de cámara, 3=botón de apuntar) la traza
+// dice si el culpable es la puerta o el botón, sin depender de la vista.
+static int ViceExtSightWhy = 0;
+
+static bool
+ViceExtWantsSight(void)
+{
+	ViceExtSightWhy = 0;
+	// D6c (sección 2, 5ª partida): al BAJARSE del coche la mira seguía pintándose
+	// unos segundos, como si el jugador estuviera apuntando. `FindPlayerVehicle()`
+	// sigue devolviendo el vehículo mientras dura la animación de salida (el ped
+	// conserva `m_pMyVehicle` hasta el último frame), así que aquí sólo cuenta si
+	// de verdad va CONDUCIENDO.
+	CPed *odPlayer = FindPlayerPed();
+	if (odPlayer && odPlayer->m_nPedState == PED_DRIVING) {
+		ViceExtSightWhy = 1;
+		return true;
+	}
+	switch (TheCamera.Cams[TheCamera.ActiveCam].Mode) {
+	case CCam::MODE_M16_1STPERSON:
+	case CCam::MODE_M16_1STPERSON_RUNABOUT:
+	case CCam::MODE_HELICANNON_1STPERSON:
+	case CCam::MODE_1STPERSON_RUNABOUT:
+	case CCam::MODE_SNIPER:
+	case CCam::MODE_SNIPER_RUNABOUT:
+	case CCam::MODE_ROCKETLAUNCHER:
+	case CCam::MODE_ROCKETLAUNCHER_RUNABOUT:
+	case CCam::MODE_CAMERA:
+		ViceExtSightWhy = 2;
+		return true;
+	}
+	if (CPad::GetPad(0)->GetTarget()) {
+		ViceExtSightWhy = 3;
+		return true;
+	}
+	if (CCamera::s_viceExtAimLawActive) {
+		ViceExtSightWhy = 4;
+		return true;
+	}
+	return false;
+}
+
+// Sustituye a `Sprites[HUD_SITEM16]` en los cuatro sitios donde el HUD dibuja la
+// cruz: si el arma en curso trae mira propia y su textura está cargada, se pinta
+// esa; si no, se pinta la cruz de siempre (comportamiento anterior intacto).
+static void
+ViceExtDrawSight(const CRect &rect)
+{
+	if (!ViceExtWantsSight())
+		return;
+	int sight = 0;
+	int arma = FindPlayerPed()->GetWeapon()->m_eWeaponType;
+	if (CWeaponInfo *wi = CWeaponInfo::GetWeaponInfo((eWeaponType)arma))
+		sight = wi->m_nSight;
+#ifdef __EMSCRIPTEN__
+	// Verificación (bloque D6) sin depender de píxeles: cada vez que la mira que
+	// toca cambia, deja en la traza el arma, la columna 27 leída y si la textura
+	// de esa mira está cargada. Con esto se puede confirmar desde los logs que el
+	// parseo y el TXD funcionan en una partida real.
+	{
+		static int odUltArma = -1;
+		static int odUltMira = -1;
+		if (arma != odUltArma || sight != odUltMira) {
+			odUltArma = arma;
+			odUltMira = sight;
+			char tt[128];
+			snprintf(tt, sizeof tt, "SIGHT arma=%d mira=%d textura=%d cargadas=%d/7 por=%d modo=%d tgt=%d",
+				arma, sight,
+				(sight >= 1 && sight <= 7 && ViceExtSightSprites[sight].m_pTexture) ? 1 : 0,
+				ViceExtSightsLoaded, ViceExtSightWhy,
+				TheCamera.Cams[TheCamera.ActiveCam].Mode,
+				CPad::GetPad(0)->GetTarget() ? 1 : 0);
+			ODTRACES(tt);
+		}
+	}
+#endif
+#ifdef __EMSCRIPTEN__
+	{
+		static int s_odSightSig = -1;
+		static uint32 s_odSightMs = 0;
+		int odLoaded = (sight >= 1 && sight <= 7 && ViceExtSightSprites[sight].m_pTexture != nil) ? 1 : 0;
+		int odCruz = odLoaded ? 0 : 1;
+		int odSig = (arma << 4) ^ (sight << 1) ^ odLoaded;
+		uint32 odNowMs = CTimer::GetTimeInMilliseconds();
+		if (odSig != s_odSightSig && (odNowMs >= s_odSightMs + 1000 || odNowMs + 60000 < s_odSightMs)) {
+			s_odSightSig = odSig;
+			s_odSightMs = odNowMs;
+			char t[176];
+			snprintf(t, sizeof t, "P4 kind=sight schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 weapon=%d sight=%d loaded=%d why=%d cruz=%d px=%.1f py=%.1f",
+				(unsigned)CTimer::GetFrameCounter(), odNowMs * 0.001f,
+				arma, sight, odLoaded, ViceExtSightWhy, odCruz,
+				(rect.left + rect.right) * 0.5f, (rect.top + rect.bottom) * 0.5f);
+			ODTRACES(t);
+		}
+	}
+#endif
+	if (sight >= 1 && sight <= 7 && ViceExtSightSprites[sight].m_pTexture)
+		ViceExtSightSprites[sight].Draw(rect, CRGBA(255, 255, 255, 255),
+			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+	else
+		CHud::Sprites[HUD_SITEM16].Draw(rect, CRGBA(255, 255, 255, 255),
+			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+}
+#else
+static bool
+ViceExtHasWeaponSight(void)
+{
+	return false;
+}
+#endif
+
 void CHud::Draw()
 {
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
@@ -234,6 +387,7 @@ void CHud::Draw()
 		bool DrawCrossHair = false;
 		bool CrossHairHidesHud = false;
 		bool DrawCrossHairPC = false;
+		bool odAimLaw = CCamera::s_viceExtAimLawActive;
 
 		CPlayerPed *playerPed = FindPlayerPed();
 		eWeaponType WeaponType = playerPed->GetWeapon()->m_eWeaponType;
@@ -250,16 +404,54 @@ void CHud::Draw()
 			if (playerPed) {
 				if (playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
 
-					if (WeaponType >= WEAPONTYPE_COLT45 && WeaponType <= WEAPONTYPE_RUGER
+					// L2 (21/09, 7ª partida): las armas del mod van AL FINAL del enum
+					// (48-55, `WeaponType.h`) y la lista de arriba acaba en RUGER, así
+					// que quedaban sin `DrawCrossHairPC` y por tanto **sin retícula**
+					// (`AIMDIR arma=54 desv=73.6 peso=1.00` con el arma al costado y sin
+					// mira en el vídeo `t=103..t=112`; el jugador: "algunas no salen ni
+					// la retícula"). Se añaden por rango, con los mismos tipos que el
+					// mod marca `CANAIM` en su `weapon.dat`.
+					if (WeaponType >= WEAPONTYPE_COLT45 && WeaponType <= WEAPONTYPE_ROCKETLAUNCHER
 						|| WeaponType == WEAPONTYPE_M60 || WeaponType == WEAPONTYPE_MINIGUN
-						|| WeaponType == WEAPONTYPE_FLAMETHROWER) {
+						|| WeaponType == WEAPONTYPE_FLAMETHROWER
+						|| (WeaponType >= WEAPONTYPE_BERETTA && WeaponType <= WEAPONTYPE_GRENADE_LAUNCHER)) {
 						DrawCrossHairPC = 1;
 					}
 				}
 			}
 		}
 
-		if (DrawCrossHair || DrawCrossHairPC) {
+#ifdef __EMSCRIPTEN__
+		if ((DrawCrossHair || DrawCrossHairPC)
+				&& ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR)) {
+			static uint32 s_odHudNext = 0;
+			uint32 odNow = CTimer::GetTimeInMilliseconds();
+			if (odNow >= s_odHudNext || odNow + 60000 < s_odHudNext) {
+				s_odHudNext = odNow + 1000;
+				char t[64];
+				snprintf(t, sizeof t, "SWIMHUD cruz=%d", (int)(DrawCrossHairPC ? 1 : 0));
+				ODTRACES(t);
+			}
+		}
+#endif
+#ifdef __EMSCRIPTEN__
+		{
+			static int s_odCrossSig = -1;
+			int odCrossSig = (DrawCrossHair ? 1 : 0) | (DrawCrossHairPC ? 2 : 0) | (odAimLaw ? 4 : 0)
+				| (playerPed && playerPed->m_bHasLockOnTarget ? 8 : 0);
+			if (odCrossSig != s_odCrossSig) {
+				s_odCrossSig = odCrossSig;
+				char t[176];
+				snprintf(t, sizeof t, "P4 kind=hud_cross schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 draw=%d pc=%d law=%d lock=%d mode=%d",
+					(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+					DrawCrossHair ? 1 : 0, DrawCrossHairPC ? 1 : 0, odAimLaw ? 1 : 0,
+					(playerPed && playerPed->m_bHasLockOnTarget) ? 1 : 0, (int)Mode);
+				ODTRACES(t);
+			}
+		}
+#endif
+		if ((DrawCrossHair || DrawCrossHairPC || odAimLaw)
+				&& !ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR)) {
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
 
 			SpriteBrightness = Min(SpriteBrightness+1, 30);
@@ -269,29 +461,70 @@ void CHud::Draw()
 			float fStep = Sin((CTimer::GetTimeInMilliseconds() & 1023)/1024.0f * 6.28f);
 			float fMultBright = SpriteBrightness * 0.03f * (0.25f * fStep + 0.75f);
 			CRect rect;
-			if (DrawCrossHairPC && TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam()) {
+#ifdef VICEEXT_AIM_CLASSICAXIS
+			// PORTADO — ClassicAXIS (sin LICENSE, gennariarmando/DK22Pac) — Main.cpp:745
+			//   «static void DrawCrosshair()»
+			// Qué se toma: la cruz de 3.ª persona del mod. El mod EXIGE que la ley
+			//   esté activa (`m_nCamMode == MODE_AIMWEAPON`, :750) y que no haya
+			//   transición (:753), y con eso la mira 3.ª persona de serie (que exige
+			//   `Using3rdPersonMouseCam()` → `MODE_FOLLOWPED`, Cam.cpp:1133) DESAPARECE al
+			//   apuntar. Sin esta rama el jugador se queda sin retícula, que es justo
+			//   lo que el mod viene a arreglar: por eso se AÑADE y no se sustituye la de
+			//   serie (que sigue sirviendo fuera de la ley, como hasta ahora).
+			// Adaptación: la caja es de ±14 px (Main.cpp:776), no la de 32*0.42/0.26 de la
+			//   serie, y con FIJADO no se dibuja (:775), igual que en el mod.
+			// Medible: §8.4 — la cruz sale en pantalla al apuntar sin fijado; `AIMHUD cruz=1`.
+			if (CCamera::s_viceExtAimLawActive && TheCamera.m_uiTransitionState == 0
+						&& playerPed && !playerPed->bInVehicle && !playerPed->m_bHasLockOnTarget
+						&& !CPad::GetPad(0)->ArePlayerControlsDisabled()
+						&& !ViceExtHasWeaponSight()) {
+						float ax = SCREEN_WIDTH  * TheCamera.m_f3rdPersonCHairMultX;
+						float ay = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY
+									- SCREEN_SCALE_Y(2.0f);
+						Sprites[HUD_SITEM16].Draw(
+									CRect(ax - SCREEN_SCALE_X(14.0f), ay - SCREEN_SCALE_Y(14.0f),
+												  ax + SCREEN_SCALE_X(14.0f), ay + SCREEN_SCALE_Y(14.0f)),
+									CRGBA(255, 255, 255, 255),
+												0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+			}
+#endif
+			if ((DrawCrossHairPC && TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
+					|| (CCamera::s_viceExtAimLawActive && playerPed && !playerPed->bInVehicle
+						&& playerPed->ViceExtIsAiming())) {
 				float f3rdX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
 				float f3rdY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
 #ifdef ASPECT_RATIO_SCALE
 				f3rdY -= SCREEN_SCALE_Y(2.0f);
 #endif
+				// D6d (sección 2, 5ª partida): el jugador dijo que las miras salían
+				// "muy gruesas, con el borde muy grande". La caja era la de la cruz de
+				// serie (32 * 0.6 = 38 px), así que el arte del mod se estiraba y su
+				// borde engordaba; se reduce a 0.42/0.26 (≈27/17 px de caja).
 				if (playerPed && (WeaponType == WEAPONTYPE_M4 || WeaponType == WEAPONTYPE_RUGER || WeaponType == WEAPONTYPE_M60)) {
-					rect.left = f3rdX - SCREEN_SCALE_X(32.0f * 0.6f);
-					rect.top = f3rdY - SCREEN_SCALE_Y(32.0f  * 0.6f);
-					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.6f);
-					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.6f);
+					rect.left = f3rdX - SCREEN_SCALE_X(32.0f * 0.42f);
+					rect.top = f3rdY - SCREEN_SCALE_Y(32.0f  * 0.42f);
+					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.42f);
+					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.42f);
 
+#ifdef VICEEXT_WEAPON_SIGHTS
+					ViceExtDrawSight(CRect(rect));
+#else
 					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+#endif
 				}
 				else {
-					rect.left = f3rdX - SCREEN_SCALE_X(32.0f * 0.4f);
-					rect.top = f3rdY - SCREEN_SCALE_Y(32.0f  * 0.4f);
-					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.4f);
-					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.4f);
+					rect.left = f3rdX - SCREEN_SCALE_X(32.0f * 0.26f);
+					rect.top = f3rdY - SCREEN_SCALE_Y(32.0f  * 0.26f);
+					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.26f);
+					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.26f);
 
+#ifdef VICEEXT_WEAPON_SIGHTS
+					ViceExtDrawSight(CRect(rect));
+#else
 					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+#endif
 				}
 			} else {
 				if (Mode == CCam::MODE_M16_1STPERSON ||
@@ -301,8 +534,12 @@ void CHud::Draw()
 					rect.top = (SCREEN_HEIGHT / 2) - SCREEN_SCALE_Y(32.0f);
 					rect.right = (SCREEN_WIDTH / 2) + SCREEN_SCALE_X(32.0f);
 					rect.bottom = (SCREEN_HEIGHT / 2) + SCREEN_SCALE_Y(32.0f);
+#ifdef VICEEXT_WEAPON_SIGHTS
+					ViceExtDrawSight(CRect(rect));
+#else
 					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+#endif
 				}
 				else if (Mode == CCam::MODE_1STPERSON_RUNABOUT) {
 					rect.left = (SCREEN_WIDTH / 2) - SCREEN_SCALE_X(32.0f * 0.7f);
@@ -310,8 +547,12 @@ void CHud::Draw()
 					rect.right = (SCREEN_WIDTH / 2) + SCREEN_SCALE_X(32.0f * 0.7f);
 					rect.bottom = (SCREEN_HEIGHT / 2) + SCREEN_SCALE_Y(32.0f * 0.7f);
 
+#ifdef VICEEXT_WEAPON_SIGHTS
+					ViceExtDrawSight(CRect(rect));
+#else
 					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+#endif
 				}
 				else if (Mode == CCam::MODE_ROCKETLAUNCHER || Mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT) {
 					RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
@@ -401,6 +642,144 @@ void CHud::Draw()
 			SpriteBrightness = 0;
 		}
 
+#ifdef VICEEXT_AIM_CLASSICAXIS
+			// PORTADO — ClassicAXIS (sin LICENSE, gennariarmando/DK22Pac) — Main.cpp:783
+			//   «static void DrawAutoAimTarget()»
+			// Qué se toma: la marca del fijado con el color de la SALUD del objetivo
+			//   (`CRGBA((1-h)*255, h*255, 0)`; negro al morir, Main.cpp:814-820), la ventana
+			//   de 250 ms (`timeLockOn`, :828) y el escalado por lo que QUEDA de esa
+			//   ventana (:843). `LockOnTargetType`: 0 = ninguna (corta, :784), 1 = SA,
+			//   2 = LCS/VCS (:849, con alpha 150).
+			// Adaptación + NOTA HONESTA: `DrawSATarget` y `DrawLCSTarget` del mod NO
+			//   están en las fuentes que se bajaron (se llaman, pero viven en otro
+			//   fichero del mod), así que su GEOMETRÍA exacta es desconocida. Aquí se
+			//   reimplementa con `CSprite2d::DrawRect` / `Draw2DPolygon`, que es lo que
+			//   usa el resto del HUD. NO es una copia: es un dibujo por código con la
+			//   misma información (posición, color por salud, 250 ms y la escala).
+			//   El color y la ventana los escribe el lado del ped (`PlayerPed.cpp`).
+			// Medible: §8.7 — `AIMHUD marco=` con su `tipo=`, y §8.8 — `AIHTRI h=`.
+			if (CCamera::s_viceExtAimLockOnUntil > CTimer::GetTimeInMilliseconds()
+				&& CCamera::s_viceExtAim.lockOnTargetType > 0) {
+				CVector odOut;
+				float odW2, odH2;
+				if (CSprite::CalcScreenCoors(CCamera::s_viceExtAimLastLockPos, &odOut, &odW2, &odH2, false)) {
+					// :843 `dist = (w/128) * (lo que queda de los 250 ms)`: la marca se cierra.
+					float odFrac = (float)CCamera::s_viceExtAimLockOnUntil
+						/ (float)(250 + CTimer::GetTimeInMilliseconds());
+					float odDist = (odW2 / 128.0f) * odFrac;
+					if (CCamera::s_viceExtAim.lockOnTargetType == 2) {
+						// LCS/VCS (:849-854): cruz sencilla, alpha 150.
+						CRGBA odL = CCamera::s_viceExtAimLastLockCol;
+						odL.a = 150;
+						float odLh = SCREEN_SCALE_Y(14.0f) * odDist;
+						float odLw = SCREEN_SCALE_X(14.0f) * odDist;
+						CSprite2d::DrawRect(CRect(odOut.x - odLw, odOut.y,
+							odOut.x + odLw, odOut.y + SCREEN_SCALE_Y(3.0f)), odL);
+						CSprite2d::DrawRect(CRect(odOut.x, odOut.y - odLh,
+							odOut.x + SCREEN_SCALE_X(3.0f), odOut.y + odLh), odL);
+					} else {
+						// SA (:842-847): rombo de cuatro puntas que se cierra con el tiempo.
+						float odS = SCREEN_SCALE_Y(12.0f) * odDist;
+						CSprite2d::Draw2DPolygon(odOut.x, odOut.y - odS,
+							odOut.x + odS, odOut.y, odOut.x, odOut.y + odS,
+							odOut.x - odS, odOut.y, CCamera::s_viceExtAimLastLockCol);
+					}
+				}
+			}
+			// Main.cpp:864-904 `DrawTriangleForMouseRecruitPed`: triángulo sobre el
+			// objetivo BLANDO de ratón (el que escribe la adquisición
+			// `ViceExtFind3rdPersonMouseTarget`, PlayerPed.cpp), con el color de su salud
+			// y alpha 150 (:894), a `cabeza + 1,0 m` (:891) y `w/128` (:900).
+			if (CCamera::s_viceExtAim.showTriangle && TheCamera.m_uiTransitionState == 0
+				&& CCamera::s_viceExtAimMouseTarget && playerPed) {
+				CPed *odT = (CPed*)CCamera::s_viceExtAimMouseTarget;
+				CVector odTv = odT->GetPosition();
+				odT->m_pedIK.GetComponentPosition(odTv, PED_HEAD);
+				odTv.z += 1.0f;
+				float odHp = Clamp(odT->m_fHealth / 100.0f, 0.0f, 1.0f);
+				CRGBA odTc((uint8)((1.0f - odHp) * 255.0f), (uint8)(odHp * 255.0f), 0, 150);
+				if (odHp <= 0.0f)
+					odTc = CRGBA(0, 0, 0, 255);
+				CVector odTo;
+				float odTw, odThh;
+				if (CSprite::CalcScreenCoors(odTv, &odTo, &odTw, &odThh, false)) {
+					float odTs = SCREEN_SCALE_Y(10.0f) * (odTw / 128.0f);
+					CSprite2d::Draw2DPolygon(odTo.x, odTo.y - odTs,
+						odTo.x - odTs, odTo.y + odTs, odTo.x + odTs, odTo.y + odTs,
+						odTo.x, odTo.y - odTs, odTc);
+				}
+			}
+#ifdef __EMSCRIPTEN__
+			{
+				// AIMHUD 1 Hz, y solo si se ha dibujado algo.
+				static uint32 s_odNextHud = 0;
+				uint32 odNowH = CTimer::GetTimeInMilliseconds();
+				if (s_odNextHud > odNowH + 60000) s_odNextHud = 0;
+				if (odNowH >= s_odNextHud) {
+					s_odNextHud = odNowH + 1000;
+					bool cruz = CCamera::s_viceExtAimLawActive && playerPed
+						&& !playerPed->bInVehicle && !playerPed->m_bHasLockOnTarget
+						&& playerPed->ViceExtIsAiming();
+					bool marco = CCamera::s_viceExtAimLockOnUntil > odNowH
+						&& CCamera::s_viceExtAim.lockOnTargetType > 0;
+					bool tri = CCamera::s_viceExtAim.showTriangle
+						&& CCamera::s_viceExtAimMouseTarget != nil;
+					if (cruz || marco || tri) {
+						char t[170];
+						snprintf(t, sizeof t, "AIMHUD cruz=%d marco=%d tipo=%d tri=%d rots=%.1f d=%.4f",
+							(int)cruz, (int)marco, CCamera::s_viceExtAim.lockOnTargetType,
+							(int)tri, 0.0f, 0.0f);
+						ODTRACES(t);
+					}
+				}
+			}
+			{
+				// AIHTRI: el triángulo aparece y desaparece (flanco), no 1 Hz.
+				static bool s_odTriWas = false;
+				bool tri = CCamera::s_viceExtAim.showTriangle
+					&& CCamera::s_viceExtAimMouseTarget != nil;
+				if (tri != s_odTriWas) {
+					s_odTriWas = tri;
+					char t[90];
+					float d = 0.0f;
+					if (CCamera::s_viceExtAimMouseTarget && playerPed)
+						d = (CCamera::s_viceExtAimMouseTarget->GetPosition()
+							- playerPed->GetPosition()).Magnitude();
+					snprintf(t, sizeof t, "AIHTRI h=%d rec=%d d=%.4f", (int)tri,
+						(int)(CCamera::s_viceExtAimMouseTarget ? 1 : 0), d);
+					ODTRACES(t);
+				}
+			}
+#endif
+#else
+			// Sin VICEEXT_AIM_CLASSICAXIS el bloqueo queda como estaba (marco de 4 rects,
+			// solo con fijado duro). Se conserva para que el define se pueda apagar.
+			if (playerPed && playerPed->m_bHasLockOnTarget && playerPed->m_pPointGunAt) {
+				CEntity *odTgt = playerPed->m_pPointGunAt;
+				CVector odMark = odTgt->GetPosition();
+				float odHP = 1.0f;
+				if (odTgt->IsPed()) {
+					CPed *odPed = (CPed*)odTgt;
+					odPed->m_pedIK.GetComponentPosition(odMark, PED_HEAD);
+					odHP = Clamp(odPed->m_fHealth / 100.0f, 0.0f, 1.0f);
+				}
+				odMark.z += 0.25f;
+				CRGBA odCol((uint8)((1.0f - odHP) * 255.0f), (uint8)(odHP * 255.0f), 0, 255);
+				if (odHP <= 0.0f)
+					odCol = CRGBA(0, 0, 0, 255);
+				CVector odScr;
+				float odW, odH;
+				if (CSprite::CalcScreenCoors(odMark, &odScr, &odW, &odH, false)) {
+					float odHalf = SCREEN_SCALE_X(12.0f);
+					float odTh = SCREEN_SCALE_Y(2.0f);
+					CSprite2d::DrawRect(CRect(odScr.x - odHalf, odScr.y - odHalf, odScr.x + odHalf, odScr.y - odHalf + odTh), odCol);
+					CSprite2d::DrawRect(CRect(odScr.x - odHalf, odScr.y + odHalf - odTh, odScr.x + odHalf, odScr.y + odHalf), odCol);
+					CSprite2d::DrawRect(CRect(odScr.x - odHalf, odScr.y - odHalf, odScr.x - odHalf + odTh, odScr.y + odHalf), odCol);
+					CSprite2d::DrawRect(CRect(odScr.x + odHalf - odTh, odScr.y - odHalf, odScr.x + odHalf, odScr.y + odHalf), odCol);
+				}
+			}
+#endif
+
 		if (CrossHairHidesHud)
 			return;
 
@@ -420,7 +799,13 @@ void CHud::Draw()
 			m_LastDisplayScore = CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney;
 		}
 		if (m_DisplayScoreState != FADED_OUT) {
+			// v2.5 "Remove zeros in the money in the HUD" (features.ini
+			// `RemoveMoneyZerosInTheHud`): sin los ceros de relleno a la izquierda.
+#ifdef VICEEXT_MONEY_NO_ZEROS
+			sprintf(sTemp, "$%d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
+#else
 			sprintf(sTemp, "$%08d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
+#endif
 			AsciiToUnicode(sTemp, sPrint);
 
 			CFont::SetPropOff();
@@ -481,6 +866,38 @@ void CHud::Draw()
 			*/
 
 			if (FrontEndMenuManager.m_PrefsShowHud) {
+				// L2 (21/09, 7ª partida): el jugador ve icono en unas armas nuevas y en
+				// otras no ("no hay icono de arma de las granadas"). El HUD tiene dos
+				// caminos (la tabla de sprites por tipo, o la textura del TXD del
+				// modelo) y desde fuera no se sabe cuál toma ni por qué falla. Una
+				// línea por cambio de arma lo dice: tipo, modelo, si el TXD está
+				// cargado y si la textura existe.
+#ifdef __EMSCRIPTEN__
+				static int32 s_odIconWeapon = -1;
+				if ((int32)WeaponType != s_odIconWeapon) {
+					s_odIconWeapon = (int32)WeaponType;
+					CBaseModelInfo *odIconModel = weaponInfo->m_nModelId > 0
+					    ? CModelInfo::GetModelInfo(weaponInfo->m_nModelId) : nil;
+					RwTexDictionary *odIconTxd = nil;
+					int odIconFound = 0;
+					const char *odIconName = "-";
+					if (odIconModel) {
+						odIconName = odIconModel->GetModelName();
+						auto *odSlot = CTxdStore::GetSlot(odIconModel->GetTxdSlot());
+						if (odSlot) {
+							odIconTxd = odSlot->texDict;
+							if (odIconTxd)
+								odIconFound = RwTexDictionaryFindNamedTexture(odIconTxd, odIconName) != nil;
+						}
+					}
+					char odIconTrace[190];
+					snprintf(odIconTrace, sizeof odIconTrace, "HUDICON arma=%d modelo=%d txd=%d cargado=%d textura=%d nombre=%s",
+						(int)WeaponType, weaponInfo->m_nModelId,
+						odIconModel ? (int)odIconModel->GetTxdSlot() : -1,
+						odIconTxd != nil, odIconFound, odIconName);
+					ODTRACES(odIconTrace);
+				}
+#endif
 				if (weaponInfo->m_nModelId <= 0) {
 					RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 					if (FrontEndMenuManager.m_PrefsShowHud)
@@ -509,6 +926,7 @@ void CHud::Draw()
 #else
 							static CSprite2d sprite;
 							sprite.m_pTexture = weaponIcon;
+							RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 							sprite.Draw(
 								CRect(SCREEN_SCALE_FROM_RIGHT(99.0f), SCREEN_SCALE_Y(27.0f), SCREEN_SCALE_FROM_RIGHT(35.0f), SCREEN_SCALE_Y(91.0f)),
 								CRGBA(255, 255, 255, alpha),
@@ -1150,7 +1568,9 @@ void CHud::Draw()
 						IntroRect.m_sRect.right,
 						IntroRect.m_sRect.top );
 
+					CSprite2d::SetScriptSpriteScale(true);
 					CTheScripts::ScriptSprites[IntroRect.m_nTextureId].Draw(rect, IntroRect.m_sColor);
+					CSprite2d::SetScriptSpriteScale(false);
 				}
 				else {
 					CRect rect (
@@ -1159,7 +1579,9 @@ void CHud::Draw()
 						IntroRect.m_sRect.right,
 						IntroRect.m_sRect.top );
 
+					CSprite2d::SetScriptSpriteScale(true);
 					CSprite2d::DrawRect(rect, IntroRect.m_sColor);
+					CSprite2d::SetScriptSpriteScale(false);
 				}
 			}
 		}
@@ -1489,11 +1911,15 @@ void CHud::DrawAfterFade()
 
 			// Yeah, top and bottom changed place. R* vision
 			if (rectangle.m_nTextureId >= 0) {
+				CSprite2d::SetScriptSpriteScale(true);
 				CTheScripts::ScriptSprites[rectangle.m_nTextureId].Draw(CRect(rectangle.m_sRect.left, rectangle.m_sRect.bottom,
 					rectangle.m_sRect.right, rectangle.m_sRect.top), rectangle.m_sColor);
+				CSprite2d::SetScriptSpriteScale(false);
 			} else {
+				CSprite2d::SetScriptSpriteScale(true);
 				CSprite2d::DrawRect(CRect(rectangle.m_sRect.left, rectangle.m_sRect.bottom,
 					rectangle.m_sRect.right, rectangle.m_sRect.top), rectangle.m_sColor);
+				CSprite2d::SetScriptSpriteScale(false);
 			}
 		}
 	}
@@ -1717,7 +2143,39 @@ void CHud::Initialise()
 		Sprites[i].SetTexture(WeaponFilenames[i].name, WeaponFilenames[i].mask);
 	}
 
-	m_pLastZoneName = nil;
+#ifdef VICEEXT_WEAPON_SIGHTS
+	// D6 (sección 1): las miras del mod vienen en su propio TXD
+	// (`models/weaponSights.txd`, 7 texturas). Se cargan aquí, una vez, y se
+	// vuelve a dejar el TXD del HUD como el actual.
+	{
+		int SightsTXD = CTxdStore::AddTxdSlot("weaponsights");
+		CTxdStore::LoadTxd(SightsTXD, "MODELS/WEAPONSIGHTS.TXD");
+		CTxdStore::AddRef(SightsTXD);
+		CTxdStore::PopCurrentTxd();
+		CTxdStore::SetCurrentTxd(SightsTXD);
+		for (int i = 1; i <= 7; i++) {
+			ViceExtSightSprites[i].SetTexture(ViceExtSightNames[i], nil);
+			if (ViceExtSightSprites[i].m_pTexture)
+				ViceExtSightsLoaded++;
+		}
+		CTxdStore::SetCurrentTxd(HudTXD);
+#ifdef __EMSCRIPTEN__
+		{
+			char tt[128];
+			snprintf(tt, sizeof tt, "SIGHTS cargadas=%d/7 txd=weaponsights", ViceExtSightsLoaded);
+			ODTRACES(tt);
+		}
+#endif
+	}
+#endif
+#ifdef VICEEXT_HINT_KEYS
+	// D7 (sección 1): TXD de iconos de tecla del mod (`models/pcbtns.txd`), una
+	// vez, para que los avisos puedan pintar la tecla.
+	CFont::LoadKeyIcons();
+#ifdef __EMSCRIPTEN__
+	ODTRACES("KEYICONS txd=pcbtns cargado");
+#endif
+#endif
 	GetRidOfAllHudMessages();
 	m_pLastVehicleName = nil;
 
@@ -1875,6 +2333,30 @@ void CHud::SetBigMessage(wchar *message, uint16 style)
 
 void CHud::SetHelpMessage(wchar *message, bool quick, bool displayForever)
 {
+#ifdef __EMSCRIPTEN__
+	// -----------------------------------------------------------------------
+	// R3 (plan 06, 5ª partida): el cajón de ayuda es el otro sitio por donde
+	// puede salir un texto "solo". Misma traza que los mensajes (SCRTXT) para
+	// que un solo filtro del log explique TODOS los textos de una partida.
+	// -----------------------------------------------------------------------
+	{
+		static uint32 s_odHelpN = 0;
+		char txt[110];
+		int n = 0;
+		if (message) {
+			for (const wchar *p = message; *p && n < (int)sizeof(txt) - 1; p++) {
+				wchar c = *p;
+				txt[n++] = (c >= 32 && c < 127) ? (char)c : '.';
+			}
+		}
+		txt[n] = '\0';
+		char t[220];
+		snprintf(t, sizeof t, "SCRTXT n=%u canal=help clave=\"%s\" time=%d flag=%d mis=%d",
+			++s_odHelpN, txt, (int)(displayForever ? -1 : (quick ? 0 : 1)), (int)quick,
+			(int)CTheScripts::IsPlayerOnAMission());
+		ODTRACES(t);
+	}
+#endif
 	if (!CReplay::IsPlayingBack()) {
 		for (int i = 0; i < HELP_MSG_LENGTH; i++) {
 			m_HelpMessage[i] = 0;
@@ -1956,6 +2438,11 @@ void CHud::Shutdown()
 	for (int i = 0; i < NUM_HUD_SPRITES; ++i) {
 		Sprites[i].Delete();
 	}
+
+#ifdef VICEEXT_WEAPON_SIGHTS
+	for (int i = 1; i <= 7; i++)
+		ViceExtSightSprites[i].Delete();
+#endif
 
 	RwTextureDestroy(gpSniperSightTex);
 	gpSniperSightTex = nil;

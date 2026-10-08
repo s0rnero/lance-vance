@@ -361,3 +361,19 @@ codewarrior/Release/
 codewarrior/Debug/
 
 src/extras/GitSHA1.cpp
+
+# GTA VC juego original (assets con copyright, NUNCA commitear ~1.5GB)
+Grand Theft Auto Vice City/
+gta_vc_browser/vc/
+gta_vc_browser/web/public/vc/
+gta_vc_browser/web/public/build/
+gta_vc_browser/build/
+gta_vc_browser/web/dist/
+gta_vc_browser/web/node_modules/
+gta_vc_browser/web/*.local
+
+# Locales grandes / generados (límite GitHub 100MB por archivo, no pushear)
+*.mp4
+*.RAW
+gta_vc_browser/tmp/
+gta_vc_browser/logs/

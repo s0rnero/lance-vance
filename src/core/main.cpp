@@ -1,5 +1,8 @@
 #include "common.h"
 #include <time.h>
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 #include "rpmatfx.h"
 #include "rphanim.h"
 #include "rpskin.h"
@@ -109,6 +112,19 @@ bool gameAlreadyInitialised;
 
 float NumberOfChunksLoaded;
 #define TOTALNUMCHUNKS 95.0f
+
+#ifdef __EMSCRIPTEN__
+// Carga de partida / arranque en web: UNA sola pantalla (splash1) y UNA sola
+// barra progresiva. Mientras este flag está activo:
+//   - LoadSplash() ignora cualquier otro nombre, así que las pantallas que
+//     piden portada aleatoria (`loadscN`, las que daban el salto de arte que el
+//     jugador describe como "veo la portada del juego") no recargan el TXD del
+//     splash a media carga;
+//   - LoadingScreen() delega en WebDrawLoadScreen(), así que el contador de
+//     chunks vanilla no pinta una SEGUNDA barra que arranca de cero.
+// Lo encienden/apagan WebBeginLoadScreen()/WebEndLoadScreen() (skel/glfw).
+bool gWebLoadScreenActive = false;
+#endif
 
 bool g_SlowMode = false;
 char version_name[64];
@@ -560,6 +576,14 @@ LoadSplash(const char *name)
 	char filename[140];
 	RwTexture *tex = nil;
 
+#ifdef __EMSCRIPTEN__
+	// Carga en curso en web: se fija la portada a splash1. Otro nombre forzaría
+	// Un LoadTxd en mitad de la carga (parpadeo: "el splash carga más de una
+	// vez") y cambiaría el arte de la pantalla.
+	if(gWebLoadScreenActive && name != nil &&
+	   strcmp(name, "splash1") != 0 && strcmp(name, "SPLASH1") != 0)
+		name = "splash1";
+#endif
 	if(name == nil)
 		return &splash;
 	if(splashTxdId == -1)
@@ -634,6 +658,29 @@ GetLevelSplashScreen(int level)
 	return splashScreens[level];
 }
 
+// ---------------------------------------------------------------------------
+// PORTADO — SilentPatch (MIT, © 2024 Adrian Zdanowicz "Silent")
+//   https://github.com/CookiePLMonster/SilentPatch
+//   SilentPatchVC/SilentPatchVC.cpp:723 — «Fix the loading bar outline not
+//   scaling to resolution»: recalcula `XPos * anchoUI` y `YPos * altoUI`,
+//   porque el contorno se quedaba con medidas fijas mientras la barra sí
+//   escalaba.
+// Qué se toma: la idea (el contorno tiene que usar la MISMA escala que la
+//   barra). Adaptación: aquí el contorno se dibujaba con un margen literal de
+//   1 px de pantalla (`hpos-1.0f` y `top-1.0f`), que a 1840×928 se ve como un
+//   pelo y a 640×480 como un borde grueso; ahora el margen pasa por X=ancho,
+//   Y=alto, igual que la barra.
+// Medible: traza `LBAR w= h= borde=x,y` (una línea por tamaño de ventana) y
+//   bloque `LB` del verificador: `borde_y / h` debe ser constante.
+// ---------------------------------------------------------------------------
+#ifdef RANDOMSPLASH
+#define VICEEXT_LOADBAR_BORDER_X() SCREEN_STRETCH_X(1.0f)
+#define VICEEXT_LOADBAR_BORDER_Y() SCREEN_STRETCH_Y(1.0f)
+#else
+#define VICEEXT_LOADBAR_BORDER_X() SCREEN_SCALE_X(1.0f)
+#define VICEEXT_LOADBAR_BORDER_Y() SCREEN_SCALE_Y(1.0f)
+#endif
+
 void
 ResetLoadingScreenBar()
 {
@@ -648,6 +695,17 @@ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 #ifdef DISABLE_LOADING_SCREEN
 	if (str1 && str2)
 		return;
+#endif
+
+#ifdef __EMSCRIPTEN__
+	// Carga en curso en web: la pantalla la pinta WebDrawLoadScreen (splash fijo
+	// + barra monótona con fracción explícita). Si dejáramos pasar esta versión,
+	// dibujaría su propia barra con NumberOfChunksLoaded, que arranca en 0 en
+	// cada llamada: es el "se reinicia su barra de progreso" que se veía.
+	if (gWebLoadScreenActive) {
+		WebDrawLoadScreen(gWebLoadFrac);
+		return;
+	}
 #endif
 
 #ifndef RANDOMSPLASH
@@ -685,7 +743,10 @@ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 			float bottom = SCREEN_STRETCH_Y(407.4f + 7.0f/3.0f);
 #endif
 
-			CSprite2d::DrawRect(CRect(hpos-1.0f, top-1.0f, hpos+length+1.0f, bottom+1.0f), CRGBA(40, 53, 68, 255));
+			// Contorno con margen ESCALADO (SilentPatch :723, ver cabecera).
+			float obx = VICEEXT_LOADBAR_BORDER_X();
+			float oby = VICEEXT_LOADBAR_BORDER_Y();
+			CSprite2d::DrawRect(CRect(hpos-obx, top-oby, hpos+length+obx, bottom+oby), CRGBA(40, 53, 68, 255));
 
 			CSprite2d::DrawRect(CRect(hpos, top, hpos+length, bottom), CRGBA(155, 50, 125, 255));
 
@@ -725,6 +786,301 @@ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
  		DoRWStuffEndOfFrame();
 	}
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/heap.h>
+float gWebLoadFrac = 0.0f;
+int gWebBootInitPending = 0;
+
+// F6a (fluides-v2): ¿EN QUÉ FASE del frame se van los ~4 ms que se pierden
+// una vez por segundo (medido en F4c/F5c/F5d: una imagen de ~21 ms en vez de
+// 16.7 en ~todos los segundos, con los dos relojes de acuerdo)? El frame se
+// cronometra en cinco tramos con reloj de pared (emscripten_get_now):
+//   L = lógica   (CTimer + tbInit + CGame::Process)
+//   A = audio    (DMAudio.Service: decodes de SFX, streams de radio)
+//   R = lista    (ConstructRenderList + PreRender)
+//   S = escena   (RenderScene + efectos + motion blur)
+//   T = 2D       (Render2dStuff + menús/fade + FPS)
+//   P = entrega  (DoRWStuffEndOfFrame: swap/present)
+// Cada segundo se emite UNA línea FPHASE con el frame de peor INTERVALO del
+// segundo y los tramos del frame ANTERIOR (un tick que llega tarde lo hace
+// por el trabajo del tick previo, ya terminado y medido) + `wait` =
+// intervalo - trabajo previo: wait grande = el navegador tardó en devolvernos
+// el tick (vsync/GPU/compositor), no el código. Así el culpable se señala
+// solo, sin adivinar.
+static double gWpStart, gWpCur[6], gWpPrev[6];
+static int gWpDone;
+static uint32 gWpN, gWpOver17, gWpWorstIdx;
+static double gWpWorstGap, gWpWorstPrev[6], gWpWorstWait;
+static int gWpWorstHas;
+static double gWpMax[6], gWpEmit, gWpPrevStart;
+
+void WebPhaseEnd(void);
+
+void
+WebPhaseBegin(void)
+{
+	double now = emscripten_get_now();
+	if (gWpPrevStart != 0.0) {
+		double gap = now - gWpPrevStart;
+		gWpN++;
+		if (gap > 17.0) gWpOver17++;
+		if (gap > gWpWorstGap) {
+			int i;
+			double work = 0.0;
+			for (i = 0; i < 6; i++) work += gWpPrev[i];
+			gWpWorstGap = gap;
+			gWpWorstIdx = gWpN;
+			gWpWorstWait = gap - work;
+			for (i = 0; i < 6; i++) gWpWorstPrev[i] = gWpPrev[i];
+			gWpWorstHas = 1;
+		}
+	}
+	gWpPrevStart = now;
+	gWpStart = now;
+	gWpDone = 0;
+	{ int i; for (i = 0; i < 6; i++) gWpCur[i] = 0.0; }
+}
+
+// Marca el fin de una fase (0=L 1=A 2=R 3=S 4=T 5=P). Las fases se cierran en
+// orden; la suma de las anteriores da el tramo real de esta.
+void
+WebPhaseMark(int ph)
+{
+	double acc;
+#ifdef __EMSCRIPTEN__
+	// D12 (sección 1, 21/09): la pantalla negra era un bucle infinito dentro de un
+	// frame y con el frame bloqueado no había forma de saber en qué fase se quedó.
+	// Ese rastro (printf por fase, uno por fotograma) ya cumplió su función al
+	// localizar el cuelgue en CText::LoadMissionText; ahora se conserva solo el
+	// cronometraje, que es lo que alimenta el informe de rendimiento.
+#endif
+	if (gWpDone & (1 << ph)) return;
+	acc = gWpCur[0] + gWpCur[1] + gWpCur[2] + gWpCur[3] + gWpCur[4] + gWpCur[5];
+	gWpCur[ph] = emscripten_get_now() - gWpStart - acc;
+	if (gWpCur[ph] < 0.0) gWpCur[ph] = 0.0;
+	gWpDone |= 1 << ph;
+}
+
+// Frame sin dibujado (menú, restart, carga): las fases de dibujo quedan a 0.
+void
+WebPhaseNoRender(void)
+{
+	WebPhaseMark(2);
+	WebPhaseMark(3);
+	WebPhaseMark(4);
+	if (!(gWpDone & (1 << 5))) {
+		double acc = gWpCur[0] + gWpCur[1] + gWpCur[2] + gWpCur[3] + gWpCur[4];
+		double rest = emscripten_get_now() - gWpStart - acc;
+		gWpCur[5] = rest > 0.0 ? rest : 0.0;
+		gWpDone |= 1 << 5;
+	}
+	WebPhaseEnd();
+}
+
+void
+WebPhaseEnd(void)
+{
+	double now = emscripten_get_now();
+	int i;
+	if (!(gWpDone & (1 << 5))) {
+		double acc = gWpCur[0] + gWpCur[1] + gWpCur[2] + gWpCur[3] + gWpCur[4];
+		double rest = now - gWpStart - acc;
+		gWpCur[5] = rest > 0.0 ? rest : 0.0;
+		gWpDone |= 1 << 5;
+	}
+	for (i = 0; i < 6; i++) {
+		if (gWpCur[i] > gWpMax[i]) gWpMax[i] = gWpCur[i];
+		gWpPrev[i] = gWpCur[i];
+	}
+	if (gWpEmit == 0.0) gWpEmit = now;
+	if (now - gWpEmit >= 1000.0 && gWpWorstHas) {
+		char t[260];
+		double sum = 0.0;
+		for (i = 0; i < 6; i++) sum += gWpWorstPrev[i];
+		snprintf(t, sizeof t,
+			"FPHASE n=%u over17=%u gap=%.1f at=%u prev(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f sum=%.1f) wait=%.1f max(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f)",
+			gWpN, gWpOver17, gWpWorstGap, gWpWorstIdx,
+			gWpWorstPrev[0], gWpWorstPrev[1], gWpWorstPrev[2], gWpWorstPrev[3], gWpWorstPrev[4], gWpWorstPrev[5],
+			sum, gWpWorstWait,
+			gWpMax[0], gWpMax[1], gWpMax[2], gWpMax[3], gWpMax[4], gWpMax[5]);
+		ODTRACES(t);
+		gWpN = 0; gWpOver17 = 0; gWpWorstGap = 0; gWpWorstHas = 0;
+		for (i = 0; i < 6; i++) gWpMax[i] = 0.0;
+		gWpEmit = now;
+	}
+}
+
+void
+WebDrawFps(void)
+{
+	static uint32 s_frames = 0;
+	static uint32 s_lastMs = 0;
+	static uint32 s_lastFrame = 0;
+	static int s_fps = 0;
+	static uint32 s_maxDelta = 0;
+	static int s_hitch = 0;
+	// Interruptor del contador: lo manda la PÁGINA, no la URL.
+	//   startGame({ showFps: true })  o  game.showFps(true) en caliente.
+	// Sin query params: el contador solo lo enciende la pagina por API.
+	int s_on = EM_ASM_INT({
+		var g = (typeof globalThis !== 'undefined') ? globalThis : window;
+		if (typeof g.__vcShowFps !== 'undefined') return g.__vcShowFps ? 1 : 0;
+		return 0;
+	});
+	if (!s_on) {
+		// Al apagarlo se olvida la medida: si vuelve a encenderse, cuenta limpio.
+		s_frames = 0; s_lastMs = 0; s_lastFrame = 0; s_maxDelta = 0; s_hitch = 0;
+		return;
+	}
+	// Reloj de pared (CTimer se para en el menú y congelaría la media).
+	uint32 now = (uint32)emscripten_get_now();
+	if (s_lastMs == 0) {
+		s_lastMs = now;
+		s_lastFrame = now;
+	}
+	{
+		uint32 d = now - s_lastFrame;
+		s_lastFrame = now;
+		if (d > s_maxDelta) s_maxDelta = d;
+		if (d > 100) s_hitch++;
+	}
+	s_frames++;
+	if (now - s_lastMs >= 1000) {
+		s_fps = (int)(s_frames * 1000 / (now - s_lastMs));
+		{
+			char t[128];
+			snprintf(t, sizeof t, "FPSLOG avg=%d maxdelta=%ums hitch=%d heap=%uMB strm=%ums",
+				s_fps, s_maxDelta, s_hitch,
+				(unsigned)(emscripten_get_heap_size() / 1048576), gWebStrmMs);
+			ODTRACES(t);
+		}
+		s_frames = 0;
+		s_lastMs = now;
+		s_maxDelta = 0;
+		s_hitch = 0;
+		gWebStrmMs = 0;
+	}
+	char t[32];
+	snprintf(t, sizeof t, "%d FPS", s_fps);
+	static wchar wbuf[32];
+	CFont::SetBackgroundOff();
+	CFont::SetScale(SCREEN_SCALE_X(0.5f), SCREEN_SCALE_Y(0.5f));
+	CFont::SetPropOn();
+	CFont::SetRightJustifyOff();
+	CFont::SetFontStyle(FONT_STANDARD);
+	CFont::SetColor(CRGBA(0, 255, 0, 255));
+	AsciiToUnicode(t, wbuf);
+	CFont::PrintString(SCREEN_SCALE_X(8.0f), SCREEN_SCALE_Y(8.0f), wbuf);
+	CFont::DrawFonts();
+}
+
+// Pantalla de carga in-game: splash vanilla + barra con fracción explícita.
+// Misma geometría/colores que LoadingScreen, sin texto ni contador de chunks.
+// Se llama un tramo por tick durante la carga troceada; el navegador presenta
+// el canvas al volver cada tick (sin present explícito).
+//
+// BARRA MONÓTONA: la carga web pasa por varias fases (shutdown, parse, drenado
+// de colisión, escena) y cada una reprograma gWebLoadFrac desde abajo (0.01,
+// 0.02, 0.04...). Dibujar ese valor tal cual hacía que la barra retrocediera en
+// cada frontera de fase (lo que el jugador ve como "se reinicia"). Aquí se
+// recuerda el máximo ya pintado y solo se avanza: un único barrido 0->100.
+static float s_webLoadShown = -1.0f;
+
+void
+WebDrawLoadScreen(float frac)
+{
+	// Re-entrada: LoadSplash() puede acabar en LoadingScreenLoadingFile ->
+	// LoadingScreen -> aquí dentro. Anidar DoRWStuff* rompería el frame, así que
+	// la llamada interior se descarta (la exterior ya pinta la barra correcta).
+	static bool inDraw = false;
+	if (inDraw)
+		return;
+
+	if (frac < 0.0f) frac = 0.0f;
+	if (frac > 1.0f) frac = 1.0f;
+	if (s_webLoadShown >= 0.0f && frac < s_webLoadShown) {
+		// La fase en curso quería volver atrás: se queda el máximo ya pintado.
+		// Traza solo cuando el salto es apreciable (no por redondeo): así el log
+		// demuestra que el retroceso se recorta y cuántas veces lo intentó.
+		if (s_webLoadShown - frac > 0.01f) {
+			char ob[80];
+			snprintf(ob, sizeof ob, "LOADSCR clamp %.3f->%.3f", frac, s_webLoadShown);
+			ODTRACES(ob);
+		}
+		frac = s_webLoadShown;
+	}
+	s_webLoadShown = frac;
+
+	inDraw = true;
+	CSprite2d *sp = LoadSplash(nil);
+	if (DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255)) {
+		CSprite2d::SetRecipNearClip();
+		CSprite2d::InitPerFrame();
+		CFont::InitPerFrame();
+		DefinedState();
+		RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
+		if (sp != nil && sp->m_pTexture != nil)
+			sp->Draw(CRect(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(255, 255, 255, 255));
+		else
+			CSprite2d::DrawRect(CRect(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+
+		float hpos = SCREEN_SCALE_X(40);
+		float length = SCREEN_WIDTH - SCREEN_SCALE_X(80);
+		float top = SCREEN_HEIGHT - SCREEN_SCALE_Y(14);
+		float bottom = top + SCREEN_SCALE_Y(5);
+		// Contorno con margen ESCALADO (SilentPatch :723, ver cabecera arriba).
+		float obx = VICEEXT_LOADBAR_BORDER_X();
+		float oby = VICEEXT_LOADBAR_BORDER_Y();
+#ifdef __EMSCRIPTEN__
+		// Una línea por tamaño de ventana: demuestra que el margen escala con la
+		// pantalla (`borde_y / h` constante) y no se queda en 1 px.
+		{
+			static int obW = -1, obH = -1;
+			int w = (int)SCREEN_WIDTH, h = (int)SCREEN_HEIGHT;
+			if (w != obW || h != obH) {
+				obW = w; obH = h;
+				char ob[96];
+				snprintf(ob, sizeof ob, "LBAR w=%d h=%d borde=%.2f,%.2f", w, h, obx, oby);
+				ODTRACES(ob);
+			}
+		}
+#endif
+		CSprite2d::DrawRect(CRect(hpos-obx, top-oby, hpos+length+obx, bottom+oby), CRGBA(40, 53, 68, 255));
+		CSprite2d::DrawRect(CRect(hpos, top, hpos+length, bottom), CRGBA(155, 50, 125, 255));
+		CSprite2d::DrawRect(CRect(hpos, top, hpos+length*frac, bottom), CRGBA(255, 150, 225, 255));
+
+		CFont::DrawFonts();
+		DoRWStuffEndOfFrame();
+	}
+	inDraw = false;
+}
+
+// Abre la secuencia de pantalla de carga: fija la portada a splash1 (una sola
+// carga: la segunda llamada encuentra la textura y no recarga nada), reinicia
+// la barra y bloquea cualquier otra pantalla de carga del motor mientras dure.
+// IDEMPOTENTE mientras siga activa: el arranque y la carga posterior son UNA
+// secuencia (así el segundo tick de splash no devuelve la barra a cero).
+void
+WebBeginLoadScreen(void)
+{
+	if (gWebLoadScreenActive)
+		return;
+	gWebLoadScreenActive = true;
+	s_webLoadShown = -1.0f;
+	LoadSplash("splash1");
+	ODTRACES("LOADSCR begin splash=splash1");
+}
+
+void
+WebEndLoadScreen(void)
+{
+	if (!gWebLoadScreenActive)
+		return;
+	gWebLoadScreenActive = false;
+	ODTRACES("LOADSCR end");
+}
+#endif
 
 void
 LoadingIslandScreen(const char *levelName)
@@ -1526,6 +1882,9 @@ Render2dStuffAfterFade(void)
 void
 Idle(void *arg)
 {
+#ifdef __EMSCRIPTEN__
+	WebPhaseBegin();
+#endif
 	CTimer::Update();
 
 	tbInit();
@@ -1541,25 +1900,44 @@ Idle(void *arg)
 	tbEndTimer("CGame::Process");
 	POP_MEMID();
 
+#ifdef __EMSCRIPTEN__
+	WebPhaseMark(0); // fin de lógica
+#endif
 	tbStartTimer(0, "DMAudio.Service");
 	DMAudio.Service();
 	tbEndTimer("DMAudio.Service");
+#ifdef __EMSCRIPTEN__
+	WebPhaseMark(1); // fin de audio
+#endif
 
 	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000 && !CCutsceneMgr::IsCutsceneProcessing()){
 		WANT_TO_LOAD = false;
 		FrontEndMenuManager.m_bWantToRestart = true;
+#ifdef __EMSCRIPTEN__
+		ODTRACES("WR demo-timeout restart");
+		printf("[want] WR demo-timeout restart\n");
+		WebPhaseNoRender();
+#endif
 		return;
 	}
 
 	if(FrontEndMenuManager.m_bWantToRestart || FOUND_GAME_TO_LOAD)
 	{
+#ifdef __EMSCRIPTEN__
+		WebPhaseNoRender();
+#endif
 		return;
 	}
 	
 	SetLightsWithTimeOfDayColour(Scene.world);
 
 	if(arg == nil)
+	{
+#ifdef __EMSCRIPTEN__
+		WebPhaseNoRender();
+#endif
 		return;
+	}
 
 	PUSH_MEMID(MEMID_RENDER);
 
@@ -1589,6 +1967,10 @@ Idle(void *arg)
 		tbStartTimer(0, "PreRender");
 		CRenderer::PreRender();
 		tbEndTimer("PreRender");
+
+#ifdef __EMSCRIPTEN__
+		WebPhaseMark(2); // fin de lista de render
+#endif
 
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this
@@ -1638,6 +2020,9 @@ Idle(void *arg)
 		tbStartTimer(0, "RenderMotionBlur");
 		TheCamera.RenderMotionBlur();
 		tbEndTimer("RenderMotionBlur");
+#ifdef __EMSCRIPTEN__
+		WebPhaseMark(3); // fin de escena 3D (RenderScene + efectos + blur)
+#endif
 
 		tbStartTimer(0, "Render2dStuff");
 		Render2dStuff();
@@ -1675,11 +2060,20 @@ Idle(void *arg)
 #ifdef XBOX_MESSAGE_SCREEN
 	FrontEndMenuManager.DrawOverlays();
 #endif
+#ifdef __EMSCRIPTEN__
+	WebDrawFps();
+	WebPhaseMark(4); // fin de 2D (menus/fade/efectos de pantalla)
+#endif
 
 	if (gbShowTimebars)
 		tbDisplay();
 
 	DoRWStuffEndOfFrame();
+
+#ifdef __EMSCRIPTEN__
+	WebPhaseMark(5); // fin de entrega (present)
+	WebPhaseEnd();
+#endif
 
 	POP_MEMID();	// MEMID_RENDER
 
@@ -1688,6 +2082,9 @@ Idle(void *arg)
 	return;
 
 popret:	POP_MEMID();	// MEMID_RENDER
+#ifdef __EMSCRIPTEN__
+	WebPhaseEnd();
+#endif
 }
 
 void
@@ -1717,6 +2114,18 @@ FrontendIdle(void)
 #endif
 	DoFade();
 	Render2dStuffAfterFade();
+#ifdef __EMSCRIPTEN__
+	WebDrawFps();
+	// Precargar el splash en el menú (red idle): si llega durante la tormenta
+	// de la escena, la pantalla tardaría en pintar. Fire-and-forget.
+	{
+		static int n = 0;
+		if (!n) {
+			n = 1;
+			EM_ASM({ try { OD.ensure('TXD/splash1.txd'); } catch (e) {} });
+		}
+	}
+#endif
 	CFont::DrawFonts();
 	DoRWStuffEndOfFrame();
 }
@@ -1727,6 +2136,27 @@ InitialiseGame(void)
 	LoadingScreen(nil, nil, "loadsc0");
 	CGame::Initialise("DATA\\GTA_VC.DAT");
 }
+
+#ifdef __EMSCRIPTEN__
+// Progressive loading: one Initialise section per browser tick so the page
+// stays responsive (with progress bar) instead of blocking 10-60 s in one
+// frame. Returns true when the world is ready.
+static int s_gameStepStarted = 0;
+bool
+InitialiseGameStep(void)
+{
+	if (!s_gameStepStarted) {
+		LoadingScreen(nil, nil, "loadsc0");
+		CGame::InitialiseResetSteps();
+		s_gameStepStarted = 1;
+	}
+	if (CGame::InitialiseStep("DATA\\GTA_VC.DAT")) {
+		s_gameStepStarted = 0;
+		return true;
+	}
+	return false;
+}
+#endif
 
 RsEventStatus
 AppEventHandler(RsEvent event, void *param)
@@ -1967,11 +2397,11 @@ void TheGame(void)
 				break;
 			}
 
-			DoFade();
-			Render2dStuffAfterFade();
-			CCredits::Render();
+		DoFade();
+		Render2dStuffAfterFade();
+		CCredits::Render();
 
-			DoRWStuffEndOfFrame();
+		DoRWStuffEndOfFrame();
 
 			while (frameCount < 2)
 				;

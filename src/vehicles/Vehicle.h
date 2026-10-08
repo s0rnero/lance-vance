@@ -335,6 +335,9 @@ public:
 	void ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelContactSpeed, CVector &wheelContactPoint,
 		int32 wheelsOnGround, float thrust, float brake, float adhesion, float destabTraction, int8 wheelId, float *wheelSpeed, tWheelState *wheelState, eBikeWheelSpecial special, uint16 wheelStatus);
 	void ExtinguishCarFire(void);
+	// Sección 3 (C3.3/C3.4): dummies con nombre de los modelos del mod
+	// (`petrolcap` del depósito, `indicator*` de los intermitentes...).
+	RwFrame *FindDummyFrame(const char *name);
 	void ProcessDelayedExplosion(void);
 	float ProcessWheelRotation(tWheelState state, const CVector &fwd, const CVector &speed, float radius);
 	int FindTyreNearestPoint(float x, float y);

@@ -1,6 +1,13 @@
 #include "common.h"
+#include "PedArbiter.h"
 #include "platform.h"
-
+#include "ondemand.h"
+#include "crossplatform.h"
+#include "Lists.h"
+#include "PlayerInfo.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/heap.h>
+#endif
 #include "Game.h"
 #include "main.h"
 #include "RwHelper.h"
@@ -13,6 +20,7 @@
 #include "Clock.h"
 #include "Clouds.h"
 #include "Collision.h"
+#include "ColStore.h"
 #include "Console.h"
 #include "Coronas.h"
 #include "Cranes.h"
@@ -95,6 +103,19 @@
 #ifdef USE_TEXTURE_POOL
 #include "TexturePools.h"
 #endif
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// Web loading screen: the page shows progress per Initialise step
+// (see window.__loadProgress in gta_vc_browser/web/lib/index.js).
+#define WEB_LOAD_PROGRESS(step, total) EM_ASM({ if (window.__loadProgress) window.__loadProgress($0, $1); }, (step), (total))
+// Overlay DOM de carga de partida (portada + barra): el splash GL no sale en web.
+#define WEB_LOAD_OVERLAY(show, pct, label) EM_ASM({ if (window.__loadOverlay) window.__loadOverlay($0, $1, UTF8ToString($2)); }, (show), (pct), (label))
+#else
+#define WEB_LOAD_PROGRESS(step, total) ((void)0)
+#define WEB_LOAD_OVERLAY(show, pct, label) ((void)0)
+#endif
+#define NUM_INIT_STEPS 19
 
 eLevelName CGame::currLevel;
 int32 CGame::currArea;
@@ -352,6 +373,9 @@ bool CGame::InitialiseOnceAfterRW(void)
 	DMAudio.SetEffectsFadeVol(127);
 	DMAudio.SetMusicFadeVol(127);
 #endif
+#ifdef __EMSCRIPTEN__
+	printf("[web] once-afterRW ok\n");
+#endif
 	return true;
 }
 
@@ -363,228 +387,346 @@ CGame::FinalShutdown(void)
 	CdStreamShutdown();
 }
 
-bool CGame::Initialise(const char* datFile)
+static int s_initStep = 0;
+
+void CGame::InitialiseResetSteps(void)
 {
-	ResetLoadingScreenBar();
-	strcpy(aDatFile, datFile);
+	s_initStep = 0;
+}
+
+// One loading section per call; returns true when finished.
+// Shared by native (loops in one frame) and web (one per tick).
+bool CGame::InitialiseStep(const char* datFile)
+{
+	(void)datFile;
+#ifdef __EMSCRIPTEN__
+	// Solo en el arranque (un puñado de líneas): el paso de carga por el que va
+	// y el heap, que es lo que se mira cuando el arranque se queda corto.
+	{ char ob[96]; snprintf(ob, sizeof(ob), "initstep %d heap %u", s_initStep, (unsigned)emscripten_get_heap_size()); ODTRACES(ob); }
+#endif
+	switch (s_initStep) {
+	case 0:
+	{
+		ResetLoadingScreenBar();
+		strcpy(aDatFile, datFile);
 
 #ifdef GTA_PS2
-	// TODO: upload VU0 collision code here
+		// TODO: upload VU0 collision code here
 #endif
 
-	CPools::Initialise();
+		CPools::Initialise();
 
 #ifndef GTA_PS2
 #ifdef PED_CAR_DENSITY_SLIDERS
-	// Load density values from gta3.ini only if our reVC.ini have them 0.6f
-	if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
+		// Load density values from gta3.ini only if our reVC.ini have them 0.6f
+		if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
 #endif
-		CIniFile::LoadIniFile();
+			CIniFile::LoadIniFile();
 #endif
 #ifdef USE_TEXTURE_POOL
-	_TexturePoolsUnknown(false);
+		_TexturePoolsUnknown(false);
 #endif
-	currLevel = LEVEL_BEACH;
-	currArea = AREA_MAIN_MAP;
+		currLevel = LEVEL_BEACH;
+		currArea = AREA_MAIN_MAP;
+#ifdef __EMSCRIPTEN__
+		// F1 (fluides-v2): presupuesto de streaming también para partida
+		// nueva (6 ficheros por LoadAll durante gameplay; el mecanismo ya
+		// validado por la carga). Acota el peor frame al conducir.
+		CStreaming::gWebLoadBudget = 6;
+#endif
 
-	PUSH_MEMID(MEMID_TEXTURES);
-	LoadingScreen("Loading the Game", "Loading generic textures", GetRandomSplashScreen());
-	gameTxdSlot = CTxdStore::AddTxdSlot("generic");
-	CTxdStore::Create(gameTxdSlot);
-	CTxdStore::AddRef(gameTxdSlot);
+		PUSH_MEMID(MEMID_TEXTURES);
+		break;
+	}
+	case 1:
+	{
+		LoadingScreen("Loading the Game", "Loading generic textures", GetRandomSplashScreen());
+		gameTxdSlot = CTxdStore::AddTxdSlot("generic");
+		CTxdStore::Create(gameTxdSlot);
+		CTxdStore::AddRef(gameTxdSlot);
 
 #ifdef EXTENDED_PIPELINES
-	// for generic fallback
-	CustomPipes::SetTxdFindCallback();
+		// for generic fallback
+		CustomPipes::SetTxdFindCallback();
 #endif
 
-	LoadingScreen("Loading the Game", "Loading particles", nil);
-	int particleTxdSlot = CTxdStore::AddTxdSlot("particle");
-	CTxdStore::LoadTxd(particleTxdSlot, "MODELS/PARTICLE.TXD");
-	CTxdStore::AddRef(particleTxdSlot);
-	CTxdStore::SetCurrentTxd(gameTxdSlot);
-	LoadingScreen("Loading the Game", "Setup game variables", nil);
-	POP_MEMID();
+		break;
+	}
+	case 2:
+	{
+		LoadingScreen("Loading the Game", "Loading particles", nil);
+		int particleTxdSlot = CTxdStore::AddTxdSlot("particle");
+		CTxdStore::LoadTxd(particleTxdSlot, "MODELS/PARTICLE.TXD");
+		CTxdStore::AddRef(particleTxdSlot);
+		CTxdStore::SetCurrentTxd(gameTxdSlot);
+		break;
+	}
+	case 3:
+	{
+		LoadingScreen("Loading the Game", "Setup game variables", nil);
+		POP_MEMID();
 
 #ifdef GTA_PS2
-	CDma::SyncChannel(0, true);
+		CDma::SyncChannel(0, true);
 #endif
 
-	CGameLogic::InitAtStartOfGame();
-	CReferences::Init();
-	TheCamera.Init();
-	TheCamera.SetRwCamera(Scene.camera);
-	CDebug::DebugInitTextBuffer();
-	ThePaths.Init();
-	ThePaths.AllocatePathFindInfoMem(4500);
-	CScriptPaths::Init();
-	CWeather::Init();
-	CCullZones::Init();
-	COcclusion::Init();
-	CCollision::Init();
-	CSetPieces::Init();
-	CTheZones::Init();
-	CUserDisplay::Init();
-	CMessages::Init();
-	CMessages::ClearAllMessagesDisplayedByGame();
-	CRecordDataForGame::Init();
-	CRestart::Initialise();
+		CGameLogic::InitAtStartOfGame();
+		CReferences::Init();
+		TheCamera.Init();
+		TheCamera.SetRwCamera(Scene.camera);
+		CDebug::DebugInitTextBuffer();
+		ThePaths.Init();
+		ThePaths.AllocatePathFindInfoMem(4500);
+		CScriptPaths::Init();
+		CWeather::Init();
+		CCullZones::Init();
+		COcclusion::Init();
+		CCollision::Init();
+		CSetPieces::Init();
+		CTheZones::Init();
+		CUserDisplay::Init();
+		CMessages::Init();
+		CMessages::ClearAllMessagesDisplayedByGame();
+		CRecordDataForGame::Init();
+		CRestart::Initialise();
 
-	PUSH_MEMID(MEMID_WORLD);
-	CWorld::Initialise();
-	POP_MEMID();
+		PUSH_MEMID(MEMID_WORLD);
+		CWorld::Initialise();
+		POP_MEMID();
 
-	PUSH_MEMID(MEMID_TEXTURES);
-	CParticle::Initialise();
-	POP_MEMID();
+		PUSH_MEMID(MEMID_TEXTURES);
+		CParticle::Initialise();
+		POP_MEMID();
 
-	PUSH_MEMID(MEMID_ANIMATION);
-	CAnimManager::Initialise();
-	CCutsceneMgr::Initialise();
-	POP_MEMID();
+		PUSH_MEMID(MEMID_ANIMATION);
+		CAnimManager::Initialise();
+		CCutsceneMgr::Initialise();
+		POP_MEMID();
 
-	PUSH_MEMID(MEMID_CARS);
-	CCarCtrl::Init();
-	POP_MEMID();
+		PUSH_MEMID(MEMID_CARS);
+		CCarCtrl::Init();
+		POP_MEMID();
 
-	PUSH_MEMID(MEMID_DEF_MODELS);
-	InitModelIndices();
-	CModelInfo::Initialise();
-	CPickups::Init();
-	CTheCarGenerators::Init();
+		PUSH_MEMID(MEMID_DEF_MODELS);
+		InitModelIndices();
+		CModelInfo::Initialise();
+		CPickups::Init();
+		CTheCarGenerators::Init();
 
-	CdStreamAddImage("MODELS\\GTA3.IMG");
+		CdStreamAddImage("MODELS\\GTA3.IMG");
 
-	CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
-	CFileLoader::LoadLevel(datFile);
+		CFileLoader::LoadLevel("DATA\\DEFAULT.DAT");
 
-	LoadingScreen("Loading the Game", "Add Particles", nil);
-	CWorld::AddParticles();
-	CVehicleModelInfo::LoadVehicleColours();
-	CVehicleModelInfo::LoadEnvironmentMaps();
-	CTheZones::PostZoneCreation();
-	POP_MEMID();
-
-	LoadingScreen("Loading the Game", "Setup paths", nil);
-	ThePaths.PreparePathData();
-	for (int i = 0; i < NUMPLAYERS; i++)
-		CWorld::Players[i].Clear();
-	CWorld::Players[0].LoadPlayerSkin();
-	TestModelIndices();
-
-	LoadingScreen("Loading the Game", "Setup water", nil);
-	CWaterLevel::Initialise("DATA\\WATER.DAT");
-	TheConsole.Init();
-	CDraw::SetFOV(120.0f);
-	CDraw::ms_fLODDistance = 500.0f;
-
-	LoadingScreen("Loading the Game", "Setup streaming", nil);
-	CStreaming::LoadInitialVehicles();
-	CStreaming::LoadInitialPeds();
-	CStreaming::RequestBigBuildings(LEVEL_GENERIC);
-	CStreaming::LoadAllRequestedModels(false);
-	CStreaming::RemoveIslandsNotUsed(currLevel);
-	printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
-
-	LoadingScreen("Loading the Game", "Load animations", GetRandomSplashScreen());
-	PUSH_MEMID(MEMID_ANIMATION);
-	CAnimManager::LoadAnimFiles();
-	POP_MEMID();
-
-	CStreaming::LoadInitialWeapons();
-	CStreaming::LoadAllRequestedModels(0);
-	CPed::Initialise();
-	CRouteNode::Initialise();
-	CEventList::Initialise();
-#ifdef SCREEN_DROPLETS
-	ScreenDroplets::Initialise();
-#endif
-	LoadingScreen("Loading the Game", "Find big buildings", nil);
-	CRenderer::Init();
-
-	LoadingScreen("Loading the Game", "Setup game variables", nil);
-	CRadar::Initialise();
-	CRadar::LoadTextures();
-	CWeapon::InitialiseWeapons();
-
-	LoadingScreen("Loading the Game", "Setup traffic lights", nil);
-	CTrafficLights::ScanForLightsOnMap();
-	CRoadBlocks::Init();
-
-	LoadingScreen("Loading the Game", "Setup game variables", nil);
-	CPopulation::Initialise();
-	CWorld::PlayerInFocus = 0;
-	CCoronas::Init();
-	CShadows::Init();
-	CWeaponEffects::Init();
-	CSkidmarks::Init();
-	CAntennas::Init();
-	CGlass::Init();
-	gPhoneInfo.Initialise();
-#ifdef GTA_SCENE_EDIT
-	CSceneEdit::Initialise();
-#endif
-
-	LoadingScreen("Loading the Game", "Load scripts", nil);
-	PUSH_MEMID(MEMID_SCRIPT);
-	CTheScripts::Init();
-	CGangs::Initialise();
-	POP_MEMID();
-
-	LoadingScreen("Loading the Game", "Setup game variables", nil);
-	CClock::Initialise(1000);
-	CHeli::InitHelis();
-	CCranes::InitCranes();
-	CMovingThings::Init();
-	CDarkel::Init();
-	CStats::Init();
-	CPacManPickups::Init();
-	CRubbish::Init();
-	CClouds::Init();
-	CSpecialFX::Init();
-	CRopes::Init();
-	CWaterCannons::Init();
-	CBridge::Init();
-	CGarages::Init();
-
-	LoadingScreen("Loading the Game", "Position dynamic objects", nil);
-	LoadingScreen("Loading the Game", "Initialise vehicle paths", nil);
-
-	CTrain::InitTrains();
-	CPlane::InitPlanes();
-	CCredits::Init();
-	CRecordDataForChase::Init();
-	CReplay::Init();
-
-	LoadingScreen("Loading the Game", "Start script", nil);
-#ifdef PS2_MENU
-	if ( !TheMemoryCard.m_bWantToLoad )
-#endif
-	{
-		CTheScripts::StartTestScript();
-		CTheScripts::Process();
-		TheCamera.Process();
+		break;
 	}
+	case 4:
+	{
+		// Web: GTA_VC.DAT (IDE/IPL/TXD masivos) en su propio tick para no
+		// bloquear la pestaña 10-60 s junto al setup anterior.
+		CFileLoader::LoadLevel(aDatFile);
+		LoadingScreen("Loading the Game", "Add Particles", nil);
+		CWorld::AddParticles();
+		CVehicleModelInfo::LoadVehicleColours();
+		CVehicleModelInfo::LoadEnvironmentMaps();
+		CTheZones::PostZoneCreation();
+		POP_MEMID();
 
-	LoadingScreen("Loading the Game", "Load scene", nil);
-	CCollision::ms_collisionInMemory = currLevel;
-	for (int i = 0; i < MAX_PADS; i++)
-		CPad::GetPad(i)->Clear(true);
+		break;
+	}
+	case 5:
+	{
+		LoadingScreen("Loading the Game", "Setup paths", nil);
+		ThePaths.PreparePathData();
+		for (int i = 0; i < NUMPLAYERS; i++)
+			CWorld::Players[i].Clear();
+		CWorld::Players[0].LoadPlayerSkin();
+		TestModelIndices();
+
+		break;
+	}
+	case 6:
+	{
+		LoadingScreen("Loading the Game", "Setup water", nil);
+		CWaterLevel::Initialise("DATA\\WATER.DAT");
+		TheConsole.Init();
+		CDraw::SetFOV(120.0f);
+		CDraw::ms_fLODDistance = 500.0f;
+
+		break;
+	}
+	case 7:
+	{
+		LoadingScreen("Loading the Game", "Setup streaming", nil);
+		CStreaming::LoadInitialVehicles();
+		CStreaming::LoadInitialPeds();
+		CStreaming::RequestBigBuildings(LEVEL_GENERIC);
+		CStreaming::LoadAllRequestedModels(false);
+		CStreaming::RemoveIslandsNotUsed(currLevel);
+		printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
+
+		break;
+	}
+	case 8:
+	{
+		LoadingScreen("Loading the Game", "Load animations", GetRandomSplashScreen());
+		PUSH_MEMID(MEMID_ANIMATION);
+		CAnimManager::LoadAnimFiles();
+		POP_MEMID();
+
+		CStreaming::LoadInitialWeapons();
+		CStreaming::LoadAllRequestedModels(0);
+		CPed::Initialise();
+		CRouteNode::Initialise();
+		CEventList::Initialise();
+#ifdef SCREEN_DROPLETS
+		ScreenDroplets::Initialise();
+#endif
+		break;
+	}
+	case 9:
+	{
+		LoadingScreen("Loading the Game", "Find big buildings", nil);
+		CRenderer::Init();
+
+		break;
+	}
+	case 10:
+	{
+		LoadingScreen("Loading the Game", "Setup game variables", nil);
+		CRadar::Initialise();
+		CRadar::LoadTextures();
+		CWeapon::InitialiseWeapons();
+
+		break;
+	}
+	case 11:
+	{
+		LoadingScreen("Loading the Game", "Setup traffic lights", nil);
+		CTrafficLights::ScanForLightsOnMap();
+		CRoadBlocks::Init();
+
+		break;
+	}
+	case 12:
+	{
+		LoadingScreen("Loading the Game", "Setup game variables", nil);
+		CPopulation::Initialise();
+		CWorld::PlayerInFocus = 0;
+		CCoronas::Init();
+		CShadows::Init();
+		CWeaponEffects::Init();
+		CSkidmarks::Init();
+		CAntennas::Init();
+		CGlass::Init();
+		gPhoneInfo.Initialise();
+#ifdef GTA_SCENE_EDIT
+		CSceneEdit::Initialise();
+#endif
+
+		break;
+	}
+	case 13:
+	{
+		LoadingScreen("Loading the Game", "Load scripts", nil);
+		PUSH_MEMID(MEMID_SCRIPT);
+		CTheScripts::Init();
+		CGangs::Initialise();
+		POP_MEMID();
+
+		break;
+	}
+	case 14:
+	{
+		LoadingScreen("Loading the Game", "Setup game variables", nil);
+		CClock::Initialise(1000);
+		CHeli::InitHelis();
+		CCranes::InitCranes();
+		CMovingThings::Init();
+		CDarkel::Init();
+		CStats::Init();
+		CPacManPickups::Init();
+		CRubbish::Init();
+		CClouds::Init();
+		CSpecialFX::Init();
+		CRopes::Init();
+		CWaterCannons::Init();
+		CBridge::Init();
+		CGarages::Init();
+
+		break;
+	}
+	case 15:
+	{
+		LoadingScreen("Loading the Game", "Position dynamic objects", nil);
+		break;
+	}
+	case 16:
+	{
+		LoadingScreen("Loading the Game", "Initialise vehicle paths", nil);
+
+		CTrain::InitTrains();
+		CPlane::InitPlanes();
+		CCredits::Init();
+		CRecordDataForChase::Init();
+		CReplay::Init();
+
+		break;
+	}
+	case 17:
+	{
+		LoadingScreen("Loading the Game", "Start script", nil);
+#ifdef PS2_MENU
+		if ( !TheMemoryCard.m_bWantToLoad )
+#elif defined(__EMSCRIPTEN__)
+		// Web/carga: el save trae scripts, player y escena; no correr el
+		// script de test ni el primer tick del main (era la tormenta TXDIN
+		// duplicada: creaba player + escena por defecto que el restart
+		// destruía y reconstruía en la playa).
+		if ( !FrontEndMenuManager.m_bWantToLoad )
+#endif
+		{
+			CTheScripts::StartTestScript();
+			CTheScripts::Process();
+			TheCamera.Process();
+		}
+
+		break;
+	}
+	case 18:
+	{
+		LoadingScreen("Loading the Game", "Load scene", nil);
+		CCollision::ms_collisionInMemory = currLevel;
+		for (int i = 0; i < MAX_PADS; i++)
+			CPad::GetPad(i)->Clear(true);
 #ifdef USE_TEXTURE_POOL
-	_TexturePoolsUnknown(true);
+		_TexturePoolsUnknown(true);
 #endif
 
 #ifndef MASTER
-	PlayerCoords = FindPlayerCoors();
-	VarConsole.Add("X PLAYER COORD", &PlayerCoords.x, 10.0f, -10000.0f, 10000.0f, true);
-	VarConsole.Add("Y PLAYER COORD", &PlayerCoords.y, 10.0f, -10000.0f, 10000.0f, true);
-	VarConsole.Add("Z PLAYER COORD", &PlayerCoords.z, 10.0f, -10000.0f, 10000.0f, true);
-	VarConsole.Add("UPDATE PLAYER COORD", &VarUpdatePlayerCoords, true);
+		PlayerCoords = FindPlayerCoors();
+		VarConsole.Add("X PLAYER COORD", &PlayerCoords.x, 10.0f, -10000.0f, 10000.0f, true);
+		VarConsole.Add("Y PLAYER COORD", &PlayerCoords.y, 10.0f, -10000.0f, 10000.0f, true);
+		VarConsole.Add("Z PLAYER COORD", &PlayerCoords.z, 10.0f, -10000.0f, 10000.0f, true);
+		VarConsole.Add("UPDATE PLAYER COORD", &VarUpdatePlayerCoords, true);
 #endif
 
 
-	DMAudio.SetStartingTrackPositions(TRUE);
-	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+		DMAudio.SetStartingTrackPositions(TRUE);
+		DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+		break;
+	}
+	default:
+		break;
+	}
+	WEB_LOAD_PROGRESS(s_initStep + 1, NUM_INIT_STEPS);
+	s_initStep++;
+	return s_initStep >= NUM_INIT_STEPS;
+}
+
+bool CGame::Initialise(const char* datFile)
+{
+	CGame::InitialiseResetSteps();
+	while (!CGame::InitialiseStep(datFile)) { }
 	return true;
 }
 
@@ -765,8 +907,62 @@ void CGame::ShutDownForRestart(void)
 	CSpecialFX::Shutdown();
 }
 
+#ifdef __EMSCRIPTEN__
+static int s_sdPhase = 0;
+void CGame::ShutDownForRestartResetSteps(void)
+{
+	s_sdPhase = 0;
+}
+// Shutdown troceado: mismo orden y operaciones que ShutDownForRestart, un
+// tramo por tick del navegador (el shutdown monolítico congelaba el confirm).
+// 1 = terminado.
+bool CGame::ShutDownForRestartStep(void)
+{
+	int i;
+	switch (s_sdPhase) {
+	case 0:
+#ifdef USE_TEXTURE_POOL
+		_TexturePoolsUnknown(false);
+#endif
+		CReplay::FinishPlayback();
+		CReplay::EmptyReplayBuffer();
+		DMAudio.DestroyAllGameCreatedEntities();
+		CMovingThings::Shutdown();
+		for (i = 0; i < NUMPLAYERS; i++)
+			CWorld::Players[i].Clear();
+		CGarages::SetAllDoorsBackToOriginalHeight();
+		CTheScripts::UndoBuildingSwaps();
+		CTheScripts::UndoEntityInvisibilitySettings();
+		gWebLoadFrac = 0.01f;
+		s_sdPhase = 1;
+		return false;
+	case 1:
+		CWorld::ClearForRestart();
+		CGameLogic::ClearShortCut();
+		CTimer::Shutdown();
+		gWebLoadFrac = 0.02f;
+		s_sdPhase = 2;
+		return false;
+	case 2:
+	default:
+		CStreaming::ReInit();
+		CRadar::RemoveRadarSections();
+		FrontEndMenuManager.UnloadTextures();
+		CParticleObject::RemoveAllExpireableParticleObjects();
+		CWaterCreatures::RemoveAll();
+		CSetPieces::Init();
+		CPedType::Shutdown();
+		CSpecialFX::Shutdown();
+		gWebLoadFrac = 0.03f;
+		s_sdPhase = 0;
+		return true;
+	}
+}
+#endif
+
 void CGame::InitialiseWhenRestarting(void)
 {
+	ViceExtPedResetAll();
 	CRect rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	CRGBA color(255, 255, 255, 255);
 	
@@ -834,15 +1030,219 @@ void CGame::InitialiseWhenRestarting(void)
 	}
 	
 	CTimer::Update();
-	
+
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsUnknown(true);
 #endif
 }
 
+#ifdef __EMSCRIPTEN__
+// Carga de partida troceada: un tramo por tick del navegador para que la
+// pestaña no muestre "esperar/salir". Mismo orden que InitialiseWhenRestarting.
+static int s_restartStep = 0;
+#ifdef __EMSCRIPTEN__
+static int s_loadSub = 0; // 0 = parse, 1 = drenado colisión, 2 = escena
+	static uint32 s_loadT0 = 0; // DIAG: duración total de la carga (RsTimer, reloj de pared)
+static int s_drainTotal = 1;
+static int s_drainFirst = 1;
+static int s_drainStale = 0;
+#endif
+void CGame::InitialiseRestartResetSteps(void)
+{
+	s_restartStep = 0;
+#ifdef __EMSCRIPTEN__
+	s_loadSub = 0;
+#endif
+}
+bool CGame::InitialiseRestartStep(void)
+{
+	switch (s_restartStep) {
+	case 0:
+	{
+		CTimer::Initialise();
+		CSprite2d::SetRecipNearClip();
+		if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
+			LoadSplash("splash1");
+		b_FoundRecentSavedGameWantToLoad = false;
+		TheCamera.Init();
+		if (FrontEndMenuManager.m_bWantToLoad == true)
+			RestoreForStartLoad();
+#ifdef __EMSCRIPTEN__
+		s_loadSub = 0;
+		if (FrontEndMenuManager.m_bWantToLoad == true) {
+			gWebLoadFrac = 0.01f;
+			// Presupuesto desde ya: todo LoadAll del flujo trocea (caso 1,
+			// cola de colisión, escena). 0 = monolítico (modo normal).
+			CStreaming::gWebLoadBudget = 10;
+			// Re-asegurar el splash (pudo desalojarse): IDB local, sin red.
+			EM_ASM({ try { OD.ensure('TXD/splash1.txd'); } catch (e) {} });
+		}
+#endif
+		WEB_LOAD_PROGRESS(1, 4);
+		break;
+	}
+	case 1:
+	{
+		ReInitGameObjectVariables();
+		WEB_LOAD_PROGRESS(2, 4);
+		break;
+	}
+	case 2:
+	{
+		if (FrontEndMenuManager.m_bWantToLoad == true)
+		{
+			// NO limpiar aquí: los ticks restantes del restart troceado deben
+			// seguir entrando al if (wantToLoad). Antes se limpiaba aquí y los
+			// ticks siguientes caían al else (wipe INIT_PLAYING) pisando la
+			// partida recién cargada. Se limpia al completar (glfw) o en fallo.
+#ifdef __EMSCRIPTEN__
+			// Web: parse en un tick + escena troceada en los siguientes (un
+			// tramo por tick). Mismo orden que el tail vanilla.
+			if (s_loadSub == 0) {
+				InitRadioStationPositionList();
+				ODTRACES("webload: GenericLoad empieza");
+				s_loadT0 = (uint32)RsTimer(); // reloj de pared (F2): CTimer no avanza dentro del frame
+				printf("[save] webload: GenericLoad empieza (slot %d)\n", FrontEndMenuManager.m_nCurrSaveSlot);
+				gWebDeferSceneLoad = true;
+				gWebDeferCollision = true;
+				if (GenericLoad() == true) {
+					s_loadSub = 1;
+					s_drainTotal = 1;
+					s_drainFirst = 1;
+					s_drainStale = 0;
+					gWebLoadFrac = 0.04f;
+					s_restartStep--; // quedarse en el caso 2 para el drenado
+				} else {
+					ODTRACES("webload: GenericLoad FAIL -> restart silencioso");
+					printf("[save] webload: GenericLoad FAIL -> restart silencioso\n");
+					gWebDeferSceneLoad = false;
+					gWebDeferCollision = false;
+					CStreaming::gWebLoadBudget = 6; // F1: presupuesto de gameplay
+					gWebLoadFrac = 0.0f;
+					TheCamera.SetFadeColour(0, 0, 0);
+					ShutDownForRestart();
+					CTimer::Stop();
+					CTimer::Initialise();
+					FrontEndMenuManager.m_bWantToLoad = false;
+					ReInitGameObjectVariables();
+					currLevel = LEVEL_GENERIC;
+					CCollision::SortOutCollisionAfterLoad();
+				}
+			} else if (s_loadSub == 1) {
+				// Sub-paso 0b: colisión + resto pendiente, a rebanadas.
+				// (La purga de la escena dropearía estas peticiones, así que
+				// drenan ANTES de los pasos de escena.)
+				if (s_drainFirst) {
+					s_drainFirst = 0;
+					CColStore::LoadCollision(TheCamera.GetPosition());
+					s_drainTotal = CStreaming::CountPendingRequests();
+					if (s_drainTotal < 1) s_drainTotal = 1;
+					s_drainStale = 0;
+				}
+				int before = CStreaming::CountPendingRequests();
+				CStreaming::LoadAllRequestedModels(false);
+				int after = CStreaming::CountPendingRequests();
+				if (after >= before) s_drainStale++;
+				else s_drainStale = 0;
+				int done = s_drainTotal - after;
+				if (done < 0) done = 0;
+				if (done > s_drainTotal) done = s_drainTotal;
+				gWebLoadFrac = 0.04f + 0.06f*done/s_drainTotal;
+				if (after == 0 || s_drainStale > 5) {
+					CStreaming::LoadSceneResetSteps();
+					s_loadSub = 2;
+				}
+				s_restartStep--;
+			} else {
+				if (CStreaming::LoadSceneStep(TheCamera.GetPosition())) {
+					s_loadSub = 0;
+					gWebDeferSceneLoad = false;
+					gWebDeferCollision = false;
+					DoGameSpecificStuffAfterSucessLoadDeferred();
+					DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
+					CTrain::InitTrains();
+					CPlane::InitPlanes();
+					ODTRACES("webload: GenericLoad OK");
+					printf("[save] webload: GenericLoad OK\n");
+					{
+						char t[96];
+						snprintf(t, sizeof t, "webload: total=%ums (parse+drenado+escena)",
+							(uint32)RsTimer() - s_loadT0);
+						ODTRACES(t);
+					}
+					{
+						CVector p(0.0f, 0.0f, 0.0f);
+						CPlayerPed *pl = FindPlayerPed();
+						if (pl) p = pl->GetPosition();
+						char t[160];
+						snprintf(t, sizeof t, "loaded pos=%.1f,%.1f,%.1f level=%d", p.x, p.y, p.z, (int)CGame::currLevel);
+						ODTRACES(t);
+						printf("[save] %s\n", t);
+					}
+					// F2-load raíz: sin esto el estado quedaba en GS_FRONTEND y el
+					// siguiente tick lo secuestraba a GS_INIT_PLAYING_GAME (partida
+					// nueva pisando lo cargado).
+					gGameState = GS_PLAYING_GAME;
+					gWebLoadFrac = 1.0f;
+				} else {
+					// Escena a medias: repetir el case 2 en el próximo tick
+					// (sin esto s_restartStep avanzaría y el restart acabaría
+					// con la escena sin cargar).
+					s_restartStep--;
+				}
+			}
+#else
+			InitRadioStationPositionList();
+			if (GenericLoad() == true)
+			{
+				DMAudio.ResetTimers(CTimer::GetTimeInMilliseconds());
+				CTrain::InitTrains();
+				CPlane::InitPlanes();
+			}
+			else
+			{
+				TheCamera.SetFadeColour(0, 0, 0);
+				ShutDownForRestart();
+				CTimer::Stop();
+				CTimer::Initialise();
+				FrontEndMenuManager.m_bWantToLoad = false;
+				ReInitGameObjectVariables();
+				currLevel = LEVEL_GENERIC;
+				CCollision::SortOutCollisionAfterLoad();
+			}
+#endif
+		}
+		WEB_LOAD_PROGRESS(3, 4);
+		break;
+	}
+	case 3:
+	{
+		CTimer::Update();
+		DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+#ifdef USE_TEXTURE_POOL
+		_TexturePoolsUnknown(true);
+#endif
+		WEB_LOAD_PROGRESS(4, 4);
+		break;
+	}
+	default:
+		break;
+	}
+	s_restartStep++;
+	return s_restartStep >= 4;
+}
+#endif
+
+// D13/D18 (sección 1, 21/09): marcas de tramo de CGame::Process. Sirvieron para
+// acotar el cuelgue de la pantalla negra y quedan como puntos de anclaje para
+// el depurador, sin coste: ya no imprimen nada (cada printf por fotograma
+// frenaba el motor y llenaba la consola).
+#define ODMARK(n) ((void)0)
+
 void CGame::Process(void) 
 {
+	ODMARK(0);
 	CPad::UpdatePads();
 #ifdef USE_CUSTOM_ALLOCATOR
 	ProcessTidyUpMemory();
@@ -866,6 +1266,7 @@ void CGame::Process(void)
 #endif
 	uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 	CStreaming::Update();
+	ODMARK(1);
 	uint32 processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 	CWindModifiers::Number = 0;
 	if (!CTimer::GetIsPaused())
@@ -878,16 +1279,20 @@ void CGame::Process(void)
 #endif
 		CSprite2d::SetRecipNearClip();
 		CSprite2d::InitPerFrame();
+		ODMARK(11);
 		CFont::InitPerFrame();
 		CRecordDataForGame::SaveOrRetrieveDataForThisFrame();
+		ODMARK(12);
 		CRecordDataForChase::SaveOrRetrieveDataForThisFrame();
 		CPad::DoCheats();
 		CClock::Update();
 		CWeather::Update();
+		ODMARK(13);
 
 		PUSH_MEMID(MEMID_SCRIPT);
 		CTheScripts::Process();
 		POP_MEMID();
+		ODMARK(2);
 
 		CCollision::Update();
 		CScriptPaths::Update();
@@ -932,6 +1337,7 @@ void CGame::Process(void)
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Process();
 		POP_MEMID();
+		ODMARK(4);
 
 		gAccidentManager.Update();
 		CPacManPickups::Update();
@@ -946,6 +1352,7 @@ void CGame::Process(void)
 		CCullZones::Update();
 		if (!CReplay::IsPlayingBack())
 			CGameLogic::Update();
+		ODMARK(5);
 		CBridge::Update();
 		CCoronas::DoSunAndMoon();
 		CCoronas::Update();
@@ -1219,6 +1626,7 @@ void CGame::DrasticTidyUpMemory(bool flushDraw)
 
 	CStreaming::LoadAllRequestedModels(true);
 #endif
+	ODMARK(6);
 }
 
 void CGame::TidyUpMemory(bool moveTextures, bool flushDraw)

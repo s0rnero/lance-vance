@@ -819,6 +819,9 @@ CPopulation::AddPedInCar(CVehicle* car, bool isDriver)
 			preferredModel = 0;
 			pedType = PEDTYPE_EMERGENCY;
 			break;
+#ifdef VICEEXT_POLICE_BIKE
+		case MI_VEEXT_POLWINTERG:
+#endif
 		case MI_POLICE:
 		case MI_PREDATOR:
 			preferredModel = COP_STREET;

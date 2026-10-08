@@ -2,6 +2,9 @@
 
 #include "AudioManager.h"
 #include "audio_enums.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 #include "Automobile.h"
 #include "Boat.h"
@@ -862,7 +865,13 @@ struct tVehicleSampleData {
 	uint8 m_bDoorType;
 };
 
-const tVehicleSampleData aVehicleSettings[MAX_CARS] = {
+// Los vehículos de Vice Extended tienen IDs de modelo altos (6500+), fuera del
+// rango MI_FIRST_VEHICLE..MI_LAST_VEHICLE: sus filas van después de las vanilla
+// y se indexan con esta función (params.m_nIndex se usa en toda la lógica de
+// audio y como índice de la tabla, así que nunca puede salirse).
+static const int32 NUM_VEEXT_VEHICLE_SOUNDS = 8;
+
+const tVehicleSampleData aVehicleSettings[MAX_CARS + NUM_VEEXT_VEHICLE_SOUNDS] = {
 	{SFX_CAR_REV_10, SFX_BANK_PATHFINDER, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9935, OLD_DOOR},
 	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 11487, SFX_CAR_HORN_JEEP, 9900, OLD_DOOR},
 	{SFX_CAR_REV_2, SFX_BANK_PORSCHE, SFX_CAR_HORN_PORSCHE, 11025, SFX_CAR_HORN_JEEP, 9890, NEW_DOOR},
@@ -972,7 +981,33 @@ const tVehicleSampleData aVehicleSettings[MAX_CARS] = {
 	{SFX_CAR_REV_2, SFX_BANK_PORSCHE, SFX_CAR_HORN_PORSCHE, 11025, SFX_POLICE_SIREN_SLOW, 11000, NEW_DOOR},
 	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9200, NEW_DOOR},
 	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9300, NEW_DOOR},
-	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9400, NEW_DOOR} };
+	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9400, NEW_DOOR},
+
+	// Vice Extended. Su `newVehicles.ide` trae línea `sounds` por vehículo, pero
+	// sus índices de muestra (p. ej. 2690 para la Streetfighter) no son los del
+	// banco de este port: sonarían como un sonido equivocado o no sonarían. Se
+	// usan las filas del vehículo de serie equivalente (entre paréntesis); la
+	// única excepción es la sirena de la moto policial, que sí es un índice
+	// válido y es el que el mod pide.
+	{SFX_CAR_REV_17, SFX_BANK_VTWIN, SFX_CAR_HORN_JEEP, 26313, SFX_CAR_HORN_JEEP, 10000, NEW_DOOR},      // 6500 streetfi (Angel)
+	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 12893, SFX_CAR_HORN_JEEP, 9500, OLD_DOOR},    // 6501 peren2 (Perennial)
+	{SFX_CAR_REV_5, SFX_BANK_TRUCK, SFX_CAR_HORN_TRUCK, 31478, SFX_CAR_HORN_JEEP, 9800, TRUCK_DOOR},     // 6502 trash2 (Trashmaster)
+	{SFX_CAR_REV_7, SFX_BANK_COBRA, SFX_CAR_HORN_BMW328, 12017, SFX_CAR_HORN_JEEP, 9900, NEW_DOOR},      // 6503 hellenbach (Infernus)
+	{SFX_CAR_REV_10, SFX_BANK_PATHFINDER, SFX_CAR_HORN_BMW328, 10796, SFX_CAR_HORN_JEEP, 9200, NEW_DOOR},// 6504 premier (Taxi)
+	{SFX_CAR_REV_19, SFX_BANK_HONDA250, SFX_CAR_HORN_JEEP, 30000, SFX_CAR_HORN_JEEP, 9000, NEW_DOOR},    // 6505 manchez (Sanchez)
+	{SFX_CAR_REV_17, SFX_BANK_VTWIN, SFX_CAR_HORN_PICKUP, 11000, SFX_CAR_HORN_JEEP, 9400, NEW_DOOR},     // 6506 wintergreen (Freeway)
+	{SFX_CAR_REV_17, SFX_BANK_VTWIN, SFX_CAR_HORN_PICKUP, 11000, SFX_POLICE_SIREN_SLOW, 11000, NEW_DOOR},// 6507 polwintergreen (Freeway + sirena)
+};
+
+// Índice en aVehicleSettings[]: dentro del rango vanilla es modelIndex-
+// MI_FIRST_VEHICLE; los modelos del mod van después, en el orden de sus IDs.
+static inline int32
+VehicleAudioIndex(int32 modelIndex)
+{
+	return modelIndex >= MI_VEEXT_FIRST_VEHICLE ?
+		MAX_CARS + (modelIndex - MI_VEEXT_FIRST_VEHICLE) :
+		modelIndex - MI_FIRST_VEHICLE;
+}
 
 bool8 bPlayerJustEnteredCar;
 
@@ -1020,7 +1055,7 @@ cAudioManager::ProcessVehicle(CVehicle* veh)
 	params.m_pVehicle = veh;
 	params.m_fDistance = GetDistanceSquared(m_sQueueSample.m_vecPos);
 	params.m_pTransmission = veh->pHandling != nil ? &veh->pHandling->Transmission : nil;
-	params.m_nIndex = veh->m_modelIndex - MI_FIRST_VEHICLE;
+	params.m_nIndex = VehicleAudioIndex(veh->m_modelIndex);
 	if (veh->GetStatus() == STATUS_SIMPLE)
 		params.m_fVelocityChange = veh->AutoPilot.m_fMaxTrafficSpeed * 0.02f;
 	else
@@ -2515,11 +2550,11 @@ PlayCruising:
 					if (!SampleManager.InitialiseChannel(CHANNEL_PLAYER_VEHICLE_ENGINE, soundOffset + SFX_CAR_ACCEL_1, SFX_BANK_0))
 						return;
 #endif
-					SampleManager.SetChannelLoopCount(CHANNEL_PLAYER_VEHICLE_ENGINE, 1);
+				SampleManager.SetChannelLoopCount(CHANNEL_PLAYER_VEHICLE_ENGINE, 1);
 #ifndef GTA_PS2
-					SampleManager.SetChannelLoopPoints(CHANNEL_PLAYER_VEHICLE_ENGINE, 0, -1);
+				SampleManager.SetChannelLoopPoints(CHANNEL_PLAYER_VEHICLE_ENGINE, 0, -1);
 #endif
-				}
+			}
 
 #ifdef EXTERNAL_3D_SOUND
 				SampleManager.SetChannelEmittingVolume(CHANNEL_PLAYER_VEHICLE_ENGINE, PLAYER_VEHICLE_ENGINE_VOLUME);
@@ -2858,9 +2893,17 @@ cAudioManager::ProcessVehicleSirenOrAlarm(cVehicleParams& params)
 						return TRUE;
 					if (veh->m_nCarHornTimer > 0 && params.m_nIndex != FIRETRUK && params.m_nIndex != MRWHOOP) {
 						m_sQueueSample.m_nSampleIndex = SFX_SIREN_FAST;
-						if (params.m_nIndex == FBIRANCH)
+						// PORTADO -- SilentPatch (MIT, (c) 2024 Adrian Zdanowicz "Silent")
+						//   https://github.com/CookiePLMonster/SilentPatch
+						//   SilentPatchVC/SilentPatchVC.cpp ("Corrected FBI Washington sirens sound", SirenSwitchingFix)
+						// Que se toma: fbiranch(90) y fbicar(17) usan la sirena aguda (al=0); el resto la normal.
+						// Adaptacion: el indice de audio ya es el mismo enum (FBICAR=17, FBIRANCH=90); se anade FBICAR a la rama aguda.
+						// Medible: criterio PASS = la sirena del FBI Washington suena aguda como la del FBI Rancher (oido del jugador).
+#ifdef VICEEXT_FIX_SILENTPATCH
+						if (params.m_nIndex == FBIRANCH || params.m_nIndex == FBICAR)
 							m_sQueueSample.m_nFrequency = 12668;
 						else
+#endif
 							m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_SIREN_FAST);
 						m_sQueueSample.m_nCounter = 60;
 					} else if (params.m_nIndex == VICECHEE) {
@@ -2886,6 +2929,26 @@ cAudioManager::ProcessVehicleSirenOrAlarm(cVehicleParams& params)
 				m_sQueueSample.m_nFramesToPlay = 5;
 				SET_SOUND_REVERB(TRUE);
 				SET_SOUND_REFLECTION(FALSE);
+#ifdef __EMSCRIPTEN__
+				// SIRENA (10ª partida): el jugador no oye las sirenas de las
+				// patrullas. Esta traza dice si el motor encola la muestra, cuál es
+				// (índice de banco 0) y con qué volumen. Si no aparece ni una vez
+				// con la policía cerca, el fallo está ANTES: `m_bSirenOrAlarm`
+				// nunca se enciende en las patrullas de la IA.
+				{
+					static uint32 odNextSiren = 0;
+					uint32 odNow = CTimer::GetTimeInMilliseconds();
+					if (odNow >= odNextSiren) {
+						odNextSiren = odNow + 2000;
+						char t[160];
+						snprintf(t, sizeof t, "SIRENA tipo=%d model=%d sample=%d freq=%d vol=%d dist2=%.0f",
+							(int)params.m_nIndex, (int)veh->GetModelIndex(),
+							(int)m_sQueueSample.m_nSampleIndex, (int)m_sQueueSample.m_nFrequency,
+							(int)m_sQueueSample.m_nVolume, m_sQueueSample.m_fDistance);
+						ODTRACES(t);
+					}
+				}
+#endif
 				AddSampleToRequestedQueue();
 			}
 		}
@@ -4467,29 +4530,60 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			m_sQueueSample.m_bStatic = TRUE;
 			SET_SOUND_REFLECTION(TRUE);
 			break;
+		case SOUND_NADO_BRAZO_A:
+		case SOUND_NADO_BRAZO_B:
+		case SOUND_NADO_BRAZO_LS_A:
+		case SOUND_NADO_BRAZO_LS_B:
+		{
+			CPed *odPed = (CPed*)m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_pEntity;
+			if (!odPed || !odPed->IsPed() || odPed->bIsInTheAir)
+						continue;
+			Vol = PED_ONE_SHOT_STEP_VOLUME;
+			maxDist = SQR(PED_ONE_SHOT_STEP_MAX_DIST);
+			m_sQueueSample.m_nSampleIndex =
+						sound == SOUND_NADO_BRAZO_A ? SFX_FOOTSTEP_WATER_1
+						: sound == SOUND_NADO_BRAZO_B ? SFX_FOOTSTEP_WATER_2
+						: sound == SOUND_NADO_BRAZO_LS_A ? SFX_FOOTSTEP_WATER_3 : SFX_FOOTSTEP_WATER_4;
+			m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+			m_sQueueSample.m_nCounter = m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_awAudioEvent[i] - SOUND_NADO_BRAZO_A + 1;
+			m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(m_sQueueSample.m_nSampleIndex);
+			m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency / 17);
+			m_sQueueSample.m_nPriority = 5;
+			m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+			m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_STEP_MAX_DIST;
+			m_sQueueSample.m_nLoopCount = 1;
+			RESET_LOOP_OFFSETS
+			SET_EMITTING_VOLUME(Vol);
+			m_sQueueSample.m_bIs2D = FALSE;
+			m_sQueueSample.m_bStatic = TRUE;
+			SET_SOUND_REFLECTION(TRUE);
+			break;
+		}
 		case SOUND_WEAPON_AK47_BULLET_ECHO:
 		{
 			uint32 weaponType = m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_afVolume[i];
-			switch (weaponType) {
-			case WEAPONTYPE_SPAS12_SHOTGUN:
-				m_sQueueSample.m_nSampleIndex = SFX_SPAS12_TAIL_LEFT;
+			switch (weaponType) {				case WEAPONTYPE_SPAS12_SHOTGUN:
+				case WEAPONTYPE_SHOTGUN2:	// Vice Extended
+					m_sQueueSample.m_nSampleIndex = SFX_SPAS12_TAIL_LEFT;
 				break;
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_HELICANNON:
-				m_sQueueSample.m_nSampleIndex = SFX_M60_TAIL_LEFT;
-			case WEAPONTYPE_UZI:
-			case WEAPONTYPE_MP5:
-				m_sQueueSample.m_nSampleIndex = SFX_UZI_END_LEFT;
+				m_sQueueSample.m_nSampleIndex = SFX_M60_TAIL_LEFT;				case WEAPONTYPE_UZI:
+				case WEAPONTYPE_MP5:
+				case WEAPONTYPE_UZIOLD:	// Vice Extended
+					m_sQueueSample.m_nSampleIndex = SFX_UZI_END_LEFT;
 				break;
 			case WEAPONTYPE_TEC9:
 			case WEAPONTYPE_SILENCED_INGRAM:
 				m_sQueueSample.m_nSampleIndex = SFX_TEC_TAIL;
-				break;
-			case WEAPONTYPE_M4:
-			case WEAPONTYPE_RUGER:
-			case WEAPONTYPE_SNIPERRIFLE:
-			case WEAPONTYPE_LASERSCOPE:
-				m_sQueueSample.m_nSampleIndex = SFX_RUGER_TAIL;
+				break;				case WEAPONTYPE_M4:
+				case WEAPONTYPE_RUGER:
+				case WEAPONTYPE_SNIPERRIFLE:
+				case WEAPONTYPE_LASERSCOPE:
+				case WEAPONTYPE_AK47:	// Vice Extended
+				case WEAPONTYPE_M16:
+				case WEAPONTYPE_STEYR:
+					m_sQueueSample.m_nSampleIndex = SFX_RUGER_TAIL;
 				break;
 				break;
 			default:
@@ -4554,6 +4648,63 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			if (!weapon)
 				continue;
 			switch (weapon->m_eWeaponType) {
+			// Tanda 2, audio ViceEx: tabla FINAL de oido del jugador (24/09, viceex-map.tsv).
+			// Solo 4 armas tienen muestra propia identificada: shotgun2->03/04, desert eagle->05/06,
+			// steyr->09/10 (fusil de precision) y lanzagranadas->11 (LANZAMIENTO del proyectil).
+			// 0/1 ROTAS de fabrica (ruido): vacias, manda la serie. 2 (recarga), 7/8 (disparo sin
+			// identificar) y 12 (nadar) no son disparo de estas armas: sin enganchar (ver plan).
+			// Beretta/Uziold/AK47/M16 suenan con su equivalente de serie (casos COLT45/UZI/M4).
+			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_SHOTGUN2:
+			case WEAPONTYPE_STEYR:
+			case WEAPONTYPE_GRENADE_LAUNCHER:
+			{
+				int32 odSfx;
+				switch (weapon->m_eWeaponType) {
+				case WEAPONTYPE_DESERT_EAGLE:	odSfx = SFX_VICEEX_05; break;
+				case WEAPONTYPE_SHOTGUN2:		odSfx = SFX_VICEEX_03; break;
+				case WEAPONTYPE_STEYR:			odSfx = SFX_VICEEX_09; break;
+				case WEAPONTYPE_GRENADE_LAUNCHER:	odSfx = SFX_VICEEX_11; break;
+				default:						odSfx = SFX_VICEEX_05; break;
+				}
+				// R14 (12ª partida, 22/09): RESERVAR la muestra. Es un one-shot de
+				// arma: si el reparto de decodes del frame la deja en la cola, el
+				// disparo suena tarde (o no suena). Con la reserva se decodifica al
+				// instante y ya no se recicla. Se reserva también la pareja L/R
+				// (`+1`), que es la que arranca el motor para las muestras estéreo.
+				SampleManager.ReserveSample(odSfx);
+				SampleManager.ReserveSample(odSfx + 1);
+				m_sQueueSample.m_nSampleIndex = odSfx;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(odSfx);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = m_anRandomTable[3] % 15 + PED_ONE_SHOT_WEAPON_M4_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				stereo = TRUE;
+#ifdef __EMSCRIPTEN__
+				{
+					static int odSfxTraza = 0;
+					if (odSfxTraza < 40) {
+						char odT[96];
+						odSfxTraza++;
+						snprintf(odT, sizeof odT, "VICEEX sfx arma=%d sample=%d",
+						         (int)weapon->m_eWeaponType, odSfx);
+						ODTRACES(odT);
+					}
+				}
+#endif
+				break;
+			}
 			case WEAPONTYPE_PYTHON:
 				m_sQueueSample.m_nSampleIndex = SFX_PYTHON_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
@@ -4575,6 +4726,7 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				stereo = TRUE;
 				break;
 			case WEAPONTYPE_COLT45:
+			case WEAPONTYPE_BERETTA:	// Vice Extended (tabla de oido: sin muestra propia)
 				m_sQueueSample.m_nSampleIndex = SFX_COLT45_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4728,6 +4880,8 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				stereo = TRUE;
 				break;
 			case WEAPONTYPE_M4:
+			case WEAPONTYPE_AK47:	// Vice Extended (tabla de oido: sin muestra propia)
+			case WEAPONTYPE_M16:	// Vice Extended (idem)
 				m_sQueueSample.m_nSampleIndex = SFX_RUGER_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4746,6 +4900,7 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				stereo = TRUE;
 				break;
 			case WEAPONTYPE_UZI:
+			case WEAPONTYPE_UZIOLD:	// Vice Extended (tabla de oido: sin muestra propia)
 			case WEAPONTYPE_MINIGUN:
 				m_sQueueSample.m_nSampleIndex = SFX_UZI_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
@@ -4838,6 +4993,8 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			switch ((int32)m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_afVolume[i]) {
 			case WEAPONTYPE_COLT45:
 			case WEAPONTYPE_PYTHON:
+			case WEAPONTYPE_BERETTA:	// Vice Extended
+			case WEAPONTYPE_DESERT_EAGLE:
 				m_sQueueSample.m_nSampleIndex = SFX_PISTOL_RELOAD;
 				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_PISTOL_RELOAD) + RandomDisplacement(300);
 				break;
@@ -4848,6 +5005,10 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			case WEAPONTYPE_M4:
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_HELICANNON:
+			case WEAPONTYPE_UZIOLD:	// Vice Extended
+			case WEAPONTYPE_AK47:
+			case WEAPONTYPE_M16:
+			case WEAPONTYPE_STEYR:
 				m_sQueueSample.m_nSampleIndex = SFX_AK47_RELOAD;
 				m_sQueueSample.m_nFrequency = 39243;
 				break;
@@ -4855,11 +5016,13 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			case WEAPONTYPE_SPAS12_SHOTGUN:
 			case WEAPONTYPE_STUBBY_SHOTGUN:
 			case WEAPONTYPE_RUGER:
+			case WEAPONTYPE_SHOTGUN2:	// Vice Extended
 				m_sQueueSample.m_nSampleIndex = SFX_AK47_RELOAD;
 				m_sQueueSample.m_nFrequency = 30290;
 				break;
 			case WEAPONTYPE_ROCKET:
 			case WEAPONTYPE_ROCKETLAUNCHER:
+			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
 				m_sQueueSample.m_nSampleIndex = SFX_ROCKET_RELOAD;
 				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_ROCKET_RELOAD);
 				break;
@@ -10112,12 +10275,26 @@ cAudioManager::ProcessMissionAudioSlot(uint8 slot)
 	if (m_nMissionAudioSampleIndex[slot] != NO_SAMPLE) {
 		switch (m_nMissionAudioLoadingStatus[slot]) {
 		case LOADING_STATUS_NOT_LOADED:
+			// Web: el fichero del dialogo se espera dentro de PreloadStreamedFile
+			// (slots 1-2). Se comprueba de verdad si quedo abierto: antes se
+			// declaraba CARGADO sin mirar, y un dialogo "cargado" sin fichero se
+			// termina solo en 30 frames: la voz no suena y el script corre en
+			// vacio (subtitulos que pasan volando y texto que sale de la nada).
 			SampleManager.PreloadStreamedFile(m_nMissionAudioSampleIndex[slot], slot + 1);
-			m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADED;
+			if (SampleManager.IsStreamedFileOpened(slot + 1)) {
+				m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADED;
+			} else {
+				m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADING;
+			}
 			nFramesUntilFailedLoad[slot] = 0;
 			break;
 		case LOADING_STATUS_LOADING:
-			if (++nFramesUntilFailedLoad[slot] >= 120) {
+			// Reintento (en web el fichero puede aterrizar un frame despues).
+			SampleManager.PreloadStreamedFile(m_nMissionAudioSampleIndex[slot], slot + 1);
+			if (SampleManager.IsStreamedFileOpened(slot + 1)) {
+				m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADED;
+				nFramesUntilFailedLoad[slot] = 0;
+			} else if (++nFramesUntilFailedLoad[slot] >= 120) {
 				nFramesForPretendPlaying[slot] = 0;
 				g_bMissionAudioLoadFailed[slot] = TRUE;
 				nFramesUntilFailedLoad[slot] = 0;

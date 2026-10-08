@@ -67,6 +67,9 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	m_nHeliId = 0;
 	m_fRotorRotation = 0.0f;
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase = 0.0f;
+#endif
 	m_nBulletDamage = 0;
 	m_fAngularSpeed = 0.0f;
 	m_fRotation = 0.0f;
@@ -123,6 +126,14 @@ static int PathPoint;
 void
 CHeli::ProcessControl(void)
 {
+#ifdef VICEEXT_FIX_FV
+	m_fOdPhase += CTimer::GetTimeStep();
+	if(m_fOdPhase >= 1024.0f)
+		m_fOdPhase -= 1024.0f;
+	int32 odPhase = (int32)m_fOdPhase;
+#else
+	int32 odPhase = (int32)CTimer::GetFrameCounter();
+#endif
 	int i;
 
 	if(gbModelViewer)
@@ -310,7 +321,7 @@ CHeli::ProcessControl(void)
 	CVector2D targetSpeed = vTargetDist * speed;
 
 	if(m_heliStatus == HELI_STATUS_HOVER2 || m_heliStatus == HELI_STATUS_SHOT_DOWN){
-		bool force = !!((CTimer::GetFrameCounter() + m_randomSeed) & 8);
+		bool force = !!((odPhase + m_randomSeed) & 8);
 		if(m_bTestRight){
 			if(force || CWorld::TestSphereAgainstWorld(GetPosition() + 4.0f*GetRight(), 2.0f, this, true, false, false, false, false, false) == nil){
 				if(m_heliStatus == HELI_STATUS_SHOT_DOWN){
@@ -570,7 +581,14 @@ CHeli::Render(void)
 	mat.Translate(pos);
 	mat.UpdateRW();
 
-	m_fRotorRotation += 3.14f/6.5f;
+	// PORTADO -- FramerateVigilante (MIT, (c) 2023 GTA modding (Junior_Djjr)) rotorFinalSpeed
+	//   https://github.com/GTAmodding/FramerateVigilante
+	// Que se toma: el rotor sumaba por frame (a 120 fps giraba 2,4x mas rapido que a 50).
+	// Adaptacion: escala por CTimer::GetTimeStep() (1,0 a 50 fps); el wrap a 6,28 se queda igual.
+	// Medible: criterio PASS = el rotor da las mismas vueltas por segundo a 35 y a 120 fps.
+#ifdef VICEEXT_FIX_FV_ROTOR
+	m_fRotorRotation += (3.14f/6.5f) * CTimer::GetTimeStep();
+#endif
 	if(m_fRotorRotation > 6.28f)
 		m_fRotorRotation -= 6.28f;
 

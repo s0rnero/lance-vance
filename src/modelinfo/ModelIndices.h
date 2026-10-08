@@ -466,6 +466,33 @@ enum
 
 
 	NUM_DEFAULT_MODELS,// = 300
+
+	// Vice Extended: modelos de arma del mod (sección `weap` de su
+	// default.ide). Van DESPUÉS de NUM_DEFAULT_MODELS para no desplazar los
+	// IDs 295-300, que sí son consecutivos de verdad.
+	MI_RCGRENADE = 6660,
+	MI_AK47,
+	MI_M16,
+	MI_SHOTGUN2,
+	MI_UZIOLD,
+	MI_DESERT_EAGLE,
+	MI_BERETTA,
+	MI_STEYR,
+	MI_GR_LAUNCH,
+	MI_GR_GRENADE, // grenade2: el proyectil del lanzagranadas
+
+	// Vice Extended: vehículos nuevos (sus IDs en newVehicles.ide,
+	// 6500-6507). Tampoco son consecutivos con los vanilla.
+	MI_VEEXT_FIRST_VEHICLE = 6500,
+	MI_VEEXT_STREETFI = MI_VEEXT_FIRST_VEHICLE,
+	MI_VEEXT_PEREN2,
+	MI_VEEXT_TRASH2,
+	MI_VEEXT_HELLENBACH,
+	MI_VEEXT_PREMIER,
+	MI_VEEXT_MANCHEZ,
+	MI_VEEXT_WINTERGREEN,
+	MI_VEEXT_POLWINTERG,
+	MI_VEEXT_LAST_VEHICLE = MI_VEEXT_POLWINTERG,
 };
 
 enum{

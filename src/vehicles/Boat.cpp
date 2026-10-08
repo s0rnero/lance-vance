@@ -1414,15 +1414,11 @@ CBoat::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim = nil;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
-	if (playerInfo && !playerInfo->m_bDriveByAllowed)
-		return;
 
-	CWeapon *weapon = pDriver->GetWeapon();
-	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != 5)
-		return;
-
-	weapon->Update(pDriver->m_audioEntityId, nil);
-
+	// Sección 2 (P2): el estado del mando se calcula antes de las puertas de
+	// entrada para que la traza de la sonda vea "navego y disparo" también cuando
+	// el arma no pasa la puerta (esa es la línea base).
+	bool fireHeld = CPad::GetPad(0)->GetCarGunFired();
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
@@ -1437,6 +1433,18 @@ CBoat::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
+	pDriver->DriveByTraceState("boat", fireHeld, lookingLeft, lookingRight);
+
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
+
+	CWeapon *weapon = pDriver->GetWeapon();
+	// Sección 2 (P2): con VICEEXT_DRIVEBY_WIDE las pistolas también disparan desde
+	// el barco (sin el define, esta llamada es el chequeo vanilla de slot 5).
+	if(!pDriver->CanDoDriveByWithCurrentWeapon())
+		return;
+
+	weapon->Update(pDriver->m_audioEntityId, nil);
 
 	if(lookingLeft || lookingRight){
 		if(lookingLeft){
@@ -1456,9 +1464,13 @@ CBoat::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				weapon->FireFromCar(this, lookingLeft, true);
-				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+			if (fireHeld && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				// Sección 2 (P2): traza solo si el disparo salió.
+				// Sección 2 (P4): cadencia del arma, no los 70 ms fijos del SMG.
+				uint32 shotDelay = weapon->GetDriveByShotDelay();
+				if (weapon->FireFromCar(this, lookingLeft, true))
+					pDriver->DriveByTraceShot("boat", lookingLeft ? "left" : "right", shotDelay);
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + shotDelay;
 			}
 		}
 	}else{

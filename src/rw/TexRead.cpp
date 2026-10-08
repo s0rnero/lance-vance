@@ -6,6 +6,9 @@
 #define WITHD3D
 #endif
 #include "common.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 #ifdef ANISOTROPIC_FILTERING
 #include "rpanisot.h"
 #endif
@@ -91,9 +94,26 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 	while(numTextures--){
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
+#ifdef __EMSCRIPTEN__
+			// Web: no destruir todo el diccionario por una textura DXT sin
+			// soporte S3TC u otro fallo aislado. Saltar y conservar el resto
+			// evita peds/mundo enteros en negro por un solo fallo.
+			// DIAG: registrar el hueco (pos en stream) para mapearlo al visual.
+			{
+				static int n = 0;
+				if (n < 80) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "SKIP tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					ODTRACES(t);
+				}
+			}
+			continue;
+#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
+#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}
@@ -130,9 +150,24 @@ RwTexDictionaryGtaStreamRead1(RwStream *stream)
 
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
+#ifdef __EMSCRIPTEN__
+			// Igual que la vía small (línea ~94): no tumbar medio diccionario
+			// por una textura aislada.
+			{
+				static int n = 0;
+				if (n < 40) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "SKIP1 tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					ODTRACES(t);
+				}
+			}
+			continue;
+#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
+#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}
@@ -153,9 +188,22 @@ RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict)
 	while(numberTextures--){
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
+#ifdef __EMSCRIPTEN__
+			{
+				static int n = 0;
+				if (n < 40) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "SKIP2 tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					ODTRACES(t);
+				}
+			}
+			continue;
+#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
+#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}

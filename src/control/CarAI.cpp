@@ -7,6 +7,7 @@
 #include "CarCtrl.h"
 #include "General.h"
 #include "HandlingMgr.h"
+#include "ondemand.h"
 #include "ModelIndices.h"
 #include "PlayerPed.h"
 #include "Wanted.h"
@@ -189,7 +190,7 @@ void CCarAI::UpdateCarAI(CVehicle* pVehicle)
 					pVehicle->bParking = false;
 				}
 			}
-			else if (distance > FindSwitchDistanceFarNormalVehicle(pVehicle) && !pVehicle->AutoPilot.m_bIgnorePathfinding && (CTimer::GetFrameCounter() & 7) == 0){
+			else if (distance > FindSwitchDistanceFarNormalVehicle(pVehicle) && !pVehicle->AutoPilot.m_bIgnorePathfinding && (CTimer::GetLogicalFrameCounter() & 7) == 0){
 				pVehicle->AutoPilot.m_nTempAction = TEMPACT_NONE;
 				pVehicle->AutoPilot.m_nCarMission = (CCarCtrl::JoinCarWithRoadSystemGotoCoors(pVehicle, pVehicle->AutoPilot.m_vecDestinationCoors, true)) ?
 					MISSION_GOTOCOORDS_STRAIGHT : MISSION_GOTOCOORDS;
@@ -249,7 +250,7 @@ void CCarAI::UpdateCarAI(CVehicle* pVehicle)
 					pVehicle->bParking = false;
 				}
 			}
-			else if (distance > FindSwitchDistanceFarNormalVehicle(pVehicle) && !pVehicle->AutoPilot.m_bIgnorePathfinding && (CTimer::GetFrameCounter() & 7) == 0) {
+			else if (distance > FindSwitchDistanceFarNormalVehicle(pVehicle) && !pVehicle->AutoPilot.m_bIgnorePathfinding && (CTimer::GetLogicalFrameCounter() & 7) == 0) {
 				pVehicle->AutoPilot.m_nTempAction = TEMPACT_NONE;
 				pVehicle->AutoPilot.m_nCarMission = (CCarCtrl::JoinCarWithRoadSystemGotoCoors(pVehicle, pVehicle->AutoPilot.m_vecDestinationCoors, true)) ?
 					MISSION_GOTO_COORDS_STRAIGHT_ACCURATE : MISSION_GOTOCOORDS_ACCURATE;
@@ -544,6 +545,20 @@ void CCarAI::AddPoliceCarOccupants(CVehicle* pVehicle)
 		for (int i = 0; i < 3; i++)
 			pVehicle->SetupPassenger(i);
 		return;
+#ifdef VICEEXT_POLICE_BIKE
+	case MI_VEEXT_POLWINTERG:
+		pVehicle->SetUpDriver();
+#ifdef __EMSCRIPTEN__
+		{
+			char t[176];
+			snprintf(t, sizeof t, "P4 kind=polbike schema=1 gen=1 frame=%u sim=%.4f case=7 id=0 model=%d occ=1 passengers=0 wanted=%d",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				(int)pVehicle->GetModelIndex(), FindPlayerPed()->m_pWanted->GetWantedLevel());
+			ODTRACES(t);
+		}
+#endif
+		return;
+#endif
 	case MI_POLICE:
 	case MI_RHINO:
 	case MI_BARRACKS:

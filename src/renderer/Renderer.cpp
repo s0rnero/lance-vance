@@ -1,5 +1,6 @@
 #define WITHD3D
 #include "common.h"
+#include "ondemand.h" // D10 (sección 1): traza LODLEFT (LOD que no se sustituye)
 
 #include "main.h"
 #include "Lights.h"
@@ -834,6 +835,43 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+// D10 (sección 1, 20/09): diagnóstico del "LOD pegado".
+//
+// Un edificio lejano tiene dos versiones: el modelo LOD (barato) y el real. El
+// LOD se deja de dibujar en cuanto el modelo REAL está cargado (`GetRwObject()`)
+// **y** su alfa llegó a 255 (el fundido de entrada terminó). Si cualquiera de
+// las dos cosas no pasa, el LOD se sigue viendo de cerca: eso es exactamente
+// "texturas de baja resolución que no se actualizan" (calles, muros, Malibú...).
+//
+// Esta traza dice CUÁL de las dos falla, una sola vez por modelo y con la
+// distancia, para no tener que adivinar entre "el streaming no trae el modelo"
+// y "el alfa no sube".
+static void
+OdLodLeftDiag(int32 model, CSimpleModelInfo *nonLOD, float dist)
+{
+	static int32 odVistos[48];
+	static int odNVistos;
+	static int odShown;
+	int i;
+	if (odNVistos >= (int)(sizeof odVistos / sizeof odVistos[0]))
+		return;
+	for (i = 0; i < odNVistos; i++)
+		if (odVistos[i] == model)
+			return;
+	odVistos[odNVistos++] = model;
+	if (odShown >= 40)
+		return;
+	odShown++;
+	char t[200];
+	snprintf(t, sizeof t, "LODLEFT model=%d dist=%.1f relacion=%d rwobj=%d alpha=%d",
+		model, dist, nonLOD != nil,
+		nonLOD ? (nonLOD->GetRwObject() != nil) : 0,
+		nonLOD ? nonLOD->m_alpha : -1);
+	ODTRACES(t);
+}
+#endif
+
 int32
 CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 {
@@ -876,7 +914,12 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 		if(nonLOD == nil ||
 		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255)
 			return VIS_INVISIBLE;
-
+#ifdef __EMSCRIPTEN__
+		// D10: el LOD se va a dibujar estando pegado (≤60 m) porque el modelo real
+		// no cumple las dos condiciones de arriba.
+		if(dist < 60.0f)
+			OdLodLeftDiag(ent->m_modelIndex, nonLOD, dist);
+#endif
 		// But if it is a time object, we'd rather draw the wrong
 		// non-LOD than the right LOD.
 		if(nonLOD->GetModelType() == MITYPE_TIME){

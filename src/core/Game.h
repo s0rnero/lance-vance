@@ -59,11 +59,19 @@ public:
 	static bool InitialiseOnceAfterRW(void);
 	static void FinalShutdown(void);
 	static bool Initialise(const char *datFile);
+	static void InitialiseResetSteps(void); // stepper for progressive loading
+	static bool InitialiseStep(const char *datFile); // one section; true when done
 	static bool ShutDown(void);
 	static void ReInitGameObjectVariables(void);
 	static void ReloadIPLs(void);
 	static void ShutDownForRestart(void);
 	static void InitialiseWhenRestarting(void);
+#ifdef __EMSCRIPTEN__
+	static void InitialiseRestartResetSteps(void);
+	static bool InitialiseRestartStep(void); // true cuando termina; un tramo por tick
+	static void ShutDownForRestartResetSteps(void);
+	static bool ShutDownForRestartStep(void); // true cuando termina; un tramo por tick
+#endif
 	static void Process(void);
 
 	static void InitAfterFocusLoss(void);

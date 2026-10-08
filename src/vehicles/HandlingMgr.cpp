@@ -115,7 +115,16 @@ const char VehicleNames[NUMHANDLINGS][14] = {
 	"HUNTER",
 	"RCBARON",
 	"RCGOBLIN",
-	"RCCOPTER"
+	"RCCOPTER",
+	// Vice Extended (mismo orden que el enum)
+	"STREETFI",
+	"PEREN2",
+	"TRASH2",
+	"HELLENBACH",
+	"PREMIER",
+	"MANCHEZ",
+	"WINTERGREEN",
+	"POLWINTERG"
 };
 
 cHandlingDataMgr::cHandlingDataMgr(void)
@@ -380,7 +389,7 @@ cHandlingDataMgr::ConvertDataToGameUnits(tHandlingData *handling)
 	if(handling->nIdentifier == HANDLING_RCBANDIT){
 		handling->Transmission.fMaxCruiseVelocity = handling->Transmission.fMaxVelocity;
 		handling->Transmission.fMaxReverseVelocity = -handling->Transmission.fMaxVelocity;
-	}else if(handling->nIdentifier >= HANDLING_BIKE && handling->nIdentifier <= HANDLING_FREEWAY){
+	}else if(IsBikeHandling(handling->nIdentifier)){
 		handling->Transmission.fMaxCruiseVelocity = velocity;
 		handling->Transmission.fMaxVelocity = velocity * 1.2f;
 		handling->Transmission.fMaxReverseVelocity = -0.05f;

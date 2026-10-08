@@ -187,11 +187,21 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	CPlayerPed *pPlayerPed;
 
 	ms_cutsceneProcessing = true;
+	vcCutscenePublishLoading();   // web: ya no se aplaza ningún fichero
 	ms_wasCutsceneSkipped = false;
 	CTimer::Suspend();
 	if (!bIsEverythingRemovedFromTheWorldForTheBiggestFuckoffCutsceneEver)
 		CStreaming::RemoveCurrentZonesModels();
 
+#ifdef __EMSCRIPTEN__
+	// Trazas de cinemática (van al fichero del host). `dirN` en 0 significa que
+	// cuts.dir no se pudo leer: sin él no hay animaciones ni splines de cámara.
+	{
+		char cut[160];
+		snprintf(cut, sizeof cut, "CUT begin %s objs=%d", szCutsceneName, ms_numCutsceneObjs);
+		ODTRACES(cut);
+	}
+#endif
 	ms_pCutsceneDir->numEntries = 0;
 	ms_pCutsceneDir->ReadDirFile("ANIM\\CUTS.DIR");
 
@@ -202,11 +212,22 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 
 	RwStream *stream;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "ANIM\\CUTS.IMG");
+#ifdef __EMSCRIPTEN__
+	if (stream == nil) {
+		// Sin cuts.img no hay animaciones de la cinemática: la escena se verá
+		// como actores quietos y sin audio propio. Se traza y se sigue (el
+		// assert no compila en release y dejaba un stream nulo por el camino).
+		char cut[160];
+		snprintf(cut, sizeof cut, "CUT cutsimg-FALLO %s dirN=%d", szCutsceneName, ms_pCutsceneDir->numEntries);
+		ODTRACES(cut);
+	}
+#else
 	assert(stream);
+#endif
 
 	// Load animations
 	sprintf(gString, "%s.IFP", szCutsceneName);
-	if (ms_pCutsceneDir->FindItem(gString, offset, size)) {
+	if (stream != nil && ms_pCutsceneDir->FindItem(gString, offset, size)) {
 		CStreaming::MakeSpaceFor(size << 11);
 		CStreaming::ImGonnaUseStreamingMemory();
 		RwStreamSkip(stream,  offset << 11);
@@ -217,12 +238,13 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	} else {
 		ms_animLoaded = false;
 	}
-	RwStreamClose(stream, nil);
+	if (stream != nil)
+		RwStreamClose(stream, nil);
 
 	// Load camera data
 	file = CFileMgr::OpenFile("ANIM\\CUTS.IMG", "rb");
 	sprintf(gString, "%s.DAT", szCutsceneName);
-	if (ms_pCutsceneDir->FindItem(gString, offset, size)) {
+	if (file && ms_pCutsceneDir->FindItem(gString, offset, size)) {
 		CStreaming::ImGonnaUseStreamingMemory();
 		CFileMgr::Seek(file, offset << 11, SEEK_SET);
 		TheCamera.LoadPathSplines(file);
@@ -232,7 +254,8 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 		bCamLoaded = false;
 	}
 
-	CFileMgr::CloseFile(file);
+	if (file)
+		CFileMgr::CloseFile(file);
 
 	if (CGeneral::faststricmp(ms_cutsceneName, "finale")) {
 		DMAudio.ChangeMusicMode(MUSICMODE_CUTSCENE);
@@ -242,10 +265,35 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 			DMAudio.PreloadCutSceneMusic(trackId);
 			printf("End preload audio %s\n", szCutsceneName);
 		}
+#ifdef __EMSCRIPTEN__
+		// Audio de la cinemática: el track se preloadea ANTES de que la escena
+		// arranque. Si aquí falla (fichero aplazado por estar jugando), la
+		// escena se ve pero no suena: por eso se traza el id del track.
+		{
+			char cut[160];
+			snprintf(cut, sizeof cut, "CUT audio %s track=%d mode=%d", szCutsceneName, trackId, (int)MUSICMODE_CUTSCENE);
+			ODTRACES(cut);
+		}
+#endif
 	}
 
 	ms_cutsceneTimer = 0.0f;
 	ms_loaded = true;
+#ifdef __EMSCRIPTEN__
+	{
+		// Resumen de la carga de la cinemática al fichero de trazas: animaciones
+		// (actores), splines de cámara (movimiento de cámara) y su primera
+		// coordenada. Con esto se distingue "escena vacía" de "cámara perdida".
+		char cut[220];
+		snprintf(cut, sizeof cut, "CUT loaded %s anim=%d cam=%d dirN=%d obj=%d", szCutsceneName, (int)ms_animLoaded, (int)bCamLoaded,
+			ms_pCutsceneDir->numEntries, ms_numCutsceneObjs);
+		ODTRACES(cut);
+	}
+	printf("[od] cutscene %s anim=%d cam=%d splines=%.0f,%.0f,%.0f\n", szCutsceneName, (int)ms_animLoaded, (int)bCamLoaded,
+		TheCamera.m_arrPathArray[0].m_arr_PathData ? TheCamera.m_arrPathArray[0].m_arr_PathData[0] : -1.0f,
+		TheCamera.m_arrPathArray[1].m_arr_PathData ? TheCamera.m_arrPathArray[1].m_arr_PathData[0] : -1.0f,
+		TheCamera.m_arrPathArray[2].m_arr_PathData ? TheCamera.m_arrPathArray[2].m_arr_PathData[0] : -1.0f);
+#endif
 	ms_cutsceneOffset = CVector(0.0f, 0.0f, 0.0f);
 
 	pPlayerPed = FindPlayerPed();
@@ -313,6 +361,13 @@ CCutsceneMgr::SetupCutsceneToStart(void)
 	CTimer::Update();
 	ms_running = true;
 	ms_cutsceneTimer = 0.0f;
+#ifdef __EMSCRIPTEN__
+	{
+		char cut[160];
+		snprintf(cut, sizeof cut, "CUT start %s objs=%d cam=%d", ms_cutsceneName, ms_numCutsceneObjs, (int)bCamLoaded);
+		ODTRACES(cut);
+	}
+#endif
 }
 
 void
@@ -417,6 +472,13 @@ CCutsceneMgr::DeleteCutsceneData(void)
 	if (!ms_loaded) return;
 	CTimer::Suspend();
 
+#ifdef __EMSCRIPTEN__
+	{
+		char cut[160];
+		snprintf(cut, sizeof cut, "CUT end %s objs=%d", ms_cutsceneName, ms_numCutsceneObjs);
+		ODTRACES(cut);
+	}
+#endif
 	ms_cutsceneProcessing = false;
 	ms_useLodMultiplier = false;
 	ms_useCutsceneShadows = true;
@@ -606,6 +668,7 @@ CCutsceneMgr::RemoveEverythingFromTheWorldForTheBiggestFuckoffCutsceneEver()
 	CColStore::RemoveAllCollision();
 	CWorld::bProcessCutsceneOnly = true;
 	ms_cutsceneProcessing = true;
+	vcCutscenePublishLoading();   // web: ya no se aplaza ningún fichero
 
 	for (int i = CPools::GetPedPool()->GetSize() - 1; i >= 0; i--) {
 		CPed *pPed = CPools::GetPedPool()->GetSlot(i);

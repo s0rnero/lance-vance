@@ -5,6 +5,9 @@
 #include <math.h>
 #include <ctype.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include "rwcore.h"
 
@@ -215,10 +218,23 @@ RsEventHandler(RsEvent event, void *param)
 	 */
 	if (event == rsQUITAPP)
 	{
+#ifdef __EMSCRIPTEN__
+		// Web: no hay proceso que terminar; matar el loop deja la pestaña
+		// muerta. Flush de userfiles y vuelta al menú principal recargando.
+		EM_ASM({
+			try { window.__quitting = true; } catch (e) {}
+			try {
+				OD.syncUserfiles('quit');
+				setTimeout(function(){ location.reload(); }, 1200);
+			} catch (e) { location.reload(); }
+		});
+		return rsEVENTPROCESSED;
+#else
 		/*
 		 * Set the flag which causes the event loop to exit...
 		 */
 		RsGlobal.quit = TRUE;
+#endif
 	}
 
 	if (es == rsEVENTNOTPROCESSED)
@@ -313,6 +329,9 @@ RsRwInitialize(void *displayID)
 	{
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: engine init ok\n");
+#endif
 
 	/*
 	 * Install any platform specific file systems...
@@ -331,6 +350,9 @@ RsRwInitialize(void *displayID)
 	{
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: plugins ok\n");
+#endif
 
 	/*
 	 * Attach input devices...
@@ -339,6 +361,9 @@ RsRwInitialize(void *displayID)
 	{
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: input ok\n");
+#endif
 	
 	openParams.displayID = displayID;
 
@@ -347,6 +372,9 @@ RsRwInitialize(void *displayID)
 		RwEngineTerm();
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: engine open ok\n");
+#endif
 	
 	if (RsEventHandler(rsSELECTDEVICE, displayID) == rsEVENTERROR)
 	{
@@ -354,6 +382,9 @@ RsRwInitialize(void *displayID)
 		RwEngineTerm();
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: select device ok\n");
+#endif
 	
 	if (!RwEngineStart())
 	{
@@ -361,6 +392,9 @@ RsRwInitialize(void *displayID)
 		RwEngineTerm();
 		return (FALSE);
 	}
+#ifdef __EMSCRIPTEN__
+	printf("[web] rwinit: engine start ok\n");
+#endif
 
 	/*
 	 * Register loaders for an image with a particular file extension...

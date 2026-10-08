@@ -13,6 +13,12 @@ float CSprite2d::NearCamZ;
 int CSprite2d::nextBufferVertex;
 int CSprite2d::nextBufferIndex;
 RwIm2DVertex CSprite2d::maVertices[8];
+static bool s_odScaleScriptSprites = false;
+void
+CSprite2d::SetScriptSpriteScale(bool on)
+{
+	s_odScaleScriptSprites = on;
+}
 
 void
 CSprite2d::SetRecipNearClip(void)
@@ -83,7 +89,35 @@ CSprite2d::Draw(float x, float y, float w, float h, const CRGBA &col)
 void
 CSprite2d::Draw(const CRect &rect, const CRGBA &col)
 {
-	SetVertices(rect, col, col, col, col);
+	CRect r(rect.left, rect.top, rect.right, rect.bottom);
+	if(s_odScaleScriptSprites)
+		r = CRect(rect.left * (float)SCREEN_WIDTH / 640.0f, rect.top * (float)SCREEN_HEIGHT / 448.0f, rect.right * (float)SCREEN_WIDTH / 640.0f, rect.bottom * (float)SCREEN_HEIGHT / 448.0f);
+#ifdef VICEEXT_FIX_WFP
+	else if(m_pTexture && r.left <= 0.5f && r.top <= 0.5f && r.right >= (float)SCREEN_WIDTH - 0.5f && r.bottom >= (float)SCREEN_HEIGHT - 0.5f){
+		float w = (float)SCREEN_WIDTH;
+		float h = (float)SCREEN_HEIGHT;
+		RwRaster *ras = RwTextureGetRaster(m_pTexture);
+		if(ras){
+			int32 tw = RwRasterGetWidth(ras);
+			int32 th = RwRasterGetHeight(ras);
+			if(tw > 0 && th > 0 && tw != th && (int64)tw != 2ll * th){
+				w = (float)tw;
+				h = (float)th;
+			}
+		}
+		float halfW = ((float)SCREEN_HEIGHT * (w / h)) * 0.5f;
+		float cx = (float)SCREEN_WIDTH * 0.5f;
+		if(cx - halfW > 0.0f){
+			SetVertices(r, col, col, col, col);
+			SetRenderState();
+			RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
+			DrawRect(CRect(0.0f, r.top, cx - halfW, r.bottom), CRGBA(0, 0, 0, 255));
+			DrawRect(CRect(cx + halfW, r.top, (float)SCREEN_WIDTH, r.bottom), CRGBA(0, 0, 0, 255));
+			return;
+		}
+	}
+#endif
+	SetVertices(r, col, col, col, col);
 	SetRenderState();
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
 }
@@ -329,7 +363,10 @@ CSprite2d::SetVertices(RwIm2DVertex *verts, const CRect &r, const CRGBA &c0, con
 void
 CSprite2d::DrawRect(const CRect &r, const CRGBA &col)
 {
-	SetVertices(r, col, col, col, col);
+	CRect rr(r.left, r.top, r.right, r.bottom);
+	if(s_odScaleScriptSprites)
+		rr = CRect(r.left * (float)SCREEN_WIDTH / 640.0f, r.top * (float)SCREEN_HEIGHT / 448.0f, r.right * (float)SCREEN_WIDTH / 640.0f, r.bottom * (float)SCREEN_HEIGHT / 448.0f);
+	SetVertices(rr, col, col, col, col);
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
 	RwRenderStateSet(rwRENDERSTATESHADEMODE, (void*)rwSHADEMODEFLAT);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);

@@ -2333,6 +2333,13 @@ int8 CRunningScript::ProcessCommands700To799(int32 command)
 		strncpy(name, (const char*)&CTheScripts::ScriptSpace[m_nIp], KEY_LENGTH_IN_SCRIPT);
 		m_nIp += KEY_LENGTH_IN_SCRIPT;
 		strncpy(CStats::LastMissionPassedName, name, KEY_LENGTH_IN_SCRIPT);
+#ifdef VICEEXT_AUTOSAVE
+		// Sección 3 (Vice Extended, v2.5 "Autosave after completing a mission"):
+		// pedir el autosave; se escribe cuando este script termine
+		// (COMMAND_TERMINATE_THIS_SCRIPT), que es cuando el motor deja de
+		// considerarlo una misión en curso y el guardado es válido.
+		ViceExtAutosavePending = true;
+#endif
 		++CStats::MissionsPassed;
 		CStats::CheckPointReachedSuccessfully();
 		CTheScripts::LastMissionPassedTime = CTimer::GetTimeInMilliseconds();

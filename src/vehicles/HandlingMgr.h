@@ -113,12 +113,42 @@ enum tVehicleType
 	HANDLING_RCGOBLIN,
 	HANDLING_RCCOPTER,
 
+	// Vice Extended: vehículos nuevos. Van al final para que ningún ID
+	// existente cambie, pero las motos tienen que caber en BikeHandlingData[],
+	// que va por rango (ver NUMBIKEHANDLINGS y GetBikePointer).
+	HANDLING_STREETFI,		// 6500, bike
+	HANDLING_PEREN2,		// 6501
+	HANDLING_TRASH2,		// 6502
+	HANDLING_HELLENBACH,	// 6503
+	HANDLING_PREMIER,		// 6504
+	HANDLING_MANCHEZ,		// 6505, bike
+	HANDLING_WINTERGREEN,	// 6506, bike
+	HANDLING_POLWINTERG,	// 6507, bike
+
 	NUMHANDLINGS,
 
-	NUMBIKEHANDLINGS = HANDLING_FREEWAY+1 - HANDLING_BIKE,
+	NUMVEEXT_BIKEHANDLINGS = 4,	// bikes de Vice Extended (al final del enum)
+	NUMBIKEHANDLINGS = HANDLING_FREEWAY+1 - HANDLING_BIKE + NUMVEEXT_BIKEHANDLINGS,
 	NUMFLYINGHANDLINGS = HANDLING_RCCOPTER+1 - HANDLING_SEAPLANE,
 	NUMBOATHANDLINGS = HANDLING_SEAPLANE+1 - HANDLING_PREDATOR,
 };
+
+// Motos de Vice Extended: están fuera del rango contiguo original, así que el
+// índice dentro de BikeHandlingData[] no es id-HANDLING_BIKE.
+inline int32 BikeHandlingSlot(int32 id)
+{
+	if (id >= HANDLING_BIKE && id <= HANDLING_FREEWAY)
+		return id - HANDLING_BIKE;
+	switch (id) {
+	case HANDLING_STREETFI:    return NUMBIKEHANDLINGS - 4;
+	case HANDLING_MANCHEZ:     return NUMBIKEHANDLINGS - 3;
+	case HANDLING_WINTERGREEN: return NUMBIKEHANDLINGS - 2;
+	case HANDLING_POLWINTERG:  return NUMBIKEHANDLINGS - 1;
+	}
+	return -1;
+}
+
+inline bool IsBikeHandling(int32 id) { return BikeHandlingSlot(id) >= 0; }
 
 enum tField // most likely a handling field enum, never used so :shrug:
 {
@@ -270,7 +300,12 @@ public:
 	void ConvertBikeDataToGameUnits(tBikeHandlingData *handling);
 	int32 GetHandlingId(const char *name);
 	tHandlingData *GetHandlingData(tVehicleType id) { return &HandlingData[id]; }
-	tBikeHandlingData *GetBikePointer(uint8 id) { return &BikeHandlingData[id-HANDLING_BIKE]; }
+	tBikeHandlingData *GetBikePointer(uint8 id) {
+		int32 slot = BikeHandlingSlot(id);
+		// sólo se llama con motos; el clamp evita un índice negativo si algún
+		// día entra un id que no lo es
+		return &BikeHandlingData[slot < 0 ? 0 : slot];
+	}
 	tFlyingHandlingData *GetFlyingPointer(uint8 id);
 	tBoatHandlingData *GetBoatPointer(uint8 id);
 	bool HasRearWheelDrive(tVehicleType id) { return HandlingData[id].Transmission.nDriveType != 'F'; }

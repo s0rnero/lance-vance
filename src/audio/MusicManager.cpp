@@ -20,6 +20,19 @@
 #include "Weather.h"
 #include "DMAudio.h"
 #include "GenericGameStorage.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+// DIAG radio: qué pasa en cada tap y al consumir (preview vs real).
+static void RetuneTrace(const char *kind, int presses, int counter, int veh)
+{
+	static int n = 0;
+	if (n >= 60) return;
+	n++;
+	char t[128];
+	snprintf(t, sizeof t, "RETUNE %s presses=%d cnt=%d veh=%d", kind, presses, counter, veh);
+	ODTRACES(t);
+}
+#endif
 
 #if !defined FIX_BUGS && (defined RADIO_SCROLL_TO_PREV_STATION || defined RADIO_OFF_TEXT)
 static_assert(false, "R*'s radio implementation is quite buggy, RADIO_SCROLL_TO_PREV_STATION and RADIO_OFF_TEXT won't work without FIX_BUGS");
@@ -28,6 +41,11 @@ static_assert(false, "R*'s radio implementation is quite buggy, RADIO_SCROLL_TO_
 cMusicManager MusicManager;
 int32 gNumRetunePresses;
 int32 gRetuneCounter;
+#ifdef __EMSCRIPTEN__
+// Web: inicio de la ventana de retune en ms (ventana acotada en tiempo real,
+// no en frames, para que el lag no acumule vueltas al dial).
+static uint32 gRetuneStartMs = 0;
+#endif
 bool8 g_bAnnouncementReadPosAlready;
 uint8 RadioStaticCounter = 5;
 uint32 RadioStaticTimer;
@@ -116,7 +134,8 @@ cMusicManager::ResetMusicAfterReload()
 		if (trackPos != -1) {
 			if (trackPos > m_aTracks[i].m_nLength) {
 				debug("Radio Track %d saved position is %d, Length is only %d\n", i, trackPos, m_aTracks[i].m_nLength);
-				trackPos %= m_aTracks[i].m_nLength;
+				// Missing audio files have length 0 (e.g. web build without radio): clamp, never modulo by zero.
+				trackPos = m_aTracks[i].m_nLength == 0 ? 0 : trackPos % m_aTracks[i].m_nLength;
 			}
 			m_aTracks[i].m_nPosition = trackPos;
 			m_aTracks[i].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
@@ -164,13 +183,21 @@ cMusicManager::SetStartingTrackPositions(bool8 isNewGameTimer)
 
 			if (i < STREAMED_SOUND_CITY_AMBIENT && isNewGameTimer)
 				m_aTracks[i].m_nPosition = NewGameRadioTimers[i];
-			else if (i < STREAMED_SOUND_ANNOUNCE_BRIDGE_CLOSED)
+			else if (i < STREAMED_SOUND_ANNOUNCE_BRIDGE_CLOSED && m_aTracks[i].m_nLength != 0)
 				m_aTracks[i].m_nPosition = (pos * AudioManager.m_anRandomTable[i % 5]) % m_aTracks[i].m_nLength;
 			else
 				m_aTracks[i].m_nPosition = 0;
-			
+
 			m_aTracks[i].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
 		}
+#ifdef __EMSCRIPTEN__
+		// Web: una sola línea con las 9 emisoras para verificar la radio
+		// ligera en tests headless (0 = muda/ausente). Sin spam.
+		printf("[web] radio lens ms: %u %u %u %u %u %u %u %u %u\n",
+			m_aTracks[0].m_nLength, m_aTracks[1].m_nLength, m_aTracks[2].m_nLength,
+			m_aTracks[3].m_nLength, m_aTracks[4].m_nLength, m_aTracks[5].m_nLength,
+			m_aTracks[6].m_nLength, m_aTracks[7].m_nLength, m_aTracks[8].m_nLength);
+#endif
 	}
 }
 
@@ -230,9 +257,9 @@ cMusicManager::SetRadioChannelByScript(uint32 station, int32 pos)
 		if (station == STREAMED_SOUND_RADIO_MP3_PLAYER)
 			station = STREAMED_SOUND_CITY_AMBIENT;
 		if (station <= STREAMED_SOUND_RADIO_POLICE) {
-			m_bRadioSetByScript = TRUE;
-			m_nRadioStationScript = station;
-			m_nRadioPosition = pos == -1 ? -1 : pos % m_aTracks[station].m_nLength;
+		m_bRadioSetByScript = TRUE;
+		m_nRadioStationScript = station;
+		m_nRadioPosition = pos == -1 || m_aTracks[station].m_nLength == 0 ? -1 : pos % m_aTracks[station].m_nLength;
 		}
 	}
 }
@@ -541,7 +568,13 @@ cMusicManager::ServiceGameMode()
 			{
 				if (!UsesPoliceRadio(vehicle) && !UsesTaxiRadio(vehicle)) {
 					gNumRetunePresses = 0;
+#ifdef __EMSCRIPTEN__
+					RetuneTrace("tapF9", gNumRetunePresses, gRetuneCounter, (int)vehicle->m_nRadioStation);
+					if (gRetuneCounter == 0) { gRetuneCounter = 20; gRetuneStartMs = CTimer::GetTimeInMilliseconds(); }
+					RadioStaticTimer = CTimer::GetTimeInMilliseconds() - 800;
+#else
 					gRetuneCounter = 20;
+#endif
 					RadioStaticCounter = 0;
 					if (vehicle->m_nRadioStation < USERTRACK)
 					{
@@ -556,7 +589,13 @@ cMusicManager::ServiceGameMode()
 			{
 				if (!UsesPoliceRadio(vehicle) && !UsesTaxiRadio(vehicle)) {
 					gNumRetunePresses++;
+#ifdef __EMSCRIPTEN__
+					RetuneTrace("tap", gNumRetunePresses, gRetuneCounter, (int)vehicle->m_nRadioStation);
+					if (gRetuneCounter == 0) { gRetuneCounter = 20; gRetuneStartMs = CTimer::GetTimeInMilliseconds(); }
+					RadioStaticTimer = CTimer::GetTimeInMilliseconds() - 800;
+#else
 					gRetuneCounter = 20;
+#endif
 					RadioStaticCounter = 0;
 				}
 			}
@@ -569,7 +608,13 @@ cMusicManager::ServiceGameMode()
 
 					if(scrollPrev != -1 && !ControlsManager.IsAnyVehicleActionAssignedToMouseKey(scrollPrev)) {
 						gNumRetunePresses--;
+#ifdef __EMSCRIPTEN__
+						RetuneTrace("tapWheel", gNumRetunePresses, gRetuneCounter, (int)vehicle->m_nRadioStation);
+						if (gRetuneCounter == 0) { gRetuneCounter = 20; gRetuneStartMs = CTimer::GetTimeInMilliseconds(); }
+						RadioStaticTimer = CTimer::GetTimeInMilliseconds() - 800;
+#else
 						gRetuneCounter = 20;
+#endif
 						RadioStaticCounter = 0;
 						int track = gNumRetunePresses + vehicle->m_nRadioStation;
 						while(track < 0) track += NUM_RADIOS + 1;
@@ -649,6 +694,11 @@ cMusicManager::ServiceGameMode()
 			// Because when you switch radio back and forth, gNumRetunePresses will be 0 but gRetuneCounter won't.
 #ifdef RADIO_SCROLL_TO_PREV_STATION
 			if(gRetuneCounter != 0) {
+#ifdef __EMSCRIPTEN__
+				// Con lag 20 frames son segundos: expirar por tiempo real.
+				if (CTimer::GetTimeInMilliseconds() - gRetuneStartMs > 600)
+					gRetuneCounter = 1;
+#endif
 				if(gRetuneCounter > 1)
 					gRetuneCounter--;
 				else if(gRetuneCounter == 1) {
@@ -1093,6 +1143,17 @@ cMusicManager::PreloadCutSceneMusic(uint32 track)
 		SampleManager.PreloadStreamedFile(track);
 		SampleManager.SetStreamedVolumeAndPan(MAX_VOLUME, 63, TRUE);
 		m_nPlayingTrack = track;
+#ifdef __EMSCRIPTEN__
+		// Traza del audio de cinemática: si en el log aparece "ok=0" es que el
+		// fichero del track no estaba disponible en ese momento (lo típico: se
+		// pidió mientras el juego se creía en partida y se aplazó).
+		{
+			char at[160];
+			snprintf(at, sizeof at, "CUTMUS track=%d playing=%d mode=%d", (int)track,
+				(int)SampleManager.IsStreamPlaying(), (int)m_nMusicMode);
+			ODTRACES(at);
+		}
+#endif
 	}
 }
 
@@ -1146,6 +1207,9 @@ cMusicManager::GetNextCarTuning()
 	if (UsesPoliceRadio(veh)) return STREAMED_SOUND_RADIO_POLICE;
 	if (UsesTaxiRadio(veh)) return STREAMED_SOUND_RADIO_TAXI;
 	if (gNumRetunePresses != 0) {
+#ifdef __EMSCRIPTEN__
+		RetuneTrace("consume", gNumRetunePresses, gRetuneCounter, (int)veh->m_nRadioStation);
+#endif
 #ifdef RADIO_SCROLL_TO_PREV_STATION
 		// m_nRadioStation is unsigned, so...
 		int station = veh->m_nRadioStation + gNumRetunePresses;
@@ -1193,7 +1257,7 @@ cMusicManager::GetTrackStartPos(uint32 track)
 		m_aTracks[track].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
 
 	if (pos > m_aTracks[track].m_nLength)
-		pos %= m_aTracks[track].m_nLength;
+		pos = m_aTracks[track].m_nLength == 0 ? 0 : pos % m_aTracks[track].m_nLength;
 	return pos;
 }
 

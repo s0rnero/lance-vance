@@ -52,6 +52,20 @@ endif()
 target_compile_definitions(${EXECUTABLE} PRIVATE CMAKE_BUILD)
 target_compile_definitions(${EXECUTABLE} PRIVATE USE_OUR_VERSIONING)
 
+if(EMSCRIPTEN)
+    # bootseed/ se empaqueta con --preload-file (ver gta_vc_browser/build.sh) y
+    # ninja solo vigila la RUTA, no el contenido: si se restagea bootseed
+    # después de compilar, `ninja` responde "no work to do" y el reVC.data se
+    # queda con los datos viejos (el juego sirve un gta_vc.dat obsoleto).
+    # Este stamp lo reescribe tools/stage_bootseed.py en cada restage y, al ser
+    # LINK_DEPENDS, fuerza el reenlace cuando cambian los datos del arranque.
+    set(BOOTSEED_STAMP "${CMAKE_SOURCE_DIR}/gta_vc_browser/bootseed.stamp")
+    if(NOT EXISTS "${BOOTSEED_STAMP}")
+        file(WRITE "${BOOTSEED_STAMP}" "stamp inicial\n")
+    endif()
+    set_property(TARGET ${EXECUTABLE} APPEND PROPERTY LINK_DEPENDS "${BOOTSEED_STAMP}")
+endif()
+
 if(${PROJECT}_AUDIO STREQUAL "OAL")
     find_package(OpenAL REQUIRED)
     if(TARGET OpenAL::OpenAL)

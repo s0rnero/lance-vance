@@ -1667,7 +1667,7 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 				CSprite2d::Draw2DPolygon(x + SCREEN_SCALE_X(12.0f), y + SCREEN_SCALE_Y(12.0f), x + SCREEN_SCALE_X(4.0f), y + SCREEN_SCALE_Y(12.0f), x + SCREEN_SCALE_X(8.f), y + SCREEN_SCALE_Y(4.0f), x + SCREEN_SCALE_X(8.f), y + SCREEN_SCALE_Y(4.0f), color);
 				break;
 			case BLIP_MODE_TRIANGULAR_DOWN:
-				CSprite2d::Draw2DPolygon(x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(14.0f), x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(14.0f), x + SCREEN_SCALE_X(2.f), y + SCREEN_SCALE_Y(3.0f), x + SCREEN_SCALE_X(2.f), y + SCREEN_SCALE_Y(3.0f), CRGBA(0, 0, 0, 255));
+				CSprite2d::Draw2DPolygon(x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(14.0f), x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(14.0f), x + SCREEN_SCALE_X(8.0f) + (SCREEN_SCALE_X(8.0f) - SCREEN_SCALE_X(2.f)), y + SCREEN_SCALE_Y(3.0f), x + SCREEN_SCALE_X(2.f), y + SCREEN_SCALE_Y(3.0f), CRGBA(0, 0, 0, 255));
 				CSprite2d::Draw2DPolygon(x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(12.0f), x + SCREEN_SCALE_X(8.0f), y + SCREEN_SCALE_Y(12.0f), x + SCREEN_SCALE_X(12.f), y + SCREEN_SCALE_Y(4.0f), x + SCREEN_SCALE_X(4.f), y + SCREEN_SCALE_Y(4.0f), color);
 				break;
 			case BLIP_MODE_SQUARE:

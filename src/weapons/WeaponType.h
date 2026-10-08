@@ -50,8 +50,33 @@ enum eWeaponType
 	WEAPONTYPE_FALL,
 	WEAPONTYPE_UNIDENTIFIED,
 	WEAPONTYPE_ANYMELEE,
-	WEAPONTYPE_ANYWEAPON
+	WEAPONTYPE_ANYWEAPON,
+
+	// Vice Extended: armas nuevas. Van AL FINAL a propósito: los IDs 0..47
+	// están quemados en main.scm (0..36 armas, 37 salud, 38 armadura, 39
+	// atropello, ... 46 cualquier arma de cuerpo a cuerpo, 47 cualquier arma),
+	// así que insertarlas en medio rompería los scripts que ya corren.
+	WEAPONTYPE_BERETTA,			// 48
+	WEAPONTYPE_DESERT_EAGLE, // 49
+	WEAPONTYPE_SHOTGUN2,		 // 50
+	WEAPONTYPE_UZIOLD,		  // 51
+	WEAPONTYPE_AK47,			// 52
+	WEAPONTYPE_M16,			// 53
+	WEAPONTYPE_STEYR,		   // 54
+	WEAPONTYPE_GRENADE_LAUNCHER,			// 55
+	WEAPONTYPE_GRENADE_LAUNCHER_GRENADE,	// 56 (el proyectil que lanza)
+
+	WEAPONTYPE_TOTALALLTYPES
 };
+
+// ¿Es un tipo de ARMA (0..36 o una de las nuevas) y no un tipo de daño
+// (HEALTH..ANYWEAPON) ni basura? Sustituye a las comprobaciones
+// `type < WEAPONTYPE_TOTALWEAPONS` allí donde un arma nueva también vale.
+inline bool IsWeaponType(eWeaponType type)
+{
+	return type < WEAPONTYPE_TOTALWEAPONS ||
+		(type >= WEAPONTYPE_BERETTA && type < WEAPONTYPE_TOTALALLTYPES);
+}
 
 enum {
 	WEAPONSLOT_UNARMED = 0,

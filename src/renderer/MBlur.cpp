@@ -566,12 +566,11 @@ CMBlur::AddRenderFx(RwCamera *cam, RwRect *rect, float z, FxType type)
 		for(int i = 0; i < pBufVertCount; i++)
 			if(fxType[i] == type && PosInside(rect, fxRect[i].x-10.0f, fxRect[i].y-10.0f, fxRect[i].w+10.0f, fxRect[i].h+10.0f))
 				return false;
-		// TODO: fix aspect ratio scaling
 		// radar
-		if(PosInside(rect, 40.0f, SCREEN_SCALE_FROM_BOTTOM(116.0f), 40.0f + SCREEN_SCALE_X(94.0f), SCREEN_SCALE_FROM_BOTTOM(116.0f - 76.0f)))
+		if(PosInside(rect, SCREEN_STRETCH_X(40.0f), SCREEN_SCALE_FROM_BOTTOM(116.0f), SCREEN_STRETCH_X(40.0f) + SCREEN_STRETCH_X(94.0f), SCREEN_SCALE_FROM_BOTTOM(116.0f - 76.0f)))
 			return false;
 		// HUD
-		if(PosInside(rect, 400.0f, 0.0f, SCREEN_WIDTH, 90.0f))
+		if(PosInside(rect, SCREEN_WIDTH - SCREEN_STRETCH_X(240.0f), 0.0f, SCREEN_WIDTH, SCREEN_STRETCH_Y(90.0f)))
 			return false;
 		// vehicle name
 		if(CHud::m_VehicleState != 0 && PosInside(rect, SCREEN_WIDTH/2, 350.0f, SCREEN_WIDTH, SCREEN_HEIGHT))

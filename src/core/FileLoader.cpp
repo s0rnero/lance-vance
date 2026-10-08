@@ -1,5 +1,6 @@
 #include "common.h"
 #include <ctype.h>
+#include "ondemand.h"
 #include "main.h"
 
 #include "General.h"
@@ -49,6 +50,9 @@ LoadingScreenLoadingFile(const char *filename)
 void
 CFileLoader::LoadLevel(const char *filename)
 {
+#ifdef __EMSCRIPTEN__
+	{ char ob[160]; snprintf(ob, sizeof(ob), "loadlevel %s", filename); ODTRACES(ob); }
+#endif
 	int fd;
 	RwTexDictionary *savedTxd;
 	bool objectsLoaded;

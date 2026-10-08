@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 #include "General.h"
 #include "Pad.h"
@@ -340,17 +343,59 @@ CStreaming::Update(void)
 
 	DeleteFarAwayRwObjects(TheCamera.GetPosition());
 
-	if(!ms_disableStreaming &&
+	bool odPuedeCargarTrafico = !ms_disableStreaming &&
 	   !CCutsceneMgr::IsCutsceneProcessing() &&
-	   ms_numModelsRequested < 5 &&
 	   !CRenderer::m_loadingPriority &&
 	   CGame::currArea == AREA_MAIN_MAP &&
-	   !CReplay::IsPlayingBack()){
+	   !CReplay::IsPlayingBack();
+#ifdef __EMSCRIPTEN__
+	// D4 (sección 1): medido. La puerta de siempre exige además
+	// `ms_numModelsRequested < 5` y que no haya carga prioritaria en curso. En el
+	// navegador los ficheros tardan y esas dos condiciones se quedan cerradas
+	// durante minutos enteros (medido: una sesión de 5 min con 0 llamadas al
+	// cargador y la calle congelada en los 2 modelos ya residentes). El cargador
+	// de tráfico pide COMO MUCHO un modelo cada 11,7 s, así que puede correr con
+	// el resto del streaming ocupado sin competir de verdad: la puerta se queda
+	// con las condiciones que sí son de estado del juego (área, cinemática,
+	// replay, streaming desactivado).
+	const bool odPuedeCargarTrafico2 = !ms_disableStreaming &&
+	   !CCutsceneMgr::IsCutsceneProcessing() &&
+	   CGame::currArea == AREA_MAIN_MAP &&
+	   !CReplay::IsPlayingBack();
+	if(odPuedeCargarTrafico2){
 		StreamVehiclesAndPeds();
 		StreamZoneModels(FindPlayerCoors());
 	}
+	if(!odPuedeCargarTrafico){
+		// Diagnóstico: por qué NO se cargaba tráfico (una sesión entera sin
+		// cargador deja la calle en 2 modelos). Se emite cada 300 fotogramas.
+		static uint32 odBloqueo = 0;
+		if(++odBloqueo % 300 == 0){
+			char tt[176];
+			snprintf(tt, sizeof tt, "CARBLOCK n=%u disable=%d cut=%d prio=%d area=%d play=%d nreq=%d veh=%d/%d",
+				(unsigned)odBloqueo, (int)ms_disableStreaming, (int)CCutsceneMgr::IsCutsceneProcessing(),
+				(int)CRenderer::m_loadingPriority, (int)CGame::currArea, (int)CReplay::IsPlayingBack(),
+				ms_numModelsRequested, ms_numVehiclesLoaded, desiredNumVehiclesLoaded);
+			ODTRACES(tt);
+		}
+	}
+#else
+	if(odPuedeCargarTrafico && ms_numModelsRequested < 5){
+		StreamVehiclesAndPeds();
+		StreamZoneModels(FindPlayerCoors());
+	}
+#endif
 
+#ifdef __EMSCRIPTEN__
+	// F2 (fluides-v2): coste del streaming por frame, medido ALREDEDOR de la
+	// llamada (R1: nada dentro del bucle suspendible). Incluye el tiempo de
+	// suspension Asyncify (fetch/IDB) — para eso sirve: si domina, domina.
+	uint32 odStrmT0 = (uint32)emscripten_get_now();
+#endif
 	LoadRequestedModels();
+#ifdef __EMSCRIPTEN__
+	gWebStrmMs += (uint32)emscripten_get_now() - odStrmT0;
+#endif
 
 	if(CWorld::Players[0].m_pRemoteVehicle){
 		CColStore::AddCollisionNeededAtPosn(FindPlayerCoors());
@@ -505,6 +550,24 @@ RegisterAtomicMemPtrsCB(RpAtomic *atomic, void *data)
 }
 #endif
 
+#ifdef __EMSCRIPTEN__
+// Enfriamiento de re-solicitud (solo web): si el mismo modelo falla muy
+// seguido, saltar el ReRequest inmediato; la demanda normal lo repondrá
+// luego. Evita tormentas de reintento por frame (cuelgue + RAM).
+static int odLastFailId = -1;
+static uint32 odLastFailFrame = 0;
+static bool
+OdCoolingDown(int32 streamId)
+{
+	uint32 fc = CTimer::GetFrameCounter();
+	if (streamId == odLastFailId && fc - odLastFailFrame < 30)
+		return true;
+	odLastFailId = streamId;
+	odLastFailFrame = fc;
+	return false;
+}
+#endif
+
 bool
 CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 {
@@ -536,6 +599,9 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 #endif
 		   animId != -1 && !CAnimManager::GetAnimationBlock(animId)->isLoaded){
 			RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+			if (!OdCoolingDown(streamId))
+#endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
 			return false;
@@ -580,7 +646,22 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 		if(!success){
 			debug("Failed to load %s\n", CModelInfo::GetModelInfo(streamId)->GetModelName());
+#ifdef __EMSCRIPTEN__
+			// DIAG F3a: los FAILs también a odtrace.log (la consola no basta).
+			{
+				static int n = 0;
+				if (n < 100) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "FAIL model %s", CModelInfo::GetModelInfo(streamId)->GetModelName());
+					ODTRACES(t);
+				}
+			}
+#endif
 			RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+			if (!OdCoolingDown(streamId))
+#endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
 			return false;
@@ -595,6 +676,30 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		}
 
 		PUSH_MEMID(MEMID_STREAM_TEXUTRES);
+#ifdef __EMSCRIPTEN__
+		// DIAG F3a (entrada): ¿qué pide vs qué hay en mem? Acotado + odtrace.
+		{
+			static int n = 0;
+			if (n < 60) {
+				n++;
+				uint32 sum = 0;
+				for (uint32 bi = 0; bi < mem.length && bi < 65536; bi++) sum += mem.start[bi];
+				char t[256];
+				snprintf(t, sizeof t, "TXDIN txd=%s id=%d cds=%d memlen=%u sum=%u head=%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+					CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD), streamId, cdsize, mem.length, sum,
+					mem.length > 0 ? mem.start[0] : 0, mem.length > 1 ? mem.start[1] : 0,
+					mem.length > 2 ? mem.start[2] : 0, mem.length > 3 ? mem.start[3] : 0,
+					mem.length > 4 ? mem.start[4] : 0, mem.length > 5 ? mem.start[5] : 0,
+					mem.length > 6 ? mem.start[6] : 0, mem.length > 7 ? mem.start[7] : 0,
+					mem.length > 8 ? mem.start[8] : 0, mem.length > 9 ? mem.start[9] : 0,
+					mem.length > 10 ? mem.start[10] : 0, mem.length > 11 ? mem.start[11] : 0,
+					mem.length > 12 ? mem.start[12] : 0, mem.length > 13 ? mem.start[13] : 0,
+					mem.length > 14 ? mem.start[14] : 0, mem.length > 15 ? mem.start[15] : 0);
+				ODTRACES(t);
+				printf("[texconv] %s\n", t);
+			}
+		}
+#endif
 		if(ms_bLoadingBigModel || cdsize > 200){
 			success = CTxdStore::StartLoadTxd(streamId - STREAM_OFFSET_TXD, stream);
 			if(success)
@@ -606,7 +711,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 
 		if(!success){
 			debug("Failed to load %s.txd\n", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+#ifdef __EMSCRIPTEN__
+			{
+				static int n = 0;
+				if (n < 100) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "FAIL txd %s", CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD));
+					ODTRACES(t);
+				}
+			}
+#endif
 			RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+			if (!OdCoolingDown(streamId))
+#endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
 			return false;
@@ -617,7 +736,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 		POP_MEMID();
 		if(!success){
 			debug("Failed to load %s.col\n", CColStore::GetColName(streamId - STREAM_OFFSET_COL));
+#ifdef __EMSCRIPTEN__
+			{
+				static int n = 0;
+				if (n < 100) {
+					n++;
+					char t[128];
+					snprintf(t, sizeof t, "FAIL col %s", CColStore::GetColName(streamId - STREAM_OFFSET_COL));
+					ODTRACES(t);
+				}
+			}
+#endif
 			RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+			if (!OdCoolingDown(streamId))
+#endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
 			return false;
@@ -631,6 +764,10 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			return false;
 		}
 		PUSH_MEMID(MEMID_STREAM_ANIMATION);
+		// D11/D18 (seccion 1, 21/09): el rastro por bloque (entrar/salir de
+		// cada .ifp) se retiro al localizar el cuelgue: era una pareja de
+		// printf por fichero y el alias de animaciones se comprueba mejor con
+		// el aviso de clip sin jerarquia.
 		CAnimManager::LoadAnimFile(stream, true, nil);
 		CAnimManager::CreateAnimAssocGroups();
 		POP_MEMID();
@@ -1556,6 +1693,28 @@ found:
 	CVehicleModelInfo* pVehicleInfo = (CVehicleModelInfo*)CModelInfo::GetModelInfo(modelId);
 	if (pVehicleInfo->m_vehicleClass != -1)
 		CCarCtrl::AddToLoadedVehicleArray(modelId, pVehicleInfo->m_vehicleClass, pVehicleInfo->m_frequency);
+#ifdef __EMSCRIPTEN__
+	// D4 (sección 1): un modelo de vehículo acaba de entrar en el fondo cargado
+	// (el que usa `ChooseCarModel` para el tráfico). Emparejado con `CARPED`
+	// (petición) dice si una petición se quedó sin cargar: petición sin CARLOAD
+	// = su lectura falló (ver `CARFAIL`/`ODSHORT`).
+	{
+		static int odCargados = 0;
+		if (odCargados < 400) {
+			char tt[200];
+			if (pVehicleInfo->m_vehicleClass != -1)
+				snprintf(tt, sizeof tt, "CARLOAD model=%d clase=%d freq=%d fondo=%d/%d",
+					modelId, pVehicleInfo->m_vehicleClass, pVehicleInfo->m_frequency,
+					CCarCtrl::NumOfLoadedCarsOfRating[pVehicleInfo->m_vehicleClass],
+					CCarCtrl::TotalNumOfCarsOfRating[pVehicleInfo->m_vehicleClass]);
+			else
+				snprintf(tt, sizeof tt, "CARLOAD model=%d clase=-1 (ignore) freq=%d",
+					modelId, pVehicleInfo->m_frequency);
+			ODTRACES(tt);
+			odCargados++;
+		}
+	}
+#endif
 	return true;
 }
 
@@ -1611,6 +1770,10 @@ CStreaming::LoadInitialWeapons(void)
 {
 	CStreaming::RequestModel(MI_NIGHTSTICK, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_MISSILE, STREAMFLAGS_DONT_REMOVE);
+	// Vice Extended: el proyectil del lanzagranadas tampoco es el arma en
+	// mano, así que va residente como el misil (ProjectileInfo lo instancia
+	// de golpe al disparar).
+	CStreaming::RequestModel(MI_GR_GRENADE, STREAMFLAGS_DONT_REMOVE);
 }
 
 void
@@ -1713,9 +1876,21 @@ CStreaming::StreamVehiclesAndPeds(void)
 		SetModelIsDeletable(MI_VICE8);
 	}
 
-	if(timeBeforeNextLoad >= 0)
+#ifdef __EMSCRIPTEN__
+	// D4 (sección 1): el temporizador de siempre cuenta FOTOGRAMAS (350 = 11,7 s a
+	// 30 FPS). En el navegador, a 6-9 FPS, esos 350 fotogramas son 40-60 s reales:
+	// la rotación de modelos del tráfico va 3-5 veces más lenta que en el juego
+	// original y la calle se queda con los 2-3 modelos que ya tenía residentes
+	// (medido: 6 min de calle → 2 modelos distintos, `oceanic` 28 veces).
+	// Aquí se cuenta el MISMO presupuesto, pero en tiempo real (350/30 s).
+	static uint32 odUltVehLoad = 0;
+	bool odTocaCargar = (uint32)(CTimer::GetTimeInMilliseconds() - odUltVehLoad) >= 11666;
+#else
+	bool odTocaCargar = timeBeforeNextLoad < 0;
+	if(!odTocaCargar)
 		timeBeforeNextLoad--;
-	else if(ms_numVehiclesLoaded <= desiredNumVehiclesLoaded){
+#endif
+	if(odTocaCargar && ms_numVehiclesLoaded <= desiredNumVehiclesLoaded){
 		CZoneInfo zone;
 		CVector coors = FindPlayerCoors();
 		CTheZones::GetZoneInfoForTimeOfDay(&coors, &zone);
@@ -1736,12 +1911,55 @@ CStreaming::StreamVehiclesAndPeds(void)
 			}
 		}
 		model = CCarCtrl::ChooseCarModelToLoad(mostRequestedRating);
+#ifdef __EMSCRIPTEN__
+		{
+			// D4 (sección 1): medición del cargador. `cargadas` es cuántos modelos
+			// de esa clase hay YA residentes (de los que elige `ChooseCarModel`) y
+			// `ya` si el elegido lo estaba: eso explica si el fondo se estanca
+			// porque no se piden modelos nuevos o porque se repiten los cargados.
+			static uint32 odVehReq = 0;
+			char tt[240];
+			snprintf(tt, sizeof tt, "CARPED n=%u rating=%d cargadas=%d/%d model=%d ya=%d freq=%d veh=%d/%d",
+				(unsigned)++odVehReq, mostRequestedRating,
+				CCarCtrl::NumOfLoadedCarsOfRating[mostRequestedRating],
+				CCarCtrl::TotalNumOfCarsOfRating[mostRequestedRating],
+				model, model >= 0 ? (int)HasModelLoaded(model) : -1,
+				model >= 0 ? (int)((CVehicleModelInfo*)CModelInfo::GetModelInfo(model))->m_frequency : -1,
+				ms_numVehiclesLoaded, desiredNumVehiclesLoaded);
+			ODTRACES(tt);
+			if(odVehReq % 10 == 1){
+				int n = snprintf(tt, sizeof tt, "CARPOOL n=%u", (unsigned)odVehReq);
+				for(int c = 0; c < CCarCtrl::TOTAL_CUSTOM_CLASSES && n > 0 && n < (int)sizeof(tt) - 16; c++){
+					if(CCarCtrl::NumOfLoadedCarsOfRating[c] > 0)
+						n += snprintf(tt + n, sizeof tt - n, " c%d=%d", c, CCarCtrl::NumOfLoadedCarsOfRating[c]);
+				}
+				ODTRACES(tt);
+			}
+		}
+#endif
 		if(!HasModelLoaded(model)){
 			RequestModel(model, STREAMFLAGS_DEPENDENCY);
 			timeBeforeNextLoad = 350;
+#ifdef __EMSCRIPTEN__
+			odUltVehLoad = CTimer::GetTimeInMilliseconds();
+#endif
 		}
 		CCarCtrl::NumRequestsOfCarRating[mostRequestedRating] = 0;
 	}
+#ifdef __EMSCRIPTEN__
+	else if(odTocaCargar){
+		// D4 (sección 1): el turno llegó pero la piscina de vehículos ya está en
+		// el tope, así que no se pide nada nuevo. Si esto domina, el fondo
+		// cargado se congela y no es el temporizador el que lo explica.
+		static uint32 odFull = 0;
+		if(++odFull % 5 == 0){
+			char tt[128];
+			snprintf(tt, sizeof tt, "CARFULL n=%u veh=%d/%d", (unsigned)odFull,
+				ms_numVehiclesLoaded, desiredNumVehiclesLoaded);
+			ODTRACES(tt);
+		}
+	}
+#endif
 }
 
 void
@@ -2198,6 +2416,25 @@ CStreaming::ProcessLoadingChannel(int32 ch)
 			ms_channelError = ch;
 			ms_channel[ch].state = CHANNELSTATE_ERROR;
 			ms_channel[ch].status = status;
+#ifdef __EMSCRIPTEN__
+			// D4 (sección 1): lectura del cargador fallida. En web casi siempre es
+			// un fichero que la capa on-demand todavía no tiene (ASYNCIFY lo aplaza
+			// a propósito para no congelar el frame): el motor reintenta. Con el id
+			// del modelo que iba en el canal se sabe QUÉ modelo se quedó a medias y
+			// si vuelve (emparejar con `CARLOAD`).
+			{
+				static int odFallos = 0;
+				if (odFallos < 40) {
+					char tt[200];
+					snprintf(tt, sizeof tt, "CARFAIL ch=%d status=%d intentos=%d id=%d,%d,%d,%d",
+						ch, status, ms_channel[ch].numTries,
+						ms_channel[ch].streamIds[0], ms_channel[ch].streamIds[1],
+						ms_channel[ch].streamIds[2], ms_channel[ch].streamIds[3]);
+					ODTRACES(tt);
+					odFallos++;
+				}
+			}
+#endif
 		}
 		return false;
 	}
@@ -2413,10 +2650,13 @@ CStreaming::LoadAllRequestedModels(bool priority)
 
 		//printf("process: order %d, ch %d, id %d\n", processI, nextChannel, streamIds[nextChannel]);
 
-		// Try again on error
+		// Try again on error (bounded: a permanent failure must pop in
+		// later, never hang the page — web on-demand fetches it meanwhile).
+		{ int odTries = 0;
 		while (CdStreamSync(nextChannel) != STREAM_NONE) {
 			CdStreamRead(nextChannel, ms_pStreamingBuffer[nextChannel], imgOffset+streamPoses[nextChannel], streamSizes[nextChannel]);
-		}
+			if (++odTries > 25) { debug("CdStream: 25 reintentos, se reintentará luego\n"); break; }
+		} }
 		ms_aInfoForModel[streamIds[nextChannel]].m_loadState = STREAMSTATE_READING;
 
 		MakeSpaceFor(streamSizes[nextChannel] * CDSTREAM_SECTOR_SIZE);
@@ -2457,14 +2697,32 @@ CStreaming::LoadAllRequestedModels(bool priority)
 		return;
 	bInsideLoadAll = true;
 
+	// Web: durante esta carga el motor está BLOQUEADO pidiendo ficheros. La
+	// página no puede aplazarlos (contestar "no está"): se quedaría sin ellos
+	// y el modelo saldría vacío (escena de cinemática negra, sin audio).
+	odBlockingPush();
+
 	if(priority)
 		numRequests = ms_numPriorityRequests;
 
 	FlushChannels();
 	imgOffset = GetCdImageOffset(CdStreamGetLastPosn());
 
-	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0){
+#ifdef __EMSCRIPTEN__
+	// Web: tope de ficheros por llamada (carga troceada por ticks). 0 = sin tope.
+	// R1: aquí NO hay (ni puede haber) tope por TIEMPO — ver Streaming.h.
+	int odBudget = gWebLoadBudget;
+#endif
+	while(ms_endRequestedList.m_prev != &ms_startRequestedList && numRequests > 0
+#ifdef __EMSCRIPTEN__
+		&& (odBudget <= 0 || odBudget-- > 0)
+#endif
+	){
 		numRequests--;
+#ifdef __EMSCRIPTEN__
+		// Solo medición (ODLOAD big): coste del fichero. No altera el control.
+		double odFileT0 = emscripten_get_now();
+#endif
 		streamId = GetNextFileOnCd(0, priority);
 		if(streamId == -1)
 			break;
@@ -2474,9 +2732,33 @@ CStreaming::LoadAllRequestedModels(bool priority)
 		DecrementRef(streamId);
 
 		if(ms_aInfoForModel[streamId].GetCdPosnAndSize(posn, size)){
-			do
+			int odTries = 0;
+			do {
+#ifdef __EMSCRIPTEN__
+				// D15 (sección 1, 21/09): condición del do/while ARREGLADA.
+				// El original (`status == STREAM_NONE`) repetía mientras la lectura
+				// iba BIEN: en web el fichero aplazado devuelve STREAM_NONE y esto
+				// giraba para siempre dentro de un comando del SCM (pantalla negra
+				// tras el menú). La condición correcta es repetir solo si falló
+				// (STREAM_ERROR y similares), con tope, y seguir si agota.
 				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+				int odSync = CdStreamSync(0);
+				if (odSync == STREAM_NONE || odSync == STREAM_SUCCESS) break;
+				if (++odTries > 25) {
+					debug("CdStream: 25 reintentos, se reintentará luego (id=%d)\n", streamId);
+					ODTRACES("CDRETRY agotado");
+					break;
+				}
+#else
+				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+				if (++odTries > 25) { debug("CdStream: 25 reintentos, se reintentará luego\n"); break; }
+#endif
+			}
+#ifdef __EMSCRIPTEN__
+			while (status != STREAM_SUCCESS);
+#else
 			while(CdStreamSync(0) || status == STREAM_NONE);
+#endif
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
@@ -2493,6 +2775,24 @@ CStreaming::LoadAllRequestedModels(bool priority)
 			// empty
 			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_LOADED;
 		}
+#ifdef __EMSCRIPTEN__
+		// F6b: un fichero que se pasa él solo del presupuesto explica un pico
+		// por sí mismo (no se puede trocear un decode). Traza solo los gordos.
+		{
+			double odFileMs = emscripten_get_now() - odFileT0;
+			if (odFileMs >= 8.0) {
+				static int odBigN = 0;
+				if (odBigN < 60) {
+					char t[144];
+					odBigN++;
+					snprintf(t, sizeof t, "ODLOAD big id=%d ms=%.1f tipo=%s",
+						streamId, odFileMs,
+						streamId >= STREAM_OFFSET_TXD ? (streamId >= STREAM_OFFSET_COL ? "col/anim" : "txd") : "dff");
+					ODTRACES(t);
+				}
+			}
+		}
+#endif
 	}
 
 	ms_bLoadingBigModel = false;
@@ -2502,6 +2802,7 @@ CStreaming::LoadAllRequestedModels(bool priority)
 	}
 	ms_channel[1].state = CHANNELSTATE_IDLE;
 	bInsideLoadAll = false;
+	odBlockingPop();
 }
 #endif
 
@@ -3138,6 +3439,137 @@ CStreaming::LoadScene(const CVector &pos)
 		ms_aInfoForModel[i].m_flags &= ~STREAMFLAGS_20;
 	debug("End load scene\n");
 }
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+int CStreaming::gWebLoadBudget = 0;
+// F6b: el tope por CONTEO no ve el PESO (un TXD/DFF pesado cuesta 10-25 ms,
+// así que 6 ficheros podían ser 60 ms en una imagen). Probé un tope por
+// TIEMPO y crasheaba el init (punto de sincronía cortado) → fuera. El reparto
+// de lo pesado, si vuelve, va en el LLAMADOR (R1).
+// PERF (FPSLOG strm=): ms dentro de Update->LoadRequestedModels acumulados
+// desde el último FPSLOG (lo resetea main). Medido en el LLAMADOR, nunca
+// dentro del bucle suspendible.
+uint32 gWebStrmMs = 0;
+
+int
+CStreaming::CountPendingRequests(void)
+{
+	int n = 0;
+	for (CStreamingInfo *si = ms_startRequestedList.m_next; si != &ms_endRequestedList; si = si->m_next)
+		n++;
+	return n;
+}
+
+static int s_scenePhase = 0;
+static CVector s_scenePos;
+static eLevelName s_sceneLevel = LEVEL_GENERIC;
+static int s_sceneTotal = 1;
+static int s_sceneStale = 0;
+
+void
+CStreaming::LoadSceneResetSteps(void)
+{
+	s_scenePhase = 0;
+	s_sceneTotal = 1;
+	s_sceneStale = 0;
+	gWebLoadBudget = 10; // ficheros por tick; se libera al terminar
+}
+
+// Escena de carga troceada: mismo orden y operaciones que LoadScene, un tramo
+// por tick del navegador. 1 = terminado.
+int
+CStreaming::LoadSceneStep(const CVector &pos)
+{
+	switch (s_scenePhase) {
+	case 0: {
+		// Purga y peticiones de edificios grandes. Igual que LoadScene.
+		// (La colisión corre aparte en el paso final, como en el tail vanilla.)
+		s_scenePos = pos;
+		CStreamingInfo *si, *prev;
+		for (si = ms_endRequestedList.m_prev; si != &ms_startRequestedList; si = prev) {
+			prev = si->m_prev;
+			if ((si->m_flags & (STREAMFLAGS_KEEP_IN_MEMORY|STREAMFLAGS_PRIORITY)) == 0)
+				RemoveModel(si - ms_aInfoForModel);
+		}
+		CRenderer::m_loadingPriority = false;
+		DeleteAllRwObjects();
+		s_sceneLevel = CTheZones::GetLevelFromPosition(&pos);
+		if (s_sceneLevel == LEVEL_GENERIC)
+			s_sceneLevel = CGame::currLevel;
+		CGame::currLevel = s_sceneLevel;
+		RemoveUnusedBigBuildings(s_sceneLevel);
+		RequestBigBuildings(s_sceneLevel, pos);
+		RequestBigBuildings(LEVEL_GENERIC, pos);
+		RemoveIslandsNotUsed(s_sceneLevel);
+		s_sceneTotal = CountPendingRequests();
+		if (s_sceneTotal < 1) s_sceneTotal = 1;
+		s_sceneStale = 0;
+		gWebLoadFrac = 0.12f;
+		s_scenePhase = 1;
+		return 0;
+	}
+	case 1: {
+		// Primera oleada (edificios grandes), a rebanadas por tick.
+		int before = CountPendingRequests();
+		LoadAllRequestedModels(false);
+		int after = CountPendingRequests();
+		if (after >= before) s_sceneStale++;
+		else s_sceneStale = 0;
+		int done = s_sceneTotal - after;
+		if (done < 0) done = 0;
+		gWebLoadFrac = 0.12f + 0.43f*done/s_sceneTotal;
+		if (after == 0 || s_sceneStale > 5) {
+			InstanceBigBuildings(s_sceneLevel, s_scenePos);
+			InstanceBigBuildings(LEVEL_GENERIC, s_scenePos);
+			AddModelsToRequestList(s_scenePos, STREAMFLAGS_20);
+			CRadar::StreamRadarSections(s_scenePos);
+			if (!CGame::IsInInterior()) {
+				for (int i = 0; i < 5; i++) {
+					CZoneInfo zone;
+					CTheZones::GetZoneInfoForTimeOfDay(&s_scenePos, &zone);
+					int32 model = CCarCtrl::ChooseCarModelToLoad(CCarCtrl::ChooseCarRating(&zone));
+					CStreaming::RequestModel(model, STREAMFLAGS_DEPENDENCY);
+				}
+			}
+			s_sceneTotal = CountPendingRequests();
+			if (s_sceneTotal < 1) s_sceneTotal = 1;
+			s_sceneStale = 0;
+			gWebLoadFrac = 0.57f;
+			s_scenePhase = 2;
+		}
+		return 0;
+	}
+	case 2: {
+		// Segunda oleada (zona + radar + coches), a rebanadas por tick.
+		int before = CountPendingRequests();
+		LoadAllRequestedModels(false);
+		int after = CountPendingRequests();
+		if (after >= before) s_sceneStale++;
+		else s_sceneStale = 0;
+		int done = s_sceneTotal - after;
+		if (done < 0) done = 0;
+		gWebLoadFrac = 0.57f + 0.38f*done/s_sceneTotal;
+		if (after == 0 || s_sceneStale > 5) {
+			InstanceLoadedModels(s_scenePos);
+			for (int i = 0; i < NUMSTREAMINFO; i++)
+				ms_aInfoForModel[i].m_flags &= ~STREAMFLAGS_20;
+			// F1 (fluides-v2): no liberar a 0 — presupuesto de gameplay
+			// (6 ficheros/LoadAll) para acotar el peor frame conduciendo.
+			gWebLoadBudget = 6;
+			gWebLoadFrac = 1.0f;
+			s_scenePhase = 0;
+			return 1;
+		}
+		return 0;
+	}
+	default:
+		s_scenePhase = 0;
+		gWebLoadBudget = 6;
+		return 1;
+	}
+}
+#endif
 
 void
 CStreaming::LoadSceneCollision(const CVector &pos)

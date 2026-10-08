@@ -415,7 +415,7 @@ CEntity::PreRender(void)
 void
 CEntity::Render(void)
 {
-	if(m_rwObject){
+if(m_rwObject){
 		bImBeingRendered = true;
 		if(RwObjectGetType(m_rwObject) == rpATOMIC)
 			RpAtomicRender((RpAtomic*)m_rwObject);

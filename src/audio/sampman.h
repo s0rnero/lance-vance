@@ -217,6 +217,9 @@ public:
 	int32 _GetPedCommentSlot(uint32 nComment);
 	
 	uint32 GetSampleBaseFrequency  (uint32 nSample);
+	// R14 (12ª partida): reserva una muestra para que nunca se posponga ni se
+	// recicle (sonidos de disparo de las armas del mod). Ver OdSfxReserve.
+	void   ReserveSample           (uint32 nSample);
 	uint32 GetSampleLoopStartOffset(uint32 nSample);
 	int32  GetSampleLoopEndOffset  (uint32 nSample);
 	uint32 GetSampleLength         (uint32 nSample);
@@ -248,6 +251,7 @@ public:
 	void  SetStreamedVolumeAndPan(uint8 nVolume, uint8 nPan, bool8 nEffectFlag, uint8 nStream = 0);
 	int32 GetStreamedFileLength                                                (uint8 nStream = 0);
 	bool8 IsStreamPlaying                                                      (uint8 nStream = 0);
+	bool8 IsStreamedFileOpened                                                 (uint8 nStream = 0);
 	void  SetStreamedFileLoopFlag                             (bool8 nLoopFlag, uint8 nStream = 0);
 #ifdef AUDIO_OAL
 	void  Service(void);

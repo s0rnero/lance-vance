@@ -617,6 +617,12 @@ extern bool UsingMobileScript;
 extern bool AlreadySavedGame;
 #endif
 
+#ifdef VICEEXT_AUTOSAVE
+// Sección 3 (Vice Extended): lo pone COMMAND_REGISTER_MISSION_PASSED y lo
+// consume COMMAND_TERMINATE_THIS_SCRIPT (autosave al acabar la misión).
+extern bool ViceExtAutosavePending;
+#endif
+
 uint32 AddExtraDeathDelay();
 void RetryMission(int, int unk = 0);
 

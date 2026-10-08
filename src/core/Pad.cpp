@@ -12,6 +12,8 @@
 #endif
 
 #include "Pad.h"
+#include "ondemand.h" // D7: traza del cheat de avisos con iconos (CRAZYHINT) y WLOAD (arnés web)
+#include "TxdStore.h" // WLOAD: el diccionario de cada arma del mod
 #include "ControllerConfig.h"
 #include "Timer.h"
 #include "Frontend.h"
@@ -41,6 +43,11 @@
 #include "Stats.h"
 #include "CarCtrl.h"
 #include "TrafficLights.h"
+#include "Automobile.h"
+#include "Bike.h"
+#include "Boat.h"
+#include "ModelInfo.h"
+#include "PlayerPed.h" // ve37: `ViceExtWeaponInfoOf` (la prueba de armas pide la ficha de las 8)
 
 #ifdef GTA_PS2
 #include "eetypes.h"
@@ -284,6 +291,209 @@ void WeaponCheat3()
 		FindPlayerPed()->RemoveWeaponWhenEnteringVehicle();
 	}
 #endif
+}
+
+// Vice Extended: cuarta tanda de armas (el mod la documenta como
+// CRAZYTOOLS). Es además la única forma práctica de probar las armas nuevas
+// sin su main.scm, que aquí no corre.
+void WeaponCheat4()
+{
+	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+
+	CStreaming::RequestModel(MI_BERETTA, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_DESERT_EAGLE, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_SHOTGUN2, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_UZIOLD, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_AK47, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_M16, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_STEYR, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_GR_LAUNCH, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_BERETTA, 100);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_DESERT_EAGLE, 40);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_SHOTGUN2, 50);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_UZIOLD, 150);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_AK47, 150);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_M16, 150);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_STEYR, 150);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_GRENADE_LAUNCHER, 30);
+
+#ifdef __EMSCRIPTEN__
+	// Prueba automática web (ve37): la medida DIRECTA de «el truco de armas del
+	// mod carga sus datos». Antes esto se deducía de las líneas `TXDIN`, cuya
+	// instrumentación está acotada a las primeras 60 del proceso (diagnóstico
+	// F3a): en una sesión larga ya se habían gastado y la prueba salía en rojo
+	// con el truco funcionando. Aquí no hay tope: una línea por arma pedida, con
+	// su modelo y su diccionario, y el estado real del streaming. Y de paso la
+	// ficha `WINFO` de cada arma (`ViceExtWeaponInfoOf`): así la prueba mide los
+	// clips que resuelve cada una de las 8 SIN depender de que la sonda sepa
+	// cambiarlas de mano.
+	{
+		static const eWeaponType kArmasMod[8] = { WEAPONTYPE_BERETTA, WEAPONTYPE_DESERT_EAGLE,
+			WEAPONTYPE_SHOTGUN2, WEAPONTYPE_UZIOLD, WEAPONTYPE_AK47, WEAPONTYPE_M16,
+			WEAPONTYPE_STEYR, WEAPONTYPE_GRENADE_LAUNCHER };
+		static const int kModelosMod[8] = { MI_BERETTA, MI_DESERT_EAGLE, MI_SHOTGUN2, MI_UZIOLD,
+			MI_AK47, MI_M16, MI_STEYR, MI_GR_LAUNCH };
+		for (int i = 0; i < 8; i++) {
+			CBaseModelInfo *mi = CModelInfo::GetModelInfo(kModelosMod[i]);
+			int slot = mi->GetTxdSlot();
+			char t[192];
+			snprintf(t, sizeof t, "WLOAD arma=%s cargado=%d txd=%s txdCargado=%d",
+				mi->GetModelName(), CStreaming::HasModelLoaded(kModelosMod[i]) ? 1 : 0,
+				CTxdStore::GetTxdName(slot), CStreaming::HasTxdLoaded(slot) ? 1 : 0);
+			ODTRACES(t);
+			printf("[wload] %s\n", t);
+			FindPlayerPed()->ViceExtWeaponInfoOf(kArmasMod[i]);
+		}
+	}
+#endif
+
+	CStreaming::SetModelIsDeletable(MI_BERETTA);
+	CStreaming::SetModelIsDeletable(MI_DESERT_EAGLE);
+	CStreaming::SetModelIsDeletable(MI_SHOTGUN2);
+	CStreaming::SetModelIsDeletable(MI_UZIOLD);
+	CStreaming::SetModelIsDeletable(MI_AK47);
+	CStreaming::SetModelIsDeletable(MI_M16);
+	CStreaming::SetModelIsDeletable(MI_STEYR);
+	CStreaming::SetModelIsDeletable(MI_GR_LAUNCH);
+
+#ifdef MOBILE_IMPROVEMENTS
+	if (FindPlayerVehicle()) {
+		FindPlayerPed()->RemoveWeaponWhenEnteringVehicle();
+	}
+#endif
+}
+
+// Sección 2 (P2): SOLO la pistola (Beretta), para medir el drive-by ampliado.
+// CRAZYTOOLS da además Uziold en el slot 5 y con eso el motor cambia de arma al
+// entrar al vehículo (RemoveWeaponWhenEnteringVehicle), así que la pistola no se
+// elegiría nunca: sin un caso "pistola y nada más" no hay forma determinista de
+// probar la mecánica. El literal va codificado como los demás (la última tecla
+// primero y literal[i] = tecla[i] + desplazamiento de Cheat_strncmp):
+// "CRAZYPISTOL" -> "OT[TVk\\aB]P" (11 bytes, comprobado con la tabla de CRAZYTOOLS).
+void WeaponCheat5()
+{
+	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+
+	CStreaming::RequestModel(MI_BERETTA, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_BERETTA, 100);
+	// El arma actual tiene que ser EXACTAMENTE la pistola. A pie: dentro de un
+	// vehículo SetCurrentWeapon volvería a poner el modelo en la mano, que es
+	// justo lo que decide este bloque.
+	if (!FindPlayerVehicle())
+		FindPlayerPed()->SetCurrentWeapon(WEAPONTYPE_BERETTA);
+
+	CStreaming::SetModelIsDeletable(MI_BERETTA);
+
+#ifdef MOBILE_IMPROVEMENTS
+	if (FindPlayerVehicle()) {
+		FindPlayerPed()->RemoveWeaponWhenEnteringVehicle();
+	}
+#endif
+}
+
+// Vice Extended: coloca los 8 vehículos del mod en un círculo alrededor del
+// jugador. Su `main.scm` (que los mete en tienda y misiones) no corre aquí, así
+// que ésta es la forma práctica de verlos y de probarlos de una vez.
+static void
+SpawnViceExtendedVehicle(int32 model, CVector pos)
+{
+	// Los model info de los vehículos del mod los crea el cargador del IDE al
+	// entrar en partida. Si el cheat se teclea durante una recarga del mundo
+	// (con la caché vacía la carga va por fases y el juego vuelve a "loading"),
+	// `CModelInfo::GetModelInfo` devuelve nil y `CStreaming::RequestModel`
+	// revienta con un `null function` en una llamada virtual. Mejor no hacer
+	// nada que tirar la pestaña.
+	if (CModelInfo::GetModelInfo(model) == nil)
+		return;
+
+	CStreaming::RequestModel(model, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	CStreaming::SetModelIsDeletable(model);
+	if (!CStreaming::HasModelLoaded(model))
+		return;
+
+	CVehicle *v;
+	if (CModelInfo::IsBikeModel(model))
+		v = new CBike(model, RANDOM_VEHICLE);
+	else if (CModelInfo::IsBoatModel(model))
+		v = new CBoat(model, RANDOM_VEHICLE);
+	else
+		v = new CAutomobile(model, RANDOM_VEHICLE);
+
+	v->bHasBeenOwnedByPlayer = true;
+	v->SetPosition(pos);
+	v->GetMatrix().GetPosition().z += 4.0f;
+	v->SetOrientation(0.0f, 0.0f, 3.49f);
+	v->SetStatus(STATUS_ABANDONED);
+	v->m_nDoorLock = CARLOCK_UNLOCKED;
+	CWorld::Add(v);
+#ifdef VICEEXT_POLICE_BIKE_LIGHTS
+	// Sección 1 (D3): la moto policial nace con la sirena encendida. Es un
+	// vehículo policial (los que genera CarCtrl/RoadBlocks también la llevan
+	// puesta) y así el cheat sirve para VERLA parpadear, sin depender de que la
+	// conduzca un policía (eso es el bloque P3 de la sección 2).
+	if (model == MI_VEEXT_POLWINTERG)
+		v->m_bSirenOrAlarm = true;
+#endif
+}
+
+// "CRAZYHINT" (sección 1, bloque D7): aviso de prueba con las teclas de verdad.
+// Es diagnóstico, como CRAZYRIDES o CRAZYTOOLS: sirve para VER los iconos de
+// tecla ("PC key icons in game hints", v3.0 del mod) sin depender de que salga
+// un aviso de misión, y deja en la traza (`HINTKEY`) qué acción resolvió a qué
+// tecla y si tenía icono. El literal, con los mismos desplazamientos que los
+// demás cheats: "CRAZYHINT" -> "WSPIfuDYD".
+void HintCheat()
+{
+	// `AsciiToUnicode` en vez de un literal ancho: en el port web `wchar` es de
+	// 16 bits y `wchar_t` de 32, así que un `L"..."` no encaja con `wchar *`.
+	static wchar texto[160];
+	AsciiToUnicode("~h~~k~~PED_FIREWEAPON~~w~  ~h~~k~~PED_LOCK_TARGET~~w~  "
+	               "~h~~k~~PED_JUMPING~~w~  ~h~~k~~VEHICLE_HORN~~w~  "
+	               "(CRAZYHINT: aviso con iconos de tecla)", texto);
+	CHud::SetHelpMessage(texto, false, true);
+#ifdef __EMSCRIPTEN__
+	ODTRACES("HINTTEST mostrado=1");
+#endif
+}
+
+void VehicleCheat4()
+{
+	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+
+	// El primero de la lista cae justo delante del jugador (los demás reparten
+	// el anillo): la moto policial va la primera para poder ver su sirena sin
+	// tener que girar.
+	static const int32 models[] = {
+		MI_VEEXT_POLWINTERG, MI_VEEXT_STREETFI, MI_VEEXT_PEREN2, MI_VEEXT_TRASH2,
+		MI_VEEXT_HELLENBACH, MI_VEEXT_PREMIER, MI_VEEXT_MANCHEZ, MI_VEEXT_WINTERGREEN,
+	};
+	CVector playerpos = FindPlayerCoors();
+	// "Delante" se toma del jugador, no de un punto cardinal: así el primero de
+	// la lista queda siempre en el encuadre de la cámara, mire donde mire.
+	CVector delante(0.0f, 1.0f, 0.0f);
+	if (FindPlayerPed()) {
+		delante = FindPlayerPed()->GetForward();
+		delante.z = 0.0f;
+		if (delante.MagnitudeSqr() < 0.01f)
+			delante = CVector(0.0f, 1.0f, 0.0f);
+		else
+			delante.Normalise();
+	}
+	for (int32 i = 0; i < ARRAY_SIZE(models); i++) {
+		CVector pos;
+		if (i == 0) {
+			pos = playerpos + delante*7.0f;
+		} else {
+			float angle = 2.0f*PI*i/ARRAY_SIZE(models);
+			pos = CVector(playerpos.x + 7.0f*Sin(angle), playerpos.y + 7.0f*Cos(angle), playerpos.z);
+		}
+		SpawnViceExtendedVehicle(models[i], pos);
+	}
 }
 
 void HealthCheat()
@@ -1271,6 +1481,23 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		WeaponCheat3();
 	}
+	// "CRAZYTOOLS" (Vice Extended: armas nuevas). El literal va codificado
+	// como los demás: literal[i] = tecla[i] + desplazamiento de Cheat_strncmp
+	// (3,5,7,1,13,27,3,7,1,11). Se escribe al revés (la última tecla primero).
+	else if (!Cheat_strncmp(KeyBoardCheatString, "VQVPat]HSN")) {
+		KeyBoardCheatString[0] = ' ';
+		WeaponCheat4();
+	}
+	// "CRAZYRIDES" (Vice Extended: los vehículos nuevos, alrededor del jugador)
+	else if (!Cheat_strncmp(KeyBoardCheatString, "VJKJ_t]HSN")) {
+		KeyBoardCheatString[0] = ' ';
+		VehicleCheat4();
+	}
+	// "CRAZYHINT" (sección 1, D7: aviso de prueba con los iconos de tecla)
+	else if (!Cheat_strncmp(KeyBoardCheatString, "WSPIfuDYD")) {
+		KeyBoardCheatString[0] = ' ';
+		HintCheat();
+	}
 	// "PRECIOUSPROTECTION"
 	else if (!Cheat_strncmp(KeyBoardCheatString, "QTPUP`WVS[`]ViPKnc")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1545,6 +1772,22 @@ void CPad::AddToPCCheatString(char c)
 	else if (!Cheat_strncmp(KeyBoardCheatString, "WJUHNh\\UOLS")) {
 		KeyBoardCheatString[0] = ' ';
 		FannyMagnetCheat();
+	}
+	// "CRAZYPISTOL" (sección 2, bloque P2: solo la pistola, para medir el
+	// drive-by ampliado; ver WeaponCheat5). Añadido al final de la cadena.
+	else if (!Cheat_strncmp(KeyBoardCheatString, "OT[TVk\\aB]P")) {
+		KeyBoardCheatString[0] = ' ';
+		WeaponCheat5();
+	}
+	// "CRAZYCOP" (sección 2, bloque P1): pone la búsqueda en 3 estrellas SIN
+	// matar ni atropellar a nadie, para poder repetir la prueba de "esconderse"
+	// siempre desde el mismo nivel (el plan lo pide: medir igual cada vez).
+	// Literal sacado y verificado con tools/cheat-literal-check.mjs
+	// --name=CRAZYCOP: 8 bytes, sin choques de prefijo con los de arriba.
+	else if (!Cheat_strncmp(KeyBoardCheatString, "STJZg\\UJ")) {
+		KeyBoardCheatString[0] = ' ';
+		CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+		FindPlayerPed()->SetWantedLevel(3);
 	}
 
 #ifdef KANGAROO_CHEAT

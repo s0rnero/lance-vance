@@ -17,6 +17,7 @@
 #include "Shadows.h"
 #include "Clock.h"
 #include "Bridge.h"
+#include "ondemand.h"
 
 struct FlareDef
 {
@@ -88,6 +89,33 @@ CCoronas::Init(void)
 	for(i = 0; i < 9; i++)
 		if(gpCoronaTexture[i] == nil)
 			gpCoronaTexture[i] = RwTextureRead(aCoronaSpriteNames[i], nil);
+
+#ifdef __EMSCRIPTEN__
+	// Traza (una sola vez) de qué texturas de corona quedaron cargadas. Si
+	// `coronastar` sale NIL, `RegisterCorona` guarda un puntero nulo y
+	// `CCoronas::Render` salta el dibujo: ninguna corona TYPE_STAR se ve (ni las
+	// de la sirena policial ni las de las farolas), aunque el juego no se queje.
+	// Es la primera cosa que hay que descartar cuando "desaparecen las luces".
+	{
+		static bool trazado = false;
+		if(!trazado){
+			trazado = true;
+			for(i = 0; i < 9; i++){
+				RwRaster *ras = gpCoronaTexture[i] ? RwTextureGetRaster(gpCoronaTexture[i]) : nil;
+				char cb[160];
+				// Se leen los campos del raster directamente: el shim de fakerw
+				// declara RwRasterGetFormat pero no lo implementa (símbolo sin
+				// definir al enlazar).
+				sprintf(cb, "CORONA tex[%d] %s=%s %dx%d depth=%d fmt=0x%X flags=0x%X",
+					i, aCoronaSpriteNames[i], gpCoronaTexture[i] ? "ok" : "NIL",
+					ras ? ras->width : 0, ras ? ras->height : 0,
+					ras ? ras->depth : -1, ras ? ras->format : 0,
+					ras ? ras->flags : 0);
+				ODTRACES(cb);
+			}
+		}
+	}
+#endif
 
 	CTxdStore::PopCurrentTxd();
 
@@ -248,6 +276,11 @@ CCoronas::Render(void)
 {
 	int i, j;
 	int screenw, screenh;
+	// Contadores de la traza de diagnóstico (ver el bloque __EMSCRIPTEN__ al final
+	// del bucle): distinguen "no hay coronas registradas" de "las hay pero se
+	// saltan por falta de textura", que en pantalla se ven igual (nada).
+	int coronasDibujadas = 0, coronasSinTextura = 0;
+	(void)coronasDibujadas; (void)coronasSinTextura;
 
 	PUSH_RENDERGROUP("CCoronas::Render");
 
@@ -314,6 +347,8 @@ CCoronas::Render(void)
 
 
 			if(aCoronas[i].fadeAlpha && spriteCoors.z < aCoronas[i].drawDist){
+				if(aCoronas[i].texture == nil)
+					coronasSinTextura++;
 				float recipz = 1.0f/spriteCoors.z;
 				float fadeDistance = aCoronas[i].drawDist / 2.0f;
 				float distanceFade = spriteCoors.z < fadeDistance ? 1.0f : 1.0f - (spriteCoors.z - fadeDistance)/fadeDistance;
@@ -326,6 +361,7 @@ CCoronas::Render(void)
 
 				// render corona itself
 				if(aCoronas[i].texture){
+					coronasDibujadas++;
 					float fogscale = CWeather::Foggyness*Min(spriteCoors.z, 40.0f)/40.0f + 1.0f;
 					if(CCoronas::aCoronas[i].id == SUN_CORE)
 						spriteCoors.z = 0.95f * RwCameraGetFarClipPlane(Scene.camera);
@@ -379,8 +415,8 @@ CCoronas::Render(void)
 							(spriteCoors.x - (screenw/2)) * flare->position + (screenw/2),
 							(spriteCoors.y - (screenh/2)) * flare->position + (screenh/2),
 							spriteCoors.z,
-							4.0f*flare->size * spritew/spriteh,
-							4.0f*flare->size,
+							4.0f*flare->size * spritew/spriteh * SCREEN_STRETCH_X(1.0f),
+							4.0f*flare->size * SCREEN_STRETCH_Y(1.0f),
 							(flare->red * aCoronas[i].red)>>8,
 							(flare->green * aCoronas[i].green)>>8,
 							(flare->blue * aCoronas[i].blue)>>8,
@@ -398,6 +434,23 @@ CCoronas::Render(void)
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
+
+#ifdef __EMSCRIPTEN__
+	// Traza (una vez por segundo, 20 líneas como mucho): cuántas coronas se
+	// dibujaron de verdad en el fotograma. Siempre hay algunas (farolas,
+	// faros), así que lo que interesa comparar es la misma escena con y sin
+	// sirena: un delta de 2-4 con la moto policial delante son sus luces.
+	{
+		static int ncoronas = 0;
+		if(ncoronas < 400 && (CTimer::GetFrameCounter() % 60) == 0){
+			char cb[128];
+			sprintf(cb, "CORONAREND f=%u dibujadas=%d sinTextura=%d",
+				CTimer::GetFrameCounter(), coronasDibujadas, coronasSinTextura);
+			ODTRACES(cb);
+			ncoronas++;
+		}
+	}
+#endif
 
 	// streaks
 	for(i = 0; i < NUMCORONAS; i++){

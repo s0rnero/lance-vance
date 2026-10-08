@@ -49,6 +49,15 @@ LPALGETFILTERFV alGetFilterfv;
 
 using namespace re3_openal;
 
+#ifdef __EMSCRIPTEN__
+// Web: sin EFX. No-ops; nunca se llaman (ver oal_utils.h).
+void EFXInit() {}
+void SetEffectsLevel(ALuint, float) {}
+void EAX3_Set(ALuint, const EAXLISTENERPROPERTIES *) {}
+void EFX_Set(ALuint, const EAXLISTENERPROPERTIES *) {}
+void EAX3_SetReverbMix(ALuint, float) {}
+#else
+
 void EFXInit()
 {
 	/* Define a macro to help load the function pointers. */
@@ -177,5 +186,7 @@ void EAX3_SetReverbMix(ALuint filter, float mix)
 	alFilterf(filter, AL_LOWPASS_GAIN,   mB_to_gain(Min(mb, 0.0f)));
 	alFilterf(filter, AL_LOWPASS_GAINHF, mB_to_gain(mbhf));
 }
+
+#endif // __EMSCRIPTEN__
 
 #endif

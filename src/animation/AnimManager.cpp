@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ondemand.h" // D5: traza IFPFILE (clips del .ifp servido)
 
 #include "General.h"
 #include "RwHelper.h"
@@ -624,6 +625,10 @@ char const* aShotgunAnimations[] = {
 char const* aBuddyAnimations[] = {
 	"buddy_fire",
 	"buddy_crouchfire",
+	// Vice Extended: su buddy.ifp trae también recarga y recarga agachado
+	// (las armas nuevas con grupo buddy llevan el flag RELOAD)
+	"buddy_reload",
+	"buddy_crouchreload",
 };
 char const* aTecAnimations[] = {
 	"TEC_fire",
@@ -658,6 +663,26 @@ char const* aThrowAnimations[] = {
 };
 char const* aFlamethrowerAnimations[] = {
 	"FLAME_fire",
+};
+// Vice Extended: los .ifp nuevos del mod. El orden debe casar con
+// aWeaponAnimDescs (fire, crouchfire, reload, crouchreload).
+char const* aDeagleAnimations[] = {
+	"deagle_fire",
+	"deagle_crouchfire",
+	"deagle_reload",
+	"deagle_crouchreload",
+};
+char const* aSteyrAnimations[] = {
+	"STEYR_fire",
+	"STEYR_crouchfire",
+	"STEYR_reload",
+	"STEYR_crouchreload",
+};
+char const* aRocketAnimations[] = {
+	"ROCKET_fire",
+	"ROCKET_crouchfire",
+	"ROCKET_load",
+	"ROCKET_crouchload",
 };
 char const* aMedicAnimations[] = {
 	"CPR",
@@ -705,7 +730,11 @@ char const* aPlayerAnimations[] = {
 char const* aPlayerWithRocketAnimations[] = {
 	"walk_rocket",
 	"run_rocket",
-	"run_rocket",
+	// Sección 3, bloque C6 (20/09): Vice Extended v1.5 "Sprint with heavy
+	// weapons". El hueco del esprint (índice ANIM_STD_RUNFAST) estaba con el
+	// MISMO clip que correr, así que el esprint no se veía; el `ped.ifp` del mod
+	// trae `sprint_rocket` (272 clips servidos, comprobado).
+	"sprint_rocket",
 	"idle_rocket",
 	"walk_start_rocket",
 };
@@ -719,7 +748,9 @@ char const* aPlayer1ArmedAnimations[] = {
 char const* aPlayer2ArmedAnimations[] = {
 	"walk_armed",
 	"run_armed",
-	"run_armed",
+	// Sección 3, bloque C6: ver aPlayerWithRocketAnimations. `sprint_armed` es
+	// el clip del mod para esprintar con arma de dos manos (rifles, M60, UZI...).
+	"sprint_armed",
 	"idle_armed",
 	"walk_start_armed",
 };
@@ -733,7 +764,9 @@ char const* aPlayerBBBatAnimations[] = {
 char const* aPlayerChainsawAnimations[] = {
 	"walk_csaw",
 	"run_csaw",
-	"run_csaw",
+	// Sección 3, bloque C6: ver aPlayerWithRocketAnimations (grupo del
+	// lanzallamas / minigun / motosierra, que el mod también deja esprintar).
+	"sprint_csaw",
 	"IDLE_csaw",
 	"walk_start_csaw",
 };
@@ -899,6 +932,117 @@ char const* aChainsawStrafeRightAnimations[] = {
 };
 #endif
 
+// Sección 3 (20/09): grupos para los clips que el `ped.ifp` del mod ya trae y
+// el port no usaba. Se declaran sueltos a propósito: los grupos de arriba
+// emparejan `animNames[j]` con `animDescs[j]` (arrays paralelos), así que
+// añadir un clip a uno de ellos obligaría a tocar también su desc con el mismo
+// índice. Con un grupo propio no se rompe nada de lo existente.
+char const* aSwimAnimations[] = {
+	"swim_tread",
+	"swim_crawl",
+	"swim_breast",
+	"swim_jumpout",
+};
+// R17 (22/09, 13ª partida): los clips de MOVIMIENTO del mod van con las claves
+// de `WALK`/`RUN`, no con `ASSOC_PARTIAL`.
+//
+// Qué pasaba: en III/VC el ped NO avanza por `m_fMoveSpeed`; avanza por la
+// TRASLACIÓN DE LA RAÍZ de la animación de movimiento. El camino entero es:
+//   FrameUpdate.cpp (`VELOCITY_EXTRACTION` en el hueso raíz) ->
+//   `m_vecAnimMoveDelta` -> `CPed::CalculateNewVelocity` (`m_moved`) ->
+//   `CPed::UpdatePosition` (sólo con `bIsStanding`) -> `m_vecMoveSpeed` ->
+//   `CPhysical::ApplyMoveSpeed` (translate).
+// Con `ASSOC_PARTIAL` el motor (a) NO extraía esa traslación (sólo mira los
+// clips con `ASSOC_HAS_TRANSLATION`) y (b) la APLICABA A LA POSE (`mat->pos =
+// pos - trans` no se ejecuta), o sea el cuerpo del ped se iba ~2,6 m delante de
+// su origen en cada ciclo y volvía de golpe al reiniciar: el jugador ve al
+// personaje "sin desplazamiento" mientras la cámara, que mira al ORIGEN del ped,
+// se queda quieta. Medido en el `ped.ifp` servido con
+// `tools/ifp_inspect.py` (raíz, metros por ciclo / duración):
+//   GunCrouchFwd    2,740 m / 0,731 s = 3,75 m/s   GunCrouchBwd -2,740 m / 0,731 s
+//   swim_breast     3,011 m / 1,300 s = 2,32 m/s   swim_crawl      2,505 m / 0,900 s = 2,78 m/s
+//   swim_tread      0 m (en el sitio)              walk (de serie) 1,13 m/s
+AnimAssocDesc aSwimAnimDescs[] = {
+	{ ANIM_STD_SWIM_TREAD, ASSOC_REPEAT },
+	{ ANIM_STD_SWIM_CRAWL, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION },
+	{ ANIM_STD_SWIM_BREAST, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION },
+	{ ANIM_STD_SWIM_JUMPOUT, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+};
+char const* aCrouchAnimations[] = {
+	"crouch_idle",
+	"GunCrouchFwd",
+	"GunCrouchBwd",
+	"Crouch_Roll_L",
+	"Crouch_Roll_R",
+	// R29 (27/09, E3.9): los cuatro `GunMove_*` del mod ("moverse apuntando"),
+	// servidos en el `ped.ifp` desde siempre y sin usar. Medidos en el fichero
+	// servido (raiz, metros por ciclo / duracion):
+	//   GunMove_FWD  1,854 m / 1,000 s = 1,85 m/s    GunMove_BWD  -1,853 m / 1,031 s
+	//   GunMove_L   -1,803 m / 1,000 s (eje X)       GunMove_R    1,803 m / 1,000 s
+	"GunMove_FWD",
+	"GunMove_BWD",
+	"GunMove_L",
+	"GunMove_R",
+};
+// R17: agachado, el clip que lleva el cuerpo es el del mod, así que TIENE que
+// ser el que avanza (igual que `walk`/`run` de serie): `ASSOC_MOVEMENT` para
+// que el motor lo trate como la animación de marcha (y sincronice el cambio
+// adelante/atrás con `AddAnimationAndSync`) + `ASSOC_HAS_TRANSLATION` para que
+// la velocidad salga de su raíz; `ASSOC_WALK` para los pasos
+// (`CPed::PlayFootSteps`). El ritmo (`speed`) lo escala ViceExtCrouchAnim.
+// R20 (22/09): los dos clips que faltaban, `Crouch_Roll_L` y `Crouch_Roll_R`
+// (los del juego entero de SA, ya en el `ped.ifp` del mod: se leyeron sus
+// nombres del binario servido). Son el desplazamiento DE LADO agachado, y son
+// los que hacen posible moverse en las 8 direcciones sin girar el cuerpo:
+// en III/VC la dirección de avance la pone la RAÍZ del clip (`Crouch_Forward`
+// avanza de frente, los `Roll` de lado, `Crouch_Backward` hacia atrás), así que
+// elegir el clip por el ángulo del mando es lo que convierte el mando en 8
+// direcciones. Avance medido de su raíz (metros por ciclo / duración):
+//   Crouch_Forward  2,615 m / 0,731 s = 3,58 m/s
+//   Crouch_Backward 1,853 m / 1,000 s = 1,85 m/s
+//   Crouch_Roll_L   2,172 m / 0,931 s = 2,33 m/s   (Crouch_Roll_R 2,253 m)
+// R27 (26/09): adelante y atrás ya no son los de VC. El `ped.ifp` servido lleva
+// los dos clips del sa-crouch (`GunCrouchFwd`/`GunCrouchBwd`, añadidos al dato en
+// el plan agachado-calibrado) porque el mod los pide por nombre y el motor
+// empareja por nombre. Medidos en el fichero servido: ±2,740 m / 0,731 s = 3,75
+// m/s, simétricos (el `Crouch_Backward` de VC era 1,853 m / 1,000 s = 1,85). La
+// cadencia que validó el jugador (R26c, x1,7) no cambia: 0,408 × 3,75 = 1,53 m/s
+// de barrido en las dos direcciones.
+AnimAssocDesc aCrouchAnimDescs[] = {
+	{ ANIM_STD_CROUCH_IDLE, ASSOC_REPEAT },
+	{ ANIM_STD_CROUCH_FORWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_BACKWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_LEFT, ASSOC_HAS_TRANSLATION },
+	{ ANIM_STD_CROUCH_RIGHT, ASSOC_HAS_TRANSLATION },
+	// R29 (E3.9): los GunMove_* son clips de MOVIMIENTO como los de arriba
+	// (R17: ASSOC_MOVEMENT + ASSOC_HAS_TRANSLATION para que el motor extraiga su
+	// raiz; ASSOC_WALK para los pasos). El ritmo lo escala ViceExtCrouchAnim.
+	{ ANIM_STD_CROUCH_AIMFWD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_AIMBWD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_AIMLEFT, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_AIMRIGHT, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+};
+// Sección 2 (21/09): escalada. Los clips son de San Andreas y vienen en el
+// `ped.ifp` del mod; el grupo no existía, así que no se podían usar.
+char const* aClimbAnimations[] = {
+	"CLIMB_idle",
+	"CLIMB_jump",
+	"CLIMB_jump_B",
+	"CLIMB_jump2fall",
+	"CLIMB_Pull",
+	"CLIMB_Stand",
+	"CLIMB_Stand_finish",
+};
+AnimAssocDesc aClimbAnimDescs[] = {
+	{ ANIM_STD_CLIMB_IDLE, ASSOC_REPEAT | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_JUMP, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_JUMP_B, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_JUMP2FALL, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_PULL, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_STAND, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMB_STAND_FINISH, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+};
+
 #define awc(a) ARRAY_SIZE(a), a
 const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS] = {
 	{ "man", "ped", MI_COP, awc(aStdAnimations), aStdAnimDescs },
@@ -964,6 +1108,15 @@ const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_
 	{ "csawleft", "ped", MI_COP, awc(aChainsawStrafeLeftAnimations), aStdAnimDescsSide },
 	{ "csawright", "ped", MI_COP, awc(aChainsawStrafeRightAnimations), aStdAnimDescsSide },
 #endif
+	// Vice Extended (mismo orden que AssocGroupId)
+	{ "deagle", "deagle", MI_COP, awc(aDeagleAnimations), aWeaponAnimDescs },
+	{ "steyr", "steyr", MI_COP, awc(aSteyrAnimations), aWeaponAnimDescs },
+	{ "rocket", "rocket", MI_COP, awc(aRocketAnimations), aWeaponAnimDescs },
+	// Sección 3 (20/09): nadar (C4) y agachado (C5). El bloque es "ped" (los
+	// clips salen del `ped.ifp` del mod, el mismo que carga el juego).
+	{ "playerswim", "ped", MI_COP, awc(aSwimAnimations), aSwimAnimDescs },
+	{ "playercrouch", "ped", MI_COP, awc(aCrouchAnimations), aCrouchAnimDescs },
+	{ "playerclimb", "ped", MI_COP, awc(aClimbAnimations), aClimbAnimDescs },
 };
 #undef awc
 
@@ -1243,6 +1396,10 @@ CAnimManager::CreateAnimAssocGroups(void)
 {
 	int i, j;
 
+	// D11/D18 (seccion 1, 21/09): el rastro por grupo (uno por cada una de las
+	// NUM_ANIM_ASSOC_GROUPS definiciones, en cada carga) se retiro al localizar
+	// el cuelgue real. Se queda el aviso de clip sin jerarquia, que es el dato
+	// que hace falta para asociar las animaciones que trae el ped.ifp del mod.
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
 		CAnimBlock *block = GetAnimationBlock(ms_aAnimAssocDefinitions[i].blockName);
 		if(block == nil || !block->isLoaded || ms_aAnimAssocGroups[i].assocList)
@@ -1269,10 +1426,24 @@ void
 CAnimManager::LoadAnimFile(const char *filename)
 {
 	RwStream *stream;
+#ifdef __EMSCRIPTEN__
+	printf("[od] ifp-file %s\n", filename);
+	// D5 (sección 1): cuántos clips trae REALMENTE el fichero que se sirve. El
+	// `ped.ifp` del mod tiene 272 (el de serie 234), así que este número es la
+	// prueba de que se está cargando el suyo y no el original.
+	int32 odAnimsAntes = ms_numAnimations;
+#endif
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	assert(stream);
 	LoadAnimFile(stream, true);
 	RwStreamClose(stream, nil);
+#ifdef __EMSCRIPTEN__
+	{
+		char t[160];
+		snprintf(t, sizeof t, "IFPFILE %s clips=%d total=%d", filename, ms_numAnimations - odAnimsAntes, ms_numAnimations);
+		ODTRACES(t);
+	}
+#endif
 }
 
 void
@@ -1301,6 +1472,25 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 			animBlock->firstIndex = ms_numAnimations;
 		}
 	}else{
+#ifdef __EMSCRIPTEN__
+		// Web on-demand: tabla pequeña (35 bloques / 450 anims) y sin
+		// comprobación original. Se comprueba ANTES de consumir hueco: si
+		// no cabe se salta limpio (sin solapes, sin escrituras fuera, sin
+		// reintentos eternos que mataban la pestaña).
+		if (ms_numAnimBlocks >= NUMANIMBLOCKS) {
+			static bool odWarnedBlocks = false;
+			if (!odWarnedBlocks) { odWarnedBlocks = true; printf("[od] tabla bloques anim llena, salto %s\n", buf+4); }
+			return;
+		}
+		{
+			int odWant = *(int*)buf;
+			if (odWant < 0 || ms_numAnimations + odWant > ARRAY_SIZE(ms_aAnimations)) {
+				static bool odWarnedAnims = false;
+				if (!odWarnedAnims) { odWarnedAnims = true; printf("[od] tabla anims llena (%d+%d), salto %s\n", ms_numAnimations, odWant, buf+4); }
+				return;
+			}
+		}
+#endif
 		animBlock = &ms_aAnimBlocks[ms_numAnimBlocks++];
 		strncpy(animBlock->name, buf+4, MAX_ANIMBLOCK_NAME);
 		animBlock->numAnims = *(int*)buf;
@@ -1445,6 +1635,23 @@ void
 CAnimManager::RemoveLastAnimFile(void)
 {
 	int i;
+#ifdef __EMSCRIPTEN__
+	// Web: si la cima no es un rango válido (p. ej. otros bloques se
+	// registraron después), no tocar nada: soltar el contador y listo.
+	// Antes esto liberaba jerarquías ajenas (doble free = muerte).
+	if (ms_numAnimBlocks <= 0) return;
+	{
+		int bi = ms_numAnimBlocks - 1;
+		int fi = ms_aAnimBlocks[bi].firstIndex;
+		int nn = ms_aAnimBlocks[bi].numAnims;
+		if (fi < 0 || nn < 0 || fi + nn > ARRAY_SIZE(ms_aAnimations)) {
+			static bool odWarnedRem = false;
+			if (!odWarnedRem) { odWarnedRem = true; printf("[od] remove-anim fuera de rango, se suelta sin liberar\n"); }
+			ms_numAnimBlocks--;
+			return;
+		}
+	}
+#endif
 	ms_numAnimBlocks--;
 	ms_numAnimations = ms_aAnimBlocks[ms_numAnimBlocks].firstIndex;
 	for(i = 0; i < ms_aAnimBlocks[ms_numAnimBlocks].numAnims; i++)

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ondemand.h" // D2: traza TXTMISS (claves de texto que no existen)
 
 #include "FileMgr.h"
 #ifdef MORE_LANGUAGES
@@ -22,12 +23,50 @@ CText::CText(void)
 	memset(WideErrorString, 0, sizeof(WideErrorString));
 }
 
+// D18 (sección 1, 21/09): nombre del fichero de textos segun el idioma.
+//
+// Antes esto era un switch que rellenaba `filename` sin case por defecto: si
+// m_PrefsLanguage no caia en ninguno (idioma no soportado, valor sin
+// inicializar) el buffer se usaba SIN INICIALIZAR, OpenFile fallaba, el
+// descriptor era 0 y el bucle de chunks -que nunca comprobaba ni la apertura
+// ni el fin de fichero- giraba para siempre sobre la misma cabecera: pantalla
+// negra y ni un solo error. Con el default siempre hay un nombre valido.
+static const char*
+OdTextFileName(void)
+{
+	switch (FrontEndMenuManager.m_PrefsLanguage) {
+	case CMenuManager::LANGUAGE_AMERICAN: return "AMERICAN.GXT";
+	case CMenuManager::LANGUAGE_FRENCH:   return "FRENCH.GXT";
+	case CMenuManager::LANGUAGE_GERMAN:   return "GERMAN.GXT";
+	case CMenuManager::LANGUAGE_ITALIAN:  return "ITALIAN.GXT";
+	case CMenuManager::LANGUAGE_SPANISH:  return "SPANISH.GXT";
+#ifdef MORE_LANGUAGES
+	case CMenuManager::LANGUAGE_POLISH:   return "POLISH.GXT";
+	case CMenuManager::LANGUAGE_RUSSIAN:  return "RUSSIAN.GXT";
+	case CMenuManager::LANGUAGE_JAPANESE: return "JAPANESE.GXT";
+#endif
+	default:                              return "AMERICAN.GXT";
+	}
+}
+
+// D18: un GXT que falta (o al que le falta un chunk) no puede colgar el juego.
+// Deja constancia en la consola del navegador y en odtrace.log y sigue.
+static void
+OdTextFail(const char *who, const char *filename)
+{
+	printf("%s - no se pudo leer %s (textos sin cargar)\n", who, filename);
+#ifdef __EMSCRIPTEN__
+	{
+		char t[160];
+		snprintf(t, sizeof t, "TXTGXTFAIL %s file=%s", who, filename);
+		ODTRACES(t);
+	}
+#endif
+}
+
 void
 CText::Load(void)
 {
-	char filename[32];
-	size_t offset;
-	int file;
 	bool tkey_loaded = false, tdat_loaded = false;
 	ChunkHeader m_ChunkHeader;
 
@@ -37,58 +76,42 @@ CText::Load(void)
 	Unload();
 
 	CFileMgr::SetDir("TEXT");
-	switch(FrontEndMenuManager.m_PrefsLanguage){
-	case CMenuManager::LANGUAGE_AMERICAN:
-		sprintf(filename, "AMERICAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_FRENCH:
-		sprintf(filename, "FRENCH.GXT");
-		break;
-	case CMenuManager::LANGUAGE_GERMAN:
-		sprintf(filename, "GERMAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_ITALIAN:
-		sprintf(filename, "ITALIAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_SPANISH:
-		sprintf(filename, "SPANISH.GXT");
-		break;
-#ifdef MORE_LANGUAGES
-	case CMenuManager::LANGUAGE_POLISH:
-		sprintf(filename, "POLISH.GXT");
-		break;
-	case CMenuManager::LANGUAGE_RUSSIAN:
-		sprintf(filename, "RUSSIAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_JAPANESE:
-		sprintf(filename, "JAPANESE.GXT");
-		break;
-#endif
+	const char *filename = OdTextFileName();
+
+	size_t offset = 0;
+	int file = CFileMgr::OpenFile(filename, "rb");
+	if (file == 0) {
+		OdTextFail("CText::Load", filename);
+		CFileMgr::SetDir("");
+		return;
 	}
 
-	file = CFileMgr::OpenFile(filename, "rb");
-
-	offset = 0;
 	while (!tkey_loaded || !tdat_loaded) {
-		ReadChunkHeader(&m_ChunkHeader, file, &offset);
-		if (m_ChunkHeader.size != 0) {
-			if (strncmp(m_ChunkHeader.magic, "TABL", 4) == 0) {
-				MissionTextOffsets.Load(m_ChunkHeader.size, file, &offset, 0x58000);
-				bHasMissionTextOffsets = true;
-			} else if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
-				this->keyArray.Load(m_ChunkHeader.size, file, &offset);
-				tkey_loaded = true;
-			} else if (strncmp(m_ChunkHeader.magic, "TDAT", 4) == 0) {
-				this->data.Load(m_ChunkHeader.size, file, &offset);
-				tdat_loaded = true;
-			} else {
-				CFileMgr::Seek(file, m_ChunkHeader.size, SEEK_CUR);
-				offset += m_ChunkHeader.size;
-			}
+		size_t got = ReadChunkHeader(&m_ChunkHeader, file, &offset);
+		// D18: fin de fichero o cabecera ilegible -> fuera del bucle. Sin esta
+		// salida, un GXT truncado o ausente giraba para siempre (el `size != 0`
+		// de abajo no protegia: con size 0 el cuerpo se saltaba y se releia la
+		// MISMA cabecera).
+		if (got != sizeof(ChunkHeader) || m_ChunkHeader.size == 0)
+			break;
+		if (strncmp(m_ChunkHeader.magic, "TABL", 4) == 0) {
+			MissionTextOffsets.Load(m_ChunkHeader.size, file, &offset, 0x58000);
+			bHasMissionTextOffsets = true;
+		} else if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
+			// D19: la tabla solo vale si se leyo ENTERA (si no, la cola es basura).
+			tkey_loaded = this->keyArray.Load(m_ChunkHeader.size, file, &offset) == (size_t)m_ChunkHeader.size;
+		} else if (strncmp(m_ChunkHeader.magic, "TDAT", 4) == 0) {
+			tdat_loaded = this->data.Load(m_ChunkHeader.size, file, &offset) == (size_t)m_ChunkHeader.size;
+		} else {
+			CFileMgr::Seek(file, m_ChunkHeader.size, SEEK_CUR);
+			offset += m_ChunkHeader.size;
 		}
 	}
 
-	keyArray.Update(data.chars);
+	if (tkey_loaded && tdat_loaded)
+		keyArray.Update(data.chars);
+	else
+		OdTextFail("CText::Load", filename);
 	CFileMgr::CloseFile(file);
 	CFileMgr::SetDir("");
 }
@@ -120,6 +143,21 @@ CText::Get(const char *key)
 		outstr = mission_keyArray.Search(key, mission_data.chars, &result);
 #else
 		outstr = mission_keyArray.Search(key, &result);
+#endif
+#ifdef __EMSCRIPTEN__
+	// D2/D19 (seccion 1, 21/09): "missing" SOLO si la clave no existe en NINGUNA
+	// de las dos tablas. Antes se trazaba cada fallo de la global, y las claves
+	// de mision (INTRO1..INTRO4) viven en la tabla de mision: el log se llenaba
+	// de "missing" de claves que dos lineas despues si resolvian.
+	if (!result) {
+		static uint32 odMissing = 0;
+		if (odMissing++ < 300) {
+			char t[192];
+			snprintf(t, sizeof t, "TXTMISS key=%s nglobal=%d nmision=%d", key,
+				keyArray.numEntries, bIsMissionTextLoaded ? mission_keyArray.numEntries : -1);
+			ODTRACES(t);
+		}
+	}
 #endif
 	return outstr;
 }
@@ -200,26 +238,30 @@ CText::GetNameOfLoadedMissionText(char *outName)
 	strcpy(outName, szMissionTableName);
 }
 
-void
+size_t
 CText::ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *offset)
 {
 #ifdef THIS_IS_STUPID
 	char *_buf = (char*)buf;
-	for (int i = 0; i < sizeof(ChunkHeader); i++) {
-		CFileMgr::Read(file, &_buf[i], 1);
-		(*offset)++;
-	}
+	size_t got = 0;
+	for (int i = 0; i < sizeof(ChunkHeader); i++)
+		got += CFileMgr::Read(file, &_buf[i], 1);
+	(*offset) += got;
+	return got;
 #else
 	// original code loops 8 times to read 1 byte with CFileMgr::Read, that's retarded
-	CFileMgr::Read(file, (char*)buf, sizeof(ChunkHeader));
+	// D18: devuelve los bytes leidos para que quien llama pueda distinguir una
+	// cabecera real de un fin de fichero (antes se ignoraba el resultado y se
+	// releia indefinidamente la cabecera anterior).
+	size_t got = CFileMgr::Read(file, (char*)buf, sizeof(ChunkHeader));
 	*offset += sizeof(ChunkHeader);
+	return got;
 #endif
 }
 
 void
 CText::LoadMissionText(char *MissionTableName)
 {
-	char filename[32];
 	CMessages::ClearAllMessagesDisplayedByGame();
 
 	mission_keyArray.Unload();
@@ -241,36 +283,23 @@ CText::LoadMissionText(char *MissionTableName)
 	}
 
 	CFileMgr::SetDir("TEXT");
-	switch (FrontEndMenuManager.m_PrefsLanguage) {
-	case CMenuManager::LANGUAGE_AMERICAN:
-		sprintf(filename, "AMERICAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_FRENCH:
-		sprintf(filename, "FRENCH.GXT");
-		break;
-	case CMenuManager::LANGUAGE_GERMAN:
-		sprintf(filename, "GERMAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_ITALIAN:
-		sprintf(filename, "ITALIAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_SPANISH:
-		sprintf(filename, "SPANISH.GXT");
-		break;
-#ifdef MORE_LANGUAGES
-	case CMenuManager::LANGUAGE_POLISH:
-		sprintf(filename, "POLISH.GXT");
-		break;
-	case CMenuManager::LANGUAGE_RUSSIAN:
-		sprintf(filename, "RUSSIAN.GXT");
-		break;
-	case CMenuManager::LANGUAGE_JAPANESE:
-		sprintf(filename, "JAPANESE.GXT");
-		break;
-#endif
-	}
+	const char *filename = OdTextFileName();
 	CTimer::Suspend();
 	int file = CFileMgr::OpenFile(filename, "rb");
+	// D18 (sección 1, 21/09): ESTE es el cuelgue de la pantalla negra.
+	//
+	// El SCM del mod llama a este opcode (COMMAND_LOAD_MISSION_TEXT, 1356) en
+	// cuanto arranca la partida. El original abre el GXT y lanza el bucle de
+	// chunks sin comprobar NADA: si el fichero no esta (o no esta todavia) el
+	// descriptor es 0, CFileMgr::Read no lee nada, la cabecera se queda con
+	// basura/size 0 y el `while` gira indefinidamente -> el motor no vuelve a
+	// dibujar y la pestaña se queda en negro sin un solo mensaje de error.
+	if (file == 0) {
+		OdTextFail("CText::LoadMissionText", filename);
+		CTimer::Resume();
+		CFileMgr::SetDir("");
+		return;
+	}
 	CFileMgr::Seek(file, MissionTextOffsets.data[missionTableId].offset, SEEK_SET);
 
 	char TableCheck[8];
@@ -279,34 +308,71 @@ CText::LoadMissionText(char *MissionTableName)
 		printf("CText::LoadMissionText - expected to find %s in the text file", MissionTableName);
 
 	bool tkey_loaded = false, tdat_loaded = false;
+	size_t tkey_got = 0, tkey_size = 0, tdat_got = 0, tdat_size = 0;
 	ChunkHeader m_ChunkHeader;
 	while (!tkey_loaded || !tdat_loaded) {
 		size_t bytes_read = 0;
-		ReadChunkHeader(&m_ChunkHeader, file, &bytes_read);
-		if (m_ChunkHeader.size != 0) {
-			if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
-				size_t bytes_read = 0;
-				mission_keyArray.Load(m_ChunkHeader.size, file, &bytes_read);
-				tkey_loaded = true;
-			} else if (strncmp(m_ChunkHeader.magic, "TDAT", 4) == 0) {
-				size_t bytes_read = 0;
-				mission_data.Load(m_ChunkHeader.size, file, &bytes_read);
-				tdat_loaded = true;
-			} else
-				CFileMgr::Seek(file, m_ChunkHeader.size, SEEK_CUR);
-		}
+		size_t got = ReadChunkHeader(&m_ChunkHeader, file, &bytes_read);
+		// D18: se acabaron los datos o la cabecera no es legible -> salir.
+		// El guion sigue con los textos que haya: mejor sin texto que colgado.
+		if (got != sizeof(ChunkHeader) || m_ChunkHeader.size == 0)
+			break;
+		if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
+			// D19: exigir la lectura COMPLETA del chunk.
+			tkey_got = mission_keyArray.Load(m_ChunkHeader.size, file, &bytes_read);
+			tkey_size = (size_t)m_ChunkHeader.size;
+			tkey_loaded = tkey_got == tkey_size;
+		} else if (strncmp(m_ChunkHeader.magic, "TDAT", 4) == 0) {
+			tdat_got = mission_data.Load(m_ChunkHeader.size, file, &bytes_read);
+			tdat_size = (size_t)m_ChunkHeader.size;
+			tdat_loaded = tdat_got == tdat_size;
+		} else
+			CFileMgr::Seek(file, m_ChunkHeader.size, SEEK_CUR);
 	}
 
-	mission_keyArray.Update(mission_data.chars);
+	if (tkey_loaded && tdat_loaded) {
+		mission_keyArray.Update(mission_data.chars);
+		strcpy(szMissionTableName, MissionTableName);
+		bIsMissionTextLoaded = true;
+#ifdef __EMSCRIPTEN__
+		// D19 (seccion 1, 21/09): una linea por tabla de mision cargada. Si el
+		// array se quedara corto (lectura corta del fichero), la ultima clave
+		// lo delata aqui: es el sintoma que se vio con INTRO4 (la ultima de la
+		// tabla) sin que el fichero le faltara nada.
+		{
+			char t[192];
+			snprintf(t, sizeof t, "MSGTABLE %s n=%d primera=%s ultima=%s tkey=%u/%u tdat=%u/%u", MissionTableName,
+				mission_keyArray.numEntries,
+				mission_keyArray.numEntries > 0 ? mission_keyArray.entries[0].key : "-",
+				mission_keyArray.numEntries > 0 ? mission_keyArray.entries[mission_keyArray.numEntries - 1].key : "-",
+				(unsigned)tkey_got, (unsigned)tkey_size, (unsigned)tdat_got, (unsigned)tdat_size);
+			ODTRACES(t);
+		}
+#endif
+	} else {
+#ifdef __EMSCRIPTEN__
+		// D19: si la causa es una lectura corta, se ve aqui (bytes leidos / bytes
+		// que declara la cabecera del chunk).
+		char t[192];
+		snprintf(t, sizeof t, "TXTGXTSHORT %s tkey=%u/%u tdat=%u/%u", filename,
+			(unsigned)tkey_got, (unsigned)tkey_size, (unsigned)tdat_got, (unsigned)tdat_size);
+		ODTRACES(t);
+#endif
+		OdTextFail("CText::LoadMissionText", filename);
+	}
+
 	CFileMgr::CloseFile(file);
 	CTimer::Resume();
 	CFileMgr::SetDir("");
-	strcpy(szMissionTableName, MissionTableName);
-	bIsMissionTextLoaded = true;
 }
 
 
-void
+// D19 (seccion 1, 21/09): Load devuelve los bytes leidos. Si son menos que
+// `length`, el array se queda con memoria SIN INICIALIZAR en la cola y el
+// motor busca claves en basura: sintoma tipico "la ULTIMA clave de la tabla
+// missing" (INTRO4) de forma intermitente, sin que al fichero le falte nada.
+// Con el valor devuelto, quien llama puede rechazar la tabla a medias.
+size_t
 CKeyArray::Load(size_t length, int file, size_t* offset)
 {
 	char *rawbytes;
@@ -317,13 +383,16 @@ CKeyArray::Load(size_t length, int file, size_t* offset)
 	rawbytes = (char*)entries;
 
 #ifdef THIS_IS_STUPID
+	size_t got = 0;
 	for (uint32 i = 0; i < length; i++) {
-		CFileMgr::Read(file, &rawbytes[i], 1);
+		got += CFileMgr::Read(file, &rawbytes[i], 1);
 		(*offset)++;
 	}
+	return got;
 #else
-	CFileMgr::Read(file, rawbytes, length);
+	size_t got = CFileMgr::Read(file, rawbytes, length);
 	*offset += length;
+	return got;
 #endif
 }
 
@@ -393,6 +462,9 @@ CKeyArray::Search(const char *key, uint8 *result)
 #ifdef MASTER
 	sprintf(errstr, "");
 #else
+	// D2: una clave que no existe se ve en pantalla como "<clave> missing". La
+	// traza del log vive ahora en CText::Get, DESPUES de mirar tambien la tabla
+	// de mision (aqui todavia puede resolverla la otra tabla).
 	sprintf(errstr, "%s missing", key);
 #endif // MASTER
 	for(i = 0; i < 25; i++)
@@ -400,7 +472,9 @@ CKeyArray::Search(const char *key, uint8 *result)
 	return WideErrorString;
 }
 
-void
+// D19: igual que CKeyArray::Load, devuelve los bytes leidos (ver el comentario
+// de alli: un TDAT a medias deja textos basura o, peor, punteros sin inicializar).
+size_t
 CData::Load(size_t length, int file, size_t * offset)
 {
 	char *rawbytes;
@@ -411,13 +485,16 @@ CData::Load(size_t length, int file, size_t * offset)
 	rawbytes = (char*)chars;
 
 #ifdef THIS_IS_STUPID
+	size_t got = 0;
 	for(uint32 i = 0; i < length; i++){
-		CFileMgr::Read(file, &rawbytes[i], 1);
+		got += CFileMgr::Read(file, &rawbytes[i], 1);
 		(*offset)++;
 	}
+	return got;
 #else
-	CFileMgr::Read(file, rawbytes, length);
+	size_t got = CFileMgr::Read(file, rawbytes, length);
 	*offset += length;
+	return got;
 #endif
 }
 

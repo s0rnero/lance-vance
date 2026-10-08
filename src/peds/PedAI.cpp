@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ondemand.h"
 
 #include "main.h"
 #include "Particle.h"
@@ -4183,6 +4184,10 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				optedDoorNode = veh->pPassengers[0] == this ? CAR_BUMP_REAR : CAR_BOOT;
 			} else if (veh->pPassengers[0] == this) {
 				optedDoorNode = CAR_DOOR_LR;
+#ifdef VICEEXT_BIKE_EXIT_SIDE
+				if (IsPlayer() && veh->m_fSteerInput > 0.25f)
+					optedDoorNode = CAR_DOOR_RF;
+#endif
 			} else {
 				optedDoorNode = CAR_DOOR_LF;
 			}
@@ -4881,7 +4886,29 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 	CStreaming::RequestAnim(bikevBlock, STREAMFLAGS_DEPENDENCY);
 	CStreaming::RequestAnim(bikehBlock, STREAMFLAGS_DEPENDENCY);
 	CStreaming::RequestAnim(bikedBlock, STREAMFLAGS_DEPENDENCY);
+#ifdef __EMSCRIPTEN__
+	// Punto de sincronía: justo debajo se USAN estos bloques (jerarquías de los
+	// anims de entrar/salir de coche). Aquí la carga va SIN tope: un corte deja
+	// las tablas a medio inicializar y la lectura revienta (era el OOB del init,
+	// builds ram4 y lag2). Si aun así faltara algo, se avisa y se dejan los
+	// offsets por defecto en vez de leer basura.
+	{
+		int odSaveBudget = CStreaming::gWebLoadBudget;
+		CStreaming::gWebLoadBudget = 0;
+		CStreaming::LoadAllRequestedModels(false);
+		CStreaming::gWebLoadBudget = odSaveBudget;
+		if (vanBlock < 0 || !CStreaming::HasAnimLoaded(vanBlock) ||
+		    bikesBlock < 0 || !CStreaming::HasAnimLoaded(bikesBlock) ||
+		    bikevBlock < 0 || !CStreaming::HasAnimLoaded(bikevBlock) ||
+		    bikehBlock < 0 || !CStreaming::HasAnimLoaded(bikehBlock) ||
+		    bikedBlock < 0 || !CStreaming::HasAnimLoaded(bikedBlock)) {
+			ODTRACES("ODANIMFAIL bloques de anim sin cargar; offsets por defecto");
+			return;
+		}
+	}
+#else
 	CStreaming::LoadAllRequestedModels(false);
+#endif
 	CAnimManager::AddAnimBlockRef(vanBlock);
 	CAnimManager::AddAnimBlockRef(bikesBlock);
 	CAnimManager::AddAnimBlockRef(bikevBlock);

@@ -19,6 +19,7 @@
 #include "PedPlacement.h"
 #include "Ropes.h"
 #include "Stinger.h"
+#include "ondemand.h"   // web: ODTRACES -> odtrace.log (sección 2 / P1)
 
 CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 {
@@ -142,6 +143,13 @@ CCopPed::SetArrestPlayer(CPed *player)
 	m_pSeekTarget = player;
 	m_pSeekTarget->RegisterReference((CEntity**) &m_pSeekTarget);
 	SetCurrentWeapon(WEAPONTYPE_COLT45);
+	// Sección 2 / P1: instrumentación de línea base ("busted").
+	{
+		char line[96];
+		snprintf(line, sizeof(line), "WANTEDCOP arrest-begin tag=%u lvl=%d t=%u", WantedTraceTag(),
+			FindPlayerPed()->m_pWanted->GetWantedLevel(), (unsigned)CTimer::GetTimeInMilliseconds());
+		ODTRACES(line);
+	}
 	if (player->InVehicle()) {
 		player->m_pMyVehicle->m_nNumGettingIn = 0;
 		player->m_pMyVehicle->m_nGettingInFlags = 0;
@@ -167,8 +175,7 @@ CCopPed::ClearPursuit(void)
 		return;
 
 	m_bIsInPursuit = false;
-	for (int i = 0; i < Max(wanted->m_MaxCops, wanted->m_CurrentCops); ++i)  {
-		if (!foundMyself && wanted->m_pCops[i] == this) {
+	for (int i = 0; i < Max(wanted->m_MaxCops, wanted->m_CurrentCops); ++i)  {		if (!foundMyself && wanted->m_pCops[i] == this) {
 			wanted->m_pCops[i] = nil;
 			--wanted->m_CurrentCops;
 			foundMyself = true;
@@ -225,6 +232,33 @@ CCopPed::SetPursuit(bool ignoreCopLimit)
 				m_bIsInPursuit = true;
 				++wanted->m_CurrentCops;
 				wanted->m_pCops[i] = this;
+				// Sección 2 / P1: instrumentación de línea base. En una zona de
+				// "call off chase" (los talleres: Garages.cpp -> CWorld::CallOff-
+				// ChaseForArea) el motor une y suelta al policía en CADA frame:
+				// medido en partida real del 20/09, ~60 líneas/s. Se filtra a una
+				// por segundo y se cuenta la ráfaga (burst=N = uniones habidas
+				// desde la última línea impresa).
+				{
+					static uint32 lastJoinTrace = 0;
+					static int joinBurst = 0;
+					uint32 now = CTimer::GetTimeInMilliseconds();
+					// El reloj del motor RETROCEDE al cargar partida (CTimer viene del
+					// guardado): sin reanclar, `now >= lastJoinTrace + 1000` es falso
+					// durante minutos y la traza se queda muda (medido el 20/09: la sesión
+					// que empezó cargando partida no volvió a imprimir ni una línea).
+					if (now < lastJoinTrace)
+						lastJoinTrace = 0;
+					++joinBurst;
+					if (now >= lastJoinTrace + 1000) {
+						char line[128];
+						snprintf(line, sizeof(line), "WANTEDCOP join tag=%u slot=%d lvl=%d cops=%d/%d burst=%d t=%u", WantedTraceTag(), i,
+							wanted->GetWantedLevel(), (int)wanted->m_CurrentCops, (int)wanted->m_MaxCops, joinBurst,
+							(unsigned)now);
+						ODTRACES(line);
+						joinBurst = 0;
+						lastJoinTrace = now;
+					}
+				}
 				break;
 			}
 		}
@@ -408,6 +442,35 @@ CCopPed::CopAI(void)
 
 			if (!m_bIsInPursuit)
 				return;
+
+#ifdef VICEEXT_HIDE_COPS
+			// Vice Extended (P1, "esconderse de la policía"): si NADIE te ve, los
+			// perseguidores a pie dejan de ir a tu posición viva (vanilla te seguía
+			// "por telepatía" para siempre) y se dirigen a la última posición
+			// conocida a registrarla. Los que van en coche siguen igual: su IA vive
+			// en CarAI.cpp, fuera de esta sección.
+			if (wanted->IsHiding() && !bInVehicle) {
+				CVector lastKnown = wanted->GetLastKnownPos();
+				if (m_objective != OBJECTIVE_GOTO_AREA_ON_FOOT || (m_nextRoutePointPos - lastKnown).MagnitudeSqr() > sq(9.0f)) {
+					if (m_objective != OBJECTIVE_GOTO_AREA_ON_FOOT) {
+						char line[64];
+						snprintf(line, sizeof(line), "WANTEDCOP search-last-known tag=%u t=%u", WantedTraceTag(),
+							(unsigned)CTimer::GetTimeInMilliseconds());
+						ODTRACES(line);
+					}
+					ClearObjective();
+					SetObjective(OBJECTIVE_GOTO_AREA_ON_FOOT, lastKnown);
+				}
+				return;
+			}
+			// Ha vuelto a verte: se retoma la caza en vez de quedarse registrando la
+			// zona vieja (solo si estaba persiguiendo: los objetivos de área de un
+			// script no se tocan).
+			if (m_bIsInPursuit && m_objective == OBJECTIVE_GOTO_AREA_ON_FOOT) {
+				ClearObjective();
+				SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, FindPlayerPed());
+			}
+#endif
 
 			if (wantedLevel > 1 && GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED)
 				SetCurrentWeapon(WEAPONTYPE_COLT45);

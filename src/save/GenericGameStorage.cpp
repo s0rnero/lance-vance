@@ -17,6 +17,9 @@
 #include "Gangs.h"
 #include "Garages.h"
 #include "GenericGameStorage.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 #include "Pad.h"
 #include "Particle.h"
 #include "ParticleObject.h"
@@ -37,6 +40,9 @@
 #include "TimeStep.h"
 #include "Weather.h"
 #include "World.h"
+#ifdef VICEEXT_SAVE_ANYWHERE
+#include "Wanted.h" // GetWantedLevel() de la guarda de "saving anywhere"
+#endif
 #include "Zones.h"
 #include "Timecycle.h"
 #include "Fluff.h"
@@ -46,9 +52,45 @@
 
 const uint32 SIZE_OF_ONE_GAME_IN_BYTES = 201729;
 
+#ifdef VICEEXT_AUTOSAVE
+// Sección 3, C2b (20/09): marca de "el autosave está escribiendo" (ver la
+// cabecera). Sin ella la ranura 9 es de sólo lectura.
+bool ViceExtAutosaveInProgress = false;
+#endif
+
+#ifdef VICEEXT_SAVE_ANYWHERE
+// Sección 3 (Vice Extended, v2.5 "Saving anywhere. You must not be on a
+// mission, not have a search level and not move"): las tres condiciones.
+// Se usa al guardar desde el menú de pausa; las zonas de guardado de serie no
+// pasan por aquí (ver Frontend.cpp, MENUACTION_SAVEGAME).
+bool
+ViceExtCanSaveAnywhere(void)
+{
+	if (CTheScripts::bAlreadyRunningAMissionScript)
+		return false;
+
+	CPlayerPed *ped = FindPlayerPed();
+	if (ped == nil)
+		return false;
+	if (ped->m_pWanted && ped->m_pWanted->GetWantedLevel() > 0)
+		return false;
+
+	// "not move": a pie o con el vehículo parado.
+	const CVector &speed = ped->m_pMyVehicle ? ped->m_pMyVehicle->GetMoveSpeed() : ped->GetMoveSpeed();
+	if (speed.Magnitude() > 0.1f)
+		return false;
+
+	return true;
+}
+#endif
+
 #ifdef MISSION_REPLAY
 int8 IsQuickSave;
-const int PAUSE_SAVE_SLOT = SLOT_COUNT;
+// Ranura de pausa: GTAVCsf9.b. Con SLOT_COUNT = 9 (sección 3, autosave) es la
+// última ranura de las matrices de arriba, así que `SaveSlot(PAUSE_SAVE_SLOT)`
+// sigue escribiendo el fichero 9 y su información se puede listar en el menú de
+// carga (`FEM_SL9`, el autosave).
+const int PAUSE_SAVE_SLOT = SLOT_COUNT - 1;
 #endif
 
 char DefaultPCSaveFileName[260];
@@ -299,10 +341,39 @@ GenericLoad()
 	CheckSum = 0;
 	CDate dummy; // unused
 	CPad::ResetCheats();
-	if (!ReadInSizeofSaveFileBuffer(file, size))
+#ifdef __EMSCRIPTEN__
+	// No fiarse del global fijado en el menú N ticks atrás: re-derivar del
+	// slot actual (mismo patrón que CheckSlotDataValid).
+	MakeValidSaveName(FrontEndMenuManager.m_nCurrSaveSlot);
+	strcpy(LoadFileName, ValidSaveName);
+#endif
+	if (!ReadInSizeofSaveFileBuffer(file, size)) {
+#ifdef __EMSCRIPTEN__
+		ODTRACES("GenericLoad FAIL: no abre/lee size");
+		printf("[save] GenericLoad FAIL: no abre/lee size (file=%s)\n", LoadFileName);
+#endif
 		return false;
+	}
 	size = align4bytes(size);
-	ReadDataFromFile(file, work_buff, size);
+#ifdef __EMSCRIPTEN__
+	{
+		char t[300];
+		snprintf(t, sizeof t, "GenericLoad abre %s size=%u", LoadFileName, size);
+		ODTRACES(t);
+		printf("[save] %s\n", t);
+	}
+#endif
+	if (!ReadDataFromFile(file, work_buff, size)) {
+#ifdef __EMSCRIPTEN__
+		// DIAG F2-load: antes el retorno se ignoraba y seguía con basura.
+		ODTRACES("GenericLoad FAIL: cuerpo incompleto");
+		printf("[save] GenericLoad FAIL: cuerpo incompleto (file=%s)\n", LoadFileName);
+		CloseFile(file);
+		return false;
+#else
+		(void)0;
+#endif
+	}
 	buf = (work_buff + 0x40);
 	ReadDataFromBufferPointer(buf, saveSize);
 #ifdef MISSION_REPLAY // a hack to keep compatibility but get new data from save
@@ -472,8 +543,20 @@ CloseFile(int32 file)
 void
 DoGameSpecificStuffAfterSucessLoad()
 {
+#ifdef __EMSCRIPTEN__
+	// Web: parse en un tick + cola troceada después (ver caso 2). Mismo orden.
+	extern bool gWebDeferSceneLoad;
+	extern bool gWebDeferCollision;
+	if (gWebDeferSceneLoad) {
+		if (!gWebDeferCollision)
+			CCollision::SortOutCollisionAfterLoad();
+		StillToFadeOut = true;
+		JustLoadedDontFadeInYet = true;
+		TheCamera.Fade(0.0f, FADE_OUT);
+		return;
+	}
+#endif
 	CCollision::SortOutCollisionAfterLoad();
-	CStreaming::LoadSceneCollision(TheCamera.GetPosition());
 	CStreaming::LoadScene(TheCamera.GetPosition());
 	CGame::TidyUpMemory(true, false);
 	StillToFadeOut = true;
@@ -482,11 +565,41 @@ DoGameSpecificStuffAfterSucessLoad()
 	CTheScripts::Process();
 }
 
+#ifdef __EMSCRIPTEN__
+// Cola diferida del tail: tidy + scripts (la colisión ya drenó en el sub-paso
+// 0b y la escena por pasos). Mismo orden relativo que arriba.
+bool gWebDeferSceneLoad = false;
+bool gWebDeferCollision = false;
+void DoGameSpecificStuffAfterSucessLoadDeferred(void)
+{
+	CGame::TidyUpMemory(true, false);
+	CTheScripts::Process();
+}
+#endif
+
 bool
 CheckSlotDataValid(int32 slot)
 {
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
-	if (CheckDataNotCorrupt(slot, LoadFileName)) {
+#ifdef __EMSCRIPTEN__
+	// Web: LoadFileName (global BSS, vacío) nunca se asignaba en la ruta PC:
+	// validar y cargar abrían "" y todo load iba a partida nueva. Fijarlo
+	// al slot elegido (MakeValidSaveName ya sale absoluto a /userfiles).
+	MakeValidSaveName(slot);
+	strcpy(LoadFileName, ValidSaveName);
+#endif
+	bool slotOk = CheckDataNotCorrupt(slot, LoadFileName);
+#ifdef __EMSCRIPTEN__
+	{
+		// DIAG F2-load (+pantalla para la traza fusionada).
+		char t[300];
+		snprintf(t, sizeof t, "CheckSlotDataValid slot=%d screen=%d file=%s -> %d",
+			slot, FrontEndMenuManager.m_nCurrScreen, LoadFileName, (int)slotOk);
+		ODTRACES(t);
+		printf("[save] %s\n", t);
+	}
+#endif
+	if (slotOk) {
 		CStreaming::DeleteAllRwObjects();
 		return true;
 	}

@@ -10,6 +10,9 @@
 #ifndef _WIN32
 #include "crossplatform.h"
 #endif
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 using namespace rw;
 
@@ -305,7 +308,28 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 {
 	*tex = Texture::streamReadNative(stream);
 #ifdef LIBRW
+#ifdef __EMSCRIPTEN__
+	// DIAG F3a (bracket): ¿tex nil (lectura) o convert nil (conversión)?
+	// Acotado + a odtrace.log. Quitar con el fix raíz.
+	if (*tex == nil) {
+		static int n = 0;
+		if (n < 50) { n++; ODTRACES("hackRead tex NIL"); printf("[texconv] hackRead tex NIL\n"); }
+		return *tex != nil;
+	}
+#endif
 	(*tex)->raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
+#ifdef __EMSCRIPTEN__
+	if ((*tex)->raster == nil) {
+		static int n = 0;
+		if (n < 50) {
+			n++;
+			char t[96];
+			snprintf(t, sizeof t, "hackRead convert NIL tex=%s", (*tex)->name);
+			ODTRACES(t);
+			printf("[texconv] %s\n", t);
+		}
+	}
+#endif
 #endif
 	return *tex != nil;
 }
@@ -777,7 +801,8 @@ RpAtomic *RpAtomicRender(RpAtomic * atomic) { atomic->render(); return atomic; }
 RpClump *RpAtomicGetClump(const RpAtomic * atomic) { return atomic->clump; }
 //RpInterpolator *RpAtomicGetInterpolator(RpAtomic * atomic);
 RpGeometry *RpAtomicGetGeometry(const RpAtomic * atomic) { return atomic->geometry; }
-// WARNING: illegal cast
+// librw's Atomic::RenderCB returns Atomic* (like RenderWare), so this cast is
+// exact. It MUST stay exact: wasm traps on call_indirect signature mismatches.
 void RpAtomicSetRenderCallBack(RpAtomic * atomic, RpAtomicCallBackRender callback) { atomic->setRenderCB((Atomic::RenderCB)callback); }
 RpAtomicCallBackRender RpAtomicGetRenderCallBack(const RpAtomic * atomic) { return (RpAtomicCallBackRender)atomic->renderCB; }
 //RwBool RpAtomicInstance(RpAtomic *atomic);

@@ -58,21 +58,32 @@ uint32 CPickups::StaticCamStartTime;
 
 tPickupMessage CPickups::aMessages[NUMPICKUPMESSAGES];
 
-uint16 AmmoForWeapon[WEAPONTYPE_TOTALWEAPONS + 1] = { 0,  1,  1,  1,   1,   1,   1,   1,   1,   1,  1,  1, 8,   8,   8,    8, 8,   68, 24,
-													 32, 28, 20, 200, 120, 120, 120, 120, 120, 40, 28, 8, 300, 200, 1000, 1, 400, 36, 0 };
+// WEAPONTYPE_TOTALALLTYPES (no TOTALWEAPONS): las armas nuevas del mod
+// (48..56) también se indexan aquí. Los índices 38..47 (tipos de daño) van a 0.
+uint16 AmmoForWeapon[WEAPONTYPE_TOTALALLTYPES] = { 0,  1,  1,  1,   1,   1,   1,   1,   1,   1,  1,  1, 8,   8,   8,    8, 8,   68, 24,
+													 32, 28, 20, 200, 120, 120, 120, 120, 120, 40, 28, 8, 300, 200, 1000, 1, 400, 36, 0,
+													 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 38..47 tipos de daño
+													 68, 24, 32, 120, 120, 120, 120, 8, 8 }; // Vice Extended (48..56)
 
-uint16 AmmoForWeapon_OnStreet[WEAPONTYPE_TOTALWEAPONS + 1] = { 0,  1,  1,  1,   1,  1,  1,  1,  1,  1,  1,  1, 4,   4,   4,   4, 4,   34, 12,
-															  16, 14, 10, 100, 60, 60, 60, 60, 60, 20, 14, 4, 150, 100, 500, 1, 400, 36, 0 };
+uint16 AmmoForWeapon_OnStreet[WEAPONTYPE_TOTALALLTYPES] = { 0,  1,  1,  1,   1,  1,  1,  1,  1,  1,  1,  1, 4,   4,   4,   4, 4,   34, 12,
+															  16, 14, 10, 100, 60, 60, 60, 60, 60, 20, 14, 4, 150, 100, 500, 1, 400, 36, 0,
+															  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, // 38..47 tipos de daño
+															  34, 12, 16, 60, 60, 60, 60, 4, 4 }; // Vice Extended (48..56)
 
-uint16 CostOfWeapon[WEAPONTYPE_TOTALWEAPONS + 3] = { 0,     10,    10,   10,   10,   10,    10,   10,    10,  10,  10,  10,   1000, 1000,
+uint16 CostOfWeapon[WEAPONTYPE_TOTALALLTYPES + 3] = { 0,     10,    10,   10,   10,   10,    10,   10,    10,  10,  10,  10,   1000, 1000,
 													1000,  500,   8000, 250,  400,  1200,  1250, 1250,  800, 800, 650, 1200, 5000, 400,
-													10000, 10000, 8000, 8000, 8000, 10000, 1000, 11000, 500, 20,  10,  0 };
+													10000, 10000, 8000, 8000, 8000, 10000, 1000, 11000, 500, 20,  10,  0,
+													0, 0, 0, 0, 0, 0, 0, 0,
+													250, 400, 1200, 800, 5000, 5000, 5500, 8000, 1000 }; // Vice Extended
 
+// OJO: indexado por tipo de arma (colorId = WeaponForModel), así que las armas
+// nuevas del mod (48..56) también entran. Sin las 13 entradas extra el brillo
+// del recogido (y el color del mensaje) leería fuera del array.
 struct
 {
 	uint8 r,g,b;
 	float unk;
-} aPickupColors[] = {
+} aPickupColors[WEAPONTYPE_TOTALALLTYPES + 7] = {
 	{ 128, 128, 128, 1.0f },
 	{ 128, 128, 128, 1.0f },
 	{ 97, 194, 247, 1.0f },
@@ -116,7 +127,23 @@ struct
 	{ 255, 255, 100, 1.0f },
 	{ 255, 100, 100, 1.0f },
 	{ 100, 255, 100, 1.0f },
-	{ 255, 255, 255, 1.0f }
+	{ 255, 255, 255, 1.0f },
+	// 44..47: FALL, UNIDENTIFIED, ANYMELEE, ANYWEAPON. No son recogibles; se
+	// rellenan con el color de daño para que el array llegue entero a 48.
+	{ 255, 255, 255, 1.0f },
+	{ 255, 255, 255, 1.0f },
+	{ 255, 255, 255, 1.0f },
+	{ 255, 255, 255, 1.0f },
+	// Vice Extended (48..56): mismo color que su arma de serie equivalente.
+	{ 149, 194, 24, 1.0f },  // Beretta (como Colt45)
+	{ 149, 194, 24, 1.0f },  // DesertEagle (como Python)
+	{ 45, 155, 90, 1.0f },   // Shotgun2 (como Shotgun)
+	{ 255, 227, 79, 1.0f },  // Uziold (como Uzi)
+	{ 254, 137, 0, 1.0f },   // Ak47 (como M4)
+	{ 254, 137, 0, 1.0f },   // M16 (como M4)
+	{ 254, 137, 0, 1.0f },   // Steyr (como Ruger)
+	{ 164, 40, 178, 1.0f },  // Gr_launch (como RocketLauncher)
+	{ 27, 89, 130, 1.0f }    // Gr_launch_gren (como Grenade)
 };
 
 
@@ -367,10 +394,10 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 		if (isPickupTouched) {
 			eWeaponType weaponType = CPickups::WeaponForModel(m_pObject->GetModelIndex());
-			if (weaponType < WEAPONTYPE_TOTALWEAPONS && CDarkel::FrenzyOnGoing()) {
+			if (IsWeaponType(weaponType) && CDarkel::FrenzyOnGoing()) {
 				isPickupTouched = false;
 				m_bWasControlMessageShown = false;
-			} else if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) {
+			} else if (IsWeaponType(weaponType) && weaponType != WEAPONTYPE_UNARMED) {
 				uint32 slot = CWeaponInfo::GetWeaponInfo(weaponType)->m_nWeaponSlot;
 				eWeaponType plrWeaponSlot = FindPlayerPed()->GetWeapon(slot).m_eWeaponType;
 				if (plrWeaponSlot != weaponType) {

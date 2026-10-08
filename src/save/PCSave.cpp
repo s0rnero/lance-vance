@@ -1,6 +1,14 @@
 #define WITHWINDOWS
 #include "common.h"
 #include "crossplatform.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+// Web: /userfiles es IDBFS; sin flush explícito lo guardado muere en memoria
+// (el sync de beforeunload casi nunca completa, y en crash jamás).
+#define WEB_FLUSH_USERFILES() EM_ASM({ try { OD.syncUserfiles('save'); } catch (e) { console.log('[od] flush save no disponible'); } })
+#else
+#define WEB_FLUSH_USERFILES() do {} while (0)
+#endif
 
 #include "FileMgr.h"
 #include "Font.h"
@@ -11,6 +19,12 @@
 #include "Messages.h"
 #include "PCSave.h"
 #include "Text.h"
+#include "Lists.h"
+#include "PlayerInfo.h"
+#include "PlayerPed.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 const char* _psGetUserFilesFolder();
 
@@ -19,7 +33,13 @@ C_PcSave PcSaveHelper;
 void
 C_PcSave::SetSaveDirectory(const char *path)
 {
+#ifdef __EMSCRIPTEN__
+	// Barra normal: DeleteFile() es unlink() sin casepath; con '\\' el
+	// borrado fallaba en silencio y el slot seguía listando. '/' vale en todo.
+	sprintf(DefaultPCSaveFileName, "%s/%s", "/userfiles", "GTAVCsf");
+#else
 	sprintf(DefaultPCSaveFileName, "%s\\%s", path, "GTAVCsf");
+#endif
 }
 
 bool
@@ -33,9 +53,21 @@ C_PcSave::DeleteSlot(int32 slot)
 
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
 	sprintf(FileName, "%s%i.b", DefaultPCSaveFileName, slot + 1);
-	DeleteFile(FileName);
+	int delok = DeleteFile(FileName);
+#ifdef __EMSCRIPTEN__
+	{
+		char t[300];
+		snprintf(t, sizeof t, "DeleteSlot slot=%d file=%s -> %d", slot, FileName, delok);
+		ODTRACES(t);
+		printf("[save] %s\n", t);
+	}
+#endif
 	SlotSaveDate[slot][0] = '\0';
+#ifdef __EMSCRIPTEN__
+	return delok == 0;
+#else
 	return true;
+#endif
 }
 
 int8
@@ -53,6 +85,19 @@ C_PcSave::SaveSlot(int32 slot)
 		if (GenericSave(file)) {
 			if (!!CFileMgr::CloseFile(file))
 				nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
+			WEB_FLUSH_USERFILES();
+#ifdef __EMSCRIPTEN__
+			// DIAG contenido: posición al guardar (vs post-carga).
+			{
+				CVector p(0.0f, 0.0f, 0.0f);
+				CPlayerPed *pl = FindPlayerPed();
+				if (pl) p = pl->GetPosition();
+				char t[160];
+				snprintf(t, sizeof t, "save slot=%d pos=%.1f,%.1f,%.1f", slot, p.x, p.y, p.z);
+				ODTRACES(t);
+				printf("[save] %s\n", t);
+			}
+#endif
 			return 0;
 		}
 

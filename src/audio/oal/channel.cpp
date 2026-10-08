@@ -184,6 +184,14 @@ void CChannel::SetSampleData(void *_data, size_t _DataSize, int32 freq)
 	DataSize = _DataSize;
 	Frequency = freq;
 }
+
+bool CChannel::UsesData(void *p, size_t n)
+{
+	if(!IsUsed() || !Data)
+		return false;
+	uint8 *d = (uint8*)Data, *q = (uint8*)p;
+	return q < d + DataSize && d < q + n;
+}
 	
 void CChannel::SetCurrentFreq(uint32 freq)
 {

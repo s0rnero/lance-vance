@@ -18,6 +18,7 @@
 #include "ParticleMgr.h"
 #include "RwHelper.h"
 #include "Streaming.h"
+#include "ondemand.h" // Sección 1 (21/09): traza del fallo de DATA\waterpro.dat
 #include "ColStore.h"
 #include "CdStream.h"
 #include "Pad.h"
@@ -123,6 +124,19 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 	do
 	{
 		hFile = CFileMgr::OpenFile("DATA\\waterpro.dat", "rb");
+#ifdef __EMSCRIPTEN__
+		// Web (sección 1, 21/09): aquí reintentar es un bucle INFINITO si el
+		// fichero no está en el FS virtual — la capa on-demand ya hizo su
+		// intento y devolvió fallo, así que el `while` no acaba nunca y el
+		// navegador se queda en negro sin un solo error. Un intento basta; si
+		// falla se avisa y se sigue sin los datos PRO del agua (el juego
+		// funciona: sólo el agua pierde el detalle de niveles).
+		if (hFile < 0) {
+			printf("[od-trace] WATER sin DATA\\waterpro.dat (open=%d): se sigue sin datos PRO\n", hFile);
+			ODTRACES("WATER no-waterpro");
+			break;
+		}
+#endif
 	}
 	while ( hFile < 0 );
 #else
