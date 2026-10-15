@@ -25,11 +25,42 @@ import struct
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MOD = os.path.join(os.path.dirname(ROOT),
-                   "vice-extended-october-2025-update_1788102643_908113",
-                   "GameFiles", "ViceExtended", "audio")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # gta_vc_browser/
+REPO = os.path.dirname(ROOT)                                          # raiz del port
+
+
+def mod_audio_dir():
+    """Carpeta `ViceExtended/audio` del mod (la que trae `ViceEx.SDT`/`ViceEx.RAW`).
+
+    Se busca por `VC_VICEEX_AUDIO` (la carpeta), luego por `VC_GAME` (la raiz del
+    juego, la que arranca `ViceEx.exe`) y si no por las rutas conocidas del repo.
+    Hace falta la variable porque `ViceEx.RAW` no esta en git (`.gitignore`:
+    `*.RAW`): la copia buena suele ser la de la instalacion del jugador.
+    """
+    cands = []
+    env = os.environ.get("VC_VICEEX_AUDIO")
+    if env:
+        cands.append(env)
+    env = os.environ.get("VC_GAME")
+    if env:
+        cands.append(os.path.join(env, "ViceExtended", "audio"))
+    cands += [
+        os.path.join(REPO, "mods", "extended", "GameFiles", "ViceExtended", "audio"),
+        os.path.join(os.path.dirname(REPO),
+                     "vice-extended-october-2025-update_1788102643_908113",
+                     "GameFiles", "ViceExtended", "audio"),
+        os.path.join(os.path.dirname(REPO), "Grand Theft Auto Vice City",
+                     "ViceExtended", "audio"),
+    ]
+    for c in cands:
+        if os.path.isfile(os.path.join(c, "ViceEx.SDT")):
+            return c
+    return cands[0]
+
+
+MOD = mod_audio_dir()
 SDTMOD = os.path.join(MOD, "ViceEx.SDT")
+WAVS = os.path.join(ROOT, "tmp", "viceex-samples")
 WAVS = os.path.join(ROOT, "tmp", "viceex-samples")
 OUTD = os.path.join(ROOT, "streamed", "Audio", "sfx")
 OUTSDT = os.path.join(ROOT, "streamed", "Audio", "sfx.SDT")

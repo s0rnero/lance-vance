@@ -25,6 +25,9 @@ Uso:
     python tools/extract_viceex.py [--sd <SDT>] [--raw <RAW>] [--out <dir>] [--solo 3,4]
 
 Requisitos: ffmpeg (y ffprobe) en el PATH.
+
+La carpeta del mod se resuelve sola: define `VC_GAME` con la raiz del juego (la
+que arranca `ViceEx.exe`) si la copia del repo no trae `ViceEx.RAW`.
 """
 import argparse
 import os
@@ -32,9 +35,40 @@ import struct
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MOD = os.path.join(os.path.dirname(ROOT), "Grand Theft Auto Vice City",
-                   "ViceExtended", "audio")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # gta_vc_browser/
+REPO = os.path.dirname(ROOT)                                          # raiz del port
+
+
+def mod_audio_dir():
+    """Carpeta `ViceExtended/audio` del mod (la que trae `ViceEx.SDT`/`ViceEx.RAW`).
+
+    Se busca por `VC_VICEEX_AUDIO` (la carpeta), luego por `VC_GAME` (la raiz del
+    juego, la que arranca `ViceEx.exe`) y si no por las rutas conocidas del repo.
+    Hace falta la variable porque `ViceEx.RAW` no esta en git (`.gitignore`:
+    `*.RAW`): la copia buena suele ser la de la instalacion del jugador.
+    """
+    cands = []
+    env = os.environ.get("VC_VICEEX_AUDIO")
+    if env:
+        cands.append(env)
+    env = os.environ.get("VC_GAME")
+    if env:
+        cands.append(os.path.join(env, "ViceExtended", "audio"))
+    cands += [
+        os.path.join(REPO, "mods", "extended", "GameFiles", "ViceExtended", "audio"),
+        os.path.join(os.path.dirname(REPO),
+                     "vice-extended-october-2025-update_1788102643_908113",
+                     "GameFiles", "ViceExtended", "audio"),
+        os.path.join(os.path.dirname(REPO), "Grand Theft Auto Vice City",
+                     "ViceExtended", "audio"),
+    ]
+    for c in cands:
+        if os.path.isfile(os.path.join(c, "ViceEx.SDT")):
+            return c
+    return cands[0]
+
+
+MOD = mod_audio_dir()
 DEF_SDT = os.path.join(MOD, "ViceEx.SDT")
 DEF_RAW = os.path.join(MOD, "ViceEx.RAW")
 DEF_OUT = os.path.join(ROOT, "tmp", "viceex-samples")
@@ -68,7 +102,9 @@ def main():
     a = ap.parse_args()
 
     if not os.path.exists(a.sd) or not os.path.exists(a.raw):
-        raise SystemExit("ERROR: no encuentro %s / %s" % (a.sd, a.raw))
+        raise SystemExit("ERROR: no encuentro %s / %s\n"
+                         "(define VC_GAME con la raiz del juego, o pasa --sd/--raw)"
+                         % (a.sd, a.raw))
 
     sdt = open(a.sd, "rb").read()
     if len(sdt) % 20:

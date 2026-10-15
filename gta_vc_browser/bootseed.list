@@ -1659,6 +1659,7 @@ models/generic/wheels.DFF
 models/coll/vehicles.col
 models/coll/newvehicles.col
 models/coll/weapons.col
+models/coll/newWeapons.col
 data/gta_vc.dat
 data/maps/generic.ide
 data/maps/littleha/littleha.ide
@@ -1931,3 +1932,4 @@ data/Cullzone.dat
 data/train.dat
 data/surface.dat
 data/pedgrp.dat
+ViceExtended/features.ini

@@ -77,7 +77,7 @@ export function otraSesionActiva(ruta = ODTRACE, segundos = 25) {
 // AUTOGUARDADO (si existe) y la partida sembrada es la SEGUNDA (y≈228/800): con
 // la fila y≈180 el clic cae en el hueco y la sonda se queda en el menú.
 export const FRAC = {
-  start: [0.5, 325 / 800],   // INICIAR PARTIDA
+  start: [0.5, 325 / 800],   // INICIAR PARTIDA (menu de inicio) / NUEVA PARTIDA (pantalla 1)
   load: [0.5, 345 / 800],    // CARGAR JUEGO
   slot: [0.3125, Number(process.env.VC_SLOT_Y || 228) / 800],
   yes: [0.5, 418 / 800],     // SÍ (¿continuar jugando?)
@@ -382,15 +382,28 @@ export async function abrirSesion(opts = {}) {
   // Todo el tramo va dentro de un TOPE: si el menú no cede, se falla con el
   // motivo (antes, con la CPU compartida, esto podía quedarse minutos sin decir
   // nada: le pasó a la primera corrida del arnés).
+  // VC_NUEVA_PARTIDA=1: entrar EMPEZANDO PARTIDA en vez de cargando la partida
+  // sembrada. Es la unica puerta cuando el save no encaja con el `main.scm`
+  // servido (plan 12.0 familia 13: el save del mod se cae en
+  // `CRunningScript::Load`). El camino son DOS filas en la misma altura: INICIAR
+  // PARTIDA en el menu de inicio y NUEVA PARTIDA en `MENUPAGE_NEW_GAME`, que
+  // arranca sin mas preguntas cuando no hay partida cargada (Frontend.cpp:
+  // `m_TargetMenu == MENUPAGE_NEW_GAME_RELOAD && m_bGameNotLoaded`).
+  const nuevaPartida = String(process.env.VC_NUEVA_PARTIDA || '') === '1';
   const topeMenuMs = Number(process.env.VC_MENU_TIMEOUT_S || 150) * 1000;
   const tClics = Date.now();
   let pedido = false, intentos = 0;
   while (!pedido && Date.now() - tClics < topeMenuMs) {
     intentos++;
-    await clic(at(FRAC.start));
-    await clic(at(FRAC.load));
-    await clic(at(FRAC.slot));
-    await clic(at(FRAC.yes));
+    if (nuevaPartida) {
+      await clic(at(FRAC.start));   // INICIAR PARTIDA -> MENUPAGE_NEW_GAME
+      await clic(at(FRAC.start));   // NUEVA PARTIDA -> arranca
+    } else {
+      await clic(at(FRAC.start));
+      await clic(at(FRAC.load));
+      await clic(at(FRAC.slot));
+      await clic(at(FRAC.yes));
+    }
     for (let i = 0; i < 3 && !pedido; i++) {
       await sleep(2000);
       pedido = traza.leer(Math.max(0, traza.tam() - 300000)).indexOf('WR load-req') >= 0;

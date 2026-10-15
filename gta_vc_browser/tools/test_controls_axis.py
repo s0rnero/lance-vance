@@ -190,7 +190,7 @@ class IfpReemplazar(BaseSintetica):
 
 
 class P4Golden(BaseSintetica):
-    """Fixture sintetica completa: los 8 criterios cubiertos -> exit 0."""
+    """Fixture sintetica completa: los criterios cubiertos -> exit 0."""
 
     def _log(self):
         lineas = [
@@ -331,13 +331,54 @@ class P4Golden(BaseSintetica):
         ev("armsight", 4, 0, pose="colt45_crouchfire", errDeg="1.5000", canon="0.5000",
            weapon=17, crouch=1)
         ev("fire", 4, 0, aim=0, gat=1, arma=17, hip=1, estado=22, slot=3, move=1)
+        ev("limits", 7, 900, numpeds=140, numvehicles=130, mult="1.50")
+        ev("ini", 0, 0, opt=1, flag=1, a=0, val="0.1200")
+        ev("ini", 0, 0, opt=8, regen=1, hp="50.0", max=100)
+        ev("radio", 1, 0, emisora=2, icono=2)
+        ev("truco", 7, 0, cheat="AIRWAYS", efecto="volar_1")
+        ev("truco", 7, 0, cheat="BIGSMOKE", efecto="teargas_5")
+        ev("truco", 7, 0, cheat="AEZAKMI", efecto="never_wanted_1")
+        ev("truco", 7, 0, cheat="IAMINVINCIBLE", efecto="invencible_1")
+        ev("truco", 7, 0, cheat="BIGHEADS", efecto="big_heads_1")
+        ev("truco", 7, 0, cheat="RCROCKET", efecto="rc_rocket_1")
+        ev("cardet", 0, 130, paso="revienta", rueda=2, impulso="180.50")
+        ev("cardet", 0, 130, paso="desprende", rueda=2, impulso="210.00")
+        ev("cardead", 0, 130, muertos=1, impulso="210.00")
+        ev("carluz", 0, 130, luz=0, impulso="190.25")
+        # Familia 11: el `features.ini` del mod se lee antes de jugar, asi que una
+        # sesion de la build servida SIEMPRE trae sus 17 claves y el resumen. Sin
+        # estas lineas P4.15 saldria SIN DATOS y el fixture dejaria de representar
+        # una sesion completa.
+        vals, rgb = CHECK.fam11_ini()
+        for clave, impl in CHECK.FAM11_CLAVES:
+            if clave in CHECK.FAM11_JUGADOR:
+                ini = int(vals[clave]) if vals.get(clave, "").lstrip("-").isdigit() else 1
+                aplica, origen = CHECK.FAM11_JUGADOR[clave], "jugador"
+            elif clave in vals:
+                if clave == "WaypointColorRGB":
+                    ini = aplica = 1
+                else:
+                    ini = int(vals[clave])
+                    aplica = 1 if ini != 0 else 0
+                origen = "fichero"
+            else:
+                ini = aplica = -1
+                origen = "port"
+            ev("inifile", 0, 0, clave=clave, ini=ini, aplica=aplica, origen=origen,
+               impl=1 if impl else 0)
+        ev("inifile", 1, 0, fichero=1,
+           leidas=sum(1 for c, _ in CHECK.FAM11_CLAVES if c in vals),
+           rgb="%d,%d,%d" % rgb)
+        # Familia 7: el mundo del mod se ingiere al arrancar (zonas de oclusion del
+        # `occlu.ipl` servido), asi que una sesion completa tambien lo trae.
+        ev("worlddata", 0, 0, zonas=CHECK.fam7_zonas_servidas()[0])
         return lineas
 
     def test_fixture_completa_sale_0_con_los_ocho_pass(self):
         ruta = self.escribir("p4-golden.log", self._log())
         r = self.cli(ruta, "--plan-4", "--expected-version", "V1", "--expected-data-tag", "D1")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        for n in range(1, 9):
+        for n in list(range(1, 9)) + [10, 11, 12, 13]:
             self.assertIn("P4.%d PASS" % n, r.stdout)
         self.assertNotIn("PARCIAL", r.stdout)
         self.assertNotIn("SIN DATOS", r.stdout)
@@ -641,6 +682,632 @@ class P42CriterioPoseExit(BaseSintetica):
         r = self.cli(ruta, "--plan-4", "--expected-version", "V1", "--expected-data-tag", "D1")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("P4.8 FALLO", r.stdout)
+
+
+
+class D7Shift(BaseSintetica):
+    def test_shift_con_dos_iconos_es_ok_y_cuenta_p4(self):
+        lineas = [
+            "JS build=SYNTHETIC-PLAN4 data=SYNTHETIC-PLAN4",
+            "12:00:00 KEYICONS txd=pcbtns cargado",
+            "12:00:01 HINTKEY accion=VEHICLE_HORN vk=72 icono=1 shift=1",
+            "12:00:01 P4 kind=shift schema=1 gen=1 frame=10 sim=0.2000 case=1 id=0"
+            " accion=VEHICLE_HORN vk=72 shift=1 icono=1",
+        ]
+        estado, motivo = veredicto(CHECK.bloque_d7, lineas)
+        self.assertEqual(estado, "OK")
+        self.assertIn("VEHICLE_HORN", motivo)
+        ev = CHECK.p4_cargar(lineas)
+        self.assertEqual(ev["invalidos"], [])
+        self.assertEqual(len([e for e in ev["eventos"] if e.get("kind") == "shift"]), 1)
+
+    def test_hintkey_vieja_sin_shift_sigue_valiendo(self):
+        lineas = [
+            "JS build=SYNTHETIC-PLAN4 data=SYNTHETIC-PLAN4",
+            "12:00:00 KEYICONS txd=pcbtns cargado",
+            "12:00:01 HINTKEY accion=PED_JUMPING vk=32 icono=1",
+        ]
+        estado, _ = veredicto(CHECK.bloque_d7, lineas)
+        self.assertEqual(estado, "OK")
+
+
+class P912Trucos(BaseSintetica):
+    CHEATS = [("AIRWAYS", "volar_1"), ("BIGSMOKE", "teargas_5"),
+              ("AEZAKMI", "never_wanted_1"), ("IAMINVINCIBLE", "invencible_1"),
+              ("BIGHEADS", "sin_efecto"), ("RCROCKET", "sin_efecto")]
+
+    def _lineas(self, pares):
+        ls = ["JS build=SYNTHETIC-PLAN91 data=SYNTHETIC-PLAN91"]
+        f = 100
+        for ch, ef in pares:
+            f += 10
+            ls.append("12:00:01 P4 kind=truco schema=1 gen=1 frame=%d sim=1.000 case=7 id=0 cheat=%s efecto=%s" % (f, ch, ef))
+        return ls
+
+    def _p412(self, lineas):
+        ev = CHECK.p4_cargar(lineas)
+        self.assertEqual(ev["invalidos"], [])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            return CHECK.p4_12(ev)
+
+    def test_seis_trucos_validos_son_pass(self):
+        estado, motivo = self._p412(self._lineas(self.CHEATS))
+        self.assertEqual(estado, "PASS", motivo)
+
+    def test_falta_un_truco_es_fallo(self):
+        estado, motivo = self._p412(self._lineas(self.CHEATS[:5]))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("sin teclear", motivo)
+
+    def test_efecto_ajeno_es_fallo(self):
+        pares = [("AIRWAYS", "volar_1"), ("BIGSMOKE", "volar_1"),
+                 ("AEZAKMI", "never_wanted_1"), ("IAMINVINCIBLE", "invencible_1"),
+                 ("BIGHEADS", "sin_efecto"), ("RCROCKET", "sin_efecto")]
+        estado, motivo = self._p412(self._lineas(pares))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("ajeno", motivo)
+
+    def _lineas_reales(self, pares):
+        """Las lineas que emite de verdad el motor: `kind=cheat2` y `via=tecleo`."""
+        ls = ["JS build=SYNTHETIC-PLAN91 data=SYNTHETIC-PLAN91"]
+        f = 100
+        for ch, ef in pares:
+            f += 10
+            ls.append("12:00:01 P4 kind=cheat2 schema=1 gen=1 frame=%d sim=1.000 case=3 id=0"
+                      " cheat=%s efecto=%s via=tecleo" % (f, ch, ef))
+        return ls
+
+    def test_la_traza_real_del_motor_es_evidencia_valida(self):
+        # `via` es una palabra en la traza del motor (`via=tecleo`): exigirla
+        # numerica invalidaba cualquier partida en la que se tecleara un truco.
+        ev = CHECK.p4_cargar(self._lineas_reales(self.CHEATS))
+        self.assertEqual(ev["invalidos"], [])
+        self.assertEqual(len([e for e in ev["eventos"] if e["kind"] == "cheat2"]), 6)
+        estado, motivo = self._p412(self._lineas_reales(self.CHEATS))
+        self.assertEqual(estado, "PASS", motivo)
+
+
+class P91Uzi(BaseSintetica):
+    def _uzi(self, *evs):
+        ls = ["JS build=SYNTHETIC-PLAN91 data=SYNTHETIC-PLAN91",
+              "12:00:00 WINFO arma=51 grupo=colt45 clips=fire"]
+        f = [100]
+        for ev, est, clip, tot, ok in evs:
+            f[0] += 2
+            s = ("12:00:01 P4 kind=uzi schema=1 gen=1 frame=%d sim=1.000 case=5 id=0"
+                 " ev=%s estado=%d clip=%d total=%d" % (f[0], ev, est, clip, tot))
+            if ok is not None:
+                s += " ok=%d" % ok
+            ls.append(s)
+        return ls
+
+    def test_rafaga_completa_es_ok(self):
+        ls = self._uzi(("enter", 8, 30, 300, None), ("ih_enter", 8, 30, 300, None),
+                       ("ih_exit", 8, 29, 299, 1), ("exit", 8, 29, 299, 1))
+        ev = CHECK.p4_cargar(ls)
+        self.assertEqual(ev["invalidos"], [])
+        estado, motivo = veredicto(CHECK.bloque_uzi, ls)
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("sin huecos", motivo)
+
+    def test_hueco_ih_enter_sin_salida_se_informa(self):
+        ls = self._uzi(("enter", 8, 30, 300, None), ("ih_enter", 8, 30, 300, None))
+        estado, motivo = veredicto(CHECK.bloque_uzi, ls)
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("ih_exit", motivo)
+
+
+class P100BCar(BaseSintetica):
+    DET = "12:00:01 P4 kind=cardet schema=1 gen=1 frame=%d sim=1.000 case=0 id=%d paso=%s rueda=%d impulso=%.2f"
+    DEA = "12:00:01 P4 kind=cardead schema=1 gen=1 frame=%d sim=1.000 case=0 id=%d muertos=%d impulso=%.2f"
+    LUZ = "12:00:01 P4 kind=carluz schema=1 gen=1 frame=%d sim=1.000 case=0 id=%d luz=%d impulso=%.2f"
+
+    def _p413(self, lineas):
+        ev = CHECK.p4_cargar(lineas)
+        self.assertEqual(ev["invalidos"], [])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            return CHECK.p4_13(ev)
+
+    def test_choque_duro_es_pass(self):
+        ls = ["JS build=SYNTHETIC-PLAN100 data=SYNTHETIC-PLAN100",
+              self.DET % (100, 130, "revienta", 2, 180.5),
+              self.DET % (104, 130, "desprende", 2, 210.0),
+              self.DEA % (104, 130, 1, 210.0),
+              self.LUZ % (106, 130, 0, 190.25)]
+        estado, motivo = self._p413(ls)
+        self.assertEqual(estado, "PASS", motivo)
+        self.assertIn("1 NPC", motivo)
+
+    def test_paso_ajeno_es_fallo(self):
+        ls = ["JS build=SYNTHETIC-PLAN100 data=SYNTHETIC-PLAN100",
+              self.DET % (100, 130, "flota", 2, 180.5)]
+        estado, motivo = self._p413(ls)
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("ajeno", motivo)
+
+    def test_sin_choques_es_sin_datos(self):
+        estado, motivo = self._p413(["JS build=SYNTHETIC-PLAN100 data=SYNTHETIC-PLAN100"])
+        self.assertEqual(estado, "SIN DATOS", motivo)
+
+
+
+class P120ScriptYParticulas(BaseSintetica):
+    """Plan 12.0 (familias 13 y 3/5): las dos trazas nuevas son evidencia valida
+    del evaluador estricto y su veredicto no se puede relajar: un opcode propio
+    sin implementar y un `particle.cfg` sin los tipos del mod tienen que verse.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+
+    # Los 7 opcodes que su `main.scm` usa de verdad, con los campos que emite el
+    # motor en cada uno (0x0FA0 45 usos, 0x0FA1 2, 0x0FA2 91, 0x0FA6 46,
+    # 0x0FA7 1, 0x0FA8 20, 0x0FA9 1).
+    MODSCRIPT = (
+        "12:00:01 P4 kind=modscript schema=1 gen=1 frame=10 sim=0.200 case=1 id=0"
+        " op=0x0FA0 cmd=4000 ped=7 var=3",
+        "12:00:02 P4 kind=modscript schema=1 gen=1 frame=20 sim=0.400 case=1 id=0"
+        " op=0x0FA1 cmd=4001 ped=7 var=3",
+        "12:00:03 P4 kind=modscript schema=1 gen=1 frame=30 sim=0.600 case=1 id=0"
+        " op=0x0FA2 cmd=4002 on=1 sel=7",
+        "12:00:04 P4 kind=modscript schema=1 gen=1 frame=40 sim=0.800 case=1 id=0"
+        " op=0x0FA6 cmd=4006 global=0 guardado=0",
+        "12:00:05 P4 kind=modscript schema=1 gen=1 frame=50 sim=1.000 case=1 id=0"
+        " op=0x0FA7 cmd=4007 guardado=0 flags=0 ticks=0",
+        "12:00:06 P4 kind=modscript schema=1 gen=1 frame=60 sim=1.200 case=1 id=0"
+        " op=0x0FA8 cmd=4008 val=12",
+        "12:00:07 P4 kind=modscript schema=1 gen=1 frame=70 sim=1.400 case=1 id=0"
+        " op=0x0FA9 cmd=4009 veh=130 grados=90.0000 rumbo=1.5708",
+    )
+    # 4010 esta dentro del rango 4000-4099 pero no es uno de los 10: es el caso
+    # que el motor traza con `desconocido=1` (y el que desincroniza la pila).
+    SIN_IMPLEMENTAR = ("12:00:08 P4 kind=modscript schema=1 gen=1 frame=80 sim=1.600 case=1 id=0"
+                       " op=0x0FAA cmd=4010 desconocido=1")
+    PARTCFG_MOD = ("12:00:01 P4 kind=partcfg schema=1 gen=1 frame=1 sim=0.010 case=2 id=0"
+                   " cargados=88 nuevos=5 desconocidos=0 total=88")
+    PARTCFG_VANILLA = ("12:00:02 P4 kind=partcfg schema=1 gen=1 frame=1 sim=0.010 case=2 id=0"
+                       " cargados=83 nuevos=0 desconocidos=0 total=83")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_los_siete_opcodes_del_script_son_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_modscript, self._log(*self.MODSCRIPT))
+        self.assertEqual(estado, "OK", motivo)
+        for op in ("0x0FA0", "0x0FA1", "0x0FA2", "0x0FA6", "0x0FA7", "0x0FA8", "0x0FA9"):
+            self.assertIn(op.upper() + " x1", motivo,
+                          "los 7 usos reales del script deben contarse uno a uno: %s" % motivo)
+
+    def test_opcode_sin_implementar_no_puede_ser_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_modscript,
+                                   self._log(*self.MODSCRIPT, self.SIN_IMPLEMENTAR))
+        self.assertNotEqual(estado, "OK",
+                            "un opcode propio sin implementar desincroniza la pila: %s" % motivo)
+
+    def test_particle_cfg_del_mod_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_partcfg, self._log(self.PARTCFG_MOD))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("cargados=88", motivo)
+
+    def test_particle_cfg_vanilla_no_puede_ser_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_partcfg, self._log(self.PARTCFG_VANILLA))
+        self.assertNotEqual(estado, "OK",
+                            "el vanilla no trae los 5 tipos del mod: %s" % motivo)
+
+    def test_las_dos_trazas_nuevas_son_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(*self.MODSCRIPT, self.PARTCFG_MOD))
+        self.assertEqual(ev["invalidos"], [],
+                         "las trazas nuevas deben pasar el evaluador estricto: %s"
+                         % ev["invalidos"])
+        kinds = [e["kind"] for e in ev["eventos"]]
+        self.assertIn("modscript", kinds)
+        self.assertIn("partcfg", kinds)
+
+    def test_var_sin_numero_en_la_traza_del_script_no_pasa(self):
+        roto = self.MODSCRIPT[0].replace("var=3", "var=-")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("var" in m for m in ev["invalidos"]),
+                        "`var` esta en P4_NUM_FINITOS: sin numero es evidencia invalida: %s"
+                        % ev["invalidos"])
+
+    def test_sin_esas_trazas_no_revienta_y_son_sin_datos(self):
+        ls = self._log()
+        self.assertEqual(veredicto(CHECK.bloque_modscript, ls)[0], "SIN DATOS")
+        self.assertEqual(veredicto(CHECK.bloque_partcfg, ls)[0], "SIN DATOS")
+
+
+class P120Volante(BaseSintetica):
+    """Plan 12.0 (familia 3, v2.5 «Rotating steering wheel»): el volante del mod
+    es evidencia valida del evaluador estricto, y una linea sin sus campos no lo
+    es. El multiplicador (1,0) y el eje NO salen de su tutorial, asi que el
+    veredicto de la pieza es visual: el bloque solo acredita que se movio, en
+    que coche y cuanto.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+    VOLANTE = ("12:00:01 P4 kind=wheelrot schema=1 gen=1 frame=10 sim=0.200 case=0 id=0"
+               " vk=130 angulo=-0.3489 direc=0.3489")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(self.VOLANTE))
+        self.assertEqual(ev["invalidos"], [],
+                         "el volante debe pasar el evaluador estricto: %s" % ev["invalidos"])
+        self.assertIn("wheelrot", [e["kind"] for e in ev["eventos"]])
+
+    def test_sin_el_angulo_no_es_evidencia(self):
+        roto = self.VOLANTE.replace(" angulo=-0.3489", "")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("angulo" in m for m in ev["invalidos"]),
+                        "`angulo` es obligatorio en P4_REQ: %s" % ev["invalidos"])
+
+    def test_bloque_sin_volante_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_wheelrot, self._log())[0], "SIN DATOS")
+
+    def test_bloque_con_volante_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_wheelrot, self._log(self.VOLANTE))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("grados", motivo)
+        self.assertIn("1 coche", motivo)
+
+    def test_linea_sin_campos_es_parcial(self):
+        linea = ("12:00:02 P4 kind=wheelrot schema=1 gen=1 frame=20 sim=0.400 case=0"
+                 " id=0 vk=-1")
+        estado, motivo = veredicto(CHECK.bloque_wheelrot, self._log(linea))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("vk/angulo/direc", motivo)
+
+
+class P120SensApuntado(BaseSintetica):
+    """Plan 12.0 (familia 1, 2506 «Aim sensitivity fix»): el cambio de par de
+    sensibilidad (mirar vs apuntar) es evidencia valida del evaluador estricto, y
+    una sesion que NUNCA apunta no se puede dar por buena: ahi no hay nada que
+    comprobar. El bloque acredita que el cambio ocurre, no el valor elegido (eso es
+    el INI del jugador y su ojo).
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+    MIRANDO = ("12:00:00 P4 kind=aimsens schema=1 gen=1 frame=1 sim=0.020 case=0 id=0"
+               " aim=0 sens=0.0013 mfac=1.0000 pfac=1.0000")
+    APUNTANDO = ("12:00:01 P4 kind=aimsens schema=1 gen=1 frame=10 sim=0.200 case=0 id=0"
+                 " aim=1 sens=0.0008 mfac=0.6668 pfac=0.5000")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(self.MIRANDO, self.APUNTANDO))
+        self.assertEqual(ev["invalidos"], [],
+                         "la sensibilidad debe pasar el evaluador estricto: %s" % ev["invalidos"])
+        self.assertIn("aimsens", [e["kind"] for e in ev["eventos"]])
+
+    def test_sin_el_factor_no_es_evidencia(self):
+        roto = self.APUNTANDO.replace(" mfac=0.6668", "")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("mfac" in m for m in ev["invalidos"]),
+                        "`mfac` es obligatorio en P4_REQ: %s" % ev["invalidos"])
+
+    def test_bloque_sin_trazas_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_aimsens, self._log())[0], "SIN DATOS")
+
+    def test_bloque_solo_mirando_es_parcial(self):
+        estado, motivo = veredicto(CHECK.bloque_aimsens, self._log(self.MIRANDO))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("NINGUNO apuntando", motivo)
+
+    def test_bloque_con_apuntado_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_aimsens,
+                                   self._log(self.MIRANDO, self.APUNTANDO))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("apuntando 1", motivo)
+        self.assertIn("0.6668", motivo)
+
+
+class P120Luna(BaseSintetica):
+    """Plan 12.0 (familia 5, v1.5 "Moving Moon"): la luna sale del rumbo del sol
+    es evidencia valida del evaluador estricto, y una linea sin su posicion no lo
+    es. El bloque solo acredita que el disco se movio del sitio del vanilla: que
+    se vea donde el jugador lo espera es su ojo.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+    LUNA = ("12:00:01 P4 kind=moon schema=1 gen=1 frame=10 sim=0.200 case=0 id=0"
+            " fadeout=162.1 brillo=121 sol=0.000,0.104,-0.994 pos=0.0,-15.6,149.1")
+    LUNA_VANILLA = ("12:00:02 P4 kind=moon schema=1 gen=1 frame=20 sim=0.400 case=0 id=0"
+                    " fadeout=170.0 brillo=100 sol=0.000,0.104,-0.994 pos=0.0,-100.0,15.0")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(self.LUNA))
+        self.assertEqual(ev["invalidos"], [],
+                         "la luna debe pasar el evaluador estricto: %s" % ev["invalidos"])
+        self.assertIn("moon", [e["kind"] for e in ev["eventos"]])
+
+    def test_sin_la_posicion_no_es_evidencia(self):
+        roto = self.LUNA.replace(" pos=0.0,-15.6,149.1", "")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("pos" in m for m in ev["invalidos"]),
+                        "`pos` es obligatorio en P4_REQ: %s" % ev["invalidos"])
+
+    def test_bloque_sin_luna_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_moon, self._log())[0], "SIN DATOS")
+
+    def test_bloque_con_luna_movida_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_moon, self._log(self.LUNA))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("fuera del vanilla", motivo)
+        self.assertIn("149.1", motivo)
+
+    def test_bloque_con_la_luna_del_vanilla_es_parcial(self):
+        estado, motivo = veredicto(CHECK.bloque_moon, self._log(self.LUNA_VANILLA))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("NINGUNA con la luna fuera", motivo)
+
+
+class P120MundoDelMod(BaseSintetica):
+    """Plan 12.0 (familia 7, `VICEEXT_MAPDATA`): el mundo del mod se sirve y el motor
+    lo ingiere. El verificador cuenta las zonas de oclusion del `occlu.ipl` SERVIDO y
+    exige que el motor tenga al menos esas: menos significa que su mundo no llego (o
+    que se sirvio otro fichero), que es el fallo que este bloque existe para cazar.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+
+    def _linea(self, zonas):
+        return ("12:00:01 P4 kind=worlddata schema=1 gen=1 frame=2 sim=0.100 case=0"
+                " id=0 zonas=%d" % zonas)
+
+    def test_el_mundo_ingerido_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar([self.IDENT, self._linea(CHECK.fam7_zonas_servidas()[0])])
+        self.assertEqual(ev["invalidos"], [],
+                         "la traza worlddata debe pasar el evaluador: %s" % ev["invalidos"])
+
+    def test_con_las_zonas_del_fichero_servido_es_pass(self):
+        estado, motivo = veredicto(CHECK.p4_16, CHECK.p4_cargar(
+            [self.IDENT, self._linea(CHECK.fam7_zonas_servidas()[0])]))
+        self.assertEqual(estado, "PASS", motivo)
+        self.assertIn("exactamente las del `occlu.ipl` del mod", motivo)
+
+    def test_menos_zonas_que_el_fichero_servido_es_fallo(self):
+        menos = CHECK.fam7_zonas_servidas()[0] - 1
+        estado, motivo = veredicto(CHECK.p4_16,
+                                   CHECK.p4_cargar([self.IDENT, self._linea(menos)]))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("no todo su mundo llego", motivo)
+
+    def test_sin_la_traza_es_sin_datos(self):
+        estado, _ = veredicto(CHECK.p4_16, CHECK.p4_cargar([self.IDENT]))
+        self.assertEqual(estado, "SIN DATOS")
+
+
+class P120FeaturesIni(BaseSintetica):
+    """Plan 12.0 (familia 11, `VICEEXT_FEATURES_INI`): el `features.ini` del mod se
+    lee al arrancar y sus claves MANDAN. El log sintetico se construye leyendo el
+    fichero servido (el mismo que lee el motor), asi que lo que se comprueba es
+    que el verificador caza una clave que no cuadra con el fichero, un fichero que
+    no se pudo leer y claves que faltan: sin eso, un `inifile` verde no probaria
+    nada.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+
+    def _lineas(self, fichero=1, romper=None):
+        vals, rgb = CHECK.fam11_ini()
+        lineas = [self.IDENT]
+        leidas = 0
+        for k, impl in CHECK.FAM11_CLAVES:
+            if k in CHECK.FAM11_JUGADOR:
+                ini = int(vals[k]) if k in vals and vals[k].lstrip("-").isdigit() else 1
+                aplica, src = CHECK.FAM11_JUGADOR[k], "jugador"
+                if k in vals:
+                    leidas += 1
+            elif k in vals:
+                if k == "WaypointColorRGB":
+                    ini = aplica = 1
+                else:
+                    ini = int(vals[k])
+                    aplica = 1 if ini != 0 else 0
+                src = "fichero"
+                leidas += 1
+            else:
+                ini, aplica, src = -1, -1, "port"
+            if romper == k:
+                aplica = 1 - aplica if aplica in (0, 1) else aplica
+            lineas.append("12:00:01 P4 kind=inifile schema=1 gen=1 frame=2 sim=0.100 case=0"
+                          " id=0 clave=%s ini=%d aplica=%d origen=%s impl=%d"
+                          % (k, ini, aplica, src, 1 if impl else 0))
+        lineas.append("12:00:02 P4 kind=inifile schema=1 gen=1 frame=2 sim=0.100 case=1"
+                      " id=0 fichero=%d leidas=%d rgb=%d,%d,%d"
+                      % (fichero, leidas, rgb[0], rgb[1], rgb[2]))
+        return lineas
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._lineas())
+        self.assertEqual(ev["invalidos"], [],
+                         "las trazas inifile deben pasar el evaluador: %s" % ev["invalidos"])
+        self.assertEqual(len([e for e in ev["eventos"] if e["kind"] == "inifile"]),
+                         len(CHECK.FAM11_CLAVES) + 1)
+
+    def test_una_traza_sin_id_no_es_evidencia(self):
+        # Este es el fallo que cazo el primer log del motor (2026-10-14): la traza
+        # salia sin `id=` y el evaluador estricto la tiraba entera. El contrato se
+        # deja dicho aqui para que no vuelva por la puerta de atras.
+        sin_id = self._lineas()[1].replace(" id=0 ", " ")
+        ev = CHECK.p4_cargar([self.IDENT, sin_id])
+        self.assertTrue(any("campos comunes" in m for m in ev["invalidos"]),
+                        "falta `id`: el evaluador tiene que rechazarla: %s" % ev["invalidos"])
+
+    def test_bloque_con_el_fichero_leido_es_ok(self):
+        estado, motivo = veredicto(CHECK.p4_15, CHECK.p4_cargar(self._lineas()))
+        self.assertEqual(estado, "PASS", motivo)
+        self.assertIn("fichero=1", motivo)
+        self.assertIn("sin efecto en el motor", motivo)
+
+    def test_fichero_que_no_se_pudo_leer_es_fallo(self):
+        estado, motivo = veredicto(CHECK.p4_15, CHECK.p4_cargar(self._lineas(fichero=0)))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("NO pudo leer", motivo)
+
+    def test_una_clave_que_no_cuadra_con_el_fichero_es_fallo(self):
+        clave = next(k for k, _ in CHECK.FAM11_CLAVES
+                     if k in CHECK.fam11_ini()[0] and k not in CHECK.FAM11_JUGADOR
+                     and k != "WaypointColorRGB")
+        estado, motivo = veredicto(CHECK.p4_15,
+                                   CHECK.p4_cargar(self._lineas(romper=clave)))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn(clave, motivo)
+        self.assertIn("el fichero dice", motivo)
+
+    def test_una_clave_sin_traza_es_fallo(self):
+        lineas = [l for l in self._lineas() if " clave=Doorbell" not in l]
+        lineas = [l for l in lineas
+                  if " clave=%s " % CHECK.FAM11_CLAVES[0][0] not in l]
+        estado, motivo = veredicto(CHECK.p4_15, CHECK.p4_cargar(lineas))
+        self.assertEqual(estado, "FALLO", motivo)
+        self.assertIn("claves sin traza", motivo)
+
+    def test_sin_trazas_es_sin_datos(self):
+        estado, _ = veredicto(CHECK.p4_15, CHECK.p4_cargar([self.IDENT]))
+        self.assertEqual(estado, "SIN DATOS")
+
+
+class P120LucesLejanas(BaseSintetica):
+    """Plan 12.0 (familia 5, v2.6 "Distant lights"): la pasada por los dos pools
+    con sus efectos 2D es evidencia valida, y una pasada que no encuentra ningun
+    efecto 2D no puede dar por buenas las luces: ahi no hay nada que encender.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+    MUNDO = ("12:00:01 P4 kind=distlights schema=1 gen=1 frame=10 sim=0.200 case=0 id=0"
+             " edificios=1200 dummies=340 conefectos=96")
+    SIN_EFECTOS = ("12:00:02 P4 kind=distlights schema=1 gen=1 frame=20 sim=0.400 case=0"
+                   " id=0 edificios=1200 dummies=340 conefectos=0")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(self.MUNDO))
+        self.assertEqual(ev["invalidos"], [],
+                         "las luces lejanas deben pasar el evaluador estricto: %s"
+                         % ev["invalidos"])
+        self.assertIn("distlights", [e["kind"] for e in ev["eventos"]])
+
+    def test_sin_los_recuentos_no_es_evidencia(self):
+        roto = self.MUNDO.replace(" conefectos=96", "")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("conefectos" in m for m in ev["invalidos"]),
+                        "`conefectos` es obligatorio en P4_REQ: %s" % ev["invalidos"])
+
+    def test_bloque_sin_trazas_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_distlights, self._log())[0], "SIN DATOS")
+
+    def test_bloque_con_efectos_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_distlights, self._log(self.MUNDO))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("96 con efectos 2D", motivo)
+
+    def test_bloque_sin_efectos_es_parcial(self):
+        estado, motivo = veredicto(CHECK.bloque_distlights, self._log(self.SIN_EFECTOS))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("no hay luces lejanas que encender", motivo)
+
+
+class P120PunteriaBanda(BaseSintetica):
+    """Plan 12.0 (familia 1, "AI accuracy"): el valor de punteria que el motor
+    aplica es evidencia valida del evaluador estricto, y una base de peds en 60
+    no puede pasar por buena: es justo el valor del vanilla.
+    """
+
+    IDENT = ("12:00:00 P4 kind=identity schema=1 gen=1 frame=1 sim=0.000 case=0 id=0"
+             " version=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120")
+    PED_MOD = ("12:00:01 P4 kind=gangaim schema=1 gen=1 frame=1 sim=0.020 case=0 id=0"
+               " tipo=ped acc=73")
+    COP_MOD = ("12:00:02 P4 kind=gangaim schema=1 gen=1 frame=2 sim=0.040 case=0 id=0"
+               " tipo=cop cop=0 acc=84")
+    PED_VANILLA = ("12:00:03 P4 kind=gangaim schema=1 gen=1 frame=3 sim=0.060 case=0"
+                   " id=0 tipo=ped acc=60")
+
+    def _log(self, *lineas):
+        return (["JS build=SYNTHETIC-PLAN120 data=SYNTHETIC-PLAN120", self.IDENT]
+                + list(lineas))
+
+    def test_es_evidencia_valida(self):
+        ev = CHECK.p4_cargar(self._log(self.PED_MOD, self.COP_MOD))
+        self.assertEqual(ev["invalidos"], [],
+                         "la punteria debe pasar el evaluador estricto: %s" % ev["invalidos"])
+        self.assertIn("gangaim", [e["kind"] for e in ev["eventos"]])
+
+    def test_sin_la_punteria_no_es_evidencia(self):
+        roto = self.PED_MOD.replace(" acc=73", "")
+        ev = CHECK.p4_cargar(self._log(roto))
+        self.assertTrue(any("acc" in m for m in ev["invalidos"]),
+                        "`acc` es obligatorio en P4_REQ: %s" % ev["invalidos"])
+
+    def test_bloque_sin_trazas_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_gangaim, self._log())[0], "SIN DATOS")
+
+    def test_bloque_con_la_punteria_del_mod_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_gangaim,
+                                   self._log(self.PED_MOD, self.COP_MOD))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("base de los peds=73", motivo)
+        self.assertIn("policia con punteria propia=1", motivo)
+
+    def test_bloque_con_la_del_vanilla_es_parcial(self):
+        estado, motivo = veredicto(CHECK.bloque_gangaim, self._log(self.PED_VANILLA))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("la mejora no esta puesta", motivo)
+
+
+class P120AltSentarse(BaseSintetica):
+    """Plan 12.0 (familia 1, ALT/sentarse): la traza de la tecla de andar es la
+    evidencia de la mitad que se mide; una accion sin tecla asignada no puede
+    pasar por buena, y sin la tecla pulsada no hay nada que juzgar.
+    """
+
+    PULSADA = "12:00:01 AIMWALK tecla=1051 spd=0.00"
+    SOLTADA = "12:00:02 AIMWALK tecla=1051 spd=0.00"
+    NULA = "12:00:03 AIMWALK tecla=1056 spd=0.00"
+
+    def _log(self, *lineas):
+        return list(lineas)
+
+    def test_bloque_sin_trazas_es_sin_datos(self):
+        self.assertEqual(veredicto(CHECK.bloque_altsit, self._log())[0], "SIN DATOS")
+
+    def test_bloque_con_la_tecla_pulsada_es_ok(self):
+        estado, motivo = veredicto(CHECK.bloque_altsit, self._log(self.PULSADA, self.SOLTADA))
+        self.assertEqual(estado, "OK", motivo)
+        self.assertIn("teclas=[1051]", motivo)
+
+    def test_bloque_con_la_accion_sin_tecla_es_parcial(self):
+        estado, motivo = veredicto(CHECK.bloque_altsit, self._log(self.NULA))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("rsNULL", motivo)
+
+    def test_bloque_sin_parar_la_velocidad_es_parcial(self):
+        linea = "12:00:04 AIMWALK tecla=1051 spd=3.50"
+        estado, motivo = veredicto(CHECK.bloque_altsit, self._log(linea))
+        self.assertEqual(estado, "PARCIAL", motivo)
+        self.assertIn("no esta parando la velocidad", motivo)
 
 
 if __name__ == "__main__":

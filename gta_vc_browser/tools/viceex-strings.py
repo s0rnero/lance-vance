@@ -18,8 +18,9 @@ Uso (desde la raíz del repo):
     python gta_vc_browser/tools/viceex-strings.py --src               # ficheros fuentes del mod
     python gta_vc_browser/tools/viceex-strings.py --ini               # claves de configuración probables
 
-El binario se busca, en este orden: variable VC_VICEEXE, y las rutas conocidas del
-paquete del mod dentro del repo.
+El binario se busca, en este orden: la variable VC_VICEEX (ruta exacta al .exe), la
+variable VC_GAME (raiz del juego instalado, la que arranca ViceEx.exe) y las rutas
+conocidas del paquete del mod dentro del repo.
 """
 
 import argparse
@@ -42,6 +43,14 @@ def find_exe():
     env = os.environ.get("VC_VICEEX")
     if env and os.path.isfile(env):
         return env
+    # La instalación viva del jugador: `VC_GAME` es la raíz del juego (la carpeta
+    # que arranca `ViceEx.exe`), la misma variable que usan `extract_viceex.py` y
+    # `add_viceex_sfx.py` para llegar al banco de audio del mod.
+    env = os.environ.get("VC_GAME")
+    if env:
+        p = os.path.join(env, "ViceEx.exe")
+        if os.path.isfile(p):
+            return p
     for rel in CANDIDATES:
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
@@ -80,7 +89,8 @@ def main():
 
     exe = find_exe()
     if not exe:
-        print("No encuentro ViceEx.exe (define VC_VICEEX o revisa el paquete del mod).", file=sys.stderr)
+        print("No encuentro ViceEx.exe (define VC_VICEEX con la ruta al .exe, o VC_GAME "
+              "con la raíz del juego, o revisa el paquete del mod).", file=sys.stderr)
         return 2
 
     strings = load_strings(exe)

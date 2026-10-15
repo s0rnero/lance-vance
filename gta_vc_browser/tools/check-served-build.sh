@@ -144,6 +144,7 @@ MARCAS=(
   "P4 kind=aim schema=1|P4  plan43: por que se apunta o se deja de apuntar (why/sprint/jump/policy)|wasm"
   "P4 kind=jump schema=1|P4  plan43: direccion del salto frente a la marcha (lr/ud/rumbo/dir)|wasm"
   "P4 kind=fire schema=1|P4  plan43: puerta del gatillo sin apuntar (aim/gat/arma/hip)|wasm"
+  "P4 kind=firewait schema=1|P4  plan71-4c: espera previa al fuego con asociacion congelada o estado/cargador|wasm"
   "P4 kind=armsight schema=1|P4  plan43: pose de brazos aplicada al apuntar (pose/errDeg)|wasm"
   "P4 kind=roll_step schema=1|P4  plan50: avance MEDIDO de la rueda frame a frame (E1)|wasm"
   "P4 kind=jump_end schema=1|P4  plan50: salto con vector real y dirErr (E5)|wasm"
@@ -160,10 +161,58 @@ MARCAS=(
   "P4 kind=hud_cross schema=1|P4  plan41: reticula con la ley de apuntado (draw/pc/law/lock)|wasm"
   "P4 kind=turners schema=1|P4  plan41: intermitentes (motivo/steer/anchorErr)|wasm"
   "P4 kind=polbike schema=1|P4  plan41: moto policial con un solo ocupante (occ/passengers)|wasm"
+  "P4 kind=limits schema=1|P4  plan9.0: limites del mod (numpeds/numvehicles/mult)|wasm"
+  "P4 kind=radio2 schema=1|P4  plan9.1(1)+10.0-C: icono de emisora al cambiar (emisora/icono)|wasm"
+  "P4 kind=shift schema=1|P4 plan9.1(3): Shift+tecla en avisos (dos iconos)|wasm"
+  "P4 kind=cheat2 schema=1|P4  plan9.1(4)+10.0-C: trucos nuevos del mod (cheat/efecto)|wasm"
+  "P4 kind=uzi schema=1|P9.1(5): flanco de disparo Micro-UZI (medida previa al fix)|wasm"
+  "P4 kind=cardet schema=1|P4  plan10.0-B: rueda reventada/desprendida (paso/rueda/impulso)|wasm"
+  "P4 kind=cardead schema=1|P4  plan10.0-B: muerte NPC en choque duro (muertos/impulso)|wasm"
+  "P4 kind=carluz schema=1|P4  plan10.0-B: faro roto por impacto (luz/impulso)|wasm"
+  "P4 kind=ini schema=1|P4  plan9.2: opciones del features.ini del mod (opt/flag/a/val)|wasm"
+  "P4 kind=inifile schema=1|11  familia 11: su features.ini leido al arrancar (clave/ini/aplica/origen/impl)|wasm"
+  "P4 kind=worlddata schema=1|7   familia 7: mundo del mod ingerido (zonas de oclusion del occlu.ipl)|wasm"
+  "P4 kind=modscript schema=1|13  script del mod: los opcodes propios 0x0FA0-0x0FA9 en el interprete|wasm"
+  "ViceExtRotateSteeringWheel|plan12.0: volante que gira (v2.5) - la pieza del mod sigue la direccion|wasm"
+  "steeringwheel|plan12.0: volante que gira (v2.5): el dummy que traen 18 modelos del gta3.img|wasm"
+  "P4 kind=wheelrot schema=1|P4  plan12.0: volante que gira (v2.5): angulo aplicado vs direccion|wasm"
+  "ViceExtAimSensMouseX|plan12.0: sensibilidad de apuntado (2506) - par de mirar vs par de apuntado|wasm"
+  "MouseAimSensX|plan12.0: sensibilidad de apuntado (2506): las ocho claves de su [Controller]|wasm"
+  "P4 kind=aimsens schema=1|P4  plan12.0: sensibilidad de apuntado (2506): factor aim/look aplicado|wasm"
+  "P4 kind=moon schema=1|P4  plan12.0: luna movil (v1.5): el disco sale del rumbo del sol|wasm"
+  "P4 kind=distlights schema=1|P4  plan12.0: luces lejanas (v2.6): edificios y dummies con efectos 2D|wasm"
+  "P4 kind=gangaim schema=1|P4  plan12.0: punteria de la IA (v1.0/2506): peds 73 y polis del mod|wasm"
+  "P4 kind=partcfg schema=1|3/5 particulas: particle.cfg con el tipo resuelto por NOMBRE|wasm"
 )
+
+# Datos del mod que tienen que estar SERVIDOS (no basta con que el motor sepa
+# leerlos): ruta servida|tamano (o -)|sha256 (12 hex, o -)|que es. La familia 13
+# (script del mod) y la 3/5 (particulas) van por aqui: si el fichero servido
+# sigue siendo el vanilla, en el log no se nota y se lee como "no hace nada".
+DATOS=(
+  "data/particle.cfg|18363|49130d2521a1|3/5 particle.cfg del mod (5 tipos nuevos)"
+  "data/main.scm|1191180|41a932cc593e|13  script del mod (antes se servia el vanilla, 1.269.133 B)"
+  "models/coll/newWeapons.col|224|-|13  colisiones de las armas nuevas (antes no estaba)"
+  "ViceExtended/features.ini|567|bf884c129adb|11  features.ini del mod: ahora lo LEE el motor (familia 11)"
+  "data/object.dat|26779|22b718c7796c|7  mundo del mod servido (familia 7)"
+  "data/occlu.ipl|21945|e46192296f2e|7  mundo del mod servido (familia 7)"
+  "data/maps/bryx/bryx.ide|111|b82b774a8958|7  mundo del mod servido (familia 7)"
+  "data/maps/bryx/bryx.ipl|172|b9b2c1c424f6|7  mundo del mod servido (familia 7)"
+)
+
+# Datos del mod que NO se sirven todavia, con su motivo: no son una regresion,
+# pero el fichero servido tiene que ser uno de los dos artefactos conocidos.
+# ruta|sha256 (12 hex) del vanilla|sha256 del mod|que es|motivo
+# 2026-10-14: vacio. El unico que estaba aqui (`data/main.scm`) ya se sirve del
+# mod, asi que su comprobacion vive en DATOS, arriba.
+PENDIENTE=()
 
 if [ "${1:-}" = "--listar" ]; then
   for m in "${MARCAS[@]}"; do echo "  ${m%%|*}  (${m##*|})"; done
+  for d in "${DATOS[@]}"; do echo "  servido/${d%%|*}  (${d##*|})"; done
+  if [ "${#PENDIENTE[@]}" -gt 0 ]; then
+    for d in "${PENDIENTE[@]}"; do echo "  servido/${d%%|*}  (pendiente: ${d##*|})"; done
+  fi
   exit 0
 fi
 
@@ -226,6 +275,70 @@ fi
 if ! grep -aq "ve13" "$PRE"; then
   echo "   FALTA ve13 (muestras de audio re-codificadas): los sonidos nuevos no llegarán"
   fallos=$((fallos + 1))
+fi
+
+# Los datos servidos, uno a uno: tamano y sha256 contra los del mod.
+echo "== datos del mod servidos =="
+for d in "${DATOS[@]}"; do
+  ruta="${d%%|*}"; resto="${d#*|}"; tam="${resto%%|*}"; resto="${resto#*|}"
+  sha="${resto%%|*}"; que="${resto##*|}"
+  f="streamed/$ruta"
+  if [ ! -f "$f" ]; then
+    printf "   FALTA %-32s %s  <-- no esta servido\n" "$ruta" "$que"
+    fallos=$((fallos + 1))
+    continue
+  fi
+  t=$(wc -c < "$f" | tr -d ' ')
+  if [ "$tam" != "-" ] && [ "$t" != "$tam" ]; then
+    printf "   FALTA %-32s tamano %s (se esperan %s)  <-- %s\n" "$ruta" "$t" "$tam" "$que"
+    fallos=$((fallos + 1))
+    continue
+  fi
+  if [ "$sha" != "-" ]; then
+    h=$(sha256sum "$f" 2>/dev/null | cut -c1-12)
+    if [ -z "$h" ]; then
+      printf "   AVISO %-32s sin sha256sum: no se comprueba el contenido  <-- %s\n" "$ruta" "$que"
+    elif [ "$h" != "$sha" ]; then
+      printf "   FALTA %-32s sha256 %s (se espera %s)  <-- %s\n" "$ruta" "$h" "$sha" "$que"
+      fallos=$((fallos + 1))
+      continue
+    fi
+  fi
+  printf "   OK    %-32s %s\n" "$ruta" "$que"
+done
+
+# La linea COLFILE del .col nuevo (sin ella el fichero esta pero no entra).
+if grep -qi "COLFILE.*NEWWEAPONS\.COL" streamed/data/default.dat 2>/dev/null; then
+  printf "   OK    %-32s %s\n" "data/default.dat COLFILE" "carga NEWWEAPONS.COL (13)"
+else
+  printf "   FALTA %-32s %s  <-- sin la linea COLFILE el .col no se carga\n" "data/default.dat COLFILE" "13"
+  fallos=$((fallos + 1))
+fi
+
+# Los datos pendientes por decision: el servido tiene que ser el vanilla o el del
+# mod (si es un tercero, es una regresion o un fichero roto).
+if [ "${#PENDIENTE[@]}" -gt 0 ]; then
+  echo "== datos del mod pendientes por decision =="
+  for d in "${PENDIENTE[@]}"; do
+    ruta="${d%%|*}"; resto="${d#*|}"; sha_va="${resto%%|*}"; resto="${resto#*|}"
+    sha_mod="${resto%%|*}"; resto="${resto#*|}"; que="${resto%%|*}"; motivo="${resto##*|}"
+    f="streamed/$ruta"
+    if [ ! -f "$f" ]; then
+      printf "   FALTA %-32s %s  <-- no esta servido (ni el vanilla)\n" "$ruta" "$que"
+      fallos=$((fallos + 1))
+      continue
+    fi
+    h=$(sha256sum "$f" 2>/dev/null | cut -c1-12)
+    if [ "$h" = "$sha_mod" ]; then
+      printf "   PENDIENTE %-28s ya servido el del mod (%s): %s\n" "$ruta" "$h" "$motivo"
+      echo "      ^ ya no esta pendiente: pasalo de PENDIENTE a DATOS"
+    elif [ "$h" = "$sha_va" ]; then
+      printf "   PENDIENTE %-28s servido el vanilla (%s): %s\n" "$ruta" "$h" "$motivo"
+    else
+      printf "   FALTA %-32s sha256 %s desconocido (vanilla %s / mod %s)  <-- %s\n" "$ruta" "${h:--}" "$sha_va" "$sha_mod" "$que"
+      fallos=$((fallos + 1))
+    fi
+  done
 fi
 
 echo

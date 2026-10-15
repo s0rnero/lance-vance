@@ -14,7 +14,15 @@ for arg in "$@"; do
   esac
 done
 
-command -v emcc >/dev/null || { echo "ERROR: emcc no encontrado. Activa emsdk primero."; exit 1; }
+# Si emcc no esta en el PATH, se usa el emsdk de $EMSDK o de $HOME/emsdk
+# (emsdk_env.sh no sirve en Git Bash si falta python3).
+if ! command -v emcc >/dev/null 2>&1; then
+  EMSDK_DIR="${EMSDK:-$HOME/emsdk}"
+  if [ -f "$EMSDK_DIR/upstream/emscripten/emcc.py" ]; then
+    export PATH="$EMSDK_DIR/upstream/emscripten:$EMSDK_DIR/upstream/bin:$PATH"
+  fi
+fi
+command -v emcc >/dev/null || { echo "ERROR: emcc no encontrado. Activa emsdk o define EMSDK."; exit 1; }
 
 if [ ! -f vendor/librw/CMakeLists.txt ]; then
   echo "ERROR: vendor/librw vacio. Ejecuta: git submodule update --init --recursive"

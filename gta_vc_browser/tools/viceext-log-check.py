@@ -46,7 +46,7 @@ Trazas que busca (las emite el motor):
               disparo sin arranque = arma MUDA.
     KEYICONS  txd=pcbtns cargado                                  TXD de iconos de
               tecla de D7.
-    HINTKEY   accion=<NOMBRE> vk=<código> icono=<0/1>             un aviso resolvió
+    HINTKEY   accion=<NOMBRE> vk=<código> icono=<0/1> [shift=<0/1>]  un aviso resolvió su tecla: `icono=1` = se pintó el icono (uno o dos con Shift); `0` = siguió el nombre en texto.
               su tecla: `icono=1` = se pintó el icono; `0` = siguió el nombre en
               texto (rueda del ratón, mando, tecla sin icono).
     VICEEXT 1p key / 1p set puerta= flanco= tog=                       (R5) el
@@ -68,6 +68,13 @@ Trazas que busca (las emite el motor):
               icono del arma: si `textura=0` el HUD no tiene qué pintar.
     SCRTXT3   x= y= texto="..."                               (R3b) caza-todo de
               los textos dibujados en la mitad inferior de la pantalla.
+    MODSCRIPT op=0x0FAx cmd=40xx ...                          (13) el script del
+              mod: los opcodes propios (0x0FA0-0x0FA9) que despacha el motor;
+              `desconocido=1` = ese opcode NO esta implementado y el script del
+              mod desincroniza su pila de parametros.
+    PARTCFG   cargados=<n> nuevos=<5> desconocidos=<0> total=<n>  (3/5) la carga
+              de `particle.cfg` con el tipo resuelto por NOMBRE (el mod anade 5
+              tipos y el orden posicional los desplazaria todos).
 
 Salida: un bloque por bloque con lo medido y un veredicto por bloque
 (OK / PARCIAL / SIN DATOS; los bloques del plan de recoil y el R27 del agachado
@@ -336,28 +343,33 @@ def bloque_d6(lineas):
 
 
 def bloque_d7(lineas):
-    print("\n== D7 · iconos de tecla en los avisos (v3.0) ==")
+    print("\n== D7 \u00b7 iconos de tecla en los avisos (v3.0) ==")
     ico = [l for l in lineas if "KEYICONS" in l]
     hint = [l for l in lineas if "HINTKEY" in l]
     resueltos = {}
     for l in hint:
-        m = re.search(r"HINTKEY accion=(\S+) vk=(-?\d+) icono=(\d)", l)
+        m = re.search(r"HINTKEY accion=(\S+) vk=(-?\d+) icono=(\d)(?: shift=(\d))?", l)
         if m:
-            resueltos[m.group(1)] = (int(m.group(2)), int(m.group(3)))
+            resueltos[m.group(1)] = (int(m.group(2)), int(m.group(3)), int(m.group(4) or 0))
+    shifts = [l for l in lineas if "kind=shift " in l]
     if ico:
         print("   " + ico[0].split("KEYICONS", 1)[-1].strip())
     print("   avisos con tecla resuelta: %d distintas" % len(resueltos))
-    for acc, (vk, hay) in list(resueltos.items())[:15]:
-        print("      %-34s vk=%-4d %s" % (acc, vk, "icono" if hay else "texto"))
-    conicono = [a for a, (vk, h) in resueltos.items() if h == 1]
+    for acc, (vk, hay, sh) in list(resueltos.items())[:15]:
+        print("      %-34s vk=%-4d %s%s" % (acc, vk, "icono" if hay else "texto",
+                                            " shift" if sh else ""))
+    conicono = [a for a, (vk, h, s) in resueltos.items() if h == 1]
+    condoble = [a for a, (vk, h, s) in resueltos.items() if h == 1 and s == 1]
+    print("   avisos Shift+tecla: %d (P4 kind=shift x%d)" % (len(condoble), len(shifts)))
     if conicono:
-        return "OK", ("%d aviso(s) con icono de tecla (p. ej. %s)"
-                      % (len(conicono), ", ".join(conicono[:3])))
+        return "OK", ("%d aviso(s) con icono de tecla (p. ej. %s)%s"
+                      % (len(conicono), ", ".join(conicono[:3]),
+                         "; Shift+tecla: %s" % ", ".join(condoble[:3]) if condoble else ""))
     if resueltos:
-        return "PARCIAL", "se resolvieron teclas pero ninguna tenía icono en el TXD"
+        return "PARCIAL", "se resolvieron teclas pero ninguna ten\u00eda icono en el TXD"
     if ico:
-        return "PARCIAL", "el TXD de iconos se cargó pero no se mostró ningún aviso con tecla"
-    return "SIN DATOS", "ni TXD de iconos ni avisos con tecla en esta sesión"
+        return "PARCIAL", "el TXD de iconos se carg\u00f3 pero no se mostr\u00f3 ning\u00fan aviso con tecla"
+    return "SIN DATOS", "ni TXD de iconos ni avisos con tecla en esta sesi\u00f3n"
 
 
 def bloque_j1(lineas):
@@ -1384,6 +1396,37 @@ def bloque_ax(lineas):
             print("   AX7: sin muestras de cuerpo quieto (no hay ninguna con lr=ud=0)")
     else:
         print("   (sin AX7: no se puede juzgar si el cuerpo sigue la marcha o la camara)")
+
+
+    # ---- ODRUMBO · destino del cuerpo frente al vector del mod y rumbo real (paso 0, 08/10) ----
+    # `dest` es el destino del cuerpo al caminar; con `br=1` debe coincidir con `vec` (el
+    # vector del mod). `real` es el rumbo medido en el ultimo segundo: solo se informa.
+    rumbo_re = re.compile(r"ODRUMBO br=(\d) lr=(-?[\d.]+) ud=(-?[\d.]+) dest=(-?[\d.]+) cur=(-?[\d.]+) camo=(-?[\d.]+) camf=(-?[\d.]+) vec=(-?[\d.]+) real=(-?[\d.]+) dist=([\d.]+)")
+    rumbo = [m for m in (rumbo_re.search(l) for l in lineas) if m]
+    if rumbo:
+        def _dif(a, b):
+            return abs((a - b + 180.0) % 360.0 - 180.0)
+        vec = [m for m in rumbo if m.group(1) == "1"]
+        if vec:
+            err = [_dif(float(m.group(4)), float(m.group(8))) for m in vec]
+            print("   ODRUMBO caminando con vector: %d muestras, |dest-vec| media %.1f max %.1f"
+                  % (len(err), sum(err) / len(err), max(err)))
+            if max(err) > 5.0:
+                fallos.append("ODRUMBO: el destino del cuerpo no coincide con el vector del mod "
+                              "(|dest-vec| max %.1f grados en %d muestras)"
+                              % (max(err), len([e for e in err if e > 5.0])))
+            movidos = [m for m in vec if float(m.group(10)) > 1.0]
+            if movidos:
+                real = [_dif(float(m.group(9)), float(m.group(4))) for m in movidos]
+                print("   ODRUMBO rumbo real vs destino (andando > 1 m/s): %d muestras, media %.1f max %.1f (informativo)"
+                      % (len(real), sum(real) / len(real), max(real)))
+        else:
+            print("   ODRUMBO: sin muestras con vector del mod (br=1)")
+        apuntado = [m for m in rumbo if m.group(1) == "0"]
+        if apuntado:
+            giro = [_dif(float(m.group(4)), float(m.group(6))) for m in apuntado]
+            print("   ODRUMBO apuntando: %d muestras, |dest-camo| media %.1f (si ~180 el giro de 180 sigue en el destino)"
+                  % (len(giro), sum(giro) / len(giro)))
 
     if fallos:
         return "FALLO", "; ".join(fallos)
@@ -2642,6 +2685,281 @@ def bloque_build(ruta):
     return ok
 
 
+def bloque_modscript(lineas):
+    """Familia 13: los opcodes propios del script del mod (0x0FA0-0x0FA9).
+
+    El main.scm del mod usa 7 de esos 10 comandos (4000-4009) 206 veces; el
+    motor los despacha tras VICEEXT_MOD_SCRIPT y emite una linea por opcode. Un
+    opcode NO implementado sale con `desconocido=1`: eso es lo que hay que ver,
+    porque ahi el script del mod desincroniza su pila de parametros.
+    """
+    por_op = collections.Counter()
+    sin_campos = 0
+    desconocidos = 0
+    for l in lineas:
+        if "kind=modscript" not in l:
+            continue
+        if "desconocido=1" in l:
+            desconocidos += 1
+        op = re.search(r"\bop=(0x[0-9A-Fa-f]+)", l)
+        cmd = re.search(r"\bcmd=(\d+)", l)
+        if op:
+            por_op[op.group(1).upper()] += 1
+        elif cmd:
+            por_op["cmd=%s" % cmd.group(1)] += 1
+        else:
+            sin_campos += 1
+    if not por_op and not desconocidos and not sin_campos:
+        return "SIN DATOS", "sin trazas kind=modscript (no se corrio el script del mod)"
+    detalle = ", ".join("%s x%d" % kv for kv in sorted(por_op.items())) or "sin opcodes"
+    if sin_campos:
+        return "PARCIAL", ("%d linea(s) kind=modscript sin `op=` ni `cmd=`; vistos: %s"
+                           % (sin_campos, detalle))
+    if desconocidos:
+        return "PARCIAL", ("%d opcode(s) de 4000-4009 SIN implementar (`desconocido=1`): "
+                           "el script del mod desincroniza; vistos: %s" % (desconocidos, detalle))
+    return "OK", "opcodes vistos: %s" % detalle
+
+
+def bloque_partcfg(lineas):
+    """Familia 3/5: el `particle.cfg` del mod carga con el tipo por NOMBRE.
+
+    El mod anade 5 tipos (ENGINE_SMOKE2_SMALL, ENGINE_STEAM_SMALL,
+    ENGINE_SMOKE_SMALL, CARFLAME_SMALL, CARFLAME_SMOKE_SMALL32): con el parser
+    posicional del motor de serie el fichero entero se desplaza. El motor emite
+    una linea por carga con los recuentos.
+    """
+    cargas = []
+    for l in lineas:
+        campos, _ = p4_evento(l)
+        if campos and campos.get("kind") == "partcfg":
+            cargas.append(campos)
+    if not cargas:
+        return "SIN DATOS", "sin trazas kind=partcfg (el motor no cargo `particle.cfg`)"
+    ult = cargas[-1]
+    cargados = _p4_entero(ult.get("cargados", ""))
+    nuevos = _p4_entero(ult.get("nuevos", ""))
+    desconocidos = _p4_entero(ult.get("desconocidos", ""))
+    detalle = "cargados=%s total=%s" % (ult.get("cargados", "?"), ult.get("total", "?"))
+    if None in (cargados, nuevos, desconocidos):
+        return "PARCIAL", "la linea kind=partcfg no trae los recuentos (%s)" % detalle
+    if desconocidos:
+        return "PARCIAL", ("%d tipo(s) del `particle.cfg` sin resolver por nombre; %s"
+                           % (desconocidos, detalle))
+    if nuevos != 5:
+        return "PARCIAL", ("el `particle.cfg` cargado trae %d tipo(s) del mod (se esperan 5): %s"
+                           % (nuevos, detalle))
+    if not cargados:
+        return "PARCIAL", "la carga no admitio ningun tipo (%s)" % detalle
+    return "OK", ("los 5 tipos del mod resueltos por nombre (%s, %d carga(s) en el log)"
+                  % (detalle, len(cargas)))
+
+
+def bloque_wheelrot(lineas):
+    """Familia 3 (v2.5): el volante del mod gira con la direccion.
+
+    El mod trae el dummy `steeringwheel` en 18 modelos del gta3.img servido; el
+    motor lo gira con el MISMO angulo que la rueda delantera y publica el par
+    (angulo aplicado, angulo de direccion) como mucho una vez por segundo. El
+    multiplicador (1,0) y el eje NO los da su tutorial: ese veredicto es visual,
+    asi que este bloque solo acredita que la pieza se movio, en que coche y
+    cuanto (no declara la pieza bien hecha).
+    """
+    eventos = []
+    sin_campos = 0
+    for l in lineas:
+        if "kind=wheelrot" not in l:
+            continue
+        vk = re.search(r"\bvk=(-?\d+)", l)
+        ang = re.search(r"\bangulo=(-?[\d.]+)", l)
+        direc = re.search(r"\bdirec=(-?[\d.]+)", l)
+        if not (vk and ang and direc):
+            sin_campos += 1
+            continue
+        eventos.append((int(vk.group(1)), float(ang.group(1)), float(direc.group(1))))
+    if not eventos and not sin_campos:
+        return "SIN DATOS", ("sin trazas kind=wheelrot (no se condujo un coche cuyo modelo "
+                             "traiga el dummy `steeringwheel`)")
+    if sin_campos:
+        return "PARCIAL", "%d linea(s) kind=wheelrot sin vk/angulo/direc" % sin_campos
+    coches = sorted(set(e[0] for e in eventos))
+    giro = max(abs(e[1]) for e in eventos)
+    return "OK", ("%d evento(s) de volante en %d coche(s); giro maximo %.1f grados (%.4f rad)"
+                  % (len(eventos), len(coches), giro * 180.0 / 3.141592653589793, giro))
+
+
+def bloque_aimsens(lineas):
+    """Familia 1 (2506 «Aim sensitivity fix»): mirar y apuntar con sensibilidad propia.
+
+    Medido en su `ViceEx.exe` (`FUN_0049b290`): mientras el jugador apunta entra el
+    par de apuntado (pad 0x937610/0x937618, raton 0x93762c/0x937634) y el resto del
+    tiempo el de mirar (pad 0x93760c/0x937614, raton 0x937628/0x937630). Aqui el
+    motor publica el factor `aim/look` que aplica, asi que este bloque acredita que
+    el cambio de par OCURRE, no que el jugador tenga los valores que quiere: eso es
+    su INI y su ojo.
+    """
+    eventos = []
+    sin_campos = 0
+    for l in lineas:
+        if "kind=aimsens" not in l:
+            continue
+        aim = re.search(r"\baim=(-?\d+)", l)
+        sens = re.search(r"\bsens=(-?[\d.]+)", l)
+        mfac = re.search(r"\bmfac=(-?[\d.]+)", l)
+        pfac = re.search(r"\bpfac=(-?[\d.]+)", l)
+        if not (aim and sens and mfac and pfac):
+            sin_campos += 1
+            continue
+        eventos.append((int(aim.group(1)), float(sens.group(1)),
+                        float(mfac.group(1)), float(pfac.group(1))))
+    if not eventos and not sin_campos:
+        return "SIN DATOS", "sin trazas kind=aimsens (no se apunto en esa sesion)"
+    if sin_campos:
+        return "PARCIAL", "%d linea(s) kind=aimsens sin aim/sens/mfac/pfac" % sin_campos
+    apuntando = [e for e in eventos if e[0] == 1]
+    mirando = [e for e in eventos if e[0] == 0]
+    if not apuntando:
+        return "PARCIAL", ("%d evento(s) de sensibilidad y NINGUNO apuntando: el cambio "
+                           "de par no se puede comprobar" % len(eventos))
+    return "OK", ("%d evento(s): apuntando %d (factor raton %.4f, pad %.4f), mirando %d"
+                  % (len(eventos), len(apuntando), apuntando[-1][2], apuntando[-1][3],
+                     len(mirando)))
+
+
+def bloque_moon(lineas):
+    """Familia 5 (v1.5 "Moving Moon"): la luna sale del rumbo del sol.
+
+    Portado de su `Clouds.cpp` (bloque `IMPROVED_TECH_PART` de su arbol fuente):
+    con la bandera puesta la posicion del disco ya no es la constante del vanilla
+    (0, -100, 15) sino `-CTimeCycle::GetSunDirection() * 150`, y el brillo y la
+    hora de salida tambien son suyos. El bloque acredita que la luna se movio y
+    cuanto; que se vea donde el jugador la espera es su ojo.
+    """
+    eventos = []
+    sin_campos = 0
+    for l in lineas:
+        if "kind=moon" not in l:
+            continue
+        fade = re.search(r"\bfadeout=(-?[\d.]+)", l)
+        bri = re.search(r"\bbrillo=(-?\d+)", l)
+        sol = re.search(r"\bsol=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", l)
+        pos = re.search(r"\bpos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", l)
+        if not (fade and bri and sol and pos):
+            sin_campos += 1
+            continue
+        eventos.append((float(fade.group(1)), int(bri.group(1)),
+                        tuple(float(x) for x in sol.groups()),
+                        tuple(float(x) for x in pos.groups())))
+    if not eventos and not sin_campos:
+        return "SIN DATOS", ("sin trazas kind=moon (no se vio el cielo de esa sesion)")
+    if sin_campos:
+        return "PARCIAL", "%d linea(s) kind=moon sin fadeout/brillo/sol/pos" % sin_campos
+    vanilla = (0.0, -100.0, 15.0)
+    movidas = [e for e in eventos if e[3] != vanilla]
+    if not movidas:
+        return "PARCIAL", ("%d linea(s) kind=moon y NINGUNA con la luna fuera del "
+                           "sitio del vanilla %s: no se puede comprobar que siga al sol"
+                           % (len(eventos), vanilla))
+    return "OK", ("%d linea(s) de luna; %d con la posicion fuera del vanilla (ultima "
+                  "pos=%s sol=%s brillo=%d)"
+                  % (len(eventos), len(movidas), movidas[-1][3], movidas[-1][2],
+                     movidas[-1][1]))
+
+
+def bloque_distlights(lineas):
+    """Familia 5 (v2.6 "Distant lights"): edificios y dummies con luz, de lejos.
+
+    Portado de su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): cada
+    frame se recorren los dos pools enteros y se registran coronas hasta 530 m /
+    el far clip. El bloque acredita que la pasada ocurre y que encuentra
+    entidades con efectos 2D; que las luces se vean es lo que mira el jugador.
+    """
+    lineas_dl = [l for l in lineas if "kind=distlights" in l]
+    if not lineas_dl:
+        return "SIN DATOS", ("sin trazas kind=distlights (no se jugo con el mundo cargado)")
+    ult = None
+    for l in lineas_dl:
+        e = re.search(r"\bedificios=(-?\d+)", l)
+        d = re.search(r"\bdummies=(-?\d+)", l)
+        c = re.search(r"\bconefectos=(-?\d+)", l)
+        if e and d and c:
+            ult = (int(e.group(1)), int(d.group(1)), int(c.group(1)))
+    if ult is None:
+        return "PARCIAL", ("%d linea(s) kind=distlights sin edificios/dummies/conefectos"
+                           % len(lineas_dl))
+    if ult[2] == 0:
+        return "PARCIAL", ("se recorrieron %d edificios y %d dummies y NINGUNO con "
+                           "efectos 2D: no hay luces lejanas que encender"
+                           % (ult[0], ult[1]))
+    return "OK", ("%d linea(s); ultima pasada: %d edificios, %d dummies, %d con efectos 2D"
+                  % (len(lineas_dl), ult[0], ult[1], ult[2]))
+
+
+def bloque_altsit(lineas):
+    """Familia 1 (v2.0 "Walking on ALT for the keyboard"; v1.0 "Seated movement").
+
+    La mitad de andar es la que se mide: con la tecla de la accion `PED_WALK`
+    pulsada el motor pone `m_fMoveSpeed` a 0 (el mod lo hace con su API
+    `CPad::GetPedWalk()`, `IMPROVED_MENU_AND_INPUT`), y la traza sale por
+    flanco (`AIMWALK tecla= spd=`). La mitad de sentarse NO lleva codigo portado:
+    el mod no tiene codigo propio ahi (su `PedAttractor.cpp` es identico al del
+    port) y su aportacion es el clip `SEAT_rvrs` de su `ped.ifp`, que el fichero
+    servido ya trae (medido con `tools/ifp_inspect.py`).
+    """
+    walk = [m for l in lineas
+            for m in [re.search("AIMWALK tecla=(-?[0-9]+) spd=(-?[0-9.]+)", l)]
+            if m]
+    if not walk:
+        return "SIN DATOS", ("sin trazas AIMWALK (no se pulso la tecla de andar en esa "
+                             "sesion)")
+    teclas = sorted(set(int(m.group(1)) for m in walk))
+    ceros = sum(1 for m in walk if abs(float(m.group(2))) < 0.001)
+    if all(t == 0 or t == 1056 for t in teclas):
+        return "PARCIAL", ("la accion PED_WALK no tiene tecla asignada (%s, que es "
+                           "rsNULL): la tecla de andar no hace nada" % teclas)
+    if ceros == 0:
+        return "PARCIAL", ("hay %d linea(s) AIMWALK y ninguna con spd=0.00: la tecla no "
+                           "esta parando la velocidad" % len(walk))
+    return "OK", ("%d evento(s) de la tecla de andar; teclas=%s, con spd=0.00: %d"
+                  % (len(walk), teclas, ceros))
+
+
+def bloque_gangaim(lineas):
+    """Familia 1 (v1.0 "Increased accuracy of NPC" + 2506 "AI accuracy tweaks").
+
+    Portado de sus bloques `IMPROVED_TECH_PART // AI` (`Ped.cpp` y `CopPed.cpp`):
+    la punteria base de los peds pasa de 60 a 73 y la de cada tipo de policia
+    sube (calle 60->84, FBI 76->80, SWAT 68->78, miamivice 76->86; el ejercito
+    se queda en 84). El bloque acredita el valor que el motor esta aplicando: si
+    sale 60, la mejora no esta puesta. Que se note en el tiroteo es del jugador.
+    """
+    eventos = []
+    sin_campos = 0
+    for l in lineas:
+        if "kind=gangaim" not in l:
+            continue
+        tipo = re.search("tipo=([a-z]+)", l)
+        acc = re.search("acc=(-?[0-9]+)", l)
+        if not (tipo and acc):
+            sin_campos += 1
+            continue
+        eventos.append((tipo.group(1), int(acc.group(1))))
+    if not eventos and not sin_campos:
+        return "SIN DATOS", "sin trazas kind=gangaim (no se creo ningun ped en esa sesion)"
+    if sin_campos:
+        return "PARCIAL", "%d linea(s) kind=gangaim sin tipo/acc" % sin_campos
+    peds = [e for e in eventos if e[0] == "ped"]
+    polis = sorted(set(e[1] for e in eventos if e[0] == "cop"))
+    if not peds:
+        return "PARCIAL", ("solo hay %d linea(s) de policia y ninguna de ped: la base "
+                           "no se puede comprobar" % len(eventos))
+    if peds[-1][1] < 73:
+        return "PARCIAL", ("la punteria base de los peds sigue en %d (el mod la sube a "
+                           "73): la mejora no esta puesta" % peds[-1][1])
+    return "OK", ("%d linea(s) de punteria; base de los peds=%d (el mod la sube a 73), "
+                  "tipos de policia con punteria propia=%d"
+                  % (len(eventos), peds[-1][1], len(polis)))
+
 
 P4_KINDS = ("move_begin", "move_end", "pose_begin", "pose_end", "input_edge",
             "input_hold_end", "roll_start", "roll_end", "roll_cancel",
@@ -2650,7 +2968,17 @@ P4_KINDS = ("move_begin", "move_end", "pose_begin", "pose_end", "input_edge",
             "legs", "hud_cross", "turners", "polbike",
             "sight", "crouchspeed", "move_apply", "pose_exit",
             "aim", "jump", "fire", "armsight",
-            "roll_step", "jump_end", "stand_end", "partials")
+            "roll_step", "jump_end", "stand_end", "partials", "firewait",
+            "limits",
+            "radio", "radio2",
+            "shift", "truco", "cheat2", "uzi",
+            "cardet", "cardead", "carluz",
+            "ini",
+            "modscript", "partcfg",
+            "wheelrot",
+            "aimsens",
+            "moon", "distlights", "gangaim",
+            "inifile", "worlddata")
 P4_REQ = {
     "move_begin": ("lr", "ud", "aim", "policy", "baseF", "baseR", "req"),
     "move_end": ("elapsed", "dist", "req", "baseF", "baseR", "dirErrMax", "bodyErrMax"),
@@ -2678,12 +3006,39 @@ P4_REQ = {
     "aim": ("why", "aim", "sprint", "jump", "policy", "speedGame"),
     "jump": ("lr", "ud", "rumbo", "dirX", "dirY"),
     "fire": ("aim", "gat", "arma", "hip"),
+    "firewait": ("run", "cur", "delay", "estado", "arma"),
     "armsight": ("pose", "errDeg"),
     "roll_step": ("clip", "current", "step", "total", "mps", "speedTarget"),
     "jump_end": ("cause", "req", "from", "to", "dist", "elapsed", "dirErr"),
     "stand_end": ("aim", "mfs", "t", "m", "mps", "maxfr"),
     "partials": ("aim", "crouch", "desde", "n", "w1", "cgroup"),
+    "limits": ("numpeds", "numvehicles", "mult"),
+    "radio": ("emisora", "icono"),
+    "radio2": ("emisora", "icono"),
+    # `via` va en PALABRA (`via=tecleo`): es lo que emite el motor, asi que no
+    # puede estar en P4_NUM_FINITOS o toda partida con un truco sale invalida.
+    "cheat2": ("cheat", "efecto", "via"),
+    "shift": ("accion", "vk", "shift", "icono"),
+    "truco": ("cheat", "efecto"),
+    "uzi": ("ev", "estado", "clip", "total"),
+    "cardet": ("paso", "rueda", "impulso"),
+    "cardead": ("muertos", "impulso"),
+    "carluz": ("luz", "impulso"),
+    "ini": ("opt",),
+    "wheelrot": ("vk", "angulo", "direc"),
+    "aimsens": ("aim", "sens", "mfac", "pfac"),
+    "moon": ("fadeout", "brillo", "sol", "pos"),
+    "distlights": ("edificios", "dummies", "conefectos"),
+    "gangaim": ("tipo", "acc"),
+    # Dos formas, y por eso NO tiene entrada en P4_REQ (el bloque P4.15 exige los
+    # campos de cada una): `case=0` es una clave (clave/ini/aplica/origen/impl) y
+    # `case=1` es el resumen del fichero (fichero/leidas/rgb).
+    "inifile": (),
+    "worlddata": ("zonas",),
 }
+P4_NUM_INI = ("opt", "flag", "a", "val", "raw", "applied", "regen", "hp", "max",
+              "hide", "wanted", "min", "fotos", "model", "proy",
+              "ini", "aplica", "zonas")
 P4_VECTORES = ("baseF", "baseR", "req", "local", "world", "carPos", "carRot", "visibleFront")
 P4_NUM_FINITOS = ("lr", "ud", "aim", "crouch", "walk", "sprint", "elapsed", "dist",
                   "dirErrMax", "bodyErrMax", "posture", "t80", "tClear",
@@ -2705,7 +3060,13 @@ P4_NUM_FINITOS = ("lr", "ud", "aim", "crouch", "walk", "sprint", "elapsed", "dis
                   "gat", "arma", "hip", "errDeg", "stickBlocked",
                   "canon", "piesMps", "pesosum",
                   "posepeso", "w1", "w2", "cgroup", "step", "total", "dirErr",
-                  "stepM", "stepT")
+                  "stepM", "stepT", "run", "cur", "delay", "estado",
+            "numpeds", "numvehicles", "mult",
+            "emisora", "icono",
+            "rueda", "impulso", "muertos", "luz",
+            "mascara", "doble", "tri", "d", "dinero",
+            "vk", "angulo", "direc",
+            "sens", "mfac", "pfac")
 P4_INICIO = {"move": "move_begin", "pose": "pose_begin", "roll": "roll_start", "cam": "cam_begin"}
 P4_FAMILIA = {"move_begin": "move", "move_end": "move", "pose_begin": "pose", "pose_end": "pose",
               "roll_start": "roll", "roll_end": "roll", "roll_cancel": "roll",
@@ -2838,7 +3199,7 @@ def p4_cargar(lineas):
             for k in P4_REQ.get(kind, ()):
                 if k not in campos:
                     errores.append("%s sin campo obligatorio %s" % (kind, k))
-            for k in P4_NUM_FINITOS:
+            for k in P4_NUM_FINITOS + P4_NUM_INI:
                 if k in campos and _p4_num(campos[k]) is None:
                     errores.append("%s con %s no finito/NaN" % (kind, k))
             for k in P4_VECTORES:
@@ -3566,6 +3927,393 @@ def p4_9(lineas):
     return "PASS", "los cuatro criterios de 4.4 dentro de sus topes"
 
 
+def bloque_uzi(lineas):
+    print("\n== UZI \u00b7 flanco de disparo Micro-UZI (medida 9.1-5) ==")
+    evs = []
+    for l in lineas:
+        m = re.search(r"P4 kind=uzi schema=1 gen=1 frame=(\d+) sim=([\d.]+) case=5 id=0 ev=(enter|ih_enter|ih_exit|exit) estado=(-?\d+) clip=(-?\d+) total=(-?\d+)(?: ok=(-?\d+))?", l)
+        if m:
+            evs.append({"frame": int(m.group(1)), "ev": m.group(3),
+                        "estado": int(m.group(4)), "clip": int(m.group(5)),
+                        "total": int(m.group(6)),
+                        "ok": int(m.group(7)) if m.group(7) is not None else None})
+    winfo = [l for l in lineas if "arma=51" in l]
+    if not evs:
+        return "SIN DATOS", "sin trazas uzi: Micro-UZI no disparada o build anterior a 9.1(5)"
+    print("   disparos (enter): %d; ih_enter: %d; ih_exit: %d; exit: %d" % (
+        len([e for e in evs if e["ev"] == "enter"]),
+        len([e for e in evs if e["ev"] == "ih_enter"]),
+        len([e for e in evs if e["ev"] == "ih_exit"]),
+        len([e for e in evs if e["ev"] == "exit"])))
+    huecos = []
+    i = 0
+    while i < len(evs):
+        if evs[i]["ev"] != "enter":
+            i += 1
+            continue
+        seq = [evs[i]["ev"]]
+        j = i + 1
+        while j < len(evs) and evs[j]["ev"] != "enter":
+            seq.append(evs[j]["ev"])
+            j += 1
+        ultimo = (j == len(evs))
+        ent = evs[i]
+        if seq == ["enter"] and ultimo:
+            huecos.append("ultimo enter frame=%d sin ih (estado=%d clip=%d)" % (ent["frame"], ent["estado"], ent["clip"]))
+        elif seq == ["enter", "ih_enter"]:
+            huecos.append("ih_enter frame=%d sin ih_exit (clip=%d)" % (ent["frame"], ent["clip"]))
+        elif seq == ["enter", "ih_enter", "ih_exit"] and ent["clip"] > 1:
+            huecos.append("ih_exit frame=%d sin exit con clip>1 (%d)" % (ent["frame"], ent["clip"]))
+        i = j
+    for h in huecos[:6]:
+        print("   hueco: " + h)
+    nenter = len([e for e in evs if e["ev"] == "enter"])
+    if not winfo:
+        return "PARCIAL", "%d enter(s)%s; sin WINFO arma=51: sesion no valida para 5a" % (
+            nenter, ("; huecos: %s" % "; ".join(huecos[:3])) if huecos else "")
+    if huecos:
+        return "OK", "%d enter(s); hueco localizado: %s" % (nenter, huecos[0])
+    return "OK", "%d enter(s) sin huecos (rafaga completa)" % nenter
+
+
+def p4_10(ev):
+    """Plan 9.0 x limites del mod: pools y radio de aparicion."""
+    print("\n== P4.10 x plan 9.0: limites (numpeds/numvehicles/mult) ==")
+    lim = [e for e in ev["eventos"] if e["kind"] == "limits"]
+    if not lim:
+        return "SIN DATOS", "sin trazas limits: build anterior a 9.0 o bandera quitada"
+    fallos = []
+    for e in lim:
+        np = _p4_num(e.get("numpeds", ""))
+        nv = _p4_num(e.get("numvehicles", ""))
+        mu = _p4_num(e.get("mult", ""))
+        if None in (np, nv, mu):
+            fallos.append("limits sin numeros")
+        elif (np, nv) != (140.0, 130.0):
+            fallos.append("pools %g/%g, se esperaban 140/130" % (np, nv))
+        elif mu < 1.0:
+            fallos.append("mult %.2f < 1.0 (no amplia)" % mu)
+    if fallos:
+        return "FALLO", "; ".join(fallos[:4])
+    return "PASS", ("%d traza(s) limits con 140/130" % len(lim))
+
+
+def p4_11(ev):
+    """Plan 9.1(1) x iconos de emisora: cambio con icono resuelto."""
+    print("\n== P4.11 x plan 9.1(1): radio (emisora/icono) ==")
+    rad = [e for e in ev["eventos"] if e["kind"] in ("radio", "radio2")]
+    if not rad:
+        return "SIN DATOS", "sin trazas radio: build anterior a 9.1(1) o bandera quitada"
+    fallos = []
+    sinicono = 0
+    for e in rad:
+        em = _p4_num(e.get("emisora", ""))
+        ic = _p4_num(e.get("icono", ""))
+        if None in (em, ic):
+            fallos.append("radio sin numeros")
+        elif em < 0 or em > 10:
+            fallos.append("emisora %g fuera de 0..10" % em)
+        elif ic < -1 or ic > 10:
+            fallos.append("icono %g fuera de -1..8" % ic)
+        elif 0 <= em <= 8 and ic == -1:
+            sinicono += 1
+    if fallos:
+        return "FALLO", "; ".join(fallos[:4])
+    if sinicono:
+        return "FALLO", ("%d cambio(s) a emisora con logo esperado (0..8) pero icono=-1: "
+                         "textura ausente en radio.txd o estacion sin resolver" % sinicono)
+    return "PASS", ("%d cambio(s) de emisora con icono 0..10" % len(rad))
+
+
+def p4_12(ev):
+    """Plan 9.1(4) x trucos nuevos del mod: los 6 codigos dejan su traza."""
+    print("\n== P4.12 x plan 9.1(4): trucos (cheat/efecto) ==")
+    ESPERADOS = {"AIRWAYS": ("volar_0", "volar_1"),
+                 "BIGSMOKE": ("teargas_5",),
+                 "AEZAKMI": ("never_wanted_0", "never_wanted_1"),
+                 "IAMINVINCIBLE": ("invencible_0", "invencible_1"),
+                 "BIGHEADS": ("sin_efecto", "big_heads_0", "big_heads_1"),
+                 "RCROCKET": ("sin_efecto", "rc_rocket_0", "rc_rocket_1")}
+    tr = [e for e in ev["eventos"] if e["kind"] in ("truco", "cheat2")]
+    if not tr:
+        return "SIN DATOS", "sin trazas truco: build anterior a 9.1(4) o bandera quitada"
+    fallos = []
+    vistos = {}
+    for e in tr:
+        ch = e.get("cheat", "")
+        ef = e.get("efecto", "")
+        if ch not in ESPERADOS:
+            fallos.append("cheat desconocido %s" % ch)
+        elif ef not in ESPERADOS[ch]:
+            fallos.append("%s con efecto ajeno (%s)" % (ch, ef))
+        else:
+            vistos[ch] = ef
+    faltan = [c for c in ESPERADOS if c not in vistos]
+    if faltan:
+        fallos.append("sin teclear: %s" % ",".join(faltan))
+    if fallos:
+        return "FALLO", "; ".join(fallos[:6])
+    return "PASS", ("%d truco(s): %s" % (len(vistos), ",".join(sorted(vistos))))
+
+
+def p4_14(ev):
+    """Plan 9.2 x features.ini del mod: opciones aplicadas (opt/flag/a/val)."""
+    print("\n== P4.14 x plan 9.2: kind=ini (features.ini del mod) ==")
+    ini = [e for e in ev["eventos"] if e["kind"] == "ini"]
+    if not ini:
+        return "SIN DATOS", "sin trazas kind=ini: build anterior a 9.2 o ninguna opcion ejercitada"
+    fallos = []
+    for e in ini:
+        opt = _p4_entero(e.get("opt", ""))
+        if opt is None:
+            fallos.append("ini sin numero en opt")
+        elif not 1 <= opt <= 19:
+            fallos.append("ini con opt=%s fuera de 1..19" % e.get("opt"))
+    if fallos:
+        return "FALLO", "; ".join(sorted(set(fallos))[:4])
+    opts = sorted(set(int(_p4_entero(e.get("opt", ""))) for e in ini))
+    return "PASS", ("%d opcion(es) del features.ini: opt %s"
+                    % (len(opts), ",".join(str(o) for o in opts)))
+
+
+# Familia 11 (`VICEEXT_FEATURES_INI`): las 17 claves del `features.ini` del mod,
+# verbatim de su lector (`x87/gta-extended`, rama `miami`, `src/core/re3.cpp:308`).
+# `impl` = el port tiene codigo detras de la clave (lo mismo que declara
+# `src/core/ViceExtFeatures.cpp`): las que van a 0 se leen y se trazan, pero no
+# hacen nada, y eso el verificador lo dice en voz alta en vez de callarlo.
+FAM11_CLAVES = (
+    ("VehiclesDontCatchFireWhenTurningOver", True),
+    ("HealthRegenerationUpToHalf", True),
+    ("WantedStarsHideOnScreenWhenThereIsNoSearch", True),
+    ("RemoveMoneyZerosInTheHud", True),
+    ("PlayerDoesntBounceAwayFromMovingCar", True),
+    ("StandardCarsUseTurnSignals", True),
+    ("CameraShakeInVehicleAtHighSpeed", False),
+    ("MilitaryFiringFromTankAtPlayer", True),
+    ("DisableBulletTraces", True),
+    ("WaypointColorRGB", True),
+    ("EnableDistantLights", True),
+    ("RecoilWhenFiring", True),
+    ("EnableClimbing", True),
+    ("EnableSwimming", True),
+    ("RocketLauncherThirdPersonAiming", True),
+    ("RandomVehicleModsInTraffic", False),
+    ("MirrorModeByDefault", False),
+)
+# Claves que el fichero NO puede mover: decisiones del jugador (la tabla
+# `kOverrides` de `src/core/ViceExtFeatures.cpp`). Si alli cambia, cambia aqui.
+FAM11_JUGADOR = {
+    "EnableClimbing": 1,
+    "RemoveMoneyZerosInTheHud": 1,
+    "VehiclesDontCatchFireWhenTurningOver": 1,
+    "HealthRegenerationUpToHalf": 1,
+    "WantedStarsHideOnScreenWhenThereIsNoSearch": 1,
+    "MilitaryFiringFromTankAtPlayer": 1,
+    "StandardCarsUseTurnSignals": 1,
+}
+
+
+def fam11_ini():
+    """Claves y color del `features.ini` del mod tal y como se sirve (bit a bit)."""
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                        "mods", "extended", "GameFiles", "ViceExtended", "features.ini")
+    vals = {}
+    rgb = None
+    try:
+        with open(ruta, encoding="utf-8", errors="replace") as f:
+            seccion = False
+            for l in f:
+                l = l.strip()
+                if l.startswith("["):
+                    seccion = l.strip("[]").strip().lower() == "features"
+                elif seccion and "=" in l and not l.startswith(";") and not l.startswith("#"):
+                    k, v = l.split("=", 1)
+                    vals[k.strip()] = v.split(";")[0].strip()
+    except OSError:
+        return None, None
+    if "WaypointColorRGB" in vals:
+        try:
+            partes = [int(x) for x in vals["WaypointColorRGB"].split(",")]
+            rgb = tuple(partes) if len(partes) == 3 else None
+        except ValueError:
+            rgb = None
+    return vals, rgb
+
+
+def p4_15(ev):
+    """Familia 11: el `features.ini` del mod se lee al arrancar y sus claves mandan."""
+    print("\n== P4.15 x plan 12.0: familia 11 (features.ini del mod) ==")
+    evs = [e for e in ev["eventos"] if e["kind"] == "inifile"]
+    if not evs:
+        return "SIN DATOS", "sin trazas kind=inifile: build anterior a la familia 11"
+
+    claves = {}
+    fallos = []
+    for e in evs:
+        if _p4_entero(e.get("case", "")) != 0:
+            continue
+        k = e.get("clave", "")
+        if not k:
+            fallos.append("traza inifile sin clave")
+        elif k in claves:
+            fallos.append("clave repetida (%s)" % k)
+        else:
+            claves[k] = e
+    resumen = [e for e in evs if _p4_entero(e.get("case", "")) == 1]
+    if not resumen:
+        return "FALLO", "sin linea de resumen (case=1): no se sabe si el fichero se leyo"
+    r = resumen[-1]
+    if r.get("fichero") != "1":
+        return "FALLO", ("el motor NO pudo leer `ViceExtended/features.ini` (fichero=0): "
+                         "el fichero no esta servido o no llega al motor")
+
+    vals, rgb = fam11_ini()
+    if vals is None:
+        return "FALLO", "no encuentro el `features.ini` del repo para contrastarlo"
+
+    conocidas = dict(FAM11_CLAVES)
+    faltan = [k for k, _ in FAM11_CLAVES if k not in claves]
+    sobran = sorted(k for k in claves if k not in conocidas)
+    if faltan:
+        fallos.append("claves sin traza: %s" % ",".join(faltan))
+    if sobran:
+        fallos.append("claves ajenas: %s" % ",".join(sobran))
+
+    del_fichero = 0
+    for k, impl in FAM11_CLAVES:
+        e = claves.get(k)
+        if e is None:
+            continue
+        ini = _p4_entero(e.get("ini", ""))
+        aplica = _p4_entero(e.get("aplica", ""))
+        origen = e.get("origen", "")
+        if ini is None or aplica is None:
+            fallos.append("%s sin numeros (ini/aplica)" % k)
+            continue
+        if _p4_entero(e.get("impl", "")) != (1 if impl else 0):
+            fallos.append("%s: impl=%s y el port declara %d" % (k, e.get("impl", ""), 1 if impl else 0))
+        if k in FAM11_JUGADOR:
+            if origen != "jugador" or aplica != FAM11_JUGADOR[k]:
+                fallos.append("%s: decision del jugador pisada (origen=%s aplica=%s)"
+                              % (k, origen, aplica))
+            continue
+        if k not in vals:
+            if origen != "port" or ini != -1:
+                fallos.append("%s: no esta en el fichero y la traza dice origen=%s ini=%s"
+                              % (k, origen, ini))
+            continue
+        if k == "WaypointColorRGB":
+            if origen != "fichero" or aplica != 1:
+                fallos.append("WaypointColorRGB: origen=%s aplica=%s (deberia salir del fichero)"
+                              % (origen, aplica))
+            elif rgb is not None and r.get("rgb", "") != ",".join(str(c) for c in rgb):
+                fallos.append("WaypointColorRGB: el motor usa rgb=%s y el fichero dice %s"
+                              % (r.get("rgb", ""), rgb))
+            del_fichero += 1
+            continue
+        try:
+            v = int(vals[k])
+        except ValueError:
+            fallos.append("%s: valor no numerico en el fichero (%s)" % (k, vals[k]))
+            continue
+        esp = 1 if v != 0 else 0
+        if origen != "fichero" or ini != v or aplica != esp:
+            fallos.append("%s: el fichero dice ini=%d y la traza trae ini=%d aplica=%d origen=%s"
+                          % (k, v, ini, aplica, origen))
+            continue
+        del_fichero += 1
+
+    leidas = _p4_entero(r.get("leidas", ""))
+    esperadas = sum(1 for k, _ in FAM11_CLAVES if k in vals)
+    if leidas != esperadas:
+        fallos.append("leidas=%s y en el fichero hay %d claves del port" % (r.get("leidas", ""), esperadas))
+
+    if fallos:
+        return "FALLO", "; ".join(fallos[:5])
+    sin_efecto = [k for k, impl in FAM11_CLAVES if not impl]
+    return "PASS", ("%d claves leidas del fichero (fichero=1), %d por decision del jugador; "
+                    "sin efecto en el motor: %s"
+                    % (del_fichero, len(FAM11_JUGADOR), ",".join(sin_efecto) or "ninguna"))
+
+
+def fam7_zonas_servidas():
+    """Zonas `occl` del `occlu.ipl` del mod tal y como se sirve (bit a bit).
+
+    Es el suelo de la comparacion: el motor puede sumar zonas de otros IPL, pero no
+    puede tener menos que las del fichero que se le sirve.
+    """
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "streamed",
+                        "data", "occlu.ipl")
+    try:
+        with open(ruta, encoding="utf-8", errors="replace") as f:
+            lineas = [l.strip() for l in f.read().split("\n")]
+    except OSError:
+        return None, None
+    lineas = [l for l in lineas if l]
+    zonas = 0
+    for l in lineas[1:]:
+        if re.match(r"^[-0-9.,\s]+$", l):
+            zonas += 1
+    return zonas, (lineas[0].lower() if lineas else "")
+
+
+def p4_16(ev):
+    """Familia 7: el mundo del mod se sirve y el motor lo ingiere (zonas de oclusion)."""
+    print("\n== P4.16 x plan 12.0: familia 7 (mundo y datos del mod) ==")
+    evs = [e for e in ev["eventos"] if e["kind"] == "worlddata"]
+    if not evs:
+        return "SIN DATOS", "sin trazas worlddata: build anterior a la familia 7"
+    esperadas, cabecera = fam7_zonas_servidas()
+    if esperadas is None:
+        return "FALLO", "no encuentro `streamed/data/occlu.ipl` para contrastar"
+    if cabecera != "occl":
+        return "FALLO", "el `occlu.ipl` servido no empieza por `occl` (cabecera=%r)" % cabecera
+    zonas = _p4_entero(evs[-1].get("zonas", ""))
+    if zonas is None:
+        return "FALLO", "worlddata sin numero en zonas"
+    if zonas < esperadas:
+        return "FALLO", ("el motor ingirio %d zona(s) de oclusion y el `occlu.ipl` del mod trae "
+                         "%d: no todo su mundo llego (o se sirvio otro fichero)"
+                         % (zonas, esperadas))
+    if zonas > esperadas:
+        return "PASS", ("%d zona(s) de oclusion (las %d del `occlu.ipl` del mod y %d mas de "
+                         "otros IPL servidos)" % (zonas, esperadas, zonas - esperadas))
+    return "PASS", "%d zona(s) de oclusion: exactamente las del `occlu.ipl` del mod" % zonas
+
+
+def p4_13(ev):
+    """Plan 10.0 lote B x rueda/faros/muertes: desprendimiento, luz rota, muerte en choque."""
+    print("\n== P4.13 x plan 10.0-B: cardet/cardead/carluz ==")
+    det = [e for e in ev["eventos"] if e["kind"] == "cardet"]
+    dea = [e for e in ev["eventos"] if e["kind"] == "cardead"]
+    luz = [e for e in ev["eventos"] if e["kind"] == "carluz"]
+    if not det and not dea and not luz:
+        return "SIN DATOS", "sin trazas cardet/cardead/carluz: sin choques duros o build anterior a 10.0-B"
+    fallos = []
+    for e in det:
+        if e.get("paso", "") not in ("desprende", "revienta"):
+            fallos.append("cardet con paso ajeno (%s)" % e.get("paso", ""))
+        for c in ("rueda", "impulso"):
+            if _p4_num(e.get(c, "")) is None:
+                fallos.append("cardet sin numero en %s" % c)
+    for e in dea:
+        for c in ("muertos", "impulso"):
+            if _p4_num(e.get(c, "")) is None:
+                fallos.append("cardead sin numero en %s" % c)
+    for e in luz:
+        for c in ("luz", "impulso"):
+            if _p4_num(e.get(c, "")) is None:
+                fallos.append("carluz sin numero en %s" % c)
+    if fallos:
+        return "FALLO", "; ".join(fallos[:4])
+    des = len([e for e in det if e.get("paso") == "desprende"])
+    rev = len([e for e in det if e.get("paso") == "revienta"])
+    mue = sum(int(float(e.get("muertos", 0))) for e in dea)
+    return "PASS", ("%d cardet (%d desprende/%d revienta), %d cardead (%d NPC), %d carluz"
+                    % (len(det), des, rev, len(dea), mue, len(luz)))
+
+
+
 def p4_esperados(a):
     v = a.expected_version
     d = a.expected_data_tag
@@ -3632,13 +4380,21 @@ def p4_main(a, lineas):
              ",".join(str(g) for g in sorted(ev["gens"]))))
     res = (("P4.1", p4_1(ev)), ("P4.2", p4_2(ev)), ("P4.3", p4_3(ev)),
            ("P4.4", p4_4(ev)), ("P4.5", p4_5(ev)), ("P4.6", p4_6(ev)),
-           ("P4.7", p4_7(ev)), ("P4.8", p4_8(ev)), ("P4.9", p4_9(lineas)))
+           ("P4.7", p4_7(ev)), ("P4.8", p4_8(ev)), ("P4.9", p4_9(lineas)),
+           ("P4.10", p4_10(ev)),
+           ("P4.11", p4_11(ev)),
+           ("P4.12", p4_12(ev)),
+           ("P4.13", p4_13(ev)),
+           ("P4.14", p4_14(ev)),
+           ("P4.15", p4_15(ev)),
+           ("P4.16", p4_16(ev)))
     print("\n== resumen plan 4.0 ==")
     for nombre, (estado, motivo) in res:
         print("   %s %-9s %s" % (nombre, estado, motivo))
     if any(estado == "FALLO" for _, (estado, _) in res):
         return 1
-    base = [(n, v) for n, v in res if n != "P4.9"]
+    base = [(n, v) for n, v in res if n not in ("P4.9", "P4.10", "P4.11", "P4.12", "P4.13",
+                                                 "P4.14", "P4.15", "P4.16")]
     if all(estado == "PASS" for _, (estado, _) in base):
         return 0
     return 2
@@ -3691,7 +4447,13 @@ def main():
                        ("SR", bloque_sirena), ("LB", bloque_lbar), ("R13", bloque_r13),
                         ("R14", bloque_r14), ("R15", bloque_r15), ("R16", bloque_r16),
                         ("R17", bloque_r17), ("R19", bloque_r19), ("R27", bloque_r27),
-                        ("RC", bloque_recoil), ("AX", bloque_ax)):
+                        ("RC", bloque_recoil), ("AX", bloque_ax),
+                        ("UZI", bloque_uzi),
+                        ("S13", bloque_modscript), ("P35", bloque_partcfg),
+                        ("VW", bloque_wheelrot), ("AW", bloque_aimsens),
+                        ("LM", bloque_moon), ("LL", bloque_distlights),
+                        ("GA", bloque_gangaim),
+                        ("AS", bloque_altsit)):
         res[nombre] = fn(lineas)
 
     print("\n== resumen ==")
@@ -3699,7 +4461,8 @@ def main():
         print("   B   FALLO    build de la sesion distinta de la servida (ver arriba)")
     for nombre in ("D2", "D4", "D5", "D6", "D7", "D8", "R2", "R3", "J1",
                    "R5", "R9", "R11", "L2", "R3b", "L6", "H", "R12", "R13", "R14", "R15", "R16",
-                   "R17", "R19", "R27", "SR", "LB", "AX"):
+                   "R17", "R19", "R27", "SR", "LB", "AX", "UZI", "S13", "P35", "VW",
+                   "AW", "LM", "LL", "GA", "AS"):
         estado, motivo = res[nombre]
         print("   %-3s %-9s %s" % (nombre, estado, motivo))
     print("   RC  %-9s %s" % res["RC"])
