@@ -1072,20 +1072,6 @@ public:
 
 	void ReplaceWeaponWhenExitingVehicle(void);
 	void RemoveWeaponWhenEnteringVehicle(void);
-
-	// Sección 2 (P2) — drive-by ampliado. `CanDoDriveByWithCurrentWeapon` es la
-	// puerta que usan los tres DoDriveByShootings (CAutomobile/CBike/CBoat) y sin
-	// VICEEXT_DRIVEBY_WIDE equivale EXACTAMENTE al chequeo vanilla de slot 5;
-	// `KeepsWeaponInHandWhileDriving` dice si el arma se queda visible en la mano
-	// al entrar al vehículo (falso sin el define -> vanilla).
-	bool CanDoDriveByWithCurrentWeapon(void);
-	bool KeepsWeaponInHandWhileDriving(void);
-
-	// Traza de la sonda de drive-by (tools/driveby-smoke-test.mjs): estado 1 vez
-	// por segundo, una línea por disparo y una por entrada/salida de vehículo.
-	void DriveByTraceState(const char *vehClass, bool fireHeld, bool lookLeft, bool lookRight);
-	void DriveByTraceShot(const char *vehClass, const char *anim, uint32 shotDelayMs);
-	void DriveByTraceVehicleWeapon(const char *phase, const char *outcome);
 	bool IsNotInWreckedVehicle()
 	{
 		return m_pMyVehicle != nil && ((CEntity*)m_pMyVehicle)->GetStatus() != STATUS_WRECKED;

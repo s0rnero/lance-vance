@@ -60,10 +60,8 @@ public:
 	uint32 m_Flags;
 
 	uint32 m_nWeaponSlot;
-#ifdef VICEEXT_WEAPON_SIGHTS
-	// columna 27 de su `weapon.dat`: 0 = cruz de serie, 1 dot, 2 pistol, 3 SMG,
-	// 4 shotgun, 5 rifle, 6 heavy, 7 rocket (su `weaponSights.txd`).
-	int32 m_nSight;
+#ifdef VICEEXT_WEAPON_SIGHT
+	uint8 m_nWeaponSight;
 #endif
 
 	static void Initialise(void);

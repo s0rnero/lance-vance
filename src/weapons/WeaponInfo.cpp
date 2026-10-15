@@ -206,6 +206,9 @@ CWeaponInfo::Initialise(void)
 		aWeaponInfo[i].m_fAnimBreakout = 0.0f;
 		aWeaponInfo[i].m_Flags = WEAPONFLAG_USE_GRAVITY | WEAPONFLAG_SLOWS_DOWN | WEAPONFLAG_RAND_SPEED | WEAPONFLAG_EXPANDS | WEAPONFLAG_EXPLODES;
 		aWeaponInfo[i].m_nWeaponSlot = WEAPONSLOT_UNARMED;
+#ifdef VICEEXT_WEAPON_SIGHT
+		aWeaponInfo[i].m_nWeaponSight = 0;
+#endif
 	}
 	debug("Loading weapon data...\n");
 	LoadWeaponData();
@@ -221,8 +224,8 @@ CWeaponInfo::LoadWeaponData(void)
 	float delayBetweenAnimAndFire, animLoopStart, animLoopEnd;
 	int flags, ammoAmount, damage, reload, weaponType;
 	int firingRate, modelId, modelId2, weaponSlot;
-#ifdef VICEEXT_WEAPON_SIGHTS
-	int weaponSight;	// D6: columna 27 (su `weapon.dat` la documenta como "weapon sight")
+#ifdef VICEEXT_WEAPON_SIGHT
+	int weaponSight = 0;
 #endif
 	char line[256], weaponName[32], fireType[32];
 	char animToPlay[32];
@@ -260,16 +263,11 @@ CWeaponInfo::LoadWeaponData(void)
 		fireOffsetX = 0.0f;
 		weaponName[0] = '\0';
 		fireType[0] = '\0';
-#ifdef VICEEXT_WEAPON_SIGHTS
-		// Un `weapon.dat` de serie sólo trae 26 columnas: si no viene la 27, la
-		// mira queda en 0 (= cruz de siempre).
-		weaponSight = 0;
-#endif
 		fireOffsetY = 0.0f;
 		fireOffsetZ = 0.0f;
 		sscanf(
 			&line[lp],
-#ifdef VICEEXT_WEAPON_SIGHTS
+#ifdef VICEEXT_WEAPON_SIGHT
 			"%s %s %f %d %d %d %d %f %f %f %f %f %f %f %s %f %f %f %f %f %f %f %d %d %x %d %d",
 #else
 			"%s %s %f %d %d %d %d %f %f %f %f %f %f %f %s %f %f %f %f %f %f %f %d %d %x %d",
@@ -299,11 +297,12 @@ CWeaponInfo::LoadWeaponData(void)
 			&modelId,
 			&modelId2,
 			&flags,
-			&weaponSlot
-#ifdef VICEEXT_WEAPON_SIGHTS
-			, &weaponSight
+#ifdef VICEEXT_WEAPON_SIGHT
+			&weaponSlot,
+			&weaponSight);
+#else
+			&weaponSlot);
 #endif
-			);
 
 		if (strncmp(weaponName, "ENDWEAPONDATA", 13) == 0)
 			return;
@@ -334,8 +333,8 @@ CWeaponInfo::LoadWeaponData(void)
 		aWeaponInfo[weaponType].m_nModel2Id = modelId2;
 		aWeaponInfo[weaponType].m_Flags = flags;
 		aWeaponInfo[weaponType].m_nWeaponSlot = weaponSlot;
-#ifdef VICEEXT_WEAPON_SIGHTS
-		aWeaponInfo[weaponType].m_nSight = weaponSight;
+#ifdef VICEEXT_WEAPON_SIGHT
+		aWeaponInfo[weaponType].m_nWeaponSight = weaponSight;
 #endif
 
 		if (animLoopEnd < 98.0f && weaponType != WEAPONTYPE_FLAMETHROWER && !CWeapon::IsShotgun(weaponType))

@@ -1954,7 +1954,11 @@ CBike::ProcessControlInputs(uint8 pad)
 	if(exitVehicleHeld)
 		bIsHandbrakeOn = true;
 	else
+#ifdef VICEEXT_FIRING_AND_AIMING
+		bIsHandbrakeOn = FindPlayerPed()->bIsPlayerAiming ? false : !!CPad::GetPad(pad)->GetHandBrake();
+#else
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
+#endif
 
 	// Steer left/right
 #ifdef FIX_BUGS
@@ -2146,11 +2150,26 @@ CBike::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
 
-	// Sección 2 (P2): el estado del mando se calcula antes de las puertas de
-	// entrada para que la traza de la sonda vea "conduzco y disparo" también
-	// cuando el arma no pasa la puerta (esa es la línea base).
-	bool fireHeld = CPad::GetPad(0)->GetCarGunFired();
+	CWeapon *weapon = pDriver->GetWeapon();
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN &&
+		CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_HANDGUN)
+#else
+	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != 5)
+#endif
+		return;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (CPad::GetPad(0)->GetTarget() && !FindPlayerPed()->bIsPlayerAiming && FindPlayerPed()->CanUseDriveBy())
+		FindPlayerPed()->SetPointGunAt(nil);
+	else if (!CPad::GetPad(0)->GetTarget() && FindPlayerPed()->bIsPlayerAiming || !FindPlayerPed()->CanUseDriveBy())
+		FindPlayerPed()->ClearWeaponTarget();
+#endif
+	weapon->Update(pDriver->m_audioEntityId, nil);
+
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
@@ -2165,20 +2184,26 @@ CBike::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
-	pDriver->DriveByTraceState("bike", fireHeld, lookingLeft, lookingRight);
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (!FindPlayerPed()->m_pWeaponModel && (FindPlayerPed()->bIsPlayerAiming || (lookingLeft || lookingRight || CPad::GetPad(0)->GetCarGunFired())))
+		pDriver->AddWeaponModel(weapon->GetInfo()->m_nModelId);
+	else if (FindPlayerPed()->m_pWeaponModel && !FindPlayerPed()->bIsPlayerAiming && !lookingLeft && !lookingRight && !CPad::GetPad(0)->GetCarGunFired())
+		pDriver->RemoveWeaponModel(weapon->GetInfo()->m_nModelId);
+#endif
+#if defined VICEEXT_FIRING_AND_AIMING && defined VICEEXT_FIRST_PERSON
+	if (FindPlayerPed()->bIsPlayerAiming || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_REAL_1ST_PERSON || 
+		(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_HANDGUN && !FindPlayerPed()->bIsPlayerAiming)) {
 
-	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		weapon->Reload();
 		return;
+	}
+#endif
 
-	CWeapon *weapon = pDriver->GetWeapon();
-	// Sección 2 (P2): con VICEEXT_DRIVEBY_WIDE las pistolas también disparan desde
-	// la moto (sin el define, esta llamada es el chequeo vanilla de slot 5).
-	if(!pDriver->CanDoDriveByWithCurrentWeapon())
-		return;
-
-	weapon->Update(pDriver->m_audioEntityId, nil);
-
-	if(lookingLeft || lookingRight || fireHeld){
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if(lookingLeft || lookingRight || (CPad::GetPad(0)->GetCarGunFired() && !FindPlayerPed()->bIsPlayerAiming)){
+#else
+	if(lookingLeft || lookingRight || CPad::GetPad(0)->GetCarGunFired()){
+#endif
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
 			if(anim)
@@ -2212,14 +2237,9 @@ CBike::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (fireHeld && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				// Sección 2 (P2): traza solo si el disparo salió (y con la animación
-				// usada: lhs/rhs/forward, nunca la de conducir).
-				// Sección 2 (P4): cadencia del arma, no los 70 ms fijos del SMG.
-				uint32 shotDelay = weapon->GetDriveByShotDelay();
-				if (weapon->FireFromCar(this, lookingLeft, lookingRight))
-					pDriver->DriveByTraceShot("bike", lookingLeft ? "lhs" : (lookingRight ? "rhs" : "forward"), shotDelay);
-				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + shotDelay;
+			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				weapon->FireFromCar(this, lookingLeft, lookingRight);
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
 			}
 		}
 	}else{
@@ -2256,7 +2276,14 @@ CBike::VehicleDamage(void)
 		bIsStanding = false;
 
 	// Inflict damage on the driver and passenger
+#ifdef VICEEXT_FIRING_AND_AIMING
+	bool bDriverUsesDriveBy = pDriver && (pDriver->GetPedState() == PED_AIM_GUN || pDriver->GetPedState() == PED_ATTACK);
+	bool bPassengerUsesDriveBy = pPassengers[0] && (pPassengers[0]->GetPedState() == PED_AIM_GUN || pPassengers[0]->GetPedState() == PED_ATTACK);
+
+	if(pDriver && (pDriver->GetPedState() == PED_DRIVING || bDriverUsesDriveBy) && colSpeed > 10.0f){
+#else
 	if(pDriver && pDriver->GetPedState() == PED_DRIVING && colSpeed > 10.0f){
+#endif
 		float fwd = 0.6f;
 		if(Abs(DotProduct(m_vecDamageNormal, GetForward())) > 0.85f){
 			float u = Max(DotProduct(m_vecDamageNormal, CVector(0.0f, 0.0f, 1.0f)), 0.0f);
@@ -2285,14 +2312,22 @@ CBike::VehicleDamage(void)
 				dir = pDriver->GetLocalDirection(-m_vecDamageNormal);
 				if(pDriver->m_fHealth > 0.0f)
 					pDriver->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PEDPIECE_TORSO, dir);
+#ifdef VICEEXT_FIRING_AND_AIMING
+				if(pDriver && (pDriver->GetPedState() == PED_DRIVING || bDriverUsesDriveBy))
+#else
 				if(pDriver && pDriver->GetPedState() == PED_DRIVING)
+#endif
 					KnockOffRider(WEAPONTYPE_RAMMEDBYCAR, dir, pDriver, false);
 			}
 			if(pPassengers[0]){
 				dir = pPassengers[0]->GetLocalDirection(-m_vecDamageNormal);
 				if(pPassengers[0]->m_fHealth > 0.0f)
 					pPassengers[0]->InflictDamage(m_pDamageEntity, WEAPONTYPE_RAMMEDBYCAR, 0.05f*damage, PEDPIECE_TORSO, dir);
+#ifdef VICEEXT_FIRING_AND_AIMING
+				if(pPassengers[0] && (pPassengers[0]->GetPedState() == PED_DRIVING || bPassengerUsesDriveBy))
+#else
 				if(pPassengers[0] && pPassengers[0]->GetPedState() == PED_DRIVING)
+#endif
 					KnockOffRider(WEAPONTYPE_RAMMEDBYCAR, dir, pPassengers[0], false);
 			}
 		}

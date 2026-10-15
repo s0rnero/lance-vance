@@ -15,6 +15,9 @@
 #include "Text.h"
 #include "Vehicle.h"
 #include "GameLogic.h"
+#ifdef VICEEXT_FIRING_AND_AIMING
+#include "Streaming.h"
+#endif
 
 #define FRENZY_ANY_PED -1
 #define FRENZY_ANY_CAR -2
@@ -234,6 +237,10 @@ CDarkel::RegisterKillByPlayer(CPed *victim, eWeaponType weapon, bool headshot)
 	if (CReplay::IsPlayingBack())
 		return;
 #endif
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (FindPlayerVehicle() && weapon == WEAPONTYPE_UZI)
+		weapon = WEAPONTYPE_UZI_DRIVEBY;
+#endif
 	if (FrenzyOnGoing() && (weapon == WeaponType
 			|| weapon == WEAPONTYPE_EXPLOSION
 			|| weapon == WEAPONTYPE_UZI_DRIVEBY && WeaponType == WEAPONTYPE_UZI
@@ -318,6 +325,12 @@ CDarkel::StartFrenzy(eWeaponType weaponType, int32 time, uint16 kill, int32 mode
 	TimeLimit = time;
 	PreviousTime = time / 1000;
 
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (weaponType == WEAPONTYPE_SNIPERRIFLE || weaponType == WEAPONTYPE_LASERSCOPE || weaponType == WEAPONTYPE_ROCKETLAUNCHER) {
+		CStreaming::RequestModel(MI_M4, STREAMFLAGS_DONT_REMOVE);
+		CStreaming::LoadAllRequestedModels(false);
+	}
+#endif
 	CPlayerPed *player = FindPlayerPed();
 	if (fixedWeapon < WEAPONTYPE_TOTALWEAPONS) {
 		InterruptedWeaponSelected = player->GetWeapon()->m_eWeaponType;
@@ -343,6 +356,10 @@ CDarkel::StartFrenzy(eWeaponType weaponType, int32 time, uint16 kill, int32 mode
 	}
 	if (CDarkel::bStandardSoundAndMessages)
 		DMAudio.PlayFrontEndSound(SOUND_RAMPAGE_START, 0);
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (weaponType == WEAPONTYPE_SNIPERRIFLE || weaponType == WEAPONTYPE_LASERSCOPE || weaponType == WEAPONTYPE_ROCKETLAUNCHER)
+		CStreaming::SetModelIsDeletable(MI_M4);
+#endif
 }
 
 void

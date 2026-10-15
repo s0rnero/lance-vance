@@ -2239,8 +2239,15 @@ CPed::ReactToAttack(CEntity *attacker)
 {
 	if (IsPlayer() && attacker->IsPed()) {
 		InformMyGangOfAttack(attacker);
+#ifdef VICEEXT_FIRST_PERSON
+		if (TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_REAL_1ST_PERSON) {
+			SetLookFlag(attacker, true);
+			SetLookTimer(700);
+		}
+#else
 		SetLookFlag(attacker, true);
 		SetLookTimer(700);
+#endif
 		return;
 	}
 	

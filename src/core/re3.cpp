@@ -661,27 +661,6 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("Controller", "HeadBob1stPerson", &TheCamera.m_bHeadBob);
 	ReadIniIfExists("Controller", "HorizantalMouseSens", &TheCamera.m_fMouseAccelHorzntl);
-#ifdef VICEEXT_AIM_CLASSICAXIS
-	// ClassicAXIS · sección [ClassicAxis] del INI de 2022 del mod, nombres verbatim.
-	// `ForceAutoAim` y los demás `bool` se leen como `bool*`; al guardar se
-	// promocionan a `int32` porque `StoreIni` no tiene sobrecarga `bool`.
-	// Si el INI no trae la sección se quedan los defaults del literal de
-	// `Camera.cpp`, que son los del mod.
-	ReadIniIfExists("ClassicAxis", "ForceAutoAim", &CCamera::s_viceExtAim.forceAutoAim);
-	ReadIniIfExists("ClassicAxis", "LockOnTargetType", &CCamera::s_viceExtAim.lockOnTargetType);
-	ReadIniIfExists("ClassicAxis", "ShowTriangleForMouseRecruit", &CCamera::s_viceExtAim.showTriangle);
-	ReadIniIfExists("ClassicAxis", "CameraCrosshairMultX", &CCamera::s_viceExtAim.crosshairMultX);
-	ReadIniIfExists("ClassicAxis", "CameraCrosshairMultY", &CCamera::s_viceExtAim.crosshairMultY);
-	ReadIniIfExists("ClassicAxis", "StoriesPointingArm", &CCamera::s_viceExtAim.storiesPointingArm);
-	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityX", &CCamera::s_viceExtAim.stickSensX);
-	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityY", &CCamera::s_viceExtAim.stickSensY);
-	ReadIniIfExists("ClassicAxis", "ZoomForAssaultRifles", &CCamera::s_viceExtAim.zoomForAssaultRifles);
-#endif
-#ifdef VICEEXT_FIRST_PERSON
-	ReadIniIfExists("FirstPerson", "Near Clip on foot", &CCamera::s_viceExt1PNearClipOnFoot);
-	ReadIniIfExists("FirstPerson", "Near Clip in vehicle", &CCamera::s_viceExt1PNearClipInCar);
-	ReadIniIfExists("FirstPerson", "Mouse Sensitive", &CCamera::s_viceExt1PMouseSens);
-#endif
 	ReadIniIfExists("Controller", "InvertMouseVertically", &MousePointerStateHelper.bInvertVertically);
 	ReadIniIfExists("Controller", "DisableMouseSteering", &CVehicle::m_bDisableMouseSteering);
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
@@ -703,6 +682,15 @@ bool LoadINISettings()
 #endif
 #else
 	ReadIniIfExists("Controller", "Vibration", &FrontEndMenuManager.m_PrefsUseVibration);
+#endif
+#if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
+	ReadIniIfExists("Controller", "FOV_FirstPerson", &FrontEndMenuManager.m_PrefsFOV_FP);
+	ReadIniIfExists("Controller", "AutocenterCamInVeh_FirstPerson", &FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP);
+	ReadIniIfExists("Controller", "RelativeCamInVeh_DriveBy_FirstPerson", &FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP);
+	ReadIniIfExists("Controller", "DoomMode_FirstPerson", &FrontEndMenuManager.m_PrefsDoomMode_FP);
+#endif
+#ifdef VICEEXT_WEAPON_SIGHT
+	ReadIniIfExists("Display", "WeaponSight", &FrontEndMenuManager.m_PrefsWeaponSight);
 #endif
 	ReadIniIfExists("Audio", "SfxVolume", &FrontEndMenuManager.m_PrefsSfxVolume);
 	ReadIniIfExists("Audio", "MusicVolume", &FrontEndMenuManager.m_PrefsMusicVolume);
@@ -812,20 +800,6 @@ void SaveINISettings()
 #endif
 	StoreIni("Controller", "HeadBob1stPerson", TheCamera.m_bHeadBob);
 	StoreIni("Controller", "HorizantalMouseSens", TheCamera.m_fMouseAccelHorzntl);
-#ifdef VICEEXT_AIM_CLASSICAXIS
-	// ClassicAXIS · la misma sección, escritura. Guardar estos valores es lo que
-	// hace que un jugador que edite el INI a mano vea que se respeta: si la sección
-	// existe en su fichero, `LoadINISettings` gana antes de que se guarde nada.
-	StoreIni("ClassicAxis", "ForceAutoAim", (int32)CCamera::s_viceExtAim.forceAutoAim);
-	StoreIni("ClassicAxis", "LockOnTargetType", CCamera::s_viceExtAim.lockOnTargetType);
-	StoreIni("ClassicAxis", "ShowTriangleForMouseRecruit", (int32)CCamera::s_viceExtAim.showTriangle);
-	StoreIni("ClassicAxis", "CameraCrosshairMultX", CCamera::s_viceExtAim.crosshairMultX);
-	StoreIni("ClassicAxis", "CameraCrosshairMultY", CCamera::s_viceExtAim.crosshairMultY);
-	StoreIni("ClassicAxis", "StoriesPointingArm", (int32)CCamera::s_viceExtAim.storiesPointingArm);
-	StoreIni("ClassicAxis", "RightAnalogStickSensitivityX", CCamera::s_viceExtAim.stickSensX);
-	StoreIni("ClassicAxis", "RightAnalogStickSensitivityY", CCamera::s_viceExtAim.stickSensY);
-	StoreIni("ClassicAxis", "ZoomForAssaultRifles", (int32)CCamera::s_viceExtAim.zoomForAssaultRifles);
-#endif
 	StoreIni("Controller", "InvertMouseVertically", MousePointerStateHelper.bInvertVertically);
 	StoreIni("Controller", "DisableMouseSteering", CVehicle::m_bDisableMouseSteering);
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
@@ -847,6 +821,15 @@ void SaveINISettings()
 #endif
 #else
 	StoreIni("Controller", "Vibration", FrontEndMenuManager.m_PrefsUseVibration);
+#endif
+#if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
+	StoreIni("Controller", "FOV_FirstPerson", FrontEndMenuManager.m_PrefsFOV_FP);
+	StoreIni("Controller", "AutocenterCamInVeh_FirstPerson", FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP);
+	StoreIni("Controller", "RelativeCamInVeh_DriveBy_FirstPerson", FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP);
+	StoreIni("Controller", "DoomMode_FirstPerson", FrontEndMenuManager.m_PrefsDoomMode_FP);
+#endif
+#ifdef VICEEXT_WEAPON_SIGHT
+	StoreIni("Display", "WeaponSight", FrontEndMenuManager.m_PrefsWeaponSight);
 #endif
 	StoreIni("Audio", "SfxVolume", FrontEndMenuManager.m_PrefsSfxVolume);
 	StoreIni("Audio", "MusicVolume", FrontEndMenuManager.m_PrefsMusicVolume);

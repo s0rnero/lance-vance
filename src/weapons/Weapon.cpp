@@ -1,5 +1,4 @@
 #include "common.h"
-#include "ViceExtFeatures.h"
 
 #include "Weapon.h"
 #include "AnimBlendAssociation.h"
@@ -38,6 +37,9 @@
 #include "Sprite.h"
 #include "Pickups.h"
 #include "SaveBuf.h"
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#include "Frontend.h"
+#endif
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
 float fSeaSparrowAimingAngle = 10.0f;
@@ -121,447 +123,7 @@ CWeapon::UpdateWeapons(void)
 	CExplosion::Update();
 	CProjectileInfo::Update();
 	CBulletInfo::Update();
-#ifdef VICEEXT_RECOIL
-	ViceExtRecoilUpdate();
-#endif
 }
-
-#ifdef VICEEXT_RECOIL
-// Sección 2 (P4) → R14 (12ª partida, 22/09) → BARRIDO 2 (WeaponRecoilAuto):
-// RETROCESO QUE MUEVE LA CAMARA (ve61 vuelve R14: mira fija).
-//
-// Historia de esta pieza (por qué está así y no de la otra forma):
-//   - features.ini "RecoilWhenFiring=1" original: `CamShakeNoPos(0.05)` + golpe
-//     de mando por disparo. El jugador: "la cadencia no mueve la mira como lo
-//     haría la cadencia, solo sacude la cámara como si algo hubiese explotado".
-//   - P4: se movió `CCamera::m_f3rdPersonCHairMultY`, que es a la vez la altura
-//     del HUD en la que se pinta la retícula y el ángulo con el que sale la
-//     bala. Funcionaba, pero el jugador lo rechaza: "la mira se mueve fingiendo
-//     tener recoil".
-//   - R14: la retícula queda FIJA y el retroceso lo acusa la cámara (restricción
-//     vigente, no reabrir).	//   - La retícula permanece fija en 0,400. La cámara integra solicitudes por
-	//     tiro exitoso y conserva sólo el residual aún no compensado manualmente.
-	//   - La clasificación SMG usa flancos efectivos de control y dos tiros
-	//     exitosos dentro de 350 ms; disparos aislados pendientes se resuelven
-	//     como taps al liberar. Vehículos quedan fuera de este alcance.
-struct ViceExtRecoilPendingShot {
-	bool valid;
-	uint32 shotSeq;
-	uint32 timeMs;
-	uint32 triggerSeq;
-	float kickRad;
-	eWeaponType type;
-};
-
-static bool s_odRecoilTriggerDown = false;
-static uint32 s_odRecoilTriggerSeq = 0;
-static uint32 s_odRecoilReleaseSeq = 0;
-static uint32 s_odRecoilPressMs = 0;
-static uint32 s_odRecoilShotSeq = 0;
-static uint32 s_odRecoilLastShotMs = 0;
-static uint32 s_odRecoilLastShotTriggerSeq = 0;
-static bool s_odRecoilHasLastShot = false;
-static bool s_odRecoilBurst = false;
-static uint32 s_odRecoilBurstTriggerSeq = 0;
-static uint32 s_odRecoilBurstCount = 0;
-static ViceExtRecoilPendingShot s_odRecoilPending = { false, 0, 0, 0, 0.0f, WEAPONTYPE_UNARMED };
-static uint32 s_odRecoilWindowStartMs = 0;
-static uint32 s_odRecoilWindowAttempts = 0;
-static uint32 s_odRecoilWindowSuccesses = 0;
-static int32 s_odRecoilLastAmmoClip = 0;
-static int32 s_odRecoilLastAmmoTotal = 0;
-static int32 s_odRecoilLastState = 0;
-static int32 s_odRecoilLastWeapon = -1;
-static bool s_odRecoilLastReloading = false;
-static bool s_odRecoilTraceStarted = false;
-
-static void
-ViceExtRecoilResolvePendingTap(const char *reason)
-{
-	if (!s_odRecoilPending.valid)
-		return;
-	char t[160];
-	snprintf(t, sizeof t, "RECOIL_CLASS shotSeq=%u decision=tap reason=%s triggerSeq=%u",
-		(unsigned)s_odRecoilPending.shotSeq, reason, (unsigned)s_odRecoilPending.triggerSeq);
-	CWeapon::ViceExtRecoilTrace(t);
-	s_odRecoilPending.valid = false;
-}
-
-static bool
-ViceExtRecoilIsSMG(eWeaponType type)
-{
-	return type == WEAPONTYPE_TEC9 || type == WEAPONTYPE_UZI ||
-		type == WEAPONTYPE_SILENCED_INGRAM || type == WEAPONTYPE_MP5 ||
-		type == WEAPONTYPE_UZIOLD;
-}
-
-static const char *
-ViceExtRecoilTypeName(eWeaponType type)
-{
-	switch (type) {
-	case WEAPONTYPE_COLT45: return "Colt45";
-	case WEAPONTYPE_PYTHON: return "Python";
-	case WEAPONTYPE_BERETTA: return "Beretta";
-	case WEAPONTYPE_DEAGLE: return "DesertEagle";
-	case WEAPONTYPE_SHOTGUN: return "Shotgun";
-	case WEAPONTYPE_SPAS12_SHOTGUN: return "Spas12";
-	case WEAPONTYPE_STUBBY_SHOTGUN: return "Stubby";
-	case WEAPONTYPE_SHOTGUN2: return "Shotgun2";
-	case WEAPONTYPE_TEC9: return "Tec9";
-	case WEAPONTYPE_UZI: return "Uzi";
-	case WEAPONTYPE_SILENCED_INGRAM: return "Ingram";
-	case WEAPONTYPE_MP5: return "Mp5";
-	case WEAPONTYPE_UZIOLD: return "UziOld";
-	case WEAPONTYPE_M4: return "M4";
-	case WEAPONTYPE_RUGER: return "Ruger";
-	case WEAPONTYPE_AK47: return "Ak47";
-	case WEAPONTYPE_M16: return "M16";
-	case WEAPONTYPE_STEYR: return "Steyr";
-	case WEAPONTYPE_M60: return "M60";
-	case WEAPONTYPE_MINIGUN: return "Minigun";
-	case WEAPONTYPE_SNIPERRIFLE: return "Sniper";
-	case WEAPONTYPE_LASERSCOPE: return "LaserScope";
-	default: return "Other";
-	}
-}
-
-static const char *s_odRecoilPressSource = "unknown";
-
-static const char *
-ViceExtRecoilInputSource(void)
-{
-	CPad *pad = CPad::GetPad(0);
-	bool mouse = pad && !!pad->GetLeftMouse();
-	bool key = pad && (!!pad->GetInsert() || !!pad->GetLeftCtrl() || !!pad->GetRightCtrl());
-	if (mouse && key)
-		return "mixed";
-	if (mouse)
-		return "mouse";
-	if (key)
-		return "keyboard";
-	// Gatillo efectivo sin ratón ni tecla de disparo: mando (o un rebind
-	// personalizado fuera de los predeterminados).
-	if (pad && !!pad->GetWeapon())
-		return "pad";
-	return "unknown";
-}
-
-static float
-ViceExtRecoilProfile(eWeaponType type, CWeaponInfo *info, const char **profile)
-{
-	switch (type) {
-	case WEAPONTYPE_COLT45: *profile = "colt45"; return 0.0080f;
-	case WEAPONTYPE_PYTHON: *profile = "python"; return 0.0150f;
-	case WEAPONTYPE_BERETTA: *profile = "beretta"; return 0.0080f;
-	case WEAPONTYPE_DEAGLE: *profile = "desert-eagle"; return 0.0160f;
-	case WEAPONTYPE_SHOTGUN: *profile = "shotgun"; return 0.0220f;
-	case WEAPONTYPE_SPAS12_SHOTGUN: *profile = "spas12"; return 0.0220f;
-	case WEAPONTYPE_STUBBY_SHOTGUN: *profile = "stubby"; return 0.0240f;
-	case WEAPONTYPE_SHOTGUN2: *profile = "shotgun2"; return 0.0220f;
-	case WEAPONTYPE_TEC9:
-	case WEAPONTYPE_UZI:
-	case WEAPONTYPE_SILENCED_INGRAM:
-	case WEAPONTYPE_MP5:
-	case WEAPONTYPE_UZIOLD: *profile = "smg-burst"; return 0.0025f;
-	case WEAPONTYPE_M4:
-	case WEAPONTYPE_RUGER:
-	case WEAPONTYPE_AK47:
-	case WEAPONTYPE_M16:
-	case WEAPONTYPE_STEYR: *profile = "rifle"; return 0.0080f;
-	case WEAPONTYPE_M60:
-	case WEAPONTYPE_MINIGUN: *profile = "heavy"; return 0.0100f;
-	case WEAPONTYPE_SNIPERRIFLE:
-	case WEAPONTYPE_LASERSCOPE: *profile = "sniper"; return 0.0140f;
-	default:
-		// Fallback explícito por familia; no se usa daño/rango como falsa precisión.
-		if (info && info->m_nWeaponSlot == WEAPONSLOT_HANDGUN) {
-			*profile = "fallback-handgun"; return 0.0080f;
-		}
-		if (info && info->m_nWeaponSlot == WEAPONSLOT_SHOTGUN) {
-			*profile = "fallback-shotgun"; return 0.0220f;
-		}
-		if (info && info->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN) {
-			*profile = "fallback-smg"; return 0.0025f;
-		}
-		if (info && info->m_nWeaponSlot == WEAPONSLOT_RIFLE) {
-			*profile = "fallback-rifle"; return 0.0080f;
-		}
-		*profile = "fallback"; return 0.0060f;
-	}
-}
-
-static void
-ViceExtRecoilQueueShot(uint32 shotSeq, float kickRad)
-{
-	// features.ini `RecoilWhenFiring` (familia 11): con la clave a 0 no se encola
-	// ninguna patada, asi que el retroceso entero (camara incluida) queda apagado
-	// desde este unico sitio. Sin fichero vale el valor del port (encendido).
-	if (!ViceExtFeatures::On("RecoilWhenFiring", true))
-		return;
-
-	if (kickRad > 0.0f)
-		ViceExtRecoilAlphaAdd(kickRad, shotSeq);
-}
-
-static uint32 s_odRecoilShots = 0;    // disparos observados (sólo para RECOIL3)
-
-// Patada de CÁMARA por familia, en radianes — estilo ini `[WeaponIDs]` del mod
-// (hardcodeada con comentarios: cada familia lista sus armas). Cam.cpp la suma
-// a `CCam::Alpha`: el offset persiste tras disparar y el jugador lo compensa
-// con el ratón; la mira permanece fija.
-// La patada final es el valor del perfil por tipo exacto de arma (sin factor
-// global): la familia pone el orden de magnitud y el arma concreta el matiz.
-//
-// R14 (12ª partida, 22/09): el jugador describe el efecto que quiere así —
-// "la mira debe ser fija siempre, lo que se debe mover es la cámara del
-// personaje de a poco para simular el recoil; este efecto ya está logrado
-// nativamente cuando se apunta con la m4 nativa". O sea: mismo efecto para
-// TODAS las armas, y lo bastante visible para verse en cada disparo. La versión
-// anterior dejaba la SMG en 0,15° (invisible) y el rifle en 0,35° (apenas un
-// temblor), así que se suben todas y se deja la más suave en 0,30°.
-// BARRIDO 2: bases intactas (aprobadas en R14); lo barrido es el factor, que ahora
-// sí varía por arma. Patada efectiva por disparo (base*acc): Colt45 0.28°,
-// Python 0.63°, escopeta 1.46-1.76°, Uzi 0.23°, MP5 0.27°, M4 0.59°, M60 1.67°,
-// francotirador 2.80° (tope encadenado 5.7° en Cam.cpp).
-void
-CWeapon::ViceExtRecoilUpdate(void)
-{
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	bool trace = ViceExtRecoilTraceEnabled();
-	if (!trace)
-		s_odRecoilTraceStarted = false;
-	else if (!s_odRecoilTraceStarted) {
-		char t[128];
-		snprintf(t, sizeof t, "RECOIL_READY schema=1 enabled=1 marker=OD_RECOIL_SCHEMA_1 recoil=1 tickMs=%u", (unsigned)now);
-		ViceExtRecoilTrace(t);
-		s_odRecoilTraceStarted = true;
-	}
-
-	CPed *player = FindPlayerPed();
-	CWeapon *weapon = player ? player->GetWeapon() : nil;
-	bool onFoot = player && !player->bInVehicle;
-	bool down = onFoot && !!CPad::GetPad(0)->GetWeapon();
-	if (weapon && s_odRecoilLastWeapon != (int32)weapon->m_eWeaponType) {
-		if (s_odRecoilLastWeapon >= 0) {
-			char t[128];
-			snprintf(t, sizeof t, "RECOIL_WEAPON_CHANGE before=%d after=%d tickMs=%u",
-				s_odRecoilLastWeapon, (int)weapon->m_eWeaponType, (unsigned)now);
-			ViceExtRecoilTrace(t);
-		}
-		ViceExtRecoilResolvePendingTap("weapon-change");
-		s_odRecoilBurst = false;
-		s_odRecoilLastWeapon = (int32)weapon->m_eWeaponType;
-	}
-	if (weapon) {
-		bool reloading = weapon->m_eWeaponState == WEAPONSTATE_RELOADING;
-		if (reloading != s_odRecoilLastReloading) {
-			char t[128];
-			snprintf(t, sizeof t, "RECOIL_RELOAD edge=%s typeId=%d tickMs=%u",
-				reloading ? "start" : "end", (int)weapon->m_eWeaponType, (unsigned)now);
-			ViceExtRecoilTrace(t);
-			s_odRecoilLastReloading = reloading;
-		}
-	}
-	if (down != s_odRecoilTriggerDown) {
-		char t[160];
-		if (down) {
-			s_odRecoilTriggerDown = true;
-			s_odRecoilTriggerSeq++;
-			s_odRecoilPressMs = now;
-			s_odRecoilBurst = false;
-			s_odRecoilBurstCount = 0;
-			s_odRecoilPressSource = ViceExtRecoilInputSource();
-			snprintf(t, sizeof t, "RECOIL_INPUT edge=press source=%s triggerSeq=%u releaseSeq=%u tickMs=%u",
-				s_odRecoilPressSource, (unsigned)s_odRecoilTriggerSeq, (unsigned)s_odRecoilReleaseSeq, (unsigned)now);
-		} else {
-			uint32 heldMs = now - s_odRecoilPressMs;
-			s_odRecoilTriggerDown = false;
-			s_odRecoilReleaseSeq++;
-			s_odRecoilBurst = false;
-			s_odRecoilBurstCount = 0;
-			ViceExtRecoilResolvePendingTap("release");
-			snprintf(t, sizeof t, "RECOIL_INPUT edge=release source=%s triggerSeq=%u releaseSeq=%u heldMs=%u tickMs=%u",
-				s_odRecoilPressSource, (unsigned)s_odRecoilTriggerSeq, (unsigned)s_odRecoilReleaseSeq, (unsigned)heldMs, (unsigned)now);
-		}
-		ViceExtRecoilTrace(t);
-	}
-
-	if (s_odRecoilWindowStartMs == 0)
-		s_odRecoilWindowStartMs = now;
-	if (now - s_odRecoilWindowStartMs >= 1000) {
-		if (s_odRecoilTriggerDown && s_odRecoilWindowAttempts > 0 && s_odRecoilWindowSuccesses == 0) {
-			char t[192];
-			const char *reason = s_odRecoilLastAmmoClip <= 0 ?
-				(s_odRecoilLastAmmoTotal <= 0 ? "no-ammo" : "reload-or-empty-clip") : "unknown";
-			snprintf(t, sizeof t, "RECOIL_FIRE_WAIT windowMs=1000 attempts=%u successes=0 ammoClip=%d ammoTotal=%d state=%d cause=%s tickMs=%u",
-				(unsigned)s_odRecoilWindowAttempts, s_odRecoilLastAmmoClip, s_odRecoilLastAmmoTotal,
-				s_odRecoilLastState, reason, (unsigned)now);
-			ViceExtRecoilTrace(t);
-		}
-		s_odRecoilWindowStartMs = now;
-		s_odRecoilWindowAttempts = 0;
-		s_odRecoilWindowSuccesses = 0;
-	}
-
-#ifdef __EMSCRIPTEN__
-	if (s_odRecoilShots != 0) {
-		static uint32 s_odNextChk = 0;
-		if (now >= s_odNextChk || now + 60000 < s_odNextChk) {
-			s_odNextChk = now + 2000;
-			char t[128];
-			snprintf(t, sizeof t, "RECOIL3 miracheck multY=%.3f disparos=%u",
-				CCamera::m_f3rdPersonCHairMultY, (unsigned)s_odRecoilShots);
-			ViceExtRecoilTrace(t);
-		}
-	}
-#endif
-}
-
-void
-CWeapon::ViceExtRecoilFireAttempt(eWeaponType type, int32 ammoClip, int32 ammoTotal, int32 state)
-{
-	s_odRecoilWindowAttempts++;
-	s_odRecoilLastAmmoClip = ammoClip;
-	s_odRecoilLastAmmoTotal = ammoTotal;
-	s_odRecoilLastState = state;
-	if (s_odRecoilWindowStartMs == 0)
-		s_odRecoilWindowStartMs = CTimer::GetTimeInMilliseconds();
-	(void)type;
-}
-
-bool
-CWeapon::ViceExtRecoilTraceEnabled(void)
-{
-#ifdef __EMSCRIPTEN__
-	return EM_ASM_INT({ return window.__odRecoilSession && window.__odRecoilSession.active ? 1 : 0; });
-#else
-	return false;
-#endif
-}
-
-void
-CWeapon::ViceExtRecoilTrace(const char *event)
-{
-#ifdef __EMSCRIPTEN__
-	if (ViceExtRecoilTraceEnabled())
-		EM_ASM({ try { if (window.__odRecoilEmit) window.__odRecoilEmit(UTF8ToString($0)); } catch (e) {} }, event);
-#else
-	(void)event;
-#endif
-}
-
-void
-CWeapon::ViceExtRecoilRecordControl(float deltaAlphaRad, float inputY, const char *source, int32 mode,
-	float residualBeforeRad, float residualAfterRad, float alphaRad, const char *reason)
-{
-	if (!ViceExtRecoilTraceEnabled())
-		return;
-	char t[224];
-	snprintf(t, sizeof t, "RECOIL_CONTROL deltaAlphaRad=%.6f inputY=%.3f source=%s mode=%d residualBeforeRad=%.6f residualAfterRad=%.6f alphaRad=%.6f reason=%s tickMs=%u",
-		deltaAlphaRad, inputY, source, mode, residualBeforeRad, residualAfterRad, alphaRad, reason,
-		(unsigned)CTimer::GetTimeInMilliseconds());
-	ViceExtRecoilTrace(t);
-}
-
-void
-CWeapon::ViceExtRecoilKick(eWeaponType type, CWeaponInfo *info, bool fromVehicle,
-	int32 ammoClip, int32 ammoTotal, int32 state)
-{
-	if (fromVehicle)
-		return; // drive-by: fuera del alcance acordado
-
-	CPed *player = FindPlayerPed();
-	bool onFoot = player && !player->bInVehicle;
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	uint32 shotSeq = ++s_odRecoilShotSeq;
-	// Los tiros sin estar a pie no contaminan el intervalo de ráfaga:
-	// consumen shotSeq (unicidad) pero no tocan el estado de cadencia.
-	int32 intervalMs = (onFoot && s_odRecoilHasLastShot) ? (int32)(now - s_odRecoilLastShotMs) : -1;
-	uint32 previousPressSeq = s_odRecoilLastShotTriggerSeq;
-	if (onFoot) {
-		s_odRecoilHasLastShot = true;
-		s_odRecoilLastShotMs = now;
-		s_odRecoilLastShotTriggerSeq = s_odRecoilTriggerDown ? s_odRecoilTriggerSeq : 0;
-	}
-	s_odRecoilWindowSuccesses++;
-	s_odRecoilShots++;
-
-	const char *profile = "unknown";
-	float profileRad = ViceExtRecoilProfile(type, info, &profile);
-	float requestedRad = onFoot ? profileRad : 0.0f;
-	const char *decision = "not-SMG";
-	const char *reason = onFoot ? "profile" : "not-on-foot";
-	uint32 heldMs = s_odRecoilTriggerDown ? now - s_odRecoilPressMs : 0;
-	uint32 burstCount = s_odRecoilBurstCount;
-
-	if (ViceExtRecoilIsSMG(type)) {
-		decision = "tap";
-		requestedRad = 0.0f;
-		reason = s_odRecoilTriggerDown ? "await-second-shot" : "trigger-released";
-		if (!onFoot) {
-			reason = "not-on-foot";
-		} else if (s_odRecoilTriggerDown) {
-			if (s_odRecoilBurst && s_odRecoilBurstTriggerSeq == s_odRecoilTriggerSeq &&
-				s_odRecoilHasLastShot && previousPressSeq == s_odRecoilTriggerSeq &&
-				intervalMs >= 0 && intervalMs <= 350) {
-				decision = "burst";
-				requestedRad = profileRad;
-				reason = "held-burst";
-				s_odRecoilBurstCount++;
-				burstCount = s_odRecoilBurstCount;
-			} else if (s_odRecoilPending.valid &&
-				s_odRecoilPending.triggerSeq == s_odRecoilTriggerSeq &&
-				s_odRecoilPending.type == type &&
-				intervalMs >= 0 && intervalMs <= 350) {
-				decision = "burst";
-				requestedRad = profileRad;
-				reason = "burst-confirmed";
-				s_odRecoilBurst = true;
-				s_odRecoilBurstTriggerSeq = s_odRecoilTriggerSeq;
-				s_odRecoilBurstCount = 2;
-				burstCount = 2;
-				char prior[144];
-				snprintf(prior, sizeof prior, "RECOIL_CLASS shotSeq=%u decision=burst reason=second-shot-within-350ms triggerSeq=%u",
-					(unsigned)s_odRecoilPending.shotSeq, (unsigned)s_odRecoilPending.triggerSeq);
-				ViceExtRecoilTrace(prior);
-				ViceExtRecoilQueueShot(s_odRecoilPending.shotSeq, s_odRecoilPending.kickRad);
-				s_odRecoilPending.valid = false;
-			} else {
-				ViceExtRecoilResolvePendingTap("interval-over-350ms");
-				s_odRecoilBurst = false;
-				s_odRecoilBurstCount = 1;
-				burstCount = 1;
-				s_odRecoilPending.valid = true;
-				s_odRecoilPending.shotSeq = shotSeq;
-				s_odRecoilPending.timeMs = now;
-				s_odRecoilPending.triggerSeq = s_odRecoilTriggerSeq;
-				s_odRecoilPending.kickRad = profileRad;
-				s_odRecoilPending.type = type;
-			}
-		}
-	} else if (s_odRecoilPending.valid) {
-		ViceExtRecoilResolvePendingTap("weapon-change");
-		s_odRecoilBurst = false;
-	}
-
-	if (!ViceExtRecoilIsSMG(type) && onFoot)
-		ViceExtRecoilQueueShot(shotSeq, requestedRad);
-	else if (ViceExtRecoilIsSMG(type) && strcmp(decision, "burst") == 0)
-		ViceExtRecoilQueueShot(shotSeq, requestedRad);
-
-	char t[416];
-	snprintf(t, sizeof t, "RECOIL_SHOT shotSeq=%u route=Fire fromVehicle=0 onFoot=%d typeId=%d type=%s slot=%d result=success ammoClip=%d ammoTotal=%d state=%d intervalMs=%d trigger=%d triggerSeq=%u releaseSeq=%u heldMs=%u releaseSincePrev=%d decision=%s thresholdMs=350 burstCount=%u profile=%s requestedRad=%.6f factor=1 reason=%s src=%s tickMs=%u",
-		(unsigned)shotSeq, onFoot ? 1 : 0, (int)type, ViceExtRecoilTypeName(type),
-		info ? info->m_nWeaponSlot : -1, ammoClip, ammoTotal, state, intervalMs,
-		s_odRecoilTriggerDown ? 1 : 0, (unsigned)s_odRecoilTriggerSeq,
-		(unsigned)s_odRecoilReleaseSeq,
-		heldMs, (s_odRecoilTriggerDown && previousPressSeq != s_odRecoilTriggerSeq) ? 1 : 0,
-		decision, (unsigned)burstCount, profile, requestedRad, reason,
-		ViceExtRecoilInputSource(), (unsigned)now);
-	ViceExtRecoilTrace(t);
-}
-#endif
-
 
 void
 CWeapon::Initialise(eWeaponType type, int32 ammo)
@@ -609,10 +171,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=enter estado=%d clip=%d total=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal);
 		ODTRACES(odUzi);
 	}
-#endif
-#ifdef VICEEXT_RECOIL
-	if (shooter == FindPlayerPed())
-		ViceExtRecoilFireAttempt(m_eWeaponType, m_nAmmoInClip, m_nAmmoTotal, m_eWeaponState);
 #endif
 
 	CVector fireOffset(0.0f, 0.0f, 0.6f);
@@ -865,13 +423,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 
 			m_eWeaponState = WEAPONSTATE_FIRING;
 
-#ifdef VICEEXT_RECOIL
-			// Sólo un tiro exitoso produce una solicitud de recoil, correlacionada
-			// con su tipo exacto y con la munición ya consumida.
-			if (isPlayer)
-				ViceExtRecoilKick(m_eWeaponType, GetInfo(), false, m_nAmmoInClip, m_nAmmoTotal, m_eWeaponState);
-#endif
-
 			if (m_nAmmoInClip == 0)
 			{
 				if (m_nAmmoTotal == 0) {
@@ -929,30 +480,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 		return fired;
 }
 
-// Sección 2 (P4): cadencia del disparo desde vehículo.
-//
-// Vanilla fija 70 ms a mano en los tres `DoDriveByShootings`
-// (CAutomobile/CBike/CBoat): es la cadencia del SMG, la única arma que podía
-// disparar desde un coche. Al abrir el drive-by a las pistolas
-// (`VICEEXT_DRIVEBY_WIDE`) esos 70 ms fijos convertían la pistola en una
-// metralleta (14 disparos/s). Aquí cada arma usa su cadencia real, la que le da
-// `weapon.dat` (`CWeaponInfo::m_nFiringRate`, en ms: Colt45/Beretta 210,
-// Python 600, Uzi 90...), con un suelo de 70 ms para no bajar del SMG. El slot 5
-// (el SMG de siempre) conserva los 70 ms exactos de vanilla: sin cambio.
-uint32
-CWeapon::GetDriveByShotDelay(void)
-{
-#ifdef VICEEXT_DRIVEBY_WIDE
-	if (GetInfo()->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN) {
-		uint32 rate = GetInfo()->m_nFiringRate;
-		if (rate < 70)
-			rate = 70;
-		return rate;
-	}
-#endif
-	return 70;
-}
-
 bool
 CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 {
@@ -966,37 +493,8 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 
 	if ( FireInstantHitFromCar(shooter, left, right) )
 	{
-#ifdef VICEEXT_DRIVEBY_WIDE
-		// Sección 2 (P4): «con la pistola salen balas como si fuera de SMG».
-		// El evento se pide al audio del VEHÍCULO y esa rama de AudioLogic
-		// (`params.m_pVehicle`, caso SOUND_WEAPON_SHOT_FIRED) NO mira el arma del
-		// conductor: elige siempre una muestra de SMG (SFX_UZI_LEFT, o la del arma
-		// de slot 5 del piloto). Con una pistola el disparo se pide al audio del
-		// PED, cuya rama sí elige por `weapon->m_eWeaponType` (SFX_COLT45_LEFT para
-		// Colt45/Beretta, SFX_PYTHON_LEFT para el Python...). El SMG (slot 5)
-		// mantiene la vía vanilla sin cambios.
-		if (GetInfo()->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN && shooter->pDriver)
-			DMAudio.PlayOneShot(shooter->pDriver->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
-		else
-#endif
 		DMAudio.PlayOneShot(shooter->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 
-#ifdef VICEEXT_RECOIL
-		// Drive-by: fuera del alcance de gameplay, pero auditable. Consume
-		// shotSeq (unicidad de la sesión) sin tocar cadencia ni cola.
-		{
-			CPed *recoilDriver = FindPlayerPed();
-			if (recoilDriver && recoilDriver->bInVehicle && recoilDriver->m_pMyVehicle == shooter) {
-				char rt[416];
-				snprintf(rt, sizeof rt, "RECOIL_SHOT shotSeq=%u route=FireFromCar fromVehicle=1 onFoot=0 typeId=%d type=%s slot=%d result=success ammoClip=%d ammoTotal=%d state=%d intervalMs=-1 trigger=1 triggerSeq=%u releaseSeq=%u heldMs=0 releaseSincePrev=0 decision=not-on-foot thresholdMs=350 burstCount=0 profile=none requestedRad=0.000000 factor=1 reason=not-on-foot src=%s tickMs=%u",
-					(unsigned)++s_odRecoilShotSeq, (int)m_eWeaponType, ViceExtRecoilTypeName(m_eWeaponType),
-					GetInfo() ? GetInfo()->m_nWeaponSlot : -1, m_nAmmoInClip, m_nAmmoTotal, m_eWeaponState,
-					(unsigned)s_odRecoilTriggerSeq, (unsigned)s_odRecoilReleaseSeq,
-					ViceExtRecoilInputSource(), (unsigned)CTimer::GetTimeInMilliseconds());
-				CWeapon::ViceExtRecoilTrace(rt);
-			}
-		}
-#endif
 		if ( m_nAmmoInClip > 0 )
 			m_nAmmoInClip--;
 
@@ -1638,7 +1136,12 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		prev_heading = ((CPed*)shooter)->m_fRotationCur;
 	}
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if ( shooter->IsPed() && ((CPed *)shooter)->m_pPointGunAt && !((CPed*)shooter)->IsPlayer() ||
+		(shooter->IsPed() && ((CPed*)shooter)->IsPlayer() && ((CPed*)shooter)->m_pPointGunAt && CPad::GetPad(0)->IsAffectedByController && FrontEndMenuManager.m_PrefsAutoaim))
+#else
 	if ( shooter->IsPed() && ((CPed *)shooter)->m_pPointGunAt )
+#endif
 	{
 		CPed *shooterPed = (CPed *)shooter;
 		if ( shooterPed->m_pedIK.m_flags & CPedIK::GUN_POINTED_SUCCESSFULLY )
@@ -1712,12 +1215,38 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		ahead.Normalise();
 #endif
 	}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	else if ( shooter == FindPlayerPed() )
+#else
 	else if ( shooter == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam()  )
+#endif
 	{
 #ifdef FREE_CAM
 		if (CCamera::bFreeCam) {
 			CPlayerPed* shooterPed = (CPlayerPed*)shooter;
 			Find3rdPersonCamTargetVectorFromCachedVectors(info->m_fRange, *fireSource, source, target, shooterPed->m_cachedCamSource, shooterPed->m_cachedCamFront, shooterPed->m_cachedCamUp);
+#ifdef VICEEXT_FEATURES_INI
+			if (bRecoilWhenFiring) {
+				float recoilMult = 1.0f;
+
+				if (TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_REAL_1ST_PERSON)
+					recoilMult += 0.6f;
+
+#ifdef VICEEXT_WEAPON_AK47
+				if (m_eWeaponType == WEAPONTYPE_AK47)
+					recoilMult += 0.5f;
+#endif
+
+				if (m_eWeaponType == WEAPONTYPE_SILENCED_INGRAM)
+					recoilMult += 0.4f;
+
+				if (shooterPed->bIsDucking)
+					recoilMult -= 0.5f;
+
+				TheCamera.Cams[TheCamera.ActiveCam].Alpha += CGeneral::GetRandomNumberInRange(0.001f * recoilMult, 0.005f * recoilMult);
+				TheCamera.Cams[TheCamera.ActiveCam].Beta += CGeneral::GetRandomNumberInRange(-0.005f * recoilMult, 0.005f * recoilMult);
+			}
+#endif
 
 			if ((shooterPed->m_pedIK.m_flags & CPedIK::GUN_POINTED_SUCCESSFULLY) == 0) {
 				target.x = info->m_fRange;
@@ -1743,10 +1272,30 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		CWorld::bIncludeBikers = true;
 		CWorld::bIncludeDeadPeds = true;
 		CWorld::bIncludeCarTyres = true;
+#ifdef VICEEXT_FIRING_AND_AIMING
+		CWorld::pIgnoreEntity = FindPlayerVehicle();
 		ProcessLineOfSight(source, target, point, victim, m_eWeaponType, shooter, true, true, true, true, true, false, false);
+		CWorld::pIgnoreEntity = NULL;
+#else
+		ProcessLineOfSight(source, target, point, victim, m_eWeaponType, shooter, true, true, true, true, true, false, false);
+#endif
 		CWorld::bIncludeBikers = false;
 		CWorld::bIncludeDeadPeds = false;
 		CWorld::bIncludeCarTyres = false;
+#ifdef VICEEXT_FIRING_AND_AIMING
+		if (FindPlayerVehicle() && FindPlayerPed()->bIsPlayerAiming && FindPlayerVehicle()->IsCar()) {
+			if (DotProduct(FindPlayerVehicle()->GetForward(), TheCamera.Cams[TheCamera.ActiveCam].Front) > 0.9f) {
+				CAutomobile* car = (CAutomobile*)FindPlayerVehicle();
+				if (car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN)) {
+					if (car->Damage.GetPanelStatus(VEHPANEL_WINDSCREEN) == PANEL_STATUS_SMASHED2)
+						car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN);
+
+					car->SetPanelDamage(CAR_WINDSCREEN, VEHPANEL_WINDSCREEN, true);
+					DMAudio.PlayOneShot(FindPlayerVehicle()->m_audioEntityId, SOUND_CAR_WINDSHIELD_CRACK, 0.f);
+				}
+			}
+		}
+#endif
 
 		if (victim)
 			CheckForShootingVehicleOccupant(&victim, &point, m_eWeaponType, source, target);
@@ -2189,7 +1738,12 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 						if ( victimPed->IsPlayer() )
 						{
 							CPlayerPed *victimPlayer = (CPlayerPed *)victimPed;
+#ifdef VICEEXT_FIRST_PERSON
+							if ( victimPlayer->m_nHitAnimDelayTimer < CTimer::GetTimeInMilliseconds() && victimPed->m_nPedState != PED_DRIVING &&
+								 TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_REAL_1ST_PERSON)
+#else
 							if ( victimPlayer->m_nHitAnimDelayTimer < CTimer::GetTimeInMilliseconds() && victimPed->m_nPedState != PED_DRIVING )
+#endif
 							{
 								victimPed->ClearAttackByRemovingAnim();
 
@@ -2512,7 +2066,11 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		CColPoint point;
 		CEntity *victim;
 
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_FIRING_AND_AIMING
+		if ( shooter == FindPlayerPed() && !FindPlayerPed()->bIsAutoAiming)
+#else
 		if ( shooter == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam() )
+#endif
 		{
 			CVector Left;
 #ifdef FREE_CAM
@@ -2848,12 +2406,19 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		}
 	}
 
-	if ( shooter == FindPlayerPed() )
+	if ( shooter == FindPlayerPed() ) {
+#ifdef VICEEXT_FEATURES_INI
+		if (bRecoilWhenFiring) {
+			TheCamera.Cams[TheCamera.ActiveCam].Alpha += CGeneral::GetRandomNumberInRange(0.005f, 0.01f);
+			TheCamera.Cams[TheCamera.ActiveCam].Beta += CGeneral::GetRandomNumberInRange(-0.01f, 0.01f);
+		}
+#endif
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 		CPad::GetPad(0)->StartShake_Distance(240, 0, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
 #else
 		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
 #endif
+	}
 
 	return true;
 }
@@ -2881,12 +2446,7 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 
 		if ( shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
 		{
-#ifndef VICEEXT_ROCKET_3RD_PERSON
-			// Vice Extended: el mod apunta el lanzacohetes en TERCERA persona
-			// (`RocketLauncherThirdPersonAiming=1`), así que exigir un modo de
-			// cámara de 1ª persona dejaba el arma MUDA. El misil no depende de
-			// esto para volar bien: `CProjectileInfo::AddProjectile` usa la matriz
-			// de la cámara cuando el tirador es el jugador.
+#ifndef VICEEXT_FIRING_AND_AIMING
 			if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER ) {
 				int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 				if (!( mode == CCam::MODE_M16_1STPERSON
@@ -3071,6 +2631,7 @@ CWeapon::FireSniper(CEntity *shooter)
 {
 	ASSERT(shooter!=nil);
 	
+#ifndef VICEEXT_FIRING_AND_AIMING
 	if ( (CEntity *)FindPlayerPed() == shooter )
 	{
 		int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
@@ -3085,6 +2646,7 @@ CWeapon::FireSniper(CEntity *shooter)
 			return false;
 		}
 	}
+#endif
 
 #ifdef SECUROM
 	if (sniperPirateCheck){
@@ -3117,6 +2679,12 @@ CWeapon::FireSniper(CEntity *shooter)
 
 	if ( shooter == FindPlayerPed() )
 	{
+#ifdef VICEEXT_FEATURES_INI
+		if (bRecoilWhenFiring) {
+			TheCamera.Cams[TheCamera.ActiveCam].Alpha += CGeneral::GetRandomNumberInRange(0.001f, 0.005f);
+			TheCamera.Cams[TheCamera.ActiveCam].Beta += CGeneral::GetRandomNumberInRange(-0.005f, 0.005f);
+		}
+#endif
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 		CPad::GetPad(0)->StartShake_Distance(240, 0, 128,
 			FindPlayerPed()->GetPosition().x,
@@ -3131,6 +2699,9 @@ CWeapon::FireSniper(CEntity *shooter)
 			
 		CParticle::HandleShootableBirdsStuff(shooter, source);
 
+#ifdef VICEEXT_FIRING_AND_AIMING
+		if (TheCamera.Using1stPersonWeaponMode())
+#endif
 		CamShakeNoPos(&TheCamera, 0.2f);
 	}
 
@@ -3793,10 +3364,22 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 				CAnimBlendAssociation *reloadAssoc = nil;
 				if (pedToAdjustSound) {
 					if (CPed::GetReloadAnim(info) && (!CWorld::Players[CWorld::PlayerInFocus].m_bFastReload || !pedToAdjustSound->IsPlayer())) {
+#ifdef VICEEXT_FIRING_AND_AIMING
+						if (m_eWeaponType == WEAPONTYPE_SHOTGUN) {
+							reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), ANIM_WEAPON_FIRE);
+							if (!reloadAssoc)
+								reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), ANIM_WEAPON_CROUCHFIRE);
+						} else {
+							reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), CPed::GetReloadAnim(info));
+							if (!reloadAssoc)
+								reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), CPed::GetCrouchReloadAnim(info));
+						}
+#else
 						reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), CPed::GetReloadAnim(info));
 						if (!reloadAssoc) {
 							reloadAssoc = RpAnimBlendClumpGetAssociation(pedToAdjustSound->GetClump(), CPed::GetCrouchReloadAnim(info));
 						}
+#endif
 					}
 				}
 				if (reloadAssoc && reloadAssoc->IsRunning() && reloadAssoc->blendAmount > 0.2f) {
@@ -3833,17 +3416,29 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 					if (CTimer::GetTimeInMilliseconds() > m_nTimer && reloadAssoc->GetProgress() < 0.9f) {
 						m_nTimer = CTimer::GetTimeInMilliseconds();
 					}
-				} else {
+				}
+#ifndef VICEEXT_IMPROVED_TECH_PART
+				else {
 					uint32 timePassed = m_nTimer - CWeaponInfo::ms_aReloadSampleTime[m_eWeaponType];
 					if (CTimer::GetPreviousTimeInMilliseconds() < timePassed && CTimer::GetTimeInMilliseconds() >= timePassed)
 						DMAudio.PlayOneShot(audioEntity, SOUND_WEAPON_RELOAD, m_eWeaponType);
 				}
+#endif
 			}
 
 			if ( CTimer::GetTimeInMilliseconds() > m_nTimer )
 			{
 				Reload();
 				m_eWeaponState = WEAPONSTATE_READY;
+#ifdef VICEEXT_FIRING_AND_AIMING
+				if (pedToAdjustSound && pedToAdjustSound->IsPlayer()) {
+					CPlayerPed* playerPed = (CPlayerPed*)pedToAdjustSound;
+					if (!playerPed->bIsPlayerAiming && !CPad::GetPad(0)->GetWeapon()) {
+						playerPed->ClearWeaponTarget();
+						playerPed->StopAimingAnims();
+					}
+				}
+#endif
 			}
 
 			break;

@@ -30,10 +30,10 @@ static const KeyDef kKeys[] = {
 	{ "DisableBulletTraces",                               true  }, // VICEEXT_FIX_SILENTPATCH (traza de bala)
 	{ "WaypointColorRGB",                                  true  }, // VICEEXT_GPS_COLOR
 	{ "EnableDistantLights",                               true  }, // VICEEXT_DISTANT_LIGHTS
-	{ "RecoilWhenFiring",                                  true  }, // VICEEXT_RECOIL
+	{ "RecoilWhenFiring",                                  true  },
 	{ "EnableClimbing",                                    true  },
 	{ "EnableSwimming",                                    true  }, // VICEEXT_SWIMMING
-	{ "RocketLauncherThirdPersonAiming",                   true  }, // VICEEXT_ROCKET_3RD_PERSON
+	{ "RocketLauncherThirdPersonAiming",                   true  },
 	{ "RandomVehicleModsInTraffic",                        false }, // fuera: taller de tuning
 	{ "MirrorModeByDefault",                               false }, // sin implementar
 };

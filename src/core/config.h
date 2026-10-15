@@ -490,41 +490,13 @@ enum Config {
 // los que están en 0 en su ini no se portan y los que piden su renderer o el
 // taller de tuning quedan fuera (ver .agents/plans/vice-extended-inclusion.md).
 #define VICEEXT_SWIMMING		// EnableSwimming=1: nadar sin morir (el jugador no se ahoga)
-#define VICEEXT_RECOIL			// RecoilWhenFiring=1: el disparo acusa retroceso
-#define VICEEXT_SPRINT_HEAVY	// v1.5: esprintar con armas pesadas
 #define VICEEXT_POLICE_BIKE_LIGHTS // 6507: sirena (coronas rojo/azul) en la moto policial
 #define VICEEXT_HIDE_COPS		// v1.0 "Changed wanted system": esconderse de la policía (sección 2, bloque P1)
-#define VICEEXT_FIRST_PERSON	// v1.5 "First-person view": conmutador de vista en 1ª persona (sección 3, bloque C1)
-#define VICEEXT_DRIVEBY_WIDE	// v1.5 "Drive-by shooting": las pistolas (una mano) valen también para disparar desde coche/moto/barco (sección 2, bloque P2)
-#define VICEEXT_WEAPON_SIGHTS	// columna 27 de su weapon.dat ("weapon sight") + su weaponSights.txd (sección 1, bloque D6)
 #define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
 #define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
-#define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
-#define VICEEXT_AIM_WALK		// v1.5: apuntando solo se camina (nunca correr/esprintar) y el agachado de
-							// andar del mod (Crouch_forward/backward) — sección 2, 5ª partida
-#define VICEEXT_ROCKET_3RD_PERSON // v3.0 "Enable third-person aiming from a rocket launcher" (su
-							// features.ini: RocketLauncherThirdPersonAiming=1): el lanzacohetes apunta en
-							// TERCERA persona (no entra en el modo francotirador/1ª persona que clava al
-							// jugador en el sitio) y se puede andar apuntando. El misil sigue saliendo
-							// hacia donde mira la cámara (`ProjectileInfo` usa su matriz).
-// ClassicAXIS (gennariarmando/DK22Pac, SIN LICENSE → reimplementación con atribución):
-// su sección [ClassicAxis] del INI de 2022 (`mods/Classic AXIS/ClassicAxisVC.ini`)
-// y su ley de cámara propia de apuntado (`CamNew.cpp Process_AimWeapon`,
-// cláusula 2 / ítem 4 del 12-handoff). Sin este define no se compila ninguna
-// de las leyes de ClassicAXIS (plan `apuntado-classicaxis-100` §10.2, B0-B11).
-// Lo que NO entra, y por qué (decisiones del jugador del 27/09):
-//   · Stick crudo sin zona muerta  → se queda `LookAroundLeftRight()` (§5.4b)
-//   · `modernCamera`              → fuera, además su default se desconoce (§5.4c)
-//   · Acelerador horizontal para el ratón vertical → fuera, es un typo del mod (§5.4d)
-//   · Botón de recentrar        → fuera, el jugador lo quitó en ve65 (§5.4e)
-//   · `StoriesAimingCoords`       → sin conmutador natural, sin implementación (§9)
-//   · Ley de coche                → se queda la nuestra, no es del mod (§5.1a)
-//   · Near-clip dual              → es del GeniusZ, otro carril (§5.6)
-#define VICEEXT_AIM_CLASSICAXIS
 #define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
 #define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
-#define VICEEXT_AIM_BLADE 0.70f
 
 #define VICEEXT_FIX_SILENTPATCH
 #define VICEEXT_FIX_WFP
@@ -610,7 +582,11 @@ enum Config {
 #define VICEEXT_CROUCH
 #ifdef VICEEXT_FEATURES_INI
 #define VICEEXT_CLIMBING
+#define VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
 #endif
+#define VICEEXT_FIRING_AND_AIMING
+#define VICEEXT_FIRST_PERSON
+#define VICEEXT_WEAPON_SIGHT
 #endif
 
 // Hud, frontend and radar

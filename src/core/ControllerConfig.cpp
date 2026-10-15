@@ -829,11 +829,6 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown(int32 button, 
 		}
 
 		int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
-		// R5: trampa del pad comprobada (blog de 1ª persona sobre este motor):
-		// con `firstPerson` los controles se restringen a "sólo zoom" (saltar,
-		// entrar al coche y demás dejan de funcionar). Nuestro conmutador pide
-		// MODE_1STPERSON_RUNABOUT, que a propósito NO está en esta lista: el
-		// jugador anda de lado/atrás, salta y sube al coche dentro del modo.
 		if (   mode == CCam::MODE_1STPERSON
 			|| mode == CCam::MODE_SNIPER
 			|| mode == CCam::MODE_ROCKETLAUNCHER
@@ -1424,24 +1419,6 @@ void CControllerConfigManager::AffectPadFromKeyBoard()
 		else if ( !GetIsKeyboardKeyDown((RsKeyCodes)extrakey))
 			AffectControllerStateOn_ButtonUp(key, OPTIONAL_EXTRA);
 	}
-}
-
-// Sección 3 (VICEEXT, 21/09): ver la declaración en ControllerConfig.h.
-bool
-CControllerConfigManager::ViceExtActionKeyJustDown(e_ControllerAction action, int32 fallbackKey)
-{
-	int32 key = GetControllerKeyAssociatedWithAction(action, KEYBOARD);
-	if (key != rsNULL && key != 0 && GetIsKeyboardKeyJustDown((RsKeyCodes)key))
-		return true;
-
-	// Sin tecla asignada (config de controles guardada antes de que la acción
-	// existiera): la acción es inalcanzable con el teclado, así que se acepta la
-	// tecla histórica de respaldo. R5/R10: vale también `1056` explícito
-	// (`rsNULL` = 1056, es lo que imprime el log: `tecla=1056`).
-	if (key == rsNULL || key == 0 || key == 1056)
-		return GetIsKeyboardKeyJustDown((RsKeyCodes)fallbackKey);
-
-	return false;
 }
 
 void CControllerConfigManager::AffectPadFromMouse()

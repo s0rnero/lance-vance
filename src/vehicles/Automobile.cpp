@@ -3717,7 +3717,11 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 	if(!exitVehicleHeld ||
 	   pDriver && pDriver->m_pVehicleAnim && (pDriver->m_pVehicleAnim->animId == ANIM_STD_ROLLOUT_LHS ||
 	                                          pDriver->m_pVehicleAnim->animId == ANIM_STD_ROLLOUT_RHS))
+#ifdef VICEEXT_FIRING_AND_AIMING
+		bIsHandbrakeOn = FindPlayerPed()->bIsPlayerAiming ? false : !!CPad::GetPad(pad)->GetHandBrake();
+#else
 		bIsHandbrakeOn = !!CPad::GetPad(pad)->GetHandBrake();
+#endif
 	else
 		bIsHandbrakeOn = true;
 
@@ -4506,13 +4510,26 @@ CAutomobile::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim = nil;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
 
-	// Sección 2 (P2): el estado del mando se calcula ANTES de las puertas de
-	// entrada porque la traza de la sonda (una línea por segundo) tiene que ver
-	// "conduzco y disparo" también cuando el arma no pasa la puerta: eso es la
-	// línea base contra la que se compara la mecánica. Mismos valores, mismo orden
-	// de decisión que antes (solo se adelanta el cálculo).
-	bool fireHeld = CPad::GetPad(0)->GetCarGunFired();
+	CWeapon *weapon = pDriver->GetWeapon();
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN &&
+		CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_HANDGUN)
+#else
+	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN)
+#endif
+		return;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (CPad::GetPad(0)->GetTarget() && !FindPlayerPed()->bIsPlayerAiming && FindPlayerPed()->CanUseDriveBy())
+		FindPlayerPed()->SetPointGunAt(nil);
+	else if (!CPad::GetPad(0)->GetTarget() && FindPlayerPed()->bIsPlayerAiming || !FindPlayerPed()->CanUseDriveBy())
+		FindPlayerPed()->ClearWeaponTarget();
+#endif
+	weapon->Update(pDriver->m_audioEntityId, nil);
+
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
@@ -4527,18 +4544,6 @@ CAutomobile::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
-	pDriver->DriveByTraceState("car", fireHeld, lookingLeft, lookingRight);
-
-	if (playerInfo && !playerInfo->m_bDriveByAllowed)
-		return;
-
-	CWeapon *weapon = pDriver->GetWeapon();
-	// Sección 2 (P2): con VICEEXT_DRIVEBY_WIDE las pistolas también disparan desde
-	// el coche (sin el define, esta llamada es el chequeo vanilla de slot 5).
-	if(!pDriver->CanDoDriveByWithCurrentWeapon())
-		return;
-
-	weapon->Update(pDriver->m_audioEntityId, nil);
 
 	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 	AnimationId leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
@@ -4546,7 +4551,34 @@ CAutomobile::DoDriveByShootings(void)
 		rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT_LO;
 		leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT_LO;
 	}
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (!FindPlayerPed()->m_pWeaponModel && (FindPlayerPed()->bIsPlayerAiming || (lookingLeft || lookingRight)))
+		pDriver->AddWeaponModel(weapon->GetInfo()->m_nModelId);
+	else if (FindPlayerPed()->m_pWeaponModel && !FindPlayerPed()->bIsPlayerAiming && !lookingLeft && !lookingRight)
+		pDriver->RemoveWeaponModel(weapon->GetInfo()->m_nModelId);
+#endif
+#if defined VICEEXT_FIRING_AND_AIMING && defined VICEEXT_IMPROVED_VEHICLES_2
+	if (FindPlayerPed()->bIsPlayerAiming) {
+		float angle = DotProduct(GetRight(), TheCamera.GetForward());
+		if (angle < -0.1f) {
+			if (m_aCarNodes[CAR_DOOR_LF]) {
+				RpAtomic* windowAtomic = nil;
+				RwFrameForAllObjects(m_aCarNodes[CAR_DOOR_LF], GetWindowAtomicObjectCB, &windowAtomic);
+				if (windowAtomic) 
+					RpAtomicSetFlags(windowAtomic, 0);
+			}
+		}
+	}
+#endif
 
+#if defined VICEEXT_FIRING_AND_AIMING && defined VICEEXT_FIRST_PERSON
+	if (FindPlayerPed()->bIsPlayerAiming || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_REAL_1ST_PERSON ||
+		(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_HANDGUN && !FindPlayerPed()->bIsPlayerAiming)) {
+
+		weapon->Reload();
+		return;
+	}
+#endif
 	if(lookingLeft || lookingRight){
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), rightAnim);
@@ -4565,18 +4597,9 @@ CAutomobile::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (fireHeld && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				// Sección 2 (P2): la traza va DESPUÉS del disparo y solo si salió, así
-				// que una línea `DRIVEBY shot` es un disparo de verdad (y lleva la
-				// animación usada: la prueba de que no es la de conducir).
-				// Sección 2 (P4): la cadencia sale del ARMA (weapon.dat) y no de un
-				// 70 ms fijo (era la del SMG: con pistola disparaba como metralleta).
-				uint32 shotDelay = weapon->GetDriveByShotDelay();
-				if (weapon->FireFromCar(this, lookingLeft, true))
-					pDriver->DriveByTraceShot("car", pDriver->m_pMyVehicle->bLowVehicle
-						? (lookingLeft ? "left-lo" : "right-lo")
-						: (lookingLeft ? "left" : "right"), shotDelay);
-				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + shotDelay;
+			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				weapon->FireFromCar(this, lookingLeft, true);
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
 			}
 		}
 	}else{

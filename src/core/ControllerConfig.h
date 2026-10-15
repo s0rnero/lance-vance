@@ -59,11 +59,7 @@ enum e_ControllerAction
 	NETWORK_TALK,
 	PED_1RST_PERSON_LOOK_UP,
 	PED_1RST_PERSON_LOOK_DOWN,
-#ifdef VICEEXT_FIRST_PERSON
-	PED_TOGGLE_1RST_PERSON,
-#else
 	_CONTROLLERACTION_36,					// Unused
-#endif
 	TOGGLE_DPAD,
 	SWITCH_DEBUG_CAM_ON,
 	TAKE_SCREEN_SHOT,
@@ -202,16 +198,6 @@ public:
 	bool  GetIsKeyboardKeyDown    (RsKeyCodes keycode);
 	bool  GetIsKeyboardKeyJustDown(RsKeyCodes keycode);
 
-	// Sección 3 (VICEEXT, 21/09): pulsación de la tecla de una acción con
-	// **respaldo**. La configuración de controles que el navegador guarda entre
-	// sesiones pisa los valores por defecto al cargarse: si el fichero se guardó
-	// con un build ANTERIOR a la existencia de la acción, al cargar no toca
-	// asignarle nada (queda `rsNULL`) y la acción deja de tener tecla para
-	// siempre. Medido en la partida del jugador: `VICEEXT reload key tecla=1056`
-	// es `rsNULL`, y la V del conmutador de 1ª persona nunca llegaba al motor.
-	// Con el respaldo, si la acción no tiene tecla asignada se acepta la tecla
-	// histórica (`fallbackKey`); si el jugador la rebindea, manda su elección.
-	bool  ViceExtActionKeyJustDown(e_ControllerAction action, int32 fallbackKey);
 	bool  GetIsMouseButtonDown    (RsKeyCodes keycode);
 	bool  GetIsMouseButtonUp      (RsKeyCodes keycode);
 

@@ -56,10 +56,27 @@ enum eSprites
 #endif
 };
 
+#ifdef VICEEXT_WEAPON_SIGHT
+enum eWeaponSights
+{
+	SIGHT_DOT,
+	SIGHT_PISTOL,
+	SIGHT_SMG,
+	SIGHT_SHOTGUN,
+	SIGHT_RIFLE,
+	SIGHT_HEAVY,
+	SIGHT_ROCKET,
+	NUM_WEAPON_SIGHTS,
+};
+#endif
+
 class CHud
 {
 public:
 	static CSprite2d Sprites[NUM_HUD_SPRITES];
+#ifdef VICEEXT_WEAPON_SIGHT
+	static CSprite2d WeaponSights[NUM_WEAPON_SIGHTS];
+#endif
 	static wchar m_HelpMessage[HELP_MSG_LENGTH];
 	static wchar m_LastHelpMessage[HELP_MSG_LENGTH];
 	static uint32 m_HelpMessageState;

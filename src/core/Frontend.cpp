@@ -593,6 +593,15 @@ CMenuManager::CMenuManager()
 	m_PrefsGPS = true;
 #endif
 #endif
+#if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
+	m_PrefsFOV_FP = 90;
+	m_PrefsAutocenterCamInVeh_FP = true;
+	m_PrefsRelativeCamInVeh_DB_FP = false;
+	m_PrefsDoomMode_FP = false;
+#endif
+#ifdef VICEEXT_WEAPON_SIGHT
+	m_PrefsWeaponSight = 2;
+#endif
 }
 
 void
@@ -886,6 +895,17 @@ CMenuManager::CheckSliderMovement(int value)
 		m_PrefsMouseAimSensY = Clamp(m_PrefsMouseAimSensY, 1.0f / 3200.0f, 1.0f / 200.0f);
 
 		TheCamera.m_fMouseAccelVertical = m_PrefsMouseAimSensY;
+
+		break;
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+	case MENUACTION_FOV_FP:
+		if (value > 0)
+			m_PrefsFOV_FP += ((100 - 80) / MENUSLIDER_LOGICAL_BARS);
+		else
+			m_PrefsFOV_FP -= ((100 - 80) / MENUSLIDER_LOGICAL_BARS);
+
+		m_PrefsFOV_FP = Clamp(m_PrefsFOV_FP, 80, 100);
 
 		break;
 #endif
@@ -1311,6 +1331,26 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						rightText = TheText.Get("FEM_OFF");
 					break;
 #endif
+#ifdef VICEEXT_FIRST_PERSON
+				case MENUACTION_AUTOCENTER_IN_VEHICLE_FP:
+					if (m_PrefsAutocenterCamInVeh_FP)
+						rightText = TheText.Get("FEM_ON");
+					else
+						rightText = TheText.Get("FEM_OFF");
+					break;
+				case MENUACTION_RELATIVE_CAM_IN_VEHICLE_DB_FP:
+					if (m_PrefsRelativeCamInVeh_DB_FP)
+						rightText = TheText.Get("FEM_ON");
+					else
+						rightText = TheText.Get("FEM_OFF");
+					break;
+				case MENUACTION_DOOM_MODE_FP:
+					if (m_PrefsDoomMode_FP)
+						rightText = TheText.Get("FEM_ON");
+					else
+						rightText = TheText.Get("FEM_OFF");
+					break;
+#endif
 #endif
 				case MENUACTION_CTRLVIBRATION:
 					if (m_PrefsUseVibration)
@@ -1537,6 +1577,16 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						rightText = TheText.Get("FEA_NM3");
 					}
 					break;
+#ifdef VICEEXT_WEAPON_SIGHT
+				case MENUACTION_WEAPONSIGHT:
+					if (m_PrefsWeaponSight == 2)
+						rightText = TheText.Get("FEM_COM");
+					else if (m_PrefsWeaponSight == 1)
+						rightText = TheText.Get("FEM_SIM");
+					else
+						rightText = TheText.Get("FEM_DEF");
+					break;
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				case MENUACTION_CFO_DYNAMIC:
 				case MENUACTION_CFO_SELECT:
@@ -1597,6 +1647,9 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					int saveSlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
 						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS ||
+#ifdef VICEEXT_FIRST_PERSON
+						action == MENUACTION_FOV_FP ||
+#endif
 						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
@@ -1790,6 +1843,11 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 							break;
 						case MENUACTION_MOUSEAIMSENSY:
 							ProcessSlider(m_PrefsMouseAimSensY * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSEAIMSENSY, HOVEROPTION_DECREASE_MOUSEAIMSENSY, SCREEN_WIDTH, false);
+							break;
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+						case MENUACTION_FOV_FP:
+							ProcessSlider((m_PrefsFOV_FP - 80.0f) / (100 - 80), SLIDER_Y(99.0f), HOVEROPTION_INCREASE_FOV_FP, HOVEROPTION_DECREASE_FOV_FP, SCREEN_WIDTH, false);
 							break;
 #endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
@@ -4921,6 +4979,9 @@ CMenuManager::UserInput(void)
 				&& action != MENUACTION_MOUSELOOKSENSY && action != MENUACTION_MOUSEAIMSENSY
 				&& action != MENUACTION_PADLOOKSENSY && action != MENUACTION_PADAIMSENSY
 #endif
+#ifdef VICEEXT_FIRST_PERSON
+				&& action != MENUACTION_FOV_FP
+#endif
 				)
 				m_nHoverOption = HOVEROPTION_RANDOM_ITEM;
 
@@ -5018,6 +5079,9 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_INCREASE_PADLOOKSENSY:
 			case HOVEROPTION_INCREASE_PADAIMSENSY:
 #endif
+#ifdef VICEEXT_FIRST_PERSON
+			case HOVEROPTION_INCREASE_FOV_FP:
+#endif
 				CheckSliderMovement(1);
 				break;
 			case HOVEROPTION_DECREASE_BRIGHTNESS:
@@ -5042,6 +5106,9 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_DECREASE_PADAIMSENSX:
 			case HOVEROPTION_DECREASE_PADLOOKSENSY:
 			case HOVEROPTION_DECREASE_PADAIMSENSY:
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+			case HOVEROPTION_DECREASE_FOV_FP:
 #endif
 				CheckSliderMovement(-1);
 				break;
@@ -5129,6 +5196,9 @@ CMenuManager::UserInput(void)
 				|| curAction == MENUACTION_MOUSELOOKSENSY || curAction == MENUACTION_MOUSEAIMSENSY
 				|| curAction == MENUACTION_PADLOOKSENSY || curAction == MENUACTION_PADAIMSENSY
 #endif
+#ifdef VICEEXT_FIRST_PERSON
+				|| curAction == MENUACTION_FOV_FP
+#endif
 				)
 				changeValueBy = -1;
 
@@ -5151,6 +5221,9 @@ CMenuManager::UserInput(void)
 				|| curAction == MENUACTION_PADLOOKSENSX || curAction == MENUACTION_PADAIMSENSX
 				|| curAction == MENUACTION_MOUSELOOKSENSY || curAction == MENUACTION_MOUSEAIMSENSY
 				|| curAction == MENUACTION_PADLOOKSENSY || curAction == MENUACTION_PADAIMSENSY
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+				|| curAction == MENUACTION_FOV_FP
 #endif
 				)
 				changeValueBy = 1;
@@ -5209,6 +5282,9 @@ CMenuManager::UserInput(void)
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_PADAIMSENSY
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_FOOTCONTROLS
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_VEHICLECONTROLS
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_FOV_FP
 #endif
 			) 
 		{
@@ -5735,6 +5811,15 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #ifdef VICEEXT_GPS
 					m_PrefsGPS = true;
 #endif
+#if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
+					m_PrefsFOV_FP = 90;
+					m_PrefsAutocenterCamInVeh_FP = true;
+					m_PrefsRelativeCamInVeh_DB_FP = false;
+					m_PrefsDoomMode_FP = false;
+#endif
+#ifdef VICEEXT_WEAPON_SIGHT
+					m_PrefsWeaponSight = 2;
+#endif
 #endif
 					SaveSettings();
 #ifdef LOAD_INI_SETTINGS
@@ -5999,6 +6084,16 @@ CMenuManager::ProcessOnOffMenuOptions()
 		SaveSettings();
 		break;
 #endif
+#ifdef VICEEXT_WEAPON_SIGHT
+	case MENUACTION_WEAPONSIGHT:
+		if (m_PrefsWeaponSight == 2)
+			m_PrefsWeaponSight = 0;
+		else
+			m_PrefsWeaponSight++;
+
+		SaveSettings();
+		break;
+#endif
 #endif
 	case MENUACTION_CTRLVIBRATION:
 		m_PrefsUseVibration = !m_PrefsUseVibration;
@@ -6010,6 +6105,20 @@ CMenuManager::ProcessOnOffMenuOptions()
 #endif
 			TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 		}
+		SaveSettings();
+		break;
+#endif
+#ifdef VICEEXT_FIRST_PERSON
+	case MENUACTION_AUTOCENTER_IN_VEHICLE_FP:
+		m_PrefsAutocenterCamInVeh_FP = !m_PrefsAutocenterCamInVeh_FP;
+		SaveSettings();
+		break;
+	case MENUACTION_RELATIVE_CAM_IN_VEHICLE_DB_FP:
+		m_PrefsRelativeCamInVeh_DB_FP = !m_PrefsRelativeCamInVeh_DB_FP;
+		SaveSettings();
+		break;
+	case MENUACTION_DOOM_MODE_FP:
+		m_PrefsDoomMode_FP = !m_PrefsDoomMode_FP;
 		SaveSettings();
 		break;
 #endif

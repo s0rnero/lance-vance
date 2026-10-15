@@ -2145,7 +2145,11 @@ void CParticle::Render()
 					
 					if ( i == PARTICLE_WATER_HYDRANT
 							|| (!particleBanned || SCREEN_WIDTH * fParticleScaleLimit >= w)
+#ifdef VICEEXT_FIRST_PERSON
+							&& (SCREEN_HEIGHT * fParticleScaleLimit >= h || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_REAL_1ST_PERSON))
+#else
 							&& SCREEN_HEIGHT * fParticleScaleLimit >= h )
+#endif
 					{
 						if ( i == PARTICLE_WATER_HYDRANT )
 						{
