@@ -92,8 +92,14 @@ in a plan, not merged silently.
 - Config that changes behaviour lives in `VICEEXT_*` defines — `src/core/config.h` for
   the cross-lane ones and the lane's own file for its constants (the crouch/aim lane
   declares `VICEEXT_CROUCH_*` in `src/peds/PlayerPed.cpp`) — not in ad-hoc globals. The
-  mods' `features.ini` stays in the game install and no code of the port reads it: it is
-  reference, not configuration.
+  mods' `features.ini` **is served and read** since the family-11 work (2026-10-14):
+  `src/core/ViceExtFeatures.{h,cpp}` loads `ViceExtended/features.ini` once at boot
+  (ported from the mod's own reader, `x87/gta-extended` `src/core/re3.cpp:284`) and the
+  sites consult it with `ViceExtFeatures::On("Clave", <port value>)`. The `VICEEXT_*`
+  define stays as the fallback value: with no file (or no key) the engine behaves
+  exactly as before, so serving the file cannot switch anything off by accident.
+  `limits.ini` is still reference, not configuration: the mod reads it at static-init
+  and here the pools are the port's own.
 
 ## 6. Decision Documentation
 
@@ -102,5 +108,5 @@ in a plan, not merged silently.
   ADR marking the previous one `superseded`.
 - Execution of each task is recorded in `.agents/plans/` (persistent memory).
 
-**Last updated:** September 2026
+**Last updated:** October 2026
 **Version:** 1.0 (adapted to this repo)

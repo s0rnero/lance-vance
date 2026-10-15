@@ -4836,3 +4836,380 @@ No cambian la física, el tope, ni `dataTag`. **El código queda preparado, no p
   `ViceExtIsAiming()`, 005 medición = partida del jugador + logs.
 - Sin código del motor ni datos tocados. `.md` del harness en LF (salvo este fichero,
   CRLF). No hay build ni tests que correr.
+
+## 14/10/2026 — Vice Extended: la instalación viva del jugador y la auditoría de los datos servidos (paso 10i del plan 12.0)
+
+**Entorno real, medido.** El jugador dio la ruta donde juega:
+`C:\Users\s0rno\Desktop\Gamez\(g)old\Grand Theft Auto Vice City`, arrancada con
+`ViceEx.exe` (3.822.080 B, PE32 i386, sha256 `4df2726e0365…`). Ese binario es
+**idéntico** al de `mods/extended/GameFiles/ViceEx.exe` y al de la copia de REA
+(`gta_vc_browser/tmp/rea/bin/ViceEx.exe`): la ingeniería inversa se está haciendo
+sobre el binario correcto. `mods/extended/Bonus/x64_beta/ViceEx.exe` es otro
+artefacto (x86-64, `8353745383…`). El árbol `ViceExtended/` de la instalación y
+el del repo son idénticos salvo `audio/ViceEx.RAW` (sólo en la instalación;
+`.gitignore` línea 377, `*.RAW`) y `userfiles/` (lo escribe el juego). El mod se
+entrega con ModLoader 0.3.9 y su log muestra `gta3/std.asi.dll` y
+`gta3/std.bank.dll` fallando al arrancar en esa instalación.
+
+**El paso 10i acabó siendo una auditoría, y corrigió la tabla del propio plan.**
+De los 10 ficheros que el plan daba por «servidos en vanilla» o «ausentes»:
+
+| Fichero | Realidad medida |
+|---|---|
+| `data/weapon.dat` | **ya es el del mod** (idéntico línea a línea, 103 líneas; los 102 B de diferencia son CRLF→LF) |
+| `data/default.ide`, `data/default.dat` | **no son vanilla**: son las versiones propias del port (vanilla + ids 6500-6507; vanilla + `COLFILE … NEWVEHICLES.COL`) |
+| vehículos y armas nuevas | **ya integrados**: `tools/import_mvl_vehicles.py` (6500-6507 en `default.ide`/`handling.cfg`/`carcols.dat`), `tools/import_img.py` y `gta_vc_browser/streamed/models/gta3.img/` como carpeta de 6.085 ficheros (`streetfi`, `manchez`, `ak47`, `beretta`, `gr_launch`…); `newvehicles.col` servido idéntico (`48f417725a60`) |
+| `features.ini`, `limits.ini`, `ViceEx.dat` | **no se sirven a propósito**: DESIGN §5 (el ini es referencia, no configuración; la paridad vive en `src/core/config.h`) |
+
+**Auditoría del overlay** (`ViceExtended/**` + `modloader/ViceExtended/**` →
+servido, con el mapeo `cdimages/x.img` → `models/x.img`): **97 idénticos, 26
+distintos, 32 ausentes**. Sólo quedan **tres huecos reales de datos**:
+
+1. `data/main.scm` — el servido es vanilla (el del mod es `41a932cc593e`);
+   bloqueado por los 10 opcodes propios de la familia 13.
+2. `data/particle.cfg` — el mod añade **5 tipos** (`ENGINE_SMOKE2_SMALL`,
+   `ENGINE_STEAM_SMALL`, `ENGINE_SMOKE_SMALL`, `CARFLAME_SMALL`,
+   `CARFLAME_SMOKE_SMALL32`) y `src/renderer/ParticleMgr.cpp` parsea
+   **posicional** (`entry->m_Type = (tParticleType)type++` con
+   `ASSERT(type < MAX_PARTICLES)`; el enum declara 82). Copiarlo suelto = assert:
+   va con su código (familia 3/5).
+3. `models/coll/newWeapons.col` (224 B) — el `default.dat` del mod lo carga y el
+   servido no lo tiene; nace con la familia 13. Precedente que obliga: el assert
+   `CalculateTrianglePlanes` que ya costó `newvehicles.col`.
+
+El resto de diferencias son decisiones ya conocidas (los 6 GXT con delta
+constante, los sets de botones de mando, `ped.ifp` con clips de otros mods,
+`fronten2/wheels/vehmods/*` del taller excluido).
+
+**CLEO queda FUERA del plan** por decisión del jugador de hoy: el mod no trae ni
+un `.cs` y los dos que hay en el repo son memory-hacks del `gta-vc.exe` x86 1.0,
+no lógica portable; no se implementa lo que no se usa.
+
+**Herramientas arregladas.** `tools/extract_viceex.py` y
+`tools/add_viceex_sfx.py` resolvían el banco de audio del mod con rutas que no
+existen en este checkout (un nombre de carpeta de descarga y un
+`Grand Theft Auto Vice City/` junto al repo). Ahora lo resuelven por
+`VC_VICEEX_AUDIO` (la carpeta) o `VC_GAME` (la raíz del juego, la que arranca
+`ViceEx.exe`), con respaldo a `mods/extended/GameFiles/ViceExtended/audio` y a
+las rutas antiguas.
+
+**La auditoría queda re-ejecutable**: `gta_vc_browser/tools/viceext-parity-check.py`
+(nuevo) recorre el overlay del mod contra lo servido, clasifica cada diferencia
+(`bloqueado`/`cubierto`/`by-design`/`pendiente`/`mundo`) y falla solo si aparece
+algo sin clasificar. Corrida de hoy: `PARIDAD OK - 66 diferencias, todas
+clasificadas (bloqueado=3, by-design=28, cubierto=24, mundo=5, pendiente=6)`.
+
+**No se sirvió nada al juego en esta entrada** (ningún dato servido cambió y
+`dataTag` queda intacto) y no se corrió build ni suite: la auditoría demostró que
+no hay ninguna copia de datos que se pueda hacer suelta. Pendiente del jugador:
+su veredicto en partida cuando entren las familias 13 y 3/5.
+
+## 14/10/2026 — REA/Ghidra: por que fallaba el MCP y el camino que si funciona (familia 13) `[raiz]`
+
+**El "Connection cancelled" no era el servidor.** `rea-agents@6.4.0 mcp doctor`
+devuelve `healthy: true` (adaptador `production-stdio`, 170/170 herramientas, 6
+prompts, catalogo `85d80276ecac`) y un handshake real por stdio responde en segundos
+(`initialize` 3,0 s, `tools/list` 0,3 s, `binary_session` 0,4 s; lo mide la
+herramienta nueva `tools/viceex-rea.py mcp-check`). Lo que fallaba era la **primera
+llamada ligada a Ghidra**: el proveedor solo sirve operaciones cuando el analisis
+automatico esta completo y cancelar termina su base de datos efimera, asi que el
+corte del cliente (`MCP error -32001: Request timed out`, reproducido hoy con
+`procedure_pseudo_code 0x4948B6`) tiraba la sesion entera.
+
+**Medido, no supuesto:** el analisis en frio de su `ViceEx.exe` (3.822.080 B, PE32
+i386, Ghidra 12.1.4) cuesta **242 s** la primera pasada y **221 s** la segunda con el
+snapshot ya actualizado — el snapshot es un **registro, no una cache** (crecio
+871.070 -> 882.402 B, +11,3 KB, del orden del pseudocodigo de esa consulta). Con 8
+analizadores caros desactivados baja a **201 s**: tampoco cabe en el limite del
+cliente. Conclusion: la decompilacion va por **CLI** (que no tiene ese limite) y el
+MCP queda para lo que no exige el primer analisis.
+
+**Config:** `.agents/mcp.json` gana `JAVA_HOME` (`C:\Program Files\Java\jdk-26.0.2`) y
+`REA_GHIDRA_STARTUP_TIMEOUT_MS=900000` (el limite propio de REA son 330.000 ms), para
+que un import lento no muera por su deadline. Eso cambia el `launchHash` del registro
+del cliente (`~/.freebuff/mcp.json`, `configKey: rea`), que pedira re-aprobar el
+servidor al recargarlo. **No** se adopta la dieta de analizadores: cambiaria el digest
+del perfil (`b9d116ea480a…`) e invalidaria los snapshots existentes.
+
+**Camino listo:** `gta_vc_browser/tools/viceex-rea.py` (nuevo) con
+`estado` / `snapshot` / `dec <direccion>` / `mcp-check [--abrir]`, recibos en
+`gta_vc_browser/tmp/rea/viceex-13-*`. `dec` acepta alias (`0x0fa2`, `callee`,
+`0x0fa3`, `0x0fa9`) y `--sin-snapshot` para comparar.
+
+**Primer fruto (familia 13):** `dec 0x4948B6` devuelve el **switch entero** de
+`FUN_004946C0`, es decir la semantica de los **10 opcodes en una sola llamada** (4
+min), con sus `case 0..9` y los asserts de su `Script8.cpp`: confirma aridad y
+semantica de la tabla del plan 12.0, y anade que el byte de variante se escribe en
+`ped+0x668` (`0x0FA0`) y se lee de ahi (`0x0FA1`), que `0x0FA6` copia el byte
+global `0x93763D` a `0xD19CAA` y que `0x0FA5`/`0x0FA7` vuelven a aplicarlo (su
+inverso y su valor) por la misma rutina que `0x0FA4` usa para ponerlo a cero; y que
+`0x0FA3` es `DoAutoSave` (engancha con la familia 9). No se toco el motor ni un byte
+de lo servido.
+
+## 14/10/2026 — Familia 13 y 3/5: los opcodes del mod en el motor, las particulas por nombre y dos datos servidos `[raiz]`
+
+**Lo que ya esta dentro.** Los **10 opcodes propios** de su `main.scm`
+(`op=0x0FA0`-`op=0x0FA9` = comandos 4000-4009) estan implementados en
+`src/control/Script8.cpp` (`CRunningScript::ProcessCommands4000To4099`), con sus
+constantes en `src/control/ScriptCommands.h` y la rama nueva del despacho en
+`src/control/Script.cpp`, todo tras la bandera `VICEEXT_MOD_SCRIPT` de
+`src/core/config.h`. La **aridad es la medida** en su `ViceEx.exe` (`0FA0`=2,
+`0FA1`=1→resultado, `0FA2`=2, `0FA3`-`0FA7`=0, `0FA8`=1, `0FA9`=2), asi que los 206
+sitios de llamada de su script consumen sus parametros y **no desincronizan la
+pila** aunque el efecto sea un stub. Traza `P4 kind=modscript` por opcode (mas
+`desconocido=1` para un comando raro del rango y `P4 kind=overflow` si no cabe).
+
+**Que opcode tiene semantica real hoy:** `0FA2` (91 usos, el que mandaba)
+selecciona el ped actual validando la generacion del handle contra el pool y
+guardando su indice; `0FA0`/`0FA1` guardan y devuelven el byte de variante por
+ranura de ped; `0FA6` copia el byte global y `0FA4`/`0FA5`/`0FA7` son el editor de
+flags con contador (replica de su `sub_48B120`, con sus rangos 1..8 = AND y
+0x15..0x1C = OR); `0FA9` escribe el rumbo en radianes sobre el vehiculo; `0FA3`
+marca el autosave por la via propia del port. Queda **sin destino** `0FA8` (su
+`sub_5E1070` escribe dos globales con una formula de tiempo/aleatorio sin
+identificar) y el global `0x93763D` **sin escritor conocido** en nuestro fork: el
+resultado lo dara la traza al cargar su script, que ademas recontara los usos
+reales.
+
+**Particulas: el tipo se resuelve por NOMBRE.** Su `particle.cfg` anade 5 tipos y
+el parser era posicional (`type++` con `ASSERT(type < MAX_PARTICLES)`): servirlo
+asi era un assert garantizado. Ahora `ParticleMgr.cpp` lo resuelve por nombre
+contra una tabla del enum entero (bandera `VICEEXT_PARTICLE_NAMES`), los 5 tipos
+entran en `ParticleType.h` y `MAX_PARTICLES` pasa de 83 a 88 (con el
+`VALIDATE_SIZE` de `ParticleMgr.h` a juego). Dos fallos latentes que salieron al
+leer los ficheros reales: el centinela `;the end` no casaba con un fichero CRLF
+(el `\r` se pegaba y el bucle se pasaba del buffer) y el `strcpy` del nombre
+desbordaba el campo de 20 con `CARFLAME_SMOKE_SMALL32` (22 caracteres).
+
+**Dos datos del mod ya servidos (no por codigo, por medicion).**
+`data/particle.cfg` se sirve **bit a bit del mod** (18.363 B, `49130d2521a1`): el
+delta medido contra el que se servia es que los **83 tipos comunes tienen valores
+identicos** y el mod solo anade los 5 al final. `models/coll/newWeapons.col`
+(224 B) entra con su linea `COLFILE 0 MODELS\COLL\NEWWEAPONS.COL` en
+`streamed/data/default.dat`. `dataTag` y `VERSION` suben a
+`2026-10-14-12.0-datos1` (`stage_bootseed.py` y `gen_manifest.py` rehechos: el
+`particle.cfg` va precargado en `bootseed/`). Como `streamed/` no esta en git, el
+vanilla que se servia queda copiado en `gta_vc_browser/tmp/viceext-13/vanilla/`.
+
+**`main.scm`: NO se ha sustituido, y el motivo ya no es el codigo.** Sigue
+sirviendose el vanilla (`0fb3fd45b6a6`, 1.269.133 B) en vez del del mod
+(`41a932cc593e`, 1.191.180 B): su script lee armas y pickups de la familia 6 (que
+sigue TODO) y la sustitucion es la que puede romper una partida, asi que espera el
+veredicto del jugador. Las dos herramientas lo dicen asi y no como regresion:
+`check-served-build.sh` lo lista como `PENDIENTE` (exigiendo que el servido sea
+exactamente uno de los dos artefactos conocidos) y `viceext-parity-check.py` lo
+clasifica como `pendiente`.
+
+**Verificado ejecutando:** build del motor OK (238/238 + enlace);
+`check-served-build.sh` exit 0 con las marcas nuevas (`P4 kind=modscript`,
+`P4 kind=partcfg`, los dos datos y la linea `COLFILE`);
+`viceext-parity-check.py` exit 0 con `identicos=99 distintos=25 ausentes=39` y 64
+diferencias clasificadas (by-design=28, cubierto=24, mundo=5, pendiente=7); suite
+`test_controls_axis.py` 56 tests OK, con los fixtures nuevos de las dos trazas.
+Tres arreglos de arnes que salieron de paso: `radio2` y `cheat2` faltaban en
+`P4_KINDS`, asi que un log real con esas trazas (que el motor ya emitia) salia
+como «kind P4 desconocido» y tumbaba la evaluacion estricta; y `via` estaba en
+`P4_NUM_FINITOS` cuando el motor lo emite en palabra (`via=tecleo`), de modo que
+cualquier partida con un truco salia como evidencia invalida (ahora esta en
+`P4_REQ["cheat2"]` y el fixture usa la traza real).
+
+**Pendiente:** la partida del jugador (pasos 10g/10k), decidir la sustitucion del
+`main.scm`, y los `m_ppRaster` de los 5 tipos nuevos en `Particle.cpp` el dia que
+el motor los cree (hoy es inerte porque ningun codigo los crea).
+
+## 14/10/2026 — El script del mod servido y el primer arranque headless: la familia 3/5 medida en el motor y el save del mod que este cargador no traga `[raiz]`
+
+**El jugador dio el si y se sirvio el `main.scm` del mod**, aceptando el riesgo de
+romper la partida. `streamed/data/main.scm` y `bootseed/data/main.scm` son el del
+mod (`41a932cc593e`, 1.191.180 B) y el paquete relinkado pesa **77.953 B menos**
+que con el vanilla — exactamente la diferencia entre los dos scripts
+(1.269.133 − 1.191.180), que es la prueba de que el que viaja dentro es el del
+mod. Con esto **ya no queda ningun dato del mod sin servir**: `main.scm`,
+`particle.cfg` y `newWeapons.col` van bit a bit del suyo. `VERSION` y `dataTag`
+suben a `2026-10-14-ve78` (vuelta a la convencion `-veN` del proyecto, que
+ademas es la que exige el check estatico del arnes; el ultimo documentado era
+`ve77`).
+
+**El primer arranque que fallo enseno algo que las herramientas no ven: un dato
+puede estar servido y no llegar al motor.** Con la linea `COLFILE` ya puesta, el
+juego se caia al arrancar (`RuntimeError: null function` en `CFileMgr::Read`)
+porque **los `.col` no se leen on-demand**: van precargados en `bootseed.list`
+(donde ya estaban `vehicles.col`, `newvehicles.col` y `weapons.col`). El nuestro
+no estaba. Anadido y el fallo desaparece.
+
+**Arranque headless con estos datos (Chrome headless + el servidor de desarrollo
+del jugador, `node tools/vc-test.mjs --escenario carga`):**
+
+- **La familia 3/5 queda medida EN EL MOTOR**, no solo en el arnes:
+  `P4 kind=partcfg cargados=88 nuevos=5 desconocidos=0 total=88`, con su linea de
+  nombre largo (`CARFLAME_SMOKE_SMALL32 cap=20`). El `particle.cfg` del mod carga
+  entero en el juego real, que es la prueba que faltaba.
+- **El save del mod NO lo carga este motor.** Al abrir su partida
+  (`ViceExtended/userfiles/GTAVCsf1.b`, copiada a `gta_vc_browser/tmp/vc-save/`)
+  el motor se sale del buffer en `CRunningScript::Load` (`memory access out of
+  bounds`). **Control hecho**: con el `main.scm` **vanilla** servido y el mismo
+  save, revienta **igual y en el mismo sitio**. O sea: el save lo escribio su
+  `ViceEx.exe` y su bloque de script no encaja con el cargador del port; **no es
+  el script del mod** lo que falla. Consecuencia para el plan: el veredicto en
+  partida de la familia 13 necesita un save hecho por el **port** (o empezar
+  partida nueva); el del mod no vale para eso.
+- El arnes necesita `puppeteer-core` (no esta en el repo: se instalo en
+  `gta_vc_browser/tmp/vc-e2e/node_modules` y se pasa por `PUPPETEER_DIR`) y una
+  partida en `tools/testdata/GTAVCsf1.b` que **no existe en este checkout** (no
+  esta en git).
+
+**Los 5 tipos de particula nuevos dejan de estar a ciegas**: `Particle.cpp` les
+asigna el raster de su hermano mayor (`*_SMALL` -> `ENGINE_SMOKE2`,
+`ENGINE_STEAM`, `ENGINE_SMOKE`, `CARFLAME`, `CARFLAME_SMOKE`), **por analogia y sin
+medir su `ViceEx.exe`**: es lo unico afirmable sin REA, y queda dicho asi.
+
+**Verificado ejecutando:** build OK; `check-served-build.sh` exit 0 (los tres
+datos del mod + la linea `COLFILE`); `viceext-parity-check.py` exit 0 ->
+`identicos=100 distintos=24 ausentes=39`, 63 diferencias todas clasificadas
+(by-design=28, cubierto=24, mundo=5, pendiente=6); suite estatica
+`vc-test.mjs --estatico` exit 0 (etiqueta `ve78` y marcas OK); suite de contratos
+`test_controls_axis.py` 57 tests OK. El escenario `carga` sigue en FALLO, y el
+motivo esta identificado: el save del mod, no lo servido.
+
+**Decision del jugador (misma noche, con los datos a la vista):** el `main.scm`
+del mod **se queda servido**, aun sabiendo que depende de familias que siguen
+TODO (sobre todo las armas nuevas de la 6) y de que con el no cargan sus partidas
+guardadas. Queda como decision suya, no como accidente: el script solo se
+retiraria si lo pide.
+
+**Pendiente:** un save hecho por el port para poder medir el script del mod en
+partida (con el del mod no se puede), el veredicto del jugador y el raster real
+de esos 5 tipos si se ven mal.
+## 14/10/2026 (tarde) — Auditoria de banderas y el volante que gira (build `ve79`)
+
+Dos cosas, ambas medidas, ninguna contada de memoria.
+
+**Entregado.** `VICEEXT_CAR_ROTATE_WHEEL` (v2.5 «Rotating steering wheel») dejo de
+ser una etiqueta: `src/vehicles/Automobile.cpp` gira el dummy `steeringwheel` (18
+modelos del `gta3.img` servido; en el resto queda no-op limpio) con el angulo de
+direccion, post-multiplicando (`CMatrix::Rotate`) porque el pivote del modelo va
+inclinado y `SetRotate` borraria la posicion. Con traza `P4 kind=wheelrot`, bloque
+`VW`, 3 marcas y 5 tests de contrato (62 en total). Build `2026-10-14-ve79`;
+`check-served-build.sh` exit 0; suite estatica exit 0. **Falta el veredicto
+visual**: el tutorial del mod no da el multiplicador (1.0) ni confirma el eje.
+
+**Descubierto.** Nuevo `gta_vc_browser/tools/viceext-flag-audit.py`: de las 71
+banderas del motor, **64 tienen codigo detras y 7 son etiqueta vacia** (`ALT_SIT`,
+`GANG_AIM`, `MOON`, `MAPDATA`, `FEATURES_INI`, `DISTANT_LIGHTS`,
+`AIM_SENSITIVITY`). Con eso el pendiente deja de ser «12 familias» y pasa a ser
+«7 huecos», cuatro de ellos de datos o de trigger.
+
+**El muro, con ancla.** `EnableDistantLights` y `Aim sensitivity` solo tienen
+medida la fontaneria del INI (stub `0x406850` → lector `FUN_0051e3c0`, bandera
+`[0xa0627f]`; claves `Autoaim` `0x6eb4f0`, `MouseAimSensX/Y` `0x6eb578/0x6eb598`,
+`PadAimSensX/Y` `0x6eb540/0x6eb55c`): falta el xref de **quien consume** esas
+banderas. El `xrefs` por MCP expiro hoy en el cliente; el camino que ya funciono es
+el CLI (`tools/viceex-rea.py`, snapshot atado al sha256 del exe) con los recibos en
+`gta_vc_browser/tmp/rea/`. Queda escrito en el plan 12.0 para no volver a buscarlo.
+## 14/10/2026 (noche) — REA por `analyzeHeadless`, sensibilidad de apuntado portada (`ve80`)
+
+**Lo importante de hoy no es una feature: es que se rompio el muro de la medida.**
+`xrefs` por el cliente MCP de REA expira siempre (dos intentos, `-32001`); lo que
+funciona es `analyzeHeadless` directo (`-process ViceEx.exe -noanalysis`) sobre el
+proyecto de Ghidra ya analizado + `R2Dump.java`. De ahi salieron los xrefs que
+llevaban dos rondas sin poder pedirse; el como y las direcciones quedan en
+`.agents/mediciones-rea-r3.md`.
+
+**Portado: familia 1, 2506 «Aim sensitivity fix» (`ve80`).** Su `FUN_0049b290` lee
+el ped del jugador y, segun apunte o no, mete el par de APUNTADO (pad `0x937610`/
+`0x937618`, raton `0x93762c`/`0x937634`) o el de MIRAR (pad `0x93760c`/`0x937614`,
+raton `0x937628`/`0x937630`); el raton se escala por 0.5 (`0x6d7778` = `0x3f000000`).
+Los valores no estan compilados: salen de su `ViceEx.ini`, y los defaults del port
+son los REALES de la instalacion del jugador (raton 0.002500 -> 0.001667, pad
+0.001250 -> 0.000625; el valor de mirar coincide con el `HorizantalMouseSens` que el
+port ya usaba, asi que apuntando cae a 2/3 y 1/2). Traza `P4 kind=aimsens`, bloque
+`AW`, 3 marcas, 5 tests nuevos (67 OK). Build `ve80` EXIT=0; `check-served-build.sh`
+exit 0; suite estatica exit 0.
+
+**Medido y NO portado: familia 5, luces lejanas.** La bandera `[0xa0627f]` la
+consumen `0x50ba37` (`FUN_0050ba20`) y `0x4e72bd` (`FUN_004e7030`), que recorren los
+pools de **dummies** (`0x93839c`, 112 B) y **edificios** (`0x938390`, 100 B) —pools
+identificados por el orden de creacion de `FUN_004f0a60` contra el orden de
+`src/core/Pools.cpp`— y descartan por distancia con `[0x6e0c74]` = **530,0 m**. Sin
+la linea base vanilla no se sabe que anade: no se inventa.
+
+**Lo que sigue faltando para cerrarlo:** la partida del jugador (ni el volante
+`ve79` ni el apuntado `ve80` cuentan sin su ojo) y, para las luces lejanas, comparar
+el recorrido contra un `gta-vc.exe` vanilla por la misma via.
+
+## 14/10/2026 (noche, tanda `ve85c`) — Familia 7: el arranque real, y el `-1` del IPL del mod
+
+**Lo que ha cambiado hoy no es una feature: es que la familia 7 se miro con el motor
+encendido, y el motor tenia una queja que ningun chequeo estatico podia oir.**
+
+**Como se midio.** Con el arnes de partida real (`tools/vc-test.mjs --escenario carga`,
+su traza en `web/odtrace.log`), no con una simulacion. La primera corrida de la build
+`ve85` (mundo del mod servido, sin arreglo) **se cae en el paso 4 de
+`CGame::InitialiseStep`**, dentro de `LoadLevel(DATA\GTA_VC.DAT)` →
+`CFileLoader::LoadScene` → `CFileLoader::LoadObjectInstance`, con
+`RuntimeError: null function`. Reproducida dos veces, mismo sitio.
+
+**La causa esta en un fichero del mod, y se cuenta con numeros.** El `inst` de su
+`maps/bryx/bryx.ipl` trae `-1` en la columna del id en sus dos lineas. De las **9135**
+lineas `inst` que sirve el mundo, esas dos son las **unicas** con id negativo: el dato
+vanilla nunca pasa por ahi (medido recorriendo los IPL servidos). El port metia ese `-1`
+tal cual como indice de `CModelInfo::GetModelInfo(int)`, que **no comprueba el rango**
+(`ms_modelInfoPtrs[id]`): lee la palabra que hay ANTE el array y llama a la vtable que
+aparezca ahi. Y explica por que la corrida anterior (mismo dato, codigo de otro tamano)
+**no** se caia: ahi esa palabra era nil y el cargador **descartaba las dos lineas en
+silencio** — el mundo del mod estaba servido, pero ese trozo nunca se coloco.
+
+**El arreglo** (ADR-015): cuando el id es negativo, el modelo se resuelve **por
+nombre** (`CModelInfo::GetModelInfo(name, &id)`), que es lo que el fichero del mod quiere
+decir (por eso lleva el nombre) y lo mismo que ya validaba `viceext-world-check.py`, que
+comprueba esas instancias por nombre; si el nombre no existe, la linea se descarta. Tres
+lineas de mudanza en `src/core/FileLoader.cpp`; para el vanilla es inerte.
+
+**Verificado ejecutando.** Build `EXIT=0`; `check-served-build.sh` exit 0; suite de
+contratos **97 tests OK**; `viceext-world-check.py` exit 0; `viceext-parity-check.py`
+exit 0. Y el arranque real de despues: el motor pasa **`initstep 0..18`** completo y deja
+**`P4 kind=worlddata schema=1 gen=1 frame=1028 sim=0.1200 case=0 id=0 zonas=631`**; la
+caida en `LoadObjectInstance` ya no esta. Como los asserts van encendidos
+(`RelWithDebInfo`), el `assert(mi->IsSimple())` del cargador **paso**: el nombre del mod
+resuelve a un modelo simple de verdad. Sobre ese log real, el verificador da **P4.16
+PASS** («631 zonas: las 342 del `occlu.ipl` del mod y 289 mas») y **P4.15 PASS**
+(«10 claves leidas del fichero, 7 por decision del jugador»), este ultimo imposible
+antes: sus trazas `inifile` no llevaban el `id=` que el esquema P4 exige (corregido en
+`src/core/ViceExtFeatures.cpp`).
+
+**Lo que sigue faltando, sin adornos.** La evaluacion estricta `--plan-4` **se corta en
+P4.0** («no hay traza `P4 kind=identity`»): la identidad la emite el ped del jugador **en
+movimiento**, y esta sesion no llega a jugar porque **el save del mod no carga** (bloqueo
+de la familia 13: `CRunningScript::Load`, `memory access out of bounds` — el mismo con el
+script vanilla de control). Para medir la familia 7 en partida hay que **empezar partida
+nueva**: el arnes solo sabe cargar partida. Queda dicho aqui para no volver a buscarlo.
+
+## 14/10/2026 (noche, tanda `ve85e`) — PARTIDA NUEVA: se entra al juego, y el radar lo cierra
+
+**La puerta que faltaba era empezar partida, y se abrio.** `tools/harness/vc-harness.mjs`
+aprende a arrancar partida nueva (`VC_NUEVA_PARTIDA=1`): dos clics en la MISMA fila del menu
+—INICIAR PARTIDA y NUEVA PARTIDA—, que en este motor arranca sin mas preguntas cuando no hay
+partida cargada (`Frontend.cpp`: `m_TargetMenu == MENUPAGE_NEW_GAME_RELOAD &&
+m_bGameNotLoaded`). El camino de cargar partida sigue como estaba, solo para cuando el save
+sea compatible.
+
+**Medido: empezar partida nueva FUNCIONA.** El motor pasa `initstep 0..18`, el ped aparece en
+la ciudad (`PEDAT x=83.0 y=-849.8 z=10.3 nf=871`) y **el script del mod corre de verdad**: su
+escena inicial (`CUT begin INT_A`, `CUT loaded INT_A anim=1 cam=1 dirN=148`, 11 objetos, su
+`INT_A.MP3` por `STREAM preload`). Aparece la traza **`P4 kind=identity`**, asi que la
+evaluacion estricta `--plan-4` **ya corre sobre un log real**: **P4.0 OK** (identidad ve85),
+**P4.10 PASS** (`limits` 140/130) y **P4.6 FALLO** (apuntado: `pitch` -12.61° contra -2.86° de
+referencia, rayo a 64.3 px de la reticula). Ojo con ese FALLO: la sesion estaba **en el video
+de intro** (`modo=17 camdist=458`), asi que se reconfirma con el ped jugando.
+
+**El muro nuevo, con su cadena exacta.** En cuanto hay mundo que dibujar, el motor **se cae
+dibujando un blip**: `RuntimeError: memory access out of bounds` en `CSprite2d::Draw` ←
+`CRadar::DrawRadarSprite` ← `CRadar::DrawCoordBlip`, repetido cada frame. `DrawRadarSprite`
+indexa `RadarSprites[sprite]` **sin comprobar rango**, y esos sprites se cargan por NOMBRE
+desde `hud.txd` (`CRadar::LoadTextures`): un blip del script del mod con un icono que ese TXD
+no trae deja el sprite sin textura y el frame revienta. Es la fila «Blips/iconos HD (9.3)» y
+**es lo primero que hay que arreglar para poder jugar de verdad**.
+
+**Consecuencia para las medidas.** El escenario `agachado` no llego a correr (la sesion no
+alcanza el estado 9 en 240 s: se queda en 8, el video de intro), asi que sus bloques salen
+`SIN DATOS`. No faltan trazas de codigo: falta partida que medir.

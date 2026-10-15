@@ -27,7 +27,7 @@ metidos) · **FUERA** (excluido por decisión del jugador o imposible en wasm).
 | `RecoilWhenFiring` | HECHO | `VICEEXT_RECOIL` (v2, 12ª partida) |
 | `EnableSwimming` | HECHO | `VICEEXT_SWIMMING` + cámara (R14-1) |
 | `RocketLauncherThirdPersonAiming` | **HECHO `ve29`** | R16: el lanzacohetes apunta en 3ª persona y se puede andar apuntando |
-| `EnableDistantLights` | PENDIENTE | X6. Falta **medir** qué son en el mod (PC nativo, con el mismo sitio a la vista) antes de tocar el render |
+| `EnableDistantLights` | PENDIENTE | X6. **Recorrido medido** el 14/10 (`.agents/mediciones-rea-r3.md`): clave `0x6eaa50`, bandera `[0xa0627f]`, consumidores `FUN_0050ba20` (`0x50ba37`) y `FUN_004e7030` (`0x4e72bd`), pools de **dummies** (`0x93839c`) y **edificios** (`0x938390`), corte a **530,0 m** (`[0x6e0c74]`). Falta la **linea base vanilla** (que parte ya existia) para saber que anade antes de tocar el render |
 | `RandomVehicleModsInTraffic` | FUERA (de momento) | depende del taller de tuning (excluido) y de MVL; sustituto razonable por decidir con el jugador |
 
 Los demás (13) están a 0 en su `features.ini`, así que **no** forman parte del
@@ -50,7 +50,7 @@ Ordenado por coste. Ninguno lleva toggle en el mod: si no está, no es el mod.
 | 7 | **Animaciones de muerte dentro del coche** + conductores muertos con comportamiento aleatorio (3.0) | `Automobile`/`Ped` | medio |
 | 8 | **Variaciones de peds** (2.6) | `.ide`/`Population` | medio |
 | 9 | **ALT para caminar** y **sentarse/moverse sentado** (2.0/1.0) | `Pad.cpp` + `PlayerPed` | bajo |
-| 10 | **Sensibilidad de apuntado** y **precisión de la IA** (2506/v1.0) | `ControllerConfig`/`PedAI` | bajo |
+| 10 | **Sensibilidad de apuntado** (2506) HECHA `ve80` — par de mirar vs apuntar por dispositivo, `VICEEXT_AIM_SENSITIVITY`; **precisión de la IA** (v1.0) sigue pendiente | `ControllerConfig`/`PedAI` | bajo |
 | 11 | **Detalle de vehículo** (2.0/2.5/2506): rueda que se cae, puertas que golpean, giro aleatorio al aparecer aparcado, rotación de ruedas al salir, intermitentes | `Automobile`/`Bike` | medio |
 | 12 | **Luces del coche** (2.5): textura, haz separado, humo y fuego del capó con el capó cerrado | `Automobile`/renderer | medio |
 | 13 | **Luna móvil** (1.5, posición según el sol) | `Clouds.cpp` | bajo-medio |
