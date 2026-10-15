@@ -170,3 +170,14 @@ CCullZones::AddCullZone(CVector const &position,
 	attrib->attributes = flag;
 	attrib->wantedLevel = wantedLevel;
 }
+
+#ifdef VICEEXT_MAPDATA
+// Familia 7: las zonas acumuladas son la medida de cuanto mundo ha ingerido el
+// motor de los IPL servidos. Se pide desde `CGame::Initialise` (una vez, al
+// arrancar) para que su traza diga si el mundo del mod llego de verdad.
+int
+CCullZones::ViceExtNumZones(void)
+{
+	return (int)NumAttributeZones;
+}
+#endif

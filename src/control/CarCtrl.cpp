@@ -307,6 +307,9 @@ CCarCtrl::GenerateOneRandomCar()
 			break;
 		}
 	}
+#ifdef VICEEXT_LIMITS
+	preferredDistance *= VICEEXT_SPAWN_RADIUS_MULT;
+#endif
 	if (!ThePaths.GenerateCarCreationCoors(vecTargetPos.x, vecTargetPos.y, frontX, frontY,
 		preferredDistance, angleLimit, invertAngleLimitTest, &spawnPosition, &curNodeId, &nextNodeId,
 		&positionBetweenNodes, carClass == COPS && pWanted->GetWantedLevel() >= 1))
@@ -606,14 +609,18 @@ CCarCtrl::GenerateOneRandomCar()
 		break;
 	}
 	CVisibilityPlugins::SetClumpAlpha(pVehicle->GetClump(), 0);
+	float odDespawnK = (pVehicle->bExtendedRange ? EXTENDED_RANGE_DESPAWN_MULTIPLIER : 1.0f);
+#ifdef VICEEXT_LIMITS
+	odDespawnK *= VICEEXT_SPAWN_RADIUS_MULT;
+#endif
 	if (!pVehicle->GetIsOnScreen()){
-		if ((vecTargetPos - pVehicle->GetPosition()).Magnitude2D() > OFFSCREEN_DESPAWN_RANGE * (pVehicle->bExtendedRange ? EXTENDED_RANGE_DESPAWN_MULTIPLIER : 1.0f)) {
+		if ((vecTargetPos - pVehicle->GetPosition()).Magnitude2D() > OFFSCREEN_DESPAWN_RANGE * odDespawnK) {
 			/* Too far away cars that are not visible aren't needed. */
 			delete pVehicle;
 			return;
 		}
 	}else{
-		if ((vecTargetPos - pVehicle->GetPosition()).Magnitude2D() > TheCamera.GenerationDistMultiplier * (pVehicle->bExtendedRange ? EXTENDED_RANGE_DESPAWN_MULTIPLIER : 1.0f) * ONSCREEN_DESPAWN_RANGE ||
+		if ((vecTargetPos - pVehicle->GetPosition()).Magnitude2D() > TheCamera.GenerationDistMultiplier * odDespawnK * ONSCREEN_DESPAWN_RANGE ||
 			(vecTargetPos - pVehicle->GetPosition()).Magnitude2D() < TheCamera.GenerationDistMultiplier * MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN) {
 			delete pVehicle;
 			return;
@@ -1120,7 +1127,10 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 #endif
 		if (pVehicle->bExtendedRange)
 			threshold *= EXTENDED_RANGE_DESPAWN_MULTIPLIER;
-		if (distanceToPlayer > threshold && !CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){
+	#ifdef VICEEXT_LIMITS
+	threshold *= VICEEXT_SPAWN_RADIUS_MULT;
+#endif
+	if (distanceToPlayer > threshold && !CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){
 			if (pVehicle->GetIsOnScreen()){
 				pVehicle->bFadeOut = true;
 			}else{

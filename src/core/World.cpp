@@ -1,9 +1,12 @@
 #include "common.h"
+#include "ViceExtFeatures.h"
+#include "Building.h"
 #include "Camera.h"
 #include "CarCtrl.h"
 #include "CopPed.h"
 #include "CutsceneMgr.h"
 #include "DMAudio.h"
+#include "Dummy.h"
 #include "EventList.h"
 #include "Explosion.h"
 #include "Fire.h"
@@ -1939,6 +1942,56 @@ CWorld::Process(void)
 {
 	if(!(CTimer::GetFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
 
+	// features.ini `EnableDistantLights` (familia 11): la clave manda en caliente;
+	// sin fichero el port conserva su valor (encendido). Los dos pools de coronas
+	// cuelgan de aqui, que es su unico dueno.
+	if (ViceExtFeatures::On("EnableDistantLights", true))
+	{
+		static uint32 odDlEdificios = 0, odDlDummies = 0, odDlEfectos = 0, odDlLast = 0;
+		for (int i = CPools::GetDummyPool()->GetSize() - 1; i >= 0; i--) {
+			CDummy *odDlDummy = CPools::GetDummyPool()->GetSlot(i);
+
+			if (!odDlDummy)
+				continue;
+
+			odDlDummies++;
+			if (CModelInfo::GetModelInfo(odDlDummy->GetModelIndex())->GetNum2dEffects() > 0)
+				odDlEfectos++;
+			odDlDummy->ProcessDistantLights();
+		}
+
+		for (int i = CPools::GetBuildingPool()->GetSize() - 1; i >= 0; i--) {
+			CBuilding *odDlEdificio = CPools::GetBuildingPool()->GetSlot(i);
+
+			if (!odDlEdificio)
+				continue;
+
+			odDlEdificios++;
+			if (CModelInfo::GetModelInfo(odDlEdificio->GetModelIndex())->GetNum2dEffects() > 0)
+				odDlEfectos++;
+			odDlEdificio->ProcessDistantLights();
+		}
+#ifdef __EMSCRIPTEN__
+		{
+			uint32 odDlNow = CTimer::GetTimeInMilliseconds();
+			if (odDlNow - odDlLast > 1000) {
+				odDlLast = odDlNow;
+				char odDlT[208];
+				int odDlR = snprintf(odDlT, sizeof odDlT, "P4 kind=distlights schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 edificios=%d dummies=%d conefectos=%d", (unsigned)CTimer::GetFrameCounter(), odDlNow * 0.001f, (int)odDlEdificios, (int)odDlDummies, (int)odDlEfectos);
+				if (odDlR < 0 || odDlR >= (int)sizeof(odDlT)) {
+					char odDlO[208];
+					snprintf(odDlO, sizeof odDlO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), odDlNow * 0.001f, (int)sizeof(odDlT), odDlR);
+					ODTRACES(odDlO);
+				} else
+					ODTRACES(odDlT);
+			}
+		}
+#endif
+		odDlEdificios = 0;
+		odDlDummies = 0;
+		odDlEfectos = 0;
+	}
+
 	if(bProcessCutsceneOnly) {
 		for(int i = 0; i < NUMCUTSCENEOBJECTS; i++) {
 			CCutsceneObject *csObj = CCutsceneMgr::GetCutsceneObject(i);
@@ -2151,11 +2204,20 @@ void
 CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, float fRadius, float fPower,
                                    CEntity *pCreator, bool bProcessVehicleBombTimer)
 {
+#ifdef VICEEXT_POLISH
+	int32 odSaved = 0;
+#endif
 	for(CPtrNode *pNode = list.first; pNode; pNode = pNode->next) {
 		CPhysical *pEntity = (CPhysical *)pNode->item;
 		CVector vecDistance = pEntity->GetPosition() - position;
 		float fMagnitude = vecDistance.Magnitude();
 		if(fRadius > fMagnitude) {
+#ifdef VICEEXT_POLISH
+			if(!CWorld::GetIsLineOfSightClear(position, pEntity->GetPosition(), true, false, false, true, false, false, false)) {
+				odSaved++;
+				continue;
+			}
+#endif
 			CWeapon::BlowUpExplosiveThings(pEntity);
 			CPed *pPed = (CPed *)pEntity;
 			CObject *pObject = (CObject *)pEntity;
@@ -2257,6 +2319,15 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 			}
 		}
 	}
+#ifdef VICEEXT_POLISH
+	if(odSaved > 0) {
+#ifdef __EMSCRIPTEN__
+		char odT[192];
+		snprintf(odT, sizeof odT, "P4 kind=muro schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 saved=%d radius=%.1f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odSaved, fRadius);
+		ODTRACES(odT);
+#endif
+	}
+#endif
 }
 
 void

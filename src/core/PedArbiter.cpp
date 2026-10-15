@@ -1,5 +1,6 @@
 #include "common.h"
 #include "PedArbiter.h"
+#include "ViceExtFeatures.h"
 #include "ondemand.h"
 
 #ifdef VICEEXT_PEDARBITER
@@ -32,6 +33,12 @@ ViceExtPedClaim(ePedLane l, ePedCap c)
 {
 #ifdef VICEEXT_PEDARBITER
 	if (c < 0 || c >= NUM_PEDCAPS || l <= PEDLANE_MOTOR || l >= NUM_PEDLANES)
+		return false;
+	// features.ini `EnableSwimming` (familia 11): el carril del NADO entero se
+	// apaga desde aqui. El arbitro es su unico duenno, asi que negar el carril
+	// deja todas las consultas del nado en falso (el jugador vuelve al
+	// comportamiento vanilla) sin tocar los veinte sitios que preguntan.
+	if (l == PEDLANE_NADO && !ViceExtFeatures::On("EnableSwimming", true))
 		return false;
 	ePedLane odAntes = ms_aOwner[c];
 	if (odAntes == l)

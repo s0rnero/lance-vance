@@ -524,6 +524,23 @@ bool LoadINISettings()
 	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityY", &CCamera::s_viceExtAim.stickSensY);
 	ReadIniIfExists("ClassicAxis", "ZoomForAssaultRifles", &CCamera::s_viceExtAim.zoomForAssaultRifles);
 #endif
+#ifdef VICEEXT_AIM_SENSITIVITY
+	// 2506 «Aim sensitivity fix» · seccion [Controller] con los nombres VERBATIM de
+	// su `ViceEx.ini` (medido: `FUN_0051cab0` lee esas ocho claves y `FUN_0049b290`
+	// elige el par segun el apuntado; el raton se escala por 0.5, constante
+	// 0x6d7778 = 0x3f000000). Aqui el motor no cambia de escala: se multiplica el
+	// movimiento por `aim/look`, que es el mismo cociente. Si el INI no trae la
+	// seccion se quedan los defaults del literal de `Camera.cpp`, que son los valores
+	// reales de su fichero (raton 0.002500 -> 0.001667, pad 0.001250 -> 0.000625).
+	ReadIniIfExists("Controller", "MouseLookSensX", &CCamera::s_viceExtSens.mouseLookX);
+	ReadIniIfExists("Controller", "MouseAimSensX", &CCamera::s_viceExtSens.mouseAimX);
+	ReadIniIfExists("Controller", "MouseLookSensY", &CCamera::s_viceExtSens.mouseLookY);
+	ReadIniIfExists("Controller", "MouseAimSensY", &CCamera::s_viceExtSens.mouseAimY);
+	ReadIniIfExists("Controller", "PadLookSensX", &CCamera::s_viceExtSens.padLookX);
+	ReadIniIfExists("Controller", "PadAimSensX", &CCamera::s_viceExtSens.padAimX);
+	ReadIniIfExists("Controller", "PadLookSensY", &CCamera::s_viceExtSens.padLookY);
+	ReadIniIfExists("Controller", "PadAimSensY", &CCamera::s_viceExtSens.padAimY);
+#endif
 #ifdef VICEEXT_FIRST_PERSON
 	ReadIniIfExists("FirstPerson", "Near Clip on foot", &CCamera::s_viceExt1PNearClipOnFoot);
 	ReadIniIfExists("FirstPerson", "Near Clip in vehicle", &CCamera::s_viceExt1PNearClipInCar);
@@ -638,6 +655,18 @@ void SaveINISettings()
 #endif
 	StoreIni("Controller", "HeadBob1stPerson", TheCamera.m_bHeadBob);
 	StoreIni("Controller", "HorizantalMouseSens", TheCamera.m_fMouseAccelHorzntl);
+#ifdef VICEEXT_AIM_SENSITIVITY
+	// 2506 «Aim sensitivity fix» · se guardan las ocho claves con los nombres del mod
+	// para que su propia seccion [Controller] se pueda pegar tal cual en el INI.
+	StoreIni("Controller", "MouseLookSensX", CCamera::s_viceExtSens.mouseLookX);
+	StoreIni("Controller", "MouseAimSensX", CCamera::s_viceExtSens.mouseAimX);
+	StoreIni("Controller", "MouseLookSensY", CCamera::s_viceExtSens.mouseLookY);
+	StoreIni("Controller", "MouseAimSensY", CCamera::s_viceExtSens.mouseAimY);
+	StoreIni("Controller", "PadLookSensX", CCamera::s_viceExtSens.padLookX);
+	StoreIni("Controller", "PadAimSensX", CCamera::s_viceExtSens.padAimX);
+	StoreIni("Controller", "PadLookSensY", CCamera::s_viceExtSens.padLookY);
+	StoreIni("Controller", "PadAimSensY", CCamera::s_viceExtSens.padAimY);
+#endif
 #ifdef VICEEXT_AIM_CLASSICAXIS
 	// ClassicAXIS · la misma sección, escritura. Guardar estos valores es lo que
 	// hace que un jugador que edite el INI a mano vea que se respeta: si la sección

@@ -19,8 +19,11 @@
 #include "SaveBuf.h"
 #include "Streaming.h"
 #include "SpecialFX.h"
+#include "ViceExtFeatures.h"
 #include "Font.h"
 #include "SaveBuf.h"
+#include "ondemand.h"
+#include "Timer.h"
 
 float CRadar::m_radarRange;
 sRadarTrace CRadar::ms_RadarTrace[NUMRADARBLIPS];
@@ -1100,9 +1103,11 @@ CRadar::LoadTextures()
 	WaypointSprite.SetTexture("radar_waypoint");
 	if(!WaypointSprite.m_pTexture) {
 		// create the texture if it's missing in TXD
-#define WAYPOINT_R (255)
-#define WAYPOINT_G (72)
-#define WAYPOINT_B (77)
+		// Familia 11: manda `WaypointColorRGB` del `features.ini` servido; sin la
+		// clave vale el color que el port ya construía (`VICEEXT_GPS_COLOR_*`).
+		int odWaypointR = ViceExtFeatures::Waypoint(0, VICEEXT_GPS_COLOR_R);
+		int odWaypointG = ViceExtFeatures::Waypoint(1, VICEEXT_GPS_COLOR_G);
+		int odWaypointB = ViceExtFeatures::Waypoint(2, VICEEXT_GPS_COLOR_B);
 
 		RwRaster *raster = RwRasterCreate(16, 16, 0, rwRASTERTYPETEXTURE | rwRASTERFORMAT8888);
 
@@ -1118,9 +1123,9 @@ CRadar::LoadTextures()
 					pixels[x + y * 16] = 0;
 				else if((x2 == 2 && y2 >= 2)|| (y2 == 2 && x2 >= 2) )// colored square inside
 #ifdef RW_GL3
-					pixels[x + y * 16] = WAYPOINT_R | (WAYPOINT_G << 8) | (WAYPOINT_B << 16) | (255 << 24);
+					pixels[x + y * 16] = odWaypointR | (odWaypointG << 8) | (odWaypointB << 16) | (255 << 24);
 #else
-					pixels[x + y * 16] = WAYPOINT_B | (WAYPOINT_G << 8) | (WAYPOINT_R << 16) | (255 << 24);
+					pixels[x + y * 16] = odWaypointB | (odWaypointG << 8) | (odWaypointR << 16) | (255 << 24);
 #endif
 				else
 					pixels[x + y * 16] = 0xFF000000; // black
@@ -1128,9 +1133,17 @@ CRadar::LoadTextures()
 		RwRasterUnlock(raster);
 		WaypointSprite.m_pTexture = RwTextureCreate(raster);
 		RwTextureSetFilterMode(WaypointSprite.m_pTexture, rwFILTERLINEAR);
-#undef WAYPOINT_R
-#undef WAYPOINT_G
-#undef WAYPOINT_B
+#ifdef VICEEXT_GPS_COLOR
+#ifdef __EMSCRIPTEN__
+		{
+			char odTh[200];
+			snprintf(odTh, sizeof odTh, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=11 id=0 r=%d g=%d b=%d",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				odWaypointR, odWaypointG, odWaypointB);
+			ODTRACES(odTh);
+		}
+#endif
+#endif
 	}
 #endif
 	CTxdStore::PopCurrentTxd();

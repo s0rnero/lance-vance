@@ -7,6 +7,9 @@
 #include "Camera.h"
 #include "Font.h"
 #include "Hud.h"
+#ifdef VICEEXT_RADIO_ICONS
+#include "TxdStore.h"
+#endif
 #include "ModelIndices.h"
 #include "Replay.h"
 #include "Pad.h"
@@ -1373,7 +1376,53 @@ cMusicManager::DisplayRadioStationName()
 #else
 				track = m_nFrontendTrack;
 #endif
-			wchar* string = nil;
+	#ifdef VICEEXT_RADIO_ICONS
+		static const char *odRadioNames[11] = {
+			"wildstyle", "flash", "kchat", "fever", "vrock", "vcpr", "espantoso", "emotion", "wave103", "mp3", "none"
+		};
+		static const char *odRadioMasks[11] = {
+			"wildstyleA", "flashA", "kchatA", "feverA", "vrockA", "vcprA", "espantosoA", "emotionA", "wave103A", "mp3A", "noneA"
+		};
+		static CSprite2d odRadioSprites[11];
+		static bool odRadioMaskOk[11];
+		static bool odRadioInit = false;
+		int odStation = -1;
+		if (!odRadioInit) {
+			int odSlot = CTxdStore::FindTxdSlot("radio");
+			if (odSlot < 0) {
+				odSlot = CTxdStore::AddTxdSlot("radio");
+				CTxdStore::LoadTxd(odSlot, "MODELS/RADIO.TXD");
+				CTxdStore::AddRef(odSlot);
+				CTxdStore::PopCurrentTxd();
+			}
+			if (odSlot >= 0) {
+				odRadioInit = true;
+				CTxdStore::PushCurrentTxd();
+				CTxdStore::SetCurrentTxd(odSlot);
+				RwTexDictionary *odRadioDict = CTxdStore::GetSlot(odSlot)->texDict;
+				for (int i = 0; i < 11; i++) {
+					odRadioSprites[i].SetTexture(odRadioNames[i], odRadioMasks[i]);
+					if (odRadioDict != nil && RwTexDictionaryFindNamedTexture(odRadioDict, odRadioMasks[i]) != nil)
+						odRadioMaskOk[i] = true;
+			}
+				CTxdStore::PopCurrentTxd();
+			}
+#ifdef __EMSCRIPTEN__
+			int odRadioLoaded = 0;
+			int odRadioMasksOk = 0;
+			for (int i = 0; i < 11; i++) {
+				if (odRadioSprites[i].m_pTexture != nil)
+					odRadioLoaded++;
+				if (odRadioMaskOk[i])
+					odRadioMasksOk++;
+			}
+			char odRl[96];
+			snprintf(odRl, sizeof odRl, "RADIOLOGOS cargadas=%d/11 mascaras=%d/11 txd=radio", odRadioLoaded, odRadioMasksOk);
+			ODTRACES(odRl);
+#endif
+		}
+#endif
+		wchar* string = nil;
 			switch (track) {
 			case WILDSTYLE: string = TheText.Get("FEA_FM0"); break;
 			case FLASH_FM: string = TheText.Get("FEA_FM1"); break;
@@ -1406,10 +1455,42 @@ cMusicManager::DisplayRadioStationName()
 #endif
 			default: return;
 			};
-
+#ifdef VICEEXT_RADIO_ICONS
+			odStation = -1;
+			if (track >= WILDSTYLE && track <= WAVE)
+				odStation = track - WILDSTYLE;
+			else if (track == USERTRACK)
+				odStation = 9;
+#ifdef RADIO_OFF_TEXT
+			if (track == RADIO_OFF)
+				odStation = 10;
+#endif
+#endif
+#ifdef VICEEXT_RADIO_ICONS
+			float odTextY = SCREEN_SCALE_Y(22.0f);
+			if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil)
+				odTextY = SCREEN_SCALE_Y(68.0f);
+#else
+			float odTextY = SCREEN_SCALE_Y(22.0f);
+#endif
 			if (pCurrentStation != string) {
 				pCurrentStation = string;
 				cDisplay = 60;
+#ifdef VICEEXT_RADIO_ICONS
+#ifdef __EMSCRIPTEN__
+				{
+					char odRadioP4[160];
+					int odRadioIcono = -1;
+					int odRadioMascara = 0;
+					if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil) {
+						odRadioIcono = odStation;
+						odRadioMascara = odRadioMaskOk[odStation] ? 1 : 0;
+					}
+					snprintf(odRadioP4, sizeof odRadioP4, "P4 kind=radio2 schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 emisora=%d icono=%d mascara=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)track, odRadioIcono, odRadioMascara);
+					ODTRACES(odRadioP4);
+				}
+#endif
+#endif
 			}
 			else {
 				if (cDisplay == 0) return;
@@ -1428,14 +1509,23 @@ cMusicManager::DisplayRadioStationName()
 			CFont::SetCentreOn();
 			CFont::SetCentreSize(SCREEN_STRETCH_X(DEFAULT_SCREEN_WIDTH));
 			CFont::SetColor(CRGBA(0, 0, 0, 255));
-			CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(2.0f), SCREEN_SCALE_Y(22.0f) + SCREEN_SCALE_Y(2.0f), pCurrentStation);
+			CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(2.0f), odTextY + SCREEN_SCALE_Y(2.0f), pCurrentStation);
 
 			if (gNumRetunePresses)
 				CFont::SetColor(CRGBA(102, 133, 143, 255));
 			else
 				CFont::SetColor(CRGBA(147, 196, 211, 255));
 
-			CFont::PrintString(SCREEN_WIDTH / 2, SCREEN_SCALE_Y(22.0f), pCurrentStation);
+			CFont::PrintString(SCREEN_WIDTH / 2, odTextY, pCurrentStation);
+#ifdef VICEEXT_RADIO_ICONS
+			if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil) {
+				float odW = SCREEN_SCALE_X(64.0f);
+				float odH = SCREEN_SCALE_Y(56.0f);
+				float odCx = (float)SCREEN_WIDTH * 0.5f - odW * 0.5f;
+				float odBottom = odTextY - SCREEN_SCALE_Y(8.0f);
+				odRadioSprites[odStation].Draw(CRect(odCx, odBottom - odH, odCx + odW, odBottom), CRGBA(255, 255, 255, 255), 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
+			}
+#endif
 			CFont::DrawFonts();
 		}
 	}

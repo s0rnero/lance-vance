@@ -802,6 +802,51 @@ void DoChicksWithGunsCheat(void) {
 	CPad::bHasPlayerCheated = true;
 }
 
+#ifdef VICEEXT_EXTRA_CHEATS
+void ViceExtCheatTrace(const char *cheat, const char *efecto)
+{
+	char t[220];
+	int r = snprintf(t, sizeof t, "P4 kind=cheat2 schema=1 gen=1 frame=%u sim=%.4f case=3 id=0 cheat=%s efecto=%s via=tecleo", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, cheat, efecto);
+	if (r < 0 || r >= (int)sizeof(t)) {
+		char o[220];
+		snprintf(o, sizeof o, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(t), r);
+		ODTRACES(o);
+	} else {
+		ODTRACES(t);
+	}
+}
+void TeargasCheat()
+{
+	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+	CStreaming::RequestModel(MI_TEARGAS, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_TEARGAS, 5);
+	CStreaming::SetModelIsDeletable(MI_TEARGAS);
+}
+void NeverWantedCheat()
+{
+	CWanted *wanted = FindPlayerPed()->m_pWanted;
+	wanted->m_bIgnoredByCops = !wanted->m_bIgnoredByCops;
+	if (wanted->m_bIgnoredByCops)
+		wanted->CheatWantedLevel(0);
+	CHud::SetHelpMessage(TheText.Get(wanted->m_bIgnoredByCops ? "CHEAT1" : "CHEATOF"), true);
+}
+void InvincibleCheat()
+{
+	CPlayerPed *player = FindPlayerPed();
+	player->m_bCanBeDamaged = !player->m_bCanBeDamaged;
+	CHud::SetHelpMessage(TheText.Get(player->m_bCanBeDamaged ? "CHEATOF" : "CHEAT1"), true);
+}
+void PhotographerCheat()
+{
+	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
+	CStreaming::RequestModel(MI_CAMERA, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_CAMERA, 1);
+	CStreaming::SetModelIsDeletable(MI_CAMERA);
+}
+#endif
+
 //////////////////////////////////////////////////////////////////////////
 
 #ifdef KANGAROO_CHEAT
@@ -1481,13 +1526,6 @@ void CPad::AddToPCCheatString(char c)
 		KeyBoardCheatString[0] = ' ';
 		WeaponCheat3();
 	}
-	// "CRAZYTOOLS" (Vice Extended: armas nuevas). El literal va codificado
-	// como los demás: literal[i] = tecla[i] + desplazamiento de Cheat_strncmp
-	// (3,5,7,1,13,27,3,7,1,11). Se escribe al revés (la última tecla primero).
-	else if (!Cheat_strncmp(KeyBoardCheatString, "VQVPat]HSN")) {
-		KeyBoardCheatString[0] = ' ';
-		WeaponCheat4();
-	}
 	// "CRAZYRIDES" (Vice Extended: los vehículos nuevos, alrededor del jugador)
 	else if (!Cheat_strncmp(KeyBoardCheatString, "VJKJ_t]HSN")) {
 		KeyBoardCheatString[0] = ' ';
@@ -1789,6 +1827,65 @@ void CPad::AddToPCCheatString(char c)
 		CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
 		FindPlayerPed()->SetWantedLevel(3);
 	}
+#ifdef VICEEXT_EXTRA_CHEATS
+#define VICEEXT_CHEATCMP(rev, len) (strncmp(CPad::KeyBoardCheatString, rev, len) == 0)
+	else if (VICEEXT_CHEATCMP("96YOBWOC", 8)) {
+		KeyBoardCheatString[0] = ' ';
+		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
+		ViceExtCheatTrace("COWBOY69", "sin_efecto");
+	}
+	else if (VICEEXT_CHEATCMP("ELBICNIVNIMAI", 14)) {
+		KeyBoardCheatString[0] = ' ';
+		InvincibleCheat();
+		ViceExtCheatTrace("IAMINVINCIBLE", FindPlayerPed()->m_bCanBeDamaged ? "invencible_0" : "invencible_1");
+	}
+	else if (VICEEXT_CHEATCMP("SYAWRIA", 7)) {
+		KeyBoardCheatString[0] = ' ';
+		ChittyChittyBangBangCheat();
+		ViceExtCheatTrace("AIRWAYS", CVehicle::bAllDodosCheat ? "volar_1" : "volar_0");
+	}
+	else if (VICEEXT_CHEATCMP("EKOMSGIB", 8)) {
+		KeyBoardCheatString[0] = ' ';
+		TeargasCheat();
+		ViceExtCheatTrace("BIGSMOKE", "teargas_5");
+	}
+	else if (VICEEXT_CHEATCMP("IMKAZEA", 7)) {
+		KeyBoardCheatString[0] = ' ';
+		NeverWantedCheat();
+		ViceExtCheatTrace("AEZAKMI", FindPlayerPed()->m_pWanted->m_bIgnoredByCops ? "never_wanted_1" : "never_wanted_0");
+	}
+	else if (VICEEXT_CHEATCMP("REHPARGOTOHP", 12)) {
+		KeyBoardCheatString[0] = ' ';
+		PhotographerCheat();
+		ViceExtCheatTrace("PHOTOGRAPHER", "camara_1");
+	}
+	else if (VICEEXT_CHEATCMP("TEKCORCR", 8)) {
+		KeyBoardCheatString[0] = ' ';
+		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
+#ifdef VICEEXT_CHEAT_EFFECTS
+		CPed::bViceExtRcRocket = !CPed::bViceExtRcRocket;
+		ViceExtCheatTrace("RCROCKET", CPed::bViceExtRcRocket ? "rc_rocket_1" : "rc_rocket_0");
+#else
+		ViceExtCheatTrace("RCROCKET", "sin_efecto");
+#endif
+	}
+	else if (VICEEXT_CHEATCMP("SDAEHGIB", 8)) {
+		KeyBoardCheatString[0] = ' ';
+		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
+#ifdef VICEEXT_CHEAT_EFFECTS
+		CPed::bViceExtBigHeads = !CPed::bViceExtBigHeads;
+		ViceExtCheatTrace("BIGHEADS", CPed::bViceExtBigHeads ? "big_heads_1" : "big_heads_0");
+#else
+		ViceExtCheatTrace("BIGHEADS", "sin_efecto");
+#endif
+	}
+	else if (VICEEXT_CHEATCMP("SLOOTYZARC", 10)) {
+		KeyBoardCheatString[0] = ' ';
+		WeaponCheat4();
+		ViceExtCheatTrace("CRAZYTOOLS", "armas_mod");
+	}
+#undef VICEEXT_CHEATCMP
+#endif
 
 #ifdef KANGAROO_CHEAT
 	// "KANGAROO"
@@ -2523,6 +2620,20 @@ int16 CPad::GetPedWalkUpDown(void)
 
 	return 0;
 }
+
+#ifdef VICEEXT_ALT_SIT
+bool CPad::GetPedWalk(void)
+{
+	if ( ArePlayerControlsDisabled() )
+		return false;
+
+	RsKeyCodes odPedWalkKey = (RsKeyCodes)ControlsManager.GetControllerKeyAssociatedWithAction(PED_WALK, KEYBOARD);
+	if (odPedWalkKey == (RsKeyCodes)0)
+		return false;
+
+	return ControlsManager.GetIsKeyboardKeyDown(odPedWalkKey);
+}
+#endif
 
 int16 CPad::GetAnalogueUpDown(void)
 {

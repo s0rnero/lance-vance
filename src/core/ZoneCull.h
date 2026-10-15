@@ -51,6 +51,13 @@ public:
 		float miny, float maxy,
 		float minz, float maxz,
 		uint16 flag, int16 wantedLevel);
+#ifdef VICEEXT_MAPDATA
+	// Familia 7 (mundo y datos): cuantas zonas de oclusion ha ingerido el motor de
+	// los IPL servidos (`data/occlu.ipl`, el del mod). Es la prueba de arranque de
+	// que su mundo llego, sin mecanica nueva: la traza `P4 kind=worlddata` la
+	// contrasta con las zonas que lleva el fichero servido.
+	static int ViceExtNumZones(void);
+#endif
 	static bool CamCloseInForPlayer(void) { return (CurrentFlags_Player & ATTRZONE_CAMCLOSEIN) != 0; }
 	static bool CamStairsForPlayer(void) { return (CurrentFlags_Player & ATTRZONE_STAIRS) != 0; }
 	static bool Cam1stPersonForPlayer(void) { return (CurrentFlags_Player & ATTRZONE_1STPERSON) != 0; }

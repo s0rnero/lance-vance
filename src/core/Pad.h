@@ -222,6 +222,9 @@ public:
 	int16 GetCarGunLeftRight(void);
 	int16 GetPedWalkLeftRight(void);
 	int16 GetPedWalkUpDown(void);
+#ifdef VICEEXT_ALT_SIT
+	bool GetPedWalk(void);
+#endif
 	int16 GetAnalogueUpDown(void);
 	int16 GetAnalogueLeftRight(void);
 	bool GetLookLeft(void);

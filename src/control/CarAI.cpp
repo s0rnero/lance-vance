@@ -12,6 +12,9 @@
 #include "PlayerPed.h"
 #include "Wanted.h"
 #include "DMAudio.h"
+#ifdef VICEEXT_POLISH
+#include "EventList.h"
+#endif
 #include "Fire.h"
 #include "Pools.h"
 #include "Population.h"
@@ -22,6 +25,10 @@
 #include "ZoneCull.h"
 
 #define DISTANCE_TO_SWITCH_DISTANCE_GOTO 20.0f
+
+#ifdef VICEEXT_POLISH
+static const float odPolishGunshotFleeRadius = 15.0f;
+#endif
 
 float CCarAI::FindSwitchDistanceClose(CVehicle* pVehicle)
 {
@@ -55,6 +62,22 @@ void CCarAI::BackToCruisingIfNoWantedLevel(CVehicle* pVehicle)
 
 void CCarAI::UpdateCarAI(CVehicle* pVehicle)
 {
+#ifdef VICEEXT_POLISH
+	if (pVehicle->VehicleCreatedBy == RANDOM_VEHICLE && !pVehicle->bIsLawEnforcer && pVehicle->pDriver && !pVehicle->pDriver->IsPlayer() && pVehicle->pDriver->m_objective != OBJECTIVE_FLEE_ON_FOOT_TILL_SAFE) {
+		int32 odEvent;
+		if (CEventList::FindClosestEvent(EVENT_GUNSHOT, pVehicle->GetPosition(), &odEvent)) {
+			float odDist = (gaEvent[odEvent].posn - pVehicle->GetPosition()).Magnitude();
+			if (odDist < odPolishGunshotFleeRadius) {
+				TellOccupantsToFleeCar(pVehicle);
+#ifdef __EMSCRIPTEN__
+				char odT[192];
+				snprintf(odT, sizeof odT, "P4 kind=chofer schema=1 gen=1 frame=%u sim=%.4f case=2 id=0 model=%d dist=%.1f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)pVehicle->GetModelIndex(), odDist);
+				ODTRACES(odT);
+#endif
+			}
+		}
+	}
+#endif
 	if (pVehicle->bIsLawEnforcer){
 		if (pVehicle->AutoPilot.m_nCarMission == MISSION_BLOCKCAR_FARAWAY ||
 			pVehicle->AutoPilot.m_nCarMission == MISSION_RAMPLAYER_FARAWAY ||

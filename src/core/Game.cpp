@@ -1,5 +1,6 @@
 #include "common.h"
 #include "PedArbiter.h"
+#include "ViceExtFeatures.h"
 #include "platform.h"
 #include "ondemand.h"
 #include "crossplatform.h"
@@ -183,6 +184,12 @@ bool
 CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
+#ifdef VICEEXT_FEATURES_INI
+	// Familia 11: el `features.ini` del mod se lee UNA vez, aqui, antes de que
+	// nadie consulte ninguna de sus claves (su lector lo hace en el arranque
+	// estatico del EXE; el port necesita el sistema de ficheros ya montado).
+	ViceExtFeatures::Load();
+#endif
 	CdStreamInit(MAX_CDCHANNELS);
 	debug("size of matrix %d\n", sizeof(CMatrix));
 	debug("size of placeable %d\n", sizeof(CPlaceable));
@@ -727,6 +734,23 @@ bool CGame::Initialise(const char* datFile)
 {
 	CGame::InitialiseResetSteps();
 	while (!CGame::InitialiseStep(datFile)) { }
+#ifdef VICEEXT_MAPDATA
+#ifdef __EMSCRIPTEN__
+	{
+		// Familia 7 (mundo y datos): su mundo se sirve (`data/object.dat`,
+		// `data/occlu.ipl` y `data/maps/bryx/*`; `tools/viceext-world-check.py`
+		// vigila que sus referencias resuelvan) y esta es su prueba EN EL MOTOR:
+		// cuantas zonas de oclusion ha ingerido de los IPL servidos. El
+		// verificador las contrasta con las que lleva el `occlu.ipl` del mod
+		// (342, contadas del fichero servido), asi que un mundo que no llega se ve.
+		char t[200];
+		snprintf(t, sizeof t, "P4 kind=worlddata schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 zonas=%d",
+			(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+			CCullZones::ViceExtNumZones());
+		ODTRACES(t);
+	}
+#endif
+#endif
 	return true;
 }
 

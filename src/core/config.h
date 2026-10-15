@@ -48,11 +48,19 @@ enum Config {
 
 	NUMOBJECTINFO = 210,
 
+#define VICEEXT_LIMITS
+#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
+
 	// Pool sizes
 	NUMPTRNODES = 50000,
 	NUMENTRYINFOS = 3200,
+#ifdef VICEEXT_LIMITS
 	NUMPEDS = 140,
-	NUMVEHICLES = 130, // 110 vanilla; limits.ini del mod pide 130
+	NUMVEHICLES = 130,
+#else
+	NUMPEDS = 140,
+	NUMVEHICLES = 110,
+#endif
 	NUMBUILDINGS = 7000,
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
@@ -440,6 +448,7 @@ enum Config {
 #define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
 #define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
 #define VICEEXT_BIKE_EXIT_SIDE
+#define VICEEXT_AIM_BLADE 0.70f
 
 #define VICEEXT_FIX_SILENTPATCH
 #define VICEEXT_FIX_WFP
@@ -448,6 +457,8 @@ enum Config {
 #define VICEEXT_POLICE_BIKE
 #define VICEEXT_NO_WHEEL_PIERCE
 #define VICEEXT_SKIP_PHONE_CALL
+#define VICEEXT_MOD_SCRIPT		// familia 13: los 10 opcodes propios de su `main.scm` (comandos 4000-4009 = `0x0FA0`-`0x0FA9`) en el interprete
+#define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
 // D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
 // LOD (petición del jugador: "que el LOD sea de más metros, +20"). Se suma a la
@@ -459,6 +470,51 @@ enum Config {
 #define VICEEXT_MONEY_NO_ZEROS
 
 #define VICEEXT_PEDARBITER
+#define VICEEXT_RADIO_ICONS
+#define VICEEXT_EXTRA_CHEATS
+#define VICEEXT_CAR_DEATH
+#define VICEEXT_CAR_LIGHTS
+#define VICEEXT_ALT_SIT			// v2.0 "Walking on ALT for the keyboard" + v1.0 "Seated movement":
+							// andar con la tecla de la accion `PED_WALK` (LALT), decidido por su
+							// API `CPad::GetPedWalk()` (`#ifdef IMPROVED_MENU_AND_INPUT`); el
+							// sentarse (attractors + clips SEAT_*, con `SEAT_rvrs` del mod) ya
+							// estaba: `PedAttractor.cpp` del port es identico al suyo
+#define VICEEXT_GANG_AIM
+#define VICEEXT_MOON			// v1.5 "Moving Moon. Its position depends on the position of the Sun":
+							// la luna se coloca en `-sunDir*150` (portado de su `Clouds.cpp`,
+							// bloque "moving Moon"); el brillo y la hora de salida son suyos
+#define VICEEXT_MAPDATA
+#define VICEEXT_POLISH
+#define VICEEXT_WHEEL_DETACH
+
+// 9.2 / features.ini del mod (jugador: se implementan los 7 que faltaban).
+// Grupo: cada opcion con su bandera propia, todas hijas de esta.
+#define VICEEXT_FEATURES_INI
+#define VICEEXT_NO_FLIP_BURN		// features.ini "Vehicles do not light up when flipped"
+#define VICEEXT_HEALTH_REGEN	// features.ini "Restores health to half (when player is not moving)"
+#define VICEEXT_HIDE_STARS		// features.ini "Search stars are hidden on the screen when there is no search"
+#define VICEEXT_NO_JUMP_FROM_CAR	// features.ini "The player does not jump away from a moving car"
+#define VICEEXT_STD_TURN_SIGNALS	// features.ini "Standard cars use turn signals"
+#define VICEEXT_TANK_FIRE		// features.ini "Military firing from a tank at the player"
+#define VICEEXT_GPS_COLOR		// features.ini "Change the color of the GPS by RGB"
+#define VICEEXT_GPS_COLOR_R 255
+#define VICEEXT_GPS_COLOR_G 0
+#define VICEEXT_GPS_COLOR_B 255
+
+// 9.2 / detalles del coche y 9.1 / mundo
+#define VICEEXT_CAR_ROTATE_WHEEL	// v2.5 "Rotating steering wheel"
+#define VICEEXT_CAR_WHEEL_KEEP	// v2.0 "The front wheels of the car retain their current rotation after exiting the car"
+#define VICEEXT_CAR_FOUR_COLORS	// v2.5 "Support for four colors for added vehicles"
+#define VICEEXT_GAS_STATION_BLOW	// v2.6 "A gas station will explode if a vehicle crashes into it"
+#define VICEEXT_PROJECTILE_BLOW	// v2.6 "A projectile will explode if you shoot it"
+#define VICEEXT_DISTANT_LIGHTS	// v2.6 "Distant lights. Can be disabled in features.ini": portado de
+							// su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): los dos
+							// pools enteros, coronas hasta 530 m / el far clip
+#define VICEEXT_COP_COVER		// v2.6 "Cops can crouch down first and then go to cover during the wanted"
+#define VICEEXT_HELI_HEALTH		// v2.0 "Reduced health of police helicopter"
+#define VICEEXT_AIM_SENSITIVITY	// 2506 "Aim sensitivity fix"
+#define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
+#define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
 
 // Hud, frontend and radar
 #define PC_MENU

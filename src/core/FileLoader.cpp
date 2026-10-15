@@ -1202,6 +1202,21 @@ CFileLoader::LoadObjectInstance(const char *line)
 		area = 0;
 	}
 
+	// La fila `inst` del IPL puede traer -1 en la columna del id: el IPL del mod
+	// (`maps/bryx/bryx.ipl`, el de la familia 7) lo usa en sus dos lineas y quiere
+	// decir «el modelo declarado con ESTE nombre», que es como lo resuelve su
+	// motor. Sin esto el -1 entra tal cual como indice del array de modelos
+	// —`CModelInfo::GetModelInfo` no comprueba el rango—, se lee la palabra que
+	// hay ANTE ese array y el arranque se cae llamando a la vtable que aparezca
+	// ahi (medido el 2026-10-14: `RuntimeError: null function` en
+	// `LoadObjectInstance`, y solo con el mundo del mod servido).
+	if (id < 0) {
+		int idPorNombre = -1;
+		if (CModelInfo::GetModelInfo(name, &idPorNombre) == nil)
+			return;
+		id = idPorNombre;
+	}
+
 	mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(id);
 	if(mi == nil)
 		return;

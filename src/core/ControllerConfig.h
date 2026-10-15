@@ -232,6 +232,7 @@ public:
 	// `pcbtns.txd` nombra sus iconos) con el que está configurada esa acción, o
 	// 0 si no hay icono posible (rueda del ratón, mando).
 	int32 GetKeyIconCodeForAction(uint16 action);
+	bool GetShiftKeyIconCodesForAction(uint16 action, int32 *pShift, int32 *pKey);
 #endif
 	int32 GetControllerKeyAssociatedWithAction(e_ControllerAction action, eControllerType type);
 

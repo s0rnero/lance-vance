@@ -2945,6 +2945,23 @@ int32 CControllerConfigManager::GetKeyIconCodeForAction(uint16 action)
 	}
 	return 0;
 }
+
+bool CControllerConfigManager::GetShiftKeyIconCodesForAction(uint16 action, int32 *pShift, int32 *pKey)
+{
+	int32 vkKb = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, KEYBOARD), KEYBOARD);
+	int32 vkEx = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, OPTIONAL_EXTRA), OPTIONAL_EXTRA);
+	if (vkKb == 16 && vkEx > 0 && vkEx != 16) {
+		*pShift = vkKb;
+		*pKey = vkEx;
+		return true;
+	}
+	if (vkEx == 16 && vkKb > 0 && vkKb != 16) {
+		*pShift = vkEx;
+		*pKey = vkKb;
+		return true;
+	}
+	return false;
+}
 #endif
 
 void CControllerConfigManager::UpdateJoyButtonState(int32 padnumber)
