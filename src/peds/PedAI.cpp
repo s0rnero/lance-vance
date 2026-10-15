@@ -5655,6 +5655,22 @@ CPed::DuckAndCover(void)
 					duckingWithoutVeh = true;
 					m_attackTimer = CTimer::GetTimeInMilliseconds() + 6000;
 					bDuckAndCover = true;
+#ifdef VICEEXT_COP_COVER
+					bCrouchWhenShooting = true;
+					SetDuck(CGeneral::GetRandomNumberInRange(2000, 5000), true);
+#ifdef __EMSCRIPTEN__
+					{
+						static uint32 s_odCopCoverMs = 0;
+						uint32 odCopNow = CTimer::GetTimeInMilliseconds();
+						if (odCopNow >= s_odCopCoverMs + 1000 || odCopNow + 60000 < s_odCopCoverMs) {
+							s_odCopCoverMs = odCopNow;
+							char odCop[160];
+							snprintf(odCop, sizeof odCop, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=16 id=0 a=%d val=%d", (unsigned)CTimer::GetFrameCounter(), odCopNow * 0.001f, 1, (int)bIsDucking);
+							ODTRACES(odCop);
+						}
+					}
+#endif
+#endif
 				}
 				break;
 			}
@@ -5742,6 +5758,22 @@ CPed::DuckAndCover(void)
 				m_pSeekTarget = foundVeh;
 				m_pSeekTarget->RegisterReference((CEntity**)&m_pSeekTarget);
 				ClearPointGunAt();
+#ifdef VICEEXT_COP_COVER
+				bCrouchWhenShooting = true;
+				SetDuck(CGeneral::GetRandomNumberInRange(2000, 5000), true);
+#ifdef __EMSCRIPTEN__
+				{
+					static uint32 s_odCopCoverVehMs = 0;
+					uint32 odCopVehNow = CTimer::GetTimeInMilliseconds();
+					if (odCopVehNow >= s_odCopCoverVehMs + 1000 || odCopVehNow + 60000 < s_odCopCoverVehMs) {
+						s_odCopCoverVehMs = odCopVehNow;
+						char odCopV[160];
+						snprintf(odCopV, sizeof odCopV, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=16 id=0 a=%d val=%d", (unsigned)CTimer::GetFrameCounter(), odCopVehNow * 0.001f, 2, (int)bIsDucking);
+						ODTRACES(odCopV);
+					}
+				}
+#endif
+#endif
 			} else {
 				m_duckAndCoverTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(10000, 15000);
 				bDuckAndCover = false;

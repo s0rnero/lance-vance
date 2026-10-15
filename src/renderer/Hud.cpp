@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ViceExtFeatures.h"
 
 #include "Camera.h"
 #include "DMAudio.h"
@@ -748,6 +749,9 @@ void CHud::Draw()
 					snprintf(t, sizeof t, "AIHTRI h=%d rec=%d d=%.4f", (int)tri,
 						(int)(CCamera::s_viceExtAimMouseTarget ? 1 : 0), d);
 					ODTRACES(t);
+					char odTriP4[160];
+					snprintf(odTriP4, sizeof odTriP4, "P4 kind=hud2 schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 tri=%d d=%.4f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)tri, d);
+					ODTRACES(odTriP4);
 				}
 			}
 #endif
@@ -797,15 +801,23 @@ void CHud::Draw()
 		} else {
 			alpha = DrawFadeState(HUD_SCORE_FADING, 1);
 			m_LastDisplayScore = CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney;
+#ifdef __EMSCRIPTEN__
+			{
+				char odMoneyP4[160];
+				snprintf(odMoneyP4, sizeof odMoneyP4, "P4 kind=hud2 schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 dinero=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
+				ODTRACES(odMoneyP4);
+			}
+#endif
 		}
 		if (m_DisplayScoreState != FADED_OUT) {
 			// v2.5 "Remove zeros in the money in the HUD" (features.ini
 			// `RemoveMoneyZerosInTheHud`): sin los ceros de relleno a la izquierda.
-#ifdef VICEEXT_MONEY_NO_ZEROS
-			sprintf(sTemp, "$%d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
-#else
-			sprintf(sTemp, "$%08d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
-#endif
+			// Familia 11: la clave del fichero manda (sin fichero, el port tal cual).
+			if (ViceExtFeatures::On("RemoveMoneyZerosInTheHud", true)) {
+				sprintf(sTemp, "$%d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
+			} else {
+				sprintf(sTemp, "$%08d", CWorld::Players[CWorld::PlayerInFocus].m_nVisibleMoney);
+			}
 			AsciiToUnicode(sTemp, sPrint);
 
 			CFont::SetPropOff();
@@ -1048,7 +1060,25 @@ void CHud::Draw()
 			m_LastWanted = playerPed->m_pWanted->GetWantedLevel();
 		}
 
-		if (m_WantedState != FADED_OUT) {
+		bool odHideStars = false;
+		// Familia 11: la clave `WantedStarsHideOnScreenWhenThereIsNoSearch` del
+		// `features.ini` manda (sin fichero vale el comportamiento del port).
+		if (ViceExtFeatures::On("WantedStarsHideOnScreenWhenThereIsNoSearch", true)) {
+		odHideStars = (playerPed->m_pWanted->GetWantedLevel() == 0
+			&& playerPed->m_pWanted->m_nMinWantedLevel == 0);
+#ifdef __EMSCRIPTEN__
+		{
+			static bool s_odHideStarsWas = false;
+			if (odHideStars != s_odHideStarsWas) {
+				s_odHideStarsWas = odHideStars;
+				char t[176];
+				snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=9 id=0 hide=%d wanted=%d min=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odHideStars, (int)playerPed->m_pWanted->GetWantedLevel(), (int)playerPed->m_pWanted->m_nMinWantedLevel);
+				ODTRACES(t);
+			}
+		}
+#endif
+		}
+		if (m_WantedState != FADED_OUT && !odHideStars) {
 			CFont::SetBackgroundOff();
 			CFont::SetScale(SCREEN_SCALE_X(HUD_TEXT_SCALE_X), SCREEN_SCALE_Y(HUD_TEXT_SCALE_Y));
 			CFont::SetJustifyOff();

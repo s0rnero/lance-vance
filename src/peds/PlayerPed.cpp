@@ -36,6 +36,7 @@
 #include "ParticleObject.h"
 #include "Draw.h"
 #include "Particle.h" // C4 nado: salpicadura de un solo uso por brazada        // Sección 3, C5/C6: CWeaponInfo (peso del arma)
+#include "ViceExtFeatures.h" // familia 11: el `features.ini` del mod manda
 
 #define PAD_MOVE_TO_GAME_WORLD_MOVE 60.0f
 
@@ -1520,7 +1521,9 @@ CPlayerPed::ViceExtPrepareMove(CPad *padUsed)
 		odOk = false;
 #endif
 	s_odMove.prepared = odOk;
-	if (odOk && s_odMove.moving && s_odMove.policy == 0 && !TheCamera.Using1stPersonWeaponMode())
+	if (odOk && (m_nPedState == PED_ATTACK || (padUsed && padUsed->GetWeapon())) && !bIsDucking && !ViceExtIsCrouched() && ViceExtAimLongGun(GetWeapon()->m_eWeaponType) && !TheCamera.Using1stPersonWeaponMode())
+		m_fRotationDest = CGeneral::LimitRadianAngle(-TheCamera.Orientation - VICEEXT_AIM_BLADE);
+	else if (odOk && s_odMove.moving && s_odMove.policy == 0 && !TheCamera.Using1stPersonWeaponMode())
 		m_fRotationDest = ViceExtMoveHeading();
 #ifdef __EMSCRIPTEN__
 	ViceExtP4PoseExitSampler(this);
@@ -1537,6 +1540,16 @@ int
 CPlayerPed::ViceExtStickBlocked(void) const
 {
 	return s_odStickBlocked;
+}
+
+float
+CPlayerPed::ViceExtStickHeading(float lr, float ud) const
+{
+	float odFx = s_odMove.baseX;
+	float odFy = s_odMove.baseY;
+	float odUx = odFx * (-ud) + odFy * lr;
+	float odUy = odFy * (-ud) + (-odFx) * lr;
+	return CGeneral::LimitRadianAngle(Atan2(-odUx, odUy));
 }
 
 bool
@@ -2700,11 +2713,14 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			// Vice Extended (R16): con el lanzacohetes NO se entra en el modo de
 			// francotirador/1ª persona — apunta en 3ª persona y se puede andar.
 			bool odRocket3p = false;
-#ifdef VICEEXT_ROCKET_3RD_PERSON
-			odRocket3p = ViceExtRocket3rdPerson(weapon);
-			if (odRocket3p)
-				ViceExtRocket3pTrace(this, padUsed, weapon);
-#endif
+			// features.ini `RocketLauncherThirdPersonAiming` (familia 11): el
+			// fichero del mod manda sobre el modo de apuntado del lanzacohetes
+			// (con la clave a 0 vuelve el modo francotirador/1ª persona).
+			if (ViceExtFeatures::On("RocketLauncherThirdPersonAiming", true)) {
+				odRocket3p = ViceExtRocket3rdPerson(weapon);
+				if (odRocket3p)
+					ViceExtRocket3pTrace(this, padUsed, weapon);
+			}
 			if (!odRocket3p) {
 			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget) {
 #ifdef FREE_CAM
@@ -3201,6 +3217,30 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 			m_fRotationDest = neededTurn;
 		}
 
+#ifdef __EMSCRIPTEN__
+		{
+			static uint32 s_odRumboNext = 0;
+			static CVector s_odRumboPos(0.0f, 0.0f, 0.0f);
+			uint32 odRNow = CTimer::GetTimeInMilliseconds();
+			if (s_odRumboNext > odRNow + 60000) s_odRumboNext = 0;
+			if (odRNow >= s_odRumboNext) {
+				s_odRumboNext = odRNow + 1000;
+				CVector odRPos = GetPosition();
+				CVector2D odRStep(odRPos.x - s_odRumboPos.x, odRPos.y - s_odRumboPos.y);
+				float odRDist = odRStep.Magnitude();
+				float odReal = odRDist > 0.2f ? CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odRStep.x, odRStep.y) : 0.0f;
+				s_odRumboPos = odRPos;
+				CVector odRF = TheCamera.GetMatrix().GetForward();
+				float odCamF = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odRF.x, odRF.y);
+				int odBr = ViceExtStrafeAiming(this, padUsed) ? 0 : (ViceExtMoveHeadingOwned() ? 1 : (smoothSprayRate > 0.0f ? 3 : 2));
+				char t[280];
+				snprintf(t, sizeof t, "ODRUMBO br=%d lr=%.0f ud=%.0f dest=%.1f cur=%.1f camo=%.1f camf=%.1f vec=%.1f real=%.1f dist=%.2f",
+					odBr, leftRight, upDown, RADTODEG(m_fRotationDest), RADTODEG(m_fRotationCur),
+					RADTODEG(camOrientation), RADTODEG(odCamF), RADTODEG(ViceExtMoveHeading()), RADTODEG(odReal), odRDist);
+				ODTRACES(t);
+			}
+		}
+#endif
 		float maxAcc = 0.07f * CTimer::GetTimeStep();
 		m_fMoveSpeed = Min(padMoveInGameUnit, m_fMoveSpeed + maxAcc);
 #ifdef VICEEXT_AIM_WALK
@@ -3247,7 +3287,9 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 #ifdef VICEEXT_CLIMB
 	// Sección 2 (E1): con la tecla de saltar, si hay un borde escalable delante se
 	// trepa en vez de saltar; mientras dura, el control a pie no corre.
-	if (ViceExtClimbControl(padUsed))
+	// features.ini `EnableClimbing` (familia 11): el fichero del mod manda; con
+	// la clave a 0 no se llama a la escalada y el salto es el de siempre.
+	if (ViceExtFeatures::On("EnableClimbing", true) && ViceExtClimbControl(padUsed))
 		return;
 #endif
 
@@ -3255,7 +3297,26 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 		&& padUsed->JumpJustDown() && m_nPedState != PED_JUMP) {
 		ClearAttack();
 		ClearWeaponTarget();
-		if (m_nEvadeAmount != 0 && m_pEvadingFrom) {
+		bool odEvasiveRaw = (m_nEvadeAmount != 0 && m_pEvadingFrom) ? true : false;
+		bool odEvasive = odEvasiveRaw;
+		// features.ini `PlayerDoesntBounceAwayFromMovingCar` (familia 11; antes este
+		// bloque era `#ifdef VICEEXT_NO_JUMP_FROM_CAR`): el fichero del mod manda;
+		// con la clave a 0 el jugador sale despedido como en el original.
+		if (ViceExtFeatures::On("PlayerDoesntBounceAwayFromMovingCar", true)) {
+		odEvasive = false;
+#ifdef __EMSCRIPTEN__
+		{
+			static bool s_odVehJumpWas = false;
+			if (odEvasiveRaw != s_odVehJumpWas) {
+				s_odVehJumpWas = odEvasiveRaw;
+				char t[176];
+				snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=10 id=0 raw=%d applied=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odEvasiveRaw, (int)odEvasive);
+				ODTRACES(t);
+			}
+		}
+#endif
+		}
+		if (odEvasive) {
 			SetEvasiveDive((CPhysical*)m_pEvadingFrom, 1);
 			m_nEvadeAmount = 0;
 			m_pEvadingFrom = nil;
@@ -6024,7 +6085,7 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 #endif
 			CCamera::s_viceExtAimLawActive = true;
 			CCamera::s_viceExtAimSwitchSpeed = true;
-			CCamera::s_viceExtAimPrevHor = cam.Beta;
+			CCamera::s_viceExtAimPrevHor = CCamera::ViceExtAimBetaFromFollowBeta(cam.Beta);
 			CCamera::s_viceExtAimPrevVer = cam.Alpha;
 			CCamera::s_viceExtAimPrevCamMode = mode;
 		}
@@ -6128,8 +6189,8 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 		// nuestro motor, que ya esta escrita y que gira el cuerpo solo; no se llama
 		// `SetHeading` a proposito (ver la nota de `front` mas arriba: asi se midio el
 		// error de 90 grados). Lo que si se replica literal son los flags.
-		if (!bIsDucking)
-			m_fRotationDest = front;
+		if (!bIsDucking && !CPlayerPed::ViceExtIsCrouched())
+			m_fRotationDest = front - (ViceExtAimLongGun(wt) ? VICEEXT_AIM_BLADE : 0.0f);
 		SetLookFlag(front, true, true);
 		SetAimFlag(front);
 		SetLookTimer(INT32_MAX);
@@ -6177,7 +6238,7 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 			}
 		}
 #endif
-	} else {
+	} else if (m_nPedState != PED_ATTACK) {
 		// Main.cpp:1393-1425, al soltar.
 		ClearPointGunAt();
 		ClearWeaponTarget();
@@ -6208,7 +6269,7 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 #endif
 			TheCamera.m_bLookingAtPlayer = true;
 			CCamera::s_viceExtAimSwitchSpeed = true;
-			CCamera::s_viceExtAimPrevHor = cam.Beta;
+			CCamera::s_viceExtAimPrevHor = CCamera::ViceExtAimBetaFromFollowBeta(cam.Beta);
 			CCamera::s_viceExtAimPrevVer = cam.Alpha;
 			CCamera::s_viceExtAimPrevCamMode = mode;
 		}
@@ -6231,9 +6292,12 @@ CPlayerPed::ProcessControl(void)
 	// el jugador rebinda la acci\u00f3n a `NULL` en el men\u00fa de controles, el
 	// `GetControllerKeyAssociatedWithAction` devuelve 0 y la tecla deja de hacer
 	// nada, que es justo lo que significa `NULL` en `ClassicAxisVC.ini:8`.
+	// Con `VICEEXT_ALT_SIT` (v2.0 del mod: "Walking on ALT for the keyboard") la
+	// decision la toma su API `CPad::GetPedWalk()`, y sin la bandera no hay bloque.
+#ifdef VICEEXT_ALT_SIT
 	{
 		RsKeyCodes odWalk = (RsKeyCodes)ControlsManager.GetControllerKeyAssociatedWithAction(PED_WALK, KEYBOARD);
-		bool odWalkDown = (odWalk != (RsKeyCodes)0) && ControlsManager.GetIsKeyboardKeyDown(odWalk);
+		bool odWalkDown = CPad::GetPad(0)->GetPedWalk();
 		if (odWalkDown)
 			m_fMoveSpeed = 0.0f;
 		// Traza por FLANCO (pulsar y soltar), no por frame: `AIMWALK tecla=%d spd=%.2f`.
@@ -6249,10 +6313,33 @@ CPlayerPed::ProcessControl(void)
 		}
 #endif
 	}
+#endif
 
 	// ClassicAXIS: la ley de apuntado DEL MOD entra a sustituir el control de
 	// apuntado del motor. Va antes de `CPed::ProcessControl()` y antes que la
 	// seccion de nado (`:4465`) y de agachado (`:4472`), que no toca.
+	// features.ini `HealthRegenerationUpToHalf` (familia 11): el fichero del mod
+	// manda; con la clave a 0 no se recupera vida parado.
+	if (ViceExtFeatures::On("HealthRegenerationUpToHalf", true))
+	{
+		bool odRegenNow = false;
+		if (!bInVehicle && !bIsInTheAir && m_nMoveState == PEDMOVE_STILL && m_fHealth > 0.0f
+			&& m_fHealth < CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth * 0.5f)
+			odRegenNow = true;
+		if (odRegenNow)
+			m_fHealth = Min(m_fHealth + 0.15f, CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth * 0.5f);
+#ifdef __EMSCRIPTEN__
+		{
+			static bool s_odRegenWas = false;
+			if (odRegenNow != s_odRegenWas) {
+				s_odRegenWas = odRegenNow;
+				char t[176];
+				snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=8 id=0 regen=%d hp=%.1f max=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odRegenNow, m_fHealth, (int)CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth);
+				ODTRACES(t);
+			}
+		}
+#endif
+	}
 	ViceExtProcessPlayerPedControl();
 	// El objetivo blando de raton (Main.cpp:1474-1517) lo acquisitiona el propio
 	// mod DESPUES de su control, en el mismo punto (Main.cpp:307).
@@ -6297,7 +6384,31 @@ CPlayerPed::ProcessControl(void)
 #ifdef VICEEXT_AIM_CLASSICAXIS
 	ViceExtPrepareMove(GetPadFromPlayer(this));
 #endif
+#ifdef __EMSCRIPTEN__
+	if (1) {
+		static int s_odBaseWas = -1;
+		int odBaseNow = (int)m_nPedState;
+		if (odBaseNow != s_odBaseWas) {
+			s_odBaseWas = odBaseNow;
+			char odBaseT[200];
+			snprintf(odBaseT, sizeof(odBaseT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=4 cur=0.0000 delay=0.0000 estado=%d arma=%d wtag=71-4cfix6", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_nPedState, (int)GetWeapon()->m_eWeaponType);
+			ODTRACES(odBaseT);
+		}
+	}
+#endif
 	CPed::ProcessControl();
+#ifdef __EMSCRIPTEN__
+	if (1) {
+		static int s_odBaseAfterWas = -1;
+		int odBaseAfterNow = (int)m_nPedState;
+		if (odBaseAfterNow != s_odBaseAfterWas) {
+			s_odBaseAfterWas = odBaseAfterNow;
+			char odBaseAfterT[200];
+			snprintf(odBaseAfterT, sizeof(odBaseAfterT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=5 cur=0.0000 delay=0.0000 estado=%d arma=%d wtag=71-4cfix6", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_nPedState, (int)GetWeapon()->m_eWeaponType);
+			ODTRACES(odBaseAfterT);
+		}
+	}
+#endif
 #ifdef __EMSCRIPTEN__
 #ifdef VICEEXT_AIM_CLASSICAXIS
 	ViceExtMoveTick(this);

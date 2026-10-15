@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ViceExtFeatures.h"
 
 #include "Weapon.h"
 #include "AnimBlendAssociation.h"
@@ -292,6 +293,12 @@ ViceExtRecoilProfile(eWeaponType type, CWeaponInfo *info, const char **profile)
 static void
 ViceExtRecoilQueueShot(uint32 shotSeq, float kickRad)
 {
+	// features.ini `RecoilWhenFiring` (familia 11): con la clave a 0 no se encola
+	// ninguna patada, asi que el retroceso entero (camara incluida) queda apagado
+	// desde este unico sitio. Sin fichero vale el valor del port (encendido).
+	if (!ViceExtFeatures::On("RecoilWhenFiring", true))
+		return;
+
 	if (kickRad > 0.0f)
 		ViceExtRecoilAlphaAdd(kickRad, shotSeq);
 }
@@ -596,6 +603,13 @@ bool
 CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 {
 	ASSERT(shooter!=nil);
+#ifdef __EMSCRIPTEN__
+	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
+		char odUzi[160];
+		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=enter estado=%d clip=%d total=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal);
+		ODTRACES(odUzi);
+	}
+#endif
 #ifdef VICEEXT_RECOIL
 	if (shooter == FindPlayerPed())
 		ViceExtRecoilFireAttempt(m_eWeaponType, m_nAmmoInClip, m_nAmmoTotal, m_eWeaponState);
@@ -900,6 +914,14 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 
 		fired = FireMelee(shooter, *source);
 	}
+
+#ifdef __EMSCRIPTEN__
+	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
+		char odUzi[160];
+		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=exit estado=%d clip=%d total=%d ok=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal, (int)fired);
+		ODTRACES(odUzi);
+	}
+#endif
 
 	if ( m_eWeaponType == WEAPONTYPE_UNARMED || m_eWeaponType == WEAPONTYPE_BASEBALLBAT )
 		return true;
@@ -1585,6 +1607,14 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	ASSERT(shooter!=nil);
 	ASSERT(fireSource!=nil);
 
+#ifdef __EMSCRIPTEN__
+	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
+		char odUzi[160];
+		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=ih_enter estado=%d clip=%d total=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal);
+		ODTRACES(odUzi);
+	}
+#endif
+
 	CWeaponInfo *info = GetInfo();
 
 	CVector source, target;
@@ -1947,6 +1977,14 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	}
 
 	DoBulletImpact(shooter, victim, fireSource, &target, &point, ahead);
+
+#ifdef __EMSCRIPTEN__
+	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
+		char odUzi[160];
+		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=ih_exit estado=%d clip=%d total=%d ok=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal, 1);
+		ODTRACES(odUzi);
+	}
+#endif
 
 	return true;
 }
@@ -3098,6 +3136,13 @@ CWeapon::TakePhotograph(CEntity *shooter)
 		CSpecialFX::SnapShotFrames = 0;
 		CStats::PhotosTaken++;
 		bPhotographHasBeenTaken = true;
+#ifdef VICEEXT_PHOTO_SAVE
+		{
+			char odFotoSave[208];
+			snprintf(odFotoSave, sizeof odFotoSave, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=19 id=0 fotos=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)CStats::PhotosTaken);
+			ODTRACES(odFotoSave);
+		}
+#endif
 		
 		for ( int32 i = CPools::GetPedPool()->GetSize() - 1; i >= 0; i--)
 		{
@@ -3990,6 +4035,28 @@ CWeapon::BlowUpExplosiveThings(CEntity *thing)
 	{
 		CObject *object = (CObject*)thing;
 		int32 mi = object->GetModelIndex();
+#ifdef VICEEXT_PROJECTILE_BLOW
+		if ( !object->bHasBeenDamaged && object->IsObject() && (mi == MI_MISSILE || mi == MI_GRENADE || mi == MI_GR_GRENADE || mi == MI_MOLOTOV || mi == MI_TEARGAS) )
+		{
+			object->bHasBeenDamaged = true;
+
+			CExplosion::AddExplosion(nil, FindPlayerPed(), mi == MI_MISSILE ? EXPLOSION_ROCKET : (mi == MI_MOLOTOV ? EXPLOSION_MOLOTOV : EXPLOSION_GRENADE), object->GetPosition(), 0);
+
+			if ( object->GetIsStatic() )
+			{
+				object->SetIsStatic(false);
+				object->AddToMovingList();
+			}
+
+			{
+				char odProyBlow[208];
+				snprintf(odProyBlow, sizeof odProyBlow, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=14 id=0 model=%d proy=1", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)mi);
+				ODTRACES(odProyBlow);
+			}
+
+			return;
+		}
+#endif
 		if ( IsExplosiveThingModel(mi) && !object->bHasBeenDamaged && object->IsObject() )
 		{
 			object->bHasBeenDamaged = true;

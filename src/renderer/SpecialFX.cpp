@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "SpecialFX.h"
+#include "ViceExtFeatures.h"
 #include "RenderBuffer.h"
 #include "Timer.h"
 #include "Sprite.h"
@@ -387,6 +388,11 @@ void CBulletTraces::Init(void)
 
 void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint32 lifeTime, uint8 visibility)
 {
+	// features.ini `DisableBulletTraces` (familia 11): la clave del mod viene a 0
+	// (trazas encendidas), asi que sin fichero o sin la clave se sigue igual.
+	if (ViceExtFeatures::On("DisableBulletTraces", false))
+		return;
+
 	int32 enabledCount;
 	uint32 modifiedLifeTime;
 	int32 nextSlot;
@@ -440,6 +446,11 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint
 
 void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, class CEntity* shooter)
 {
+	// features.ini `DisableBulletTraces` (familia 11): la entrada que usa el
+	// arma. Es la puerta de verdad: con la clave a 1 no se crea ninguna traza.
+	if (ViceExtFeatures::On("DisableBulletTraces", false))
+		return;
+
 	CPhysical* player;
 	float speed;
 	int16 camMode;

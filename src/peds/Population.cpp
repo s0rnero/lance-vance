@@ -28,6 +28,9 @@
 #include "Streaming.h"
 #include "Clock.h"
 #include "WaterLevel.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 #define MIN_CREATION_DIST		40.0f // not for start of the game (look at the GeneratePedsAtStartOfGame)
 #define CREATION_RANGE			10.0f // added over the MIN_CREATION_DIST.
@@ -360,6 +363,19 @@ CPopulation::DealWithZoneChange(eLevelName oldLevel, eLevelName newLevel, bool f
 void
 CPopulation::Update(bool addPeds)
 {
+#ifdef VICEEXT_LIMITS
+#ifdef __EMSCRIPTEN__
+	{
+		static bool odLimitsTraced = false;
+		if (!odLimitsTraced) {
+			odLimitsTraced = true;
+			char odLt[192];
+			snprintf(odLt, sizeof odLt, "P4 kind=limits schema=1 gen=1 frame=%u sim=%.4f case=7 id=0 numpeds=%d numvehicles=%d mult=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, NUMPEDS, NUMVEHICLES, VICEEXT_SPAWN_RADIUS_MULT);
+			ODTRACES(odLt);
+		}
+	}
+#endif
+#endif
 	if (!CReplay::IsPlayingBack()) {
 		ManagePopulation();
 		RemovePedsIfThePoolGetsFull();
@@ -413,7 +429,11 @@ CPopulation::PedCreationDistMultiplier()
 		return 1.0f;
 
 	float vehSpeed = veh->m_vecMoveSpeed.Magnitude2D();
-	return Clamp(vehSpeed - 0.1f + 1.0f, 1.0f, 1.5f);
+	float odSpawnK = Clamp(vehSpeed - 0.1f + 1.0f, 1.0f, 1.5f);
+#ifdef VICEEXT_LIMITS
+	odSpawnK *= VICEEXT_SPAWN_RADIUS_MULT;
+#endif
+	return odSpawnK;
 }
 
 CPed*

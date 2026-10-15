@@ -55,6 +55,8 @@ uint16 CPed::nEnterCarRangeMultiplier = 1;
 bool CPed::bNastyLimbsCheat;
 bool CPed::bFannyMagnetCheat;
 bool CPed::bPedCheat3;
+bool CPed::bViceExtBigHeads;
+bool CPed::bViceExtRcRocket;
 CVector2D CPed::ms_vec2DFleePosition;
 
 void *CPed::operator new(size_t sz) throw() { return CPools::GetPedPool()->New();  }
@@ -63,6 +65,33 @@ void CPed::operator delete(void *p, size_t sz) throw() { CPools::GetPedPool()->D
 void CPed::operator delete(void *p, int handle) throw() { CPools::GetPedPool()->Delete((CPed*)p); }
 
 float gfTommyFatness = 1.0f;
+
+#ifdef VICEEXT_CHEAT_EFFECTS
+static const float ViceExtBigHeadScale = 1.5f;
+
+#ifdef __EMSCRIPTEN__
+static void ViceExtCheatEmit(int opt, int campo, int valor)
+{
+	static uint32 s_odCheatMs = 0;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odNow < s_odCheatMs + 1000 && odNow + 60000 >= s_odCheatMs)
+		return;
+	s_odCheatMs = odNow;
+	char t[220];
+	int odR = snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=%d id=0 campo=%d valor=%d",
+		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, opt, campo, valor);
+	if (odR < 0 || odR >= (int)sizeof t) {
+		char odO[200];
+		snprintf(odO, sizeof odO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d",
+			(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, (int)sizeof t, odR);
+		ODTRACES(odO);
+	} else
+		ODTRACES(t);
+}
+#else
+static inline void ViceExtCheatEmit(int, int, int) {}
+#endif
+#endif
 
 CPed::CPed(uint32 pedType) : m_pedIK(this)
 {
@@ -348,7 +377,22 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 
 	m_curFightMove = m_lastFightMove = FIGHTMOVE_IDLE;
 	GiveWeapon(WEAPONTYPE_UNARMED, 0, true);
+#ifdef VICEEXT_GANG_AIM
+	m_wepAccuracy = 73;
+#else
 	m_wepAccuracy = 60;
+#endif
+#ifdef __EMSCRIPTEN__
+	{
+		static int odGangAimPed = -1;
+		if (m_wepAccuracy != odGangAimPed) {
+			odGangAimPed = m_wepAccuracy;
+			char odGangAimT[132];
+			snprintf(odGangAimT, sizeof odGangAimT, "P4 kind=gangaim schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 tipo=ped acc=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_wepAccuracy);
+			ODTRACES(odGangAimT);
+		}
+	}
+#endif
 	m_lastWepDam = -1;
 	m_lastDamEntity = nil;
 	m_attachedTo = nil;
@@ -1600,7 +1644,11 @@ CPed::CalculateNewVelocity(void)
 			// mundo del helper), no en base cuerpo. Mientras el cuerpo mira a
 			// la camara coinciden; una vez girado 90 grados, la base cuerpo
 			// daria el avance desplazado otros 90 (el circulo del handoff 6.5).
-			float odMoveDir = walkAngle;
+			#ifdef VICEEXT_AIM_CLASSICAXIS
+			float odMoveDir = ((CPlayerPed*)this)->ViceExtStickHeading(odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown());
+#else
+			float odMoveDir = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown()) - TheCamera.Orientation);
+#endif
 			float odSideDir = 0.0f;
 #ifdef VICEEXT_AIM_CLASSICAXIS
 			CVector2D odCDir(0.0f, 0.0f);
@@ -1634,6 +1682,23 @@ CPed::CalculateNewVelocity(void)
 					SetHeading(m_fRotationCur);
 				}
 			}
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_AIM_CLASSICAXIS)
+			{
+				static uint32 s_odCrouchRumboNext = 0;
+				uint32 odCrNow = CTimer::GetTimeInMilliseconds();
+				if (s_odCrouchRumboNext > odCrNow + 60000) s_odCrouchRumboNext = 0;
+				if (odCrNow >= s_odCrouchRumboNext) {
+					s_odCrouchRumboNext = odCrNow + 1000;
+					int odSrc = odCDirOk ? 0 : 2;
+					char t[260];
+					snprintf(t, sizeof t, "ODCROUCHDIR src=%d walk=%.1f side=%.1f dir=%.1f cur=%.1f dest=%.1f cdir=%.1f cspd=%.2f",
+						odSrc, RADTODEG(walkAngle), RADTODEG(odSideDir), RADTODEG(odMoveDir),
+						RADTODEG(m_fRotationCur), RADTODEG(m_fRotationDest),
+						odCDirOk ? RADTODEG(odCDir.Heading()) : 0.0f, odCSpeed);
+					ODTRACES(t);
+				}
+			}
+#endif
 			TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = odSpeed;
 #ifdef VICEEXT_AIM_CLASSICAXIS
 			if (odCDirOk) {
@@ -5369,6 +5434,17 @@ CPed::PreRender(void)
 		RwMatrix* foreArmR = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
 		RwMatrixScale(foreArmR, &scale, rwCOMBINEPRECONCAT);
 	}
+
+#ifdef VICEEXT_CHEAT_EFFECTS
+	if (bViceExtBigHeads) {
+		RpHAnimHierarchy* hier = GetAnimHierarchyFromSkinClump(GetClump());
+		int32 idx = RpHAnimIDGetIndex(hier, ConvertPedNode2BoneTag(PED_HEAD));
+		RwMatrix* head = &RpHAnimHierarchyGetMatrixArray(hier)[idx];
+		RwV3d scale = { ViceExtBigHeadScale, ViceExtBigHeadScale, ViceExtBigHeadScale };
+		RwMatrixScale(head, &scale, rwCOMBINEPRECONCAT);
+		ViceExtCheatEmit(18, 1, (int)(ViceExtBigHeadScale * 100.0f));
+	}
+#endif
 
 	if (bBodyPartJustCameOff && bIsPedDieAnimPlaying && m_bodyPartBleeding != -1 && (CTimer::GetFrameCounter() & 7) > 3) {
 		CVector bloodDir(0.0f, 0.0f, 0.0f);

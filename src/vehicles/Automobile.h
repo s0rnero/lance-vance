@@ -141,6 +141,13 @@ public:
 	// Define APAGADO por defecto (paridad con StandardCarsUseTurnSignals=0).
 	void ViceExtProcessTurnSignals(void);
 #endif
+#ifdef VICEEXT_CAR_ROTATE_WHEEL
+	// v2.5 "Rotating steering wheel": gira el objeto suelto `steeringwheel` del
+	// modelo, que su propio tutorial (AdaptingVehiclesEN.txt, lineas 14-15) manda
+	// colgar de `chassis_hi` y con el pivote inclinado. Lo traen 18 modelos del
+	// gta3.img servido (medido en el plan 1.12, F9); en los demas es un no-op.
+	void ViceExtRotateSteeringWheel(void);
+#endif
 	bool HasCarStoppedBecauseOfLight(void);
 	void SetBusDoorTimer(uint32 timer, uint8 type);
 	void ProcessAutoBusDoors(void);

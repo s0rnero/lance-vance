@@ -179,6 +179,10 @@ public:
 	CAutoPilot AutoPilot;
 	uint8 m_currentColour1;
 	uint8 m_currentColour2;
+#ifdef VICEEXT_CAR_FOUR_COLORS
+	uint8 m_currentColour3;
+	uint8 m_currentColour4;
+#endif
 	int8 m_aExtras[2];
 	int16 m_nAlarmState;
 	int16 m_nRouteSeed;

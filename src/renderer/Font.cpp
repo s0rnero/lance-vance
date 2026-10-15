@@ -312,6 +312,7 @@ CSprite2d CFont::KeyIconSprite[256];
 bool CFont::KeyIconSearched[256];
 int32 CFont::KeyIconsSlot = -1;
 int CFont::KeyIconCode = 0;
+int CFont::KeyIconCode2 = 0;
 #endif
 
 void
@@ -485,6 +486,7 @@ CFont::Shutdown(void)
 		KeyIconsSlot = -1;
 	}
 	KeyIconCode = 0;
+	KeyIconCode2 = 0;
 #endif
 	Sprite[0].Delete();
 	Sprite[1].Delete();
@@ -511,6 +513,7 @@ CFont::InitPerFrame(void)
 #endif
 #ifdef VICEEXT_HINT_KEYS
 	KeyIconCode = 0;
+	KeyIconCode2 = 0;
 #endif
 }
 
@@ -549,9 +552,9 @@ CFont::HasKeyIcon(int vk)
 }
 
 void
-CFont::DrawKeyIcon(float x, float y)
+CFont::DrawKeyIcon(float x, float y, int vk)
 {
-	if (KeyIconCode <= 0 || !HasKeyIcon(KeyIconCode))
+	if (vk <= 0 || !HasKeyIcon(vk))
 		return;
 	if (x <= 0.0f || x > SCREEN_WIDTH || y <= 0.0f || y > SCREEN_HEIGHT)
 		return;
@@ -570,9 +573,9 @@ CFont::DrawKeyIcon(float x, float y)
 	RwRenderStateGet(rwRENDERSTATETEXTURERASTER, &raster);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
 	if (RenderState.bIsShadow)
-		KeyIconSprite[KeyIconCode].Draw(rect, RenderState.color);
+		KeyIconSprite[vk].Draw(rect, RenderState.color);
 	else
-		KeyIconSprite[KeyIconCode].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
+		KeyIconSprite[vk].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)vertexAlphaState);
 }
@@ -775,11 +778,18 @@ CFont::RenderFontBuffer()
 			}
 #endif
 #ifdef VICEEXT_HINT_KEYS
-			if(KeyIconCode > 0) {
-				DrawKeyIcon(textPosX, textPosY);
-				textPosX += RenderState.scaleY * 17.0f;
+			if(KeyIconCode > 0 || KeyIconCode2 > 0) {
+				if (KeyIconCode > 0) {
+					DrawKeyIcon(textPosX, textPosY, KeyIconCode);
+					textPosX += RenderState.scaleY * 17.0f;
+				}
+				if (KeyIconCode2 > 0) {
+					DrawKeyIcon(textPosX, textPosY, KeyIconCode2);
+					textPosX += RenderState.scaleY * 17.0f;
+				}
 				KeyIconCode = 0;
-			}
+				KeyIconCode2 = 0;
+				}
 #endif
 			if (bFlash) {
 				if (CTimer::GetTimeInMilliseconds() - Details.nFlashTimer > 300) {
@@ -1595,8 +1605,12 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 			vk = vk * 10 + (*p - '0');
 			p++;
 		}
-		if (vk > 0 && vk <= 255)
-			KeyIconCode = vk;
+		if (vk > 0 && vk <= 255) {
+			if (KeyIconCode <= 0)
+				KeyIconCode = vk;
+			else
+				KeyIconCode2 = vk;
+			}
 	}
 #endif
 	if (Details.color.r || Details.color.g || Details.color.b)

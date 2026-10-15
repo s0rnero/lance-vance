@@ -36,6 +36,21 @@ inline bool ViceExtAimHeavy(eWeaponType type)
 		return false;
 	}
 }
+inline bool ViceExtAimLongGun(eWeaponType type)
+{
+	switch (type) {
+	case WEAPONTYPE_SHOTGUN:
+	case WEAPONTYPE_STUBBY_SHOTGUN:
+	case WEAPONTYPE_SPAS12_SHOTGUN:
+	case WEAPONTYPE_SHOTGUN2:
+	case WEAPONTYPE_AK47:
+	case WEAPONTYPE_M16:
+	case WEAPONTYPE_STEYR:
+		return true;
+	default:
+		return false;
+	}
+}
 
 class CPlayerPed : public CPed
 {
@@ -119,6 +134,7 @@ public:
 	bool ViceExtGetMove(CVector2D &direction, float &speedGame) const;
 	bool ViceExtMoveWalkaround(void) const;
 	int ViceExtStickBlocked(void) const;
+	float ViceExtStickHeading(float lr, float ud) const;
 #endif
 	void ViceExtAimDirTrace(CPad *padUsed); // R9: medir desviación del apuntado
 #endif

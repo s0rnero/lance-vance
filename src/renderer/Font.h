@@ -152,11 +152,12 @@ public:
 	static CSprite2d KeyIconSprite[256];
 	static bool KeyIconSearched[256];
 	static int32 KeyIconsSlot;
-	static int KeyIconCode;   // el `~K<vk>~` que se está dibujando ahora (0 = no hay)
+	static int KeyIconCode;
+	static int KeyIconCode2;   // el `~K<vk>~` que se está dibujando ahora (0 = no hay)
 
 	static void LoadKeyIcons(void);
 	static bool HasKeyIcon(int vk);
-	static void DrawKeyIcon(float x, float y);
+	static void DrawKeyIcon(float x, float y, int vk);
 #endif
 
 

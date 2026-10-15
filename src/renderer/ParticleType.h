@@ -85,8 +85,19 @@ enum tParticleType
 	PARTICLE_RAINDROP_2D,
 	PARTICLE_HEATHAZE,
 	PARTICLE_HEATHAZE_IN_DIST,
-	
+
+	// Vice Extended (familia 3/5): los 5 tipos que anade su `particle.cfg`, al
+	// final del fichero. Se declaran aqui para que las matrices dimensionadas
+	// por MAX_PARTICLES los cubran y para que el parser pueda resolverlos por
+	// nombre (su fichero los pone DESPUES de los 83 de serie).
+	PARTICLE_ENGINE_SMOKE2_SMALL,
+	PARTICLE_ENGINE_STEAM_SMALL,
+	PARTICLE_ENGINE_SMOKE_SMALL,
+	PARTICLE_CARFLAME_SMALL,
+	PARTICLE_CARFLAME_SMOKE_SMALL32,
+
 	MAX_PARTICLES,
 	PARTICLE_FIRST = PARTICLE_SPARK,
-	PARTICLE_LAST = PARTICLE_HEATHAZE_IN_DIST
+	PARTICLE_LAST = PARTICLE_CARFLAME_SMOKE_SMALL32,	// ultimo tipo declarado (hoy ningun bucle itera con el)
+	PARTICLE_VICEEXT_FIRST = PARTICLE_ENGINE_SMOKE2_SMALL	// primer tipo que solo trae el mod
 };

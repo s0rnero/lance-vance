@@ -27,6 +27,7 @@
 #include "Object.h"
 #include "HandlingMgr.h"
 #include "Ropes.h"
+#include "ondemand.h"
 #include "Heli.h"
 #ifdef FIX_BUGS
 #include "Replay.h"
@@ -1008,11 +1009,25 @@ CHeli::TestBulletCollision(CVector *line0, CVector *line1, CVector *bulletPos, i
 
 			pHelis[i]->m_nBulletDamage += damage;
 
+#ifdef VICEEXT_HELI_HEALTH
+			const int32 odHeliDamageLimit = 400;
+#else
+			const int32 odHeliDamageLimit = 700;
+#endif
 			if(pHelis[i]->m_heliType == HELI_CATALINA && pHelis[i]->m_nBulletDamage > 400 ||
-			   pHelis[i]->m_heliType != HELI_CATALINA && pHelis[i]->m_nBulletDamage > 700){
+			   pHelis[i]->m_heliType != HELI_CATALINA && pHelis[i]->m_nBulletDamage > odHeliDamageLimit){
 				pHelis[i]->m_fAngularSpeed = CGeneral::GetRandomTrueFalse() ? 0.05f : -0.05f;
 				pHelis[i]->m_heliStatus = HELI_STATUS_SHOT_DOWN;
 				pHelis[i]->m_nExplosionTimer = CTimer::GetTimeInMilliseconds() + 10000;
+#ifdef VICEEXT_HELI_HEALTH
+				if(pHelis[i]->m_heliType != HELI_CATALINA){
+					uint32 odNowHeli = CTimer::GetTimeInMilliseconds();
+					char odTh[200];
+					snprintf(odTh, sizeof odTh, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=13 id=0 lim=%d dmg=%d down=1",
+						(unsigned)CTimer::GetFrameCounter(), odNowHeli * 0.001f, (int)odHeliDamageLimit, (int)pHelis[i]->m_nBulletDamage);
+					ODTRACES(odTh);
+				}
+#endif
 			}
 
 			hit = true;

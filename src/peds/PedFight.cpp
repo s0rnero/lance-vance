@@ -18,6 +18,7 @@
 #include "Stats.h"
 #include "TempColModels.h"
 #include "VisibilityPlugins.h"
+#include "ViceExtFeatures.h"
 #include "Vehicle.h"
 #include "Automobile.h"
 #include "WaterLevel.h"
@@ -25,6 +26,7 @@
 #include "Bike.h"
 #include "Glass.h"
 #include "SpecialFX.h"
+#include "ondemand.h"
 
 uint16 nPlayerInComboMove;
 RpClump* flyingClumpTemp;
@@ -724,6 +726,18 @@ CPed::Attack(void)
 	animLoopEnd = ourWeapon->m_fAnimLoopEnd;
 	delayBetweenAnimAndFire = ourWeapon->m_fAnimFrameFire;
 	weaponAnim = ourWeapon->m_AnimToPlay;
+#ifdef __EMSCRIPTEN__
+	if (IsPlayer()) {
+		static int s_odAtkWas = -1;
+		int odAtkNow = (int)m_nPedState | (bIsAttacking ? 64 : 0);
+		if (odAtkNow != s_odAtkWas) {
+			s_odAtkWas = odAtkNow;
+			char odAtkT[200];
+			snprintf(odAtkT, sizeof(odAtkT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=3 cur=0.0000 delay=0.0000 estado=%d arma=%d wtag=71-4cfix5", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_nPedState, (int)GetWeapon()->m_eWeaponType);
+			ODTRACES(odAtkT);
+		}
+	}
+#endif
 
 	// R28: el agachado del port no usa `bIsDucking` (R6 lo limpia): el
 	// predicado lleva las dos banderas del motor Y el agachado del port.
@@ -756,6 +770,18 @@ CPed::Attack(void)
 	}
 
 	if ( reloadAnimAssoc && reloadAnimAssoc->IsRunning() ) {
+#ifdef __EMSCRIPTEN__
+		if (IsPlayer()) {
+			static int s_odFireRelWas = -1;
+			int odFireRelNow = (bIsAttacking ? 1 : 0) | (attackShouldContinue ? 2 : 0);
+			if (odFireRelNow != s_odFireRelWas) {
+				s_odFireRelWas = odFireRelNow;
+				char odFireRelT[200];
+				snprintf(odFireRelT, sizeof(odFireRelT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=2 cur=0.0000 delay=0.0000 estado=%d arma=%d atac=%d cont=%d rec=1 thr=0", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)GetWeapon()->m_eWeaponState, (int)GetWeapon()->m_eWeaponType, bIsAttacking ? 1 : 0, attackShouldContinue ? 1 : 0);
+				ODTRACES(odFireRelT);
+			}
+		}
+#endif
 		if (!IsPlayer() || ((CPlayerPed*)this)->m_bHaveTargetSelected)
 			ClearAttack();
 		return;
@@ -819,6 +845,18 @@ CPed::Attack(void)
 	}
 
 	if (!weaponAnimAssoc) {
+#ifdef __EMSCRIPTEN__
+	if (IsPlayer()) {
+		static int s_odFireNilWas = -1;
+		int odFireNilNow = (bIsAttacking ? 1 : 0) | (attackShouldContinue ? 2 : 0) | ((reloadAnimAssoc && reloadAnimAssoc->IsRunning()) ? 4 : 0) | (throwAssoc ? 8 : 0);
+		if (odFireNilNow != s_odFireNilWas) {
+			s_odFireNilWas = odFireNilNow;
+			char odFireNilT[200];
+			snprintf(odFireNilT, sizeof(odFireNilT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=0 cur=0.0000 delay=0.0000 estado=%d arma=%d atac=%d cont=%d rec=%d thr=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)GetWeapon()->m_eWeaponState, (int)GetWeapon()->m_eWeaponType, bIsAttacking ? 1 : 0, attackShouldContinue ? 1 : 0, (reloadAnimAssoc && reloadAnimAssoc->IsRunning()) ? 1 : 0, throwAssoc ? 1 : 0);
+			ODTRACES(odFireNilT);
+		}
+	}
+#endif
 		if (!throwAssoc) {
 			if (attackShouldContinue) {
 				if (ourWeapon->m_eWeaponFire != WEAPON_FIRE_PROJECTILE || !IsPlayer() || ((CPlayerPed*)this)->m_bHaveTargetSelected) {
@@ -876,6 +914,19 @@ CPed::Attack(void)
 #endif
 			m_pedIK.m_flags &= ~CPedIK::AIMS_WITH_ARM;
 	}
+
+#ifdef __EMSCRIPTEN__
+	if (IsPlayer()) {
+		static int s_odFireWaitWas = -1;
+		int odFireWaitNow = (weaponAnimAssoc->IsRunning() ? 1 : 0) | ((weaponAnimTime > delayBetweenAnimAndFire) ? 2 : 0) | ((GetWeapon()->m_eWeaponState == WEAPONSTATE_READY || GetWeapon()->m_eWeaponState == WEAPONSTATE_FIRING) ? 0 : 4);
+		if (odFireWaitNow != s_odFireWaitWas) {
+			s_odFireWaitWas = odFireWaitNow;
+			char odFireWaitT[220];
+			snprintf(odFireWaitT, sizeof(odFireWaitT), "P4 kind=firewait schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 run=%d cur=%.4f delay=%.4f estado=%d arma=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, weaponAnimAssoc->IsRunning() ? 1 : 0, weaponAnimAssoc->currentTime, delayBetweenAnimAndFire, (int)GetWeapon()->m_eWeaponState, (int)GetWeapon()->m_eWeaponType);
+			ODTRACES(odFireWaitT);
+		}
+	}
+#endif
 
 	if (GetWeapon()->m_eWeaponType != WEAPONTYPE_CHAINSAW
 		|| !meleeAttackStarted && delayBetweenAnimAndFire - 0.5f >= weaponAnimAssoc->currentTime
@@ -3830,17 +3881,17 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 					else
 						distVec.z += 1.5f * unknown;
 
-#ifdef VICEEXT_NO_CAR_BOUNCE
 					// Vice Extended (features.ini:
 					// PlayerDoesntBounceAwayFromMovingCar=1): el jugador ya no sale
 					// despedido por el capó en parábola — el coche lo empuja pegado
 					// al suelo (el resto de peds siguen volando como el original).
-					if (IsPlayer()) {
+					// Familia 11: manda la clave del `features.ini` servido; sin fichero
+					// (o sin la clave) vale lo que el port ya traía (`true`).
+					if (ViceExtFeatures::On("PlayerDoesntBounceAwayFromMovingCar", true) && IsPlayer()) {
 						distVec = car->m_vecMoveSpeed;
 						distVec.z = 0.0f;
 						distVec *= 0.25f;
 					}
-#endif
 
 					m_vecMoveSpeed = distVec;
 					damageDir += 2;

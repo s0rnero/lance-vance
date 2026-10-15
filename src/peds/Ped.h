@@ -1177,6 +1177,9 @@ public:
 	// set by 0481:set_enter_car_range_multiplier opcode
 	static uint16 nEnterCarRangeMultiplier;
 
+	static bool bViceExtBigHeads;
+	static bool bViceExtRcRocket;
+
 	static bool bNastyLimbsCheat;
 	static bool bFannyMagnetCheat;
 	static bool bPedCheat3;

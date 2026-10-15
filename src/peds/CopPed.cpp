@@ -32,7 +32,11 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		m_currentWeapon = WEAPONTYPE_UNARMED;
 		m_fArmour = 0.0f;
 		m_wepSkills = 208; /* TODO: what is this? seems unused */
+#ifdef VICEEXT_GANG_AIM
+		m_wepAccuracy = 84;
+#else
 		m_wepAccuracy = 60;
+#endif
 		break;
 	case COP_FBI:
 		SetModelIndex(MI_FBI);
@@ -40,7 +44,11 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		SetCurrentWeapon(WEAPONTYPE_MP5);
 		m_fArmour = 100.0f;
 		m_wepSkills = 176; /* TODO: what is this? seems unused */
+#ifdef VICEEXT_GANG_AIM
+		m_wepAccuracy = 80;
+#else
 		m_wepAccuracy = 76;
+#endif
 		break;
 	case COP_SWAT:
 	case COP_HELI_SWAT:
@@ -49,7 +57,11 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		SetCurrentWeapon(WEAPONTYPE_UZI);
 		m_fArmour = 50.0f;
 		m_wepSkills = 32; /* TODO: what is this? seems unused */
+#ifdef VICEEXT_GANG_AIM
+		m_wepAccuracy = 78;
+#else
 		m_wepAccuracy = 68;
+#endif
 		break;
 	case COP_ARMY:
 		SetModelIndex(MI_ARMY);
@@ -75,9 +87,27 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		SetCurrentWeapon(WEAPONTYPE_UZI);
 		m_fArmour = 100.0f;
 		m_wepSkills = 176;
+#ifdef VICEEXT_GANG_AIM
+		m_wepAccuracy = 86;
+#else
 		m_wepAccuracy = 76;
+#endif
 		break;
 	}
+#ifdef VICEEXT_GANG_AIM
+#ifdef __EMSCRIPTEN__
+	{
+		static int odCopAimTipo = -1, odCopAimAcc = -1;
+		if ((int)copType != odCopAimTipo || (int)m_wepAccuracy != odCopAimAcc) {
+			odCopAimTipo = (int)copType;
+			odCopAimAcc = (int)m_wepAccuracy;
+			char odCopAimT[132];
+			snprintf(odCopAimT, sizeof odCopAimT, "P4 kind=gangaim schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 tipo=cop cop=%d acc=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)copType, (int)m_wepAccuracy);
+			ODTRACES(odCopAimT);
+		}
+	}
+#endif
+#endif
 	m_bIsInPursuit = false;
 	field_5FE = 1;
 	m_bIsDisabledCop = false;

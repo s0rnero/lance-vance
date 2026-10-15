@@ -1,7 +1,9 @@
 #include "common.h"
 #include "main.h"
+#include "ViceExtFeatures.h"	// familia 11: el features.ini del mod manda (On/Waypoint)
 
 #include "General.h"
+#include "Pools.h" // indice del vehiculo en la pool (traza wheelrot)
 #include "RwHelper.h"
 #include "Pad.h"
 #include "ModelIndices.h"
@@ -52,6 +54,40 @@
 #include "Bike.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
+
+#ifdef __EMSCRIPTEN__
+static inline void ViceExtP4IniEmit(int odCase, int odFlag, int odA, float odB)
+{
+	static uint32 s_odIniMs = 0;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odNow < s_odIniMs + 1000 && odNow + 60000 >= s_odIniMs)
+		return;
+	s_odIniMs = odNow;
+	char t[220];
+	int odR = snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=%d id=0 flag=%d a=%d val=%.4f",
+		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, odCase, odFlag, odA, odB);
+	if (odR < 0 || odR >= (int)sizeof t) {
+		char odO[200];
+		snprintf(odO, sizeof odO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d",
+			(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, (int)sizeof t, odR);
+		ODTRACES(odO);
+	} else
+		ODTRACES(t);
+}
+#else
+static inline void ViceExtP4IniEmit(int, int, int, float) {}
+#endif
+
+#ifdef VICEEXT_CAR_WHEEL_KEEP
+static float ViceExtWheelKeepSteer(float odSteer)
+{
+	ViceExtP4IniEmit(2, 1, 0, odSteer);
+	return odSteer;
+}
+#else
+static inline float ViceExtWheelKeepSteer(float) { return 0.0f; }
+#endif
+
 
 bool bAllCarCheat;
 
@@ -526,7 +562,7 @@ CAutomobile::ProcessControl(void)
 			m_fBrakePedal = 0.0f;
 		bIsHandbrakeOn = false;
 
-		m_fSteerAngle = 0.0f;
+		m_fSteerAngle = ViceExtWheelKeepSteer(m_fSteerAngle);
 		m_fGasPedal = 0.0f;
 		if(!IsAlarmOn())
 			m_nCarHornTimer = 0;
@@ -542,7 +578,7 @@ CAutomobile::ProcessControl(void)
 		m_fBrakePedal = 0.05f;
 		bIsHandbrakeOn = true;
 
-		m_fSteerAngle = 0.0f;
+		m_fSteerAngle = ViceExtWheelKeepSteer(m_fSteerAngle);
 		m_fGasPedal = 0.0f;
 		if(!IsAlarmOn())
 			m_nCarHornTimer = 0;
@@ -562,7 +598,7 @@ CAutomobile::ProcessControl(void)
 			bIsHandbrakeOn = false;
 		}
 
-		m_fSteerAngle = 0.0f;
+		m_fSteerAngle = ViceExtWheelKeepSteer(m_fSteerAngle);
 		m_fGasPedal = 0.0f;
 		if(!IsAlarmOn())
 			m_nCarHornTimer = 0;
@@ -1500,6 +1536,25 @@ CAutomobile::ProcessControl(void)
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 					m_nGunFiringTime = CTimer::GetTimeInMilliseconds();
 				}
+			}else if(
+#ifdef VICEEXT_CHEAT_EFFECTS
+				(GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN) && GetStatus() == STATUS_PLAYER && CPed::bViceExtRcRocket
+#else
+				false
+#endif
+				){
+#ifdef VICEEXT_CHEAT_EFFECTS
+				if(CPad::GetPad(0)->CarGunJustDown() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+350){
+					CWeapon gun(WEAPONTYPE_ROCKETLAUNCHER, 100);
+					CVector source = vecHunterRocketPos;
+					source = GetMatrix()*source + Max(DotProduct(m_vecMoveSpeed, GetForward()), 0.0f)*GetForward()*CTimer::GetTimeStep();
+					gun.FireProjectile(this, &source, 0.0f);
+					CStats::RoundsFiredByPlayer++;
+					DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+					m_nGunFiringTime = CTimer::GetTimeInMilliseconds();
+					ViceExtP4IniEmit(18, 1, (int)GetModelIndex(), 0.0f);
+				}
+#endif
 			}else if(GetModelIndex() == MI_SEASPAR && GetStatus() == STATUS_PLAYER){
 				// Sea sparrow gun
 				if(CPad::GetPad(0)->GetHandBrake() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+40){
@@ -1732,7 +1787,7 @@ CAutomobile::ProcessControl(void)
 			}
 	}
 
-#ifdef VICEEXT_TURN_SIGNALS
+#if defined(VICEEXT_TURN_SIGNALS) || defined(VICEEXT_STD_TURN_SIGNALS)
 	// Sección 3, bloque C3.4 (v2.5 "Turners, which are used by NPCs and can also
 	// be used by the player"): intermitentes del jugador y de los NPC que estén
 	// cerca. APAGADO por defecto en config.h, por paridad con su features.ini
@@ -1744,7 +1799,7 @@ CAutomobile::ProcessControl(void)
 #endif
 }
 
-#ifdef VICEEXT_TURN_SIGNALS
+#if defined(VICEEXT_TURN_SIGNALS) || defined(VICEEXT_STD_TURN_SIGNALS)
 // Sección 3, bloque C3.4: intermitentes del coche del JUGADOR mientras gira el
 // volante. Se dibujan como coronas naranjas en los dummies del modelo
 // (`indicator_lf/lr/rf/rr`, `indicator2_*` y, si no hay, `indicators_f/r`), que
@@ -1781,7 +1836,11 @@ CAutomobile::ViceExtProcessTurnSignals(void)
 #ifdef __EMSCRIPTEN__
 			ViceExtP4TurnersEmit(this, 0, 0, 0, "lejos", 0.0f, 0.0f);
 #endif
-			return;
+			// features.ini `StandardCarsUseTurnSignals` (familia 11): manda sobre los
+			// intermitentes de los coches de la IA. El coche del jugador es del port
+			// (VICEEXT_TURN_SIGNALS), asi que esta clave no lo apaga.
+			if (!ViceExtFeatures::On("StandardCarsUseTurnSignals", true))
+				return;
 		}
 		if (CTimer::GetFrameCounter() != s_viceExtTurnNpcFrame) {
 			s_viceExtTurnNpcFrame = CTimer::GetFrameCounter();
@@ -1791,7 +1850,11 @@ CAutomobile::ViceExtProcessTurnSignals(void)
 #ifdef __EMSCRIPTEN__
 			ViceExtP4TurnersEmit(this, 0, 0, 0, "sincupo", 0.0f, 0.0f);
 #endif
-			return;
+			// features.ini `StandardCarsUseTurnSignals` (familia 11): manda sobre los
+			// intermitentes de los coches de la IA. El coche del jugador es del port
+			// (VICEEXT_TURN_SIGNALS), asi que esta clave no lo apaga.
+			if (!ViceExtFeatures::On("StandardCarsUseTurnSignals", true))
+				return;
 		}
 	}
 
@@ -1982,6 +2045,52 @@ ViceExtP4TurnersEmit(CVehicle *car, int odIsPlayer, int odSide, int odFound, con
 		odIsPlayer ? "jugador" : "npc", (int)car->GetModelIndex(),
 		odSide, odFound, odMotivo, odSteer, odAnchorErr,
 		car->GetPosition().x, car->GetPosition().y, car->GetPosition().z);
+}
+#endif
+
+#ifdef VICEEXT_CAR_ROTATE_WHEEL
+// v2.5 "Rotating steering wheel" (medido en el plan 1.12, F9). El dummy se
+// llama `steeringwheel` (minusculas, sin guion) y va suelto, colgado de
+// `chassis_hi` en los modelos adaptados: lo traen 18 de los del gta3.img
+// servido (admiral, ambulan, baggage, banshee, cheetah, firetruk, hellenbach,
+// idaho, infernus, patriot, peren2, police, premier, sabre, sabretur, taxi,
+// trash2, vicechee) y en los demas no existe, que es un no-op limpio. El pivote
+// va inclinado en el modelo, asi que se POST-multiplica (`Rotate`, que respeta la
+// base) en vez de machacarla (`SetRotate`, que ademas borra la posicion: ver
+// SetComponentRotation); es la opcion que apunta su propio tutorial.
+// PENDIENTE DEL VEREDICTO VISUAL: el tutorial no da el multiplicador (aqui 1.0,
+// el mismo angulo que la rueda delantera) ni confirma el eje, y eso no se puede
+// decidir leyendo: si el jugador lo ve mal, se corrige esta constante.
+#define VICEEXT_CAR_ROTATE_WHEEL_NOMBRE "steeringwheel"
+#define VICEEXT_CAR_ROTATE_WHEEL_GAIN   1.0f
+
+void
+CAutomobile::ViceExtRotateSteeringWheel(void)
+{
+	// Sin cache a proposito: se busca por nombre en el arbol del clump cada
+	// fotograma que se dibuja el coche, igual que los dummies `indicator*` de los
+	// intermitentes, para no arriesgar una instancia del modelo equivocada. Un
+	// modelo que no trae el dummy sale por aqui sin nada que hacer.
+	RwFrame *odFrame = FindDummyFrame(VICEEXT_CAR_ROTATE_WHEEL_NOMBRE);
+	if (odFrame == nil)
+		return;
+
+	float odAngle = -(VICEEXT_CAR_ROTATE_WHEEL_GAIN * m_fSteerAngle);
+	CMatrix mat(RwFrameGetMatrix(odFrame));
+	mat.Rotate(0.0f, 0.0f, odAngle);
+	mat.UpdateRW();
+
+#ifdef __EMSCRIPTEN__
+	static uint32 odP4WheelMs = 0;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odNow < odP4WheelMs + 1000 && odNow + 60000 >= odP4WheelMs)
+		return;
+	odP4WheelMs = odNow;
+	char odT[240];
+	VICEEXT_P4_EMIT(1, odT, "P4 kind=wheelrot schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 vk=%d angulo=%.4f direc=%.4f",
+		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f,
+		(int)CPools::GetVehiclePool()->GetIndex(this), odAngle, m_fSteerAngle);
+#endif
 }
 #endif
 
@@ -3232,6 +3341,9 @@ CAutomobile::PreRender(void)
 		mat.UpdateRW();
 	}
 
+#ifdef VICEEXT_CAR_ROTATE_WHEEL
+	ViceExtRotateSteeringWheel();
+#endif
 	if(GetModelIndex() == MI_DODO){
 		// Front wheel
 		mat.Attach(RwFrameGetMatrix(m_aCarNodes[CAR_WHEEL_RF]));
@@ -3795,8 +3907,39 @@ CAutomobile::TankControl(void)
 	CVector gunEnd(0.0f, 1.813f, 2.979f);
 	CVector baseToEnd = gunEnd - turrentBase;
 
-	if(this != FindPlayerVehicle())
+	// features.ini `MilitaryFiringFromTankAtPlayer` (familia 11): la clave manda
+	// sobre el disparo de la IA desde el tanque. Con la clave apagada, el camino
+	// es el vanilla (un tanque que no conduce el jugador: no dispara).
+	if(this != FindPlayerVehicle() && ViceExtFeatures::On("MilitaryFiringFromTankAtPlayer", true)){
+		static uint32 s_odTankShotMs = 0;
+		CPed *odTarget = FindPlayerPed();
+		if(pDriver && !pDriver->IsPlayer() && odTarget && odTarget->m_fHealth > 0.0f){
+			float odTargetAngle = CGeneral::GetATanOfXY(odTarget->GetPosition().x - GetPosition().x, odTarget->GetPosition().y - GetPosition().y);
+			float odFwdAngle = CGeneral::GetATanOfXY(GetForward().x, GetForward().y);
+			float odWant = odFwdAngle - odTargetAngle;
+			while(odWant < -PI) odWant += TWOPI;
+			while(odWant > PI) odWant -= TWOPI;
+			m_fCarGunLR = odWant;
+			uint32 odNow = (uint32)CTimer::GetTimeInMilliseconds();
+			if(odNow > s_odTankShotMs + 2000){
+				s_odTankShotMs = odNow;
+				CVector odBase = GetMatrix() * turrentBase;
+				CVector odAim = odTarget->GetPosition();
+				odAim.z += 0.6f;
+				CVector odDir = odAim - odBase;
+				float odLen = odDir.Magnitude();
+				if(odLen > 0.001f)
+					odDir = (1.0f/odLen) * odDir;
+				CVector odP2 = odBase + 60.0f*odDir;
+				ViceExtP4IniEmit(7, 1, (int)GetModelIndex(), odWant);
+				CExplosion::AddExplosion(nil, this, EXPLOSION_TANK_GRENADE, odP2, 0);
+			}
+		}
 		return;
+	}
+	if(this != FindPlayerVehicle())	// clave apagada: camino vanilla
+		return;
+
 	if(CWorld::Players[CWorld::PlayerInFocus].m_WBState != WBSTATE_PLAYING)
 		return;
 
@@ -4621,11 +4764,44 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 
 	// damage flipped over car
 	if(GetUp().z < 0.0f && this != FindPlayerVehicle()){
-		if(bNotDamagedUpsideDown || GetStatus() == STATUS_PLAYER_REMOTE || bIsInWater)
-			return;
-		if(GetStatus() != STATUS_WRECKED)
-			m_fHealth = Max(m_fHealth - 4.0f*CTimer::GetTimeStep(), 0.0f);
+		// features.ini `VehiclesDontCatchFireWhenTurningOver` (familia 11): con la
+		// clave puesta el coche volcado ya no arde ni pierde salud; sin la clave (o
+		// sin fichero) el valor del port es el que traia el camino vanilla de abajo.
+		if (ViceExtFeatures::On("VehiclesDontCatchFireWhenTurningOver", true)) {
+#ifdef __EMSCRIPTEN__
+			ViceExtP4IniEmit(5, 1, (int)GetStatus(), m_fHealth);
+#endif
+		} else {
+			if(bNotDamagedUpsideDown || GetStatus() == STATUS_PLAYER_REMOTE || bIsInWater)
+				return;
+			if(GetStatus() != STATUS_WRECKED)
+				m_fHealth = Max(m_fHealth - 4.0f*CTimer::GetTimeStep(), 0.0f);
+		}
 	}
+
+#ifdef VICEEXT_GAS_STATION_BLOW
+	if(impulse > 20.0f){
+		CEntity *odHit = m_pDamageEntity;
+		int odMi = odHit ? odHit->GetModelIndex() : -1;
+		if(odMi != MI_PETROLPUMP && odMi != MI_PETROLPUMP2){
+			for(i = 0; i < m_nCollisionRecords; i++){
+				if(m_aCollisionRecords[i] == nil)
+					continue;
+				int odCmi = m_aCollisionRecords[i]->GetModelIndex();
+				if(odCmi == MI_PETROLPUMP || odCmi == MI_PETROLPUMP2){
+					odHit = m_aCollisionRecords[i];
+					odMi = odCmi;
+					break;
+				}
+			}
+		}
+		if(odHit && odHit->IsObject() && (odMi == MI_PETROLPUMP || odMi == MI_PETROLPUMP2)){
+			ViceExtP4IniEmit(4, 1, odMi, impulse);
+			((CObject*)odHit)->bHasBeenDamaged = true;
+			CExplosion::AddExplosion(odHit, this, EXPLOSION_BARREL, odHit->GetPosition() + CVector(0.0f, 0.0f, 0.5f), 100);
+		}
+	}
+#endif
 
 	float minImpulse = GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN ? 1.0f : 25.0f;
 	if(impulse > minImpulse && GetStatus() != STATUS_WRECKED){
@@ -4752,6 +4928,76 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			case CAR_PIECE_WHEEL_LR:
 			case CAR_PIECE_WHEEL_RF:
 			case CAR_PIECE_WHEEL_RR:
+#ifdef VICEEXT_WHEEL_DETACH
+				{
+					int32 odWheel = CARWHEEL_FRONT_LEFT;
+					int32 odNode = CAR_WHEEL_LF;
+					tComponent odComp = COMPONENT_WHEEL_FRONT_LEFT;
+					switch (damagedPiece) {
+					case CAR_PIECE_WHEEL_LR:
+						odWheel = CARWHEEL_REAR_LEFT;
+						odComp = COMPONENT_WHEEL_REAR_LEFT;
+						break;
+					case CAR_PIECE_WHEEL_RF:
+						odWheel = CARWHEEL_FRONT_RIGHT;
+						odNode = CAR_WHEEL_RF;
+						odComp = COMPONENT_WHEEL_FRONT_RIGHT;
+						break;
+					case CAR_PIECE_WHEEL_RR:
+						odWheel = CARWHEEL_REAR_RIGHT;
+						odNode = CAR_WHEEL_RF;
+						odComp = COMPONENT_WHEEL_REAR_RIGHT;
+						break;
+					default:
+						break;
+					}
+					char odT[220];
+					int odR;
+					if (Damage.GetWheelStatus(odWheel) == WHEEL_STATUS_BURST) {
+						Damage.SetWheelStatus(odWheel, WHEEL_STATUS_MISSING);
+						SpawnFlyingComponent(odNode, COMPGROUP_WHEEL);
+						RpAtomic *odAtomic = nil;
+						RwFrameForAllObjects(m_aCarNodes[odNode], GetCurrentAtomicObjectCB, &odAtomic);
+						if (odAtomic)
+							RpAtomicSetFlags(odAtomic, 0);
+						odR = snprintf(odT, sizeof odT, "P4 kind=cardet schema=1 gen=1 frame=%u sim=%.4f case=0 id=%u paso=desprende rueda=%d impulso=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)GetModelIndex(), odWheel, impulse*impulseMult);
+						if (odR < 0 || odR >= (int)sizeof(odT)) {
+							snprintf(odT, sizeof odT, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odT), odR);
+						}
+						ODTRACES(odT);
+#ifdef VICEEXT_CAR_DEATH
+						{
+							int32 odDead = 0;
+							if (pDriver && !pDriver->IsPlayer() && pDriver->GetPedState() == PED_DRIVING) {
+								pDriver->SetDead();
+								pDriver->FlagToDestroyWhenNextProcessed();
+								odDead++;
+							}
+							for (int32 odP = 0; odP < m_nNumMaxPassengers; odP++) {
+								if (pPassengers[odP] && !pPassengers[odP]->IsPlayer() && pPassengers[odP]->GetPedState() == PED_DRIVING) {
+									pPassengers[odP]->SetDead();
+									pPassengers[odP]->FlagToDestroyWhenNextProcessed();
+									odDead++;
+								}
+							}
+						odR = snprintf(odT, sizeof odT, "P4 kind=cardead schema=1 gen=1 frame=%u sim=%.4f case=0 id=%u muertos=%d impulso=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)GetModelIndex(), odDead, impulse*impulseMult);
+						if (odR < 0 || odR >= (int)sizeof(odT)) {
+							snprintf(odT, sizeof odT, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odT), odR);
+						}
+						ODTRACES(odT);
+						}
+#endif
+					} else if (Damage.GetWheelStatus(odWheel) == WHEEL_STATUS_OK) {
+						if (Damage.ApplyDamage(odComp, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)) {
+						odR = snprintf(odT, sizeof odT, "P4 kind=cardet schema=1 gen=1 frame=%u sim=%.4f case=0 id=%u paso=revienta rueda=%d impulso=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)GetModelIndex(), odWheel, impulse*impulseMult);
+						if (odR < 0 || odR >= (int)sizeof(odT)) {
+							snprintf(odT, sizeof odT, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odT), odR);
+						}
+						ODTRACES(odT);
+						}
+					}
+				}
+#endif
 				break;
 
 			case CAR_PIECE_WINDSCREEN:
@@ -4803,6 +5049,16 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 		for(i = 0; i < 4; i++)
 			if(oldLightStatus[i] != 1 && Damage.GetLightStatus((eLights)i) == 1){
 				DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_LIGHT_BREAK, i);	// BUG? i?
+#ifdef VICEEXT_CAR_LIGHTS
+				{
+					char odT[220];
+					int odR = snprintf(odT, sizeof odT, "P4 kind=carluz schema=1 gen=1 frame=%u sim=%.4f case=0 id=%u luz=%d impulso=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)GetModelIndex(), i, impulse);
+					if (odR < 0 || odR >= (int)sizeof(odT)) {
+						snprintf(odT, sizeof odT, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odT), odR);
+					}
+					ODTRACES(odT);
+				}
+#endif
 				break;
 			}
 	}

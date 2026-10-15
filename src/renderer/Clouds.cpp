@@ -14,6 +14,7 @@
 #include "Timecycle.h"
 #include "Renderer.h"
 #include "Clouds.h"
+#include "ondemand.h"
 
 #define SMALLSTRIPHEIGHT 4.0f
 #define HORIZSTRIPHEIGHT 48.0f
@@ -135,11 +136,46 @@ CClouds::Render(void)
 	RwV3d campos = TheCamera.GetPosition();
 
 	// Moon
+#ifdef VICEEXT_MOON
+	float moonfadeout;
+	float odMoonSmooth = 1.9f;
+	if ((int)minute > 1100)
+		moonfadeout = Abs(minute - 1100.0f) / odMoonSmooth;
+	else if ((int)minute < 240)
+		moonfadeout = 180.0f;
+	else
+		moonfadeout = 180.0f - Abs(minute - 240.0f) * odMoonSmooth;
+
+	if ((int)moonfadeout > 0.0f && (int)moonfadeout < 340) {
+		float coverage = Max(CWeather::Foggyness, CWeather::CloudCoverage);
+		int brightness = (1.0f - coverage) * ((int)moonfadeout);
+		CVector sunCoors = CTimeCycle::GetSunDirection();
+		sunCoors *= 150.0f;
+		RwV3d pos = { -sunCoors.x, -sunCoors.y, -sunCoors.z };
+#ifdef __EMSCRIPTEN__
+		{
+			static uint32 odMoonLast = 0;
+			uint32 odMoonNow = CTimer::GetTimeInMilliseconds();
+			if (odMoonNow - odMoonLast > 1000) {
+				odMoonLast = odMoonNow;
+				char odMoonT[208];
+				int odMoonR = snprintf(odMoonT, sizeof odMoonT, "P4 kind=moon schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 fadeout=%.1f brillo=%d sol=%.3f,%.3f,%.3f pos=%.1f,%.1f,%.1f", (unsigned)CTimer::GetFrameCounter(), odMoonNow * 0.001f, moonfadeout, brightness, sunCoors.x, sunCoors.y, sunCoors.z, pos.x, pos.y, pos.z);
+				if (odMoonR < 0 || odMoonR >= (int)sizeof(odMoonT)) {
+					char odMoonO[208];
+					snprintf(odMoonO, sizeof odMoonO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), odMoonNow * 0.001f, (int)sizeof(odMoonT), odMoonR);
+					ODTRACES(odMoonO);
+				} else
+					ODTRACES(odMoonT);
+			}
+		}
+#endif
+#else
 	float moonfadeout = Abs(minute - 180.0f);	// fully visible at 3AM
 	if((int)moonfadeout < 180){			// fade in/out 3 hours
 		float coverage = Max(CWeather::Foggyness, CWeather::CloudCoverage);
 		int brightness = (1.0f - coverage) * (180 - (int)moonfadeout);
 		RwV3d pos = { 0.0f, -100.0f, 15.0f };
+#endif
 		RwV3dAdd(&worldpos, &campos, &pos);
 		if(CSprite::CalcScreenCoors(worldpos, &screenpos, &szx, &szy, false)){
 			RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpCoronaTexture[2]));

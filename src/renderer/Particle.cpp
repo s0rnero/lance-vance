@@ -21,6 +21,9 @@
 #include "soundlist.h"
 #include "SaveBuf.h"
 #include "debugmenu.h"
+#ifdef VICEEXT_POLISH
+#include "ondemand.h"
+#endif
 
 #define MAX_PARTICLES_ON_SCREEN   (750)
 
@@ -668,6 +671,21 @@ void CParticle::Initialise()
 			case PARTICLE_BEASTIE:
 				entry->m_ppRaster = &gpBeastieRaster;
 				break;
+			
+			// Los 5 tipos del mod (familia 3/5) reutilizan la textura de su hermano mayor.
+			case PARTICLE_ENGINE_SMOKE2_SMALL:
+			case PARTICLE_ENGINE_SMOKE_SMALL:
+			case PARTICLE_CARFLAME_SMOKE_SMALL32:
+				entry->m_ppRaster = &gpCloudRaster4;
+				break;
+			
+			case PARTICLE_ENGINE_STEAM_SMALL:
+				entry->m_ppRaster = &gpSmoke2Raster;
+				break;
+			
+			case PARTICLE_CARFLAME_SMALL:
+				entry->m_ppRaster = &gpFlame1Raster;
+				break;
 		}
 	}
 
@@ -863,6 +881,12 @@ void CParticle::AddParticlesAlongLine(tParticleType type, CVector const &vecStar
 	}
 }
 
+#ifdef VICEEXT_POLISH
+static const float odPolishBloodLifeMult = 1.5f;
+static const float odPolishDustLifeMult = 2.0f;
+static bool odPolishTraced = false;
+#endif
+
 CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVector const &vecDir, CEntity *pEntity, float fSize, int32 nRotationSpeed, int32 nRotation, int32 nCurFrame, int32 nLifeSpan)
 {
 	CRGBA color(0, 0, 0, 0);
@@ -903,11 +927,29 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 	
 	pParticle->m_fSize = psystem->m_fDefaultInitialRadius;
 	pParticle->m_fExpansionRate = psystem->m_fExpansionRate;
-	
+
+#ifdef VICEEXT_POLISH
+	int32 odBaseLife = nLifeSpan != 0 ? nLifeSpan : psystem->m_nLifeSpan;
+	int32 odScaledLife = odBaseLife;
+	if (type == PARTICLE_BLOOD || type == PARTICLE_BLOOD_SMALL || type == PARTICLE_BLOOD_SPURT)
+		odScaledLife = int32(float(odBaseLife) * odPolishBloodLifeMult);
+	else if (type == PARTICLE_CAR_DUST || type == PARTICLE_CARCOLLISION_DUST)
+		odScaledLife = int32(float(odBaseLife) * odPolishDustLifeMult);
+	pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + odScaledLife;
+	if (!odPolishTraced && odScaledLife != odBaseLife) {
+		odPolishTraced = true;
+#ifdef __EMSCRIPTEN__
+		char odT[192];
+		snprintf(odT, sizeof odT, "P4 kind=particulas schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 type=%d base=%d scaled=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)type, (int)odBaseLife, (int)odScaledLife);
+		ODTRACES(odT);
+#endif
+	}
+#else
 	if ( nLifeSpan != 0 )
 		pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + nLifeSpan;
 	else
 		pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + psystem->m_nLifeSpan;
+#endif
 
 	pParticle->m_nColorIntensity = psystem->m_nFadeToBlackInitialIntensity;
 	
