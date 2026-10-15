@@ -1,4 +1,7 @@
 #pragma once
+#ifdef VICEEXT_NEW_WEAPONS
+#include "ModelIndices.h"
+#endif
 #include "Sprite2d.h"
 
 #define HELP_MSG_LENGTH 256
@@ -44,7 +47,13 @@ enum eSprites
 	HUD_LASERDOT,
 	HUD_VIEWFINDER,
 	HUD_BLEEDER,
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	NUM_HUD_SPRITES = 69 + (MI_GR_LAUNCH - MI_FIRST_NEW_WEAPON),
+#elif defined(VICEEXT_NEW_WEAPONS)
+	NUM_HUD_SPRITES = 69 + (NUM_NEW_WEAPONS - MI_FIRST_NEW_WEAPON - 1),
+#else
 	NUM_HUD_SPRITES = 69,
+#endif
 };
 
 class CHud

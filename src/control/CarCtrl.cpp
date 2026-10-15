@@ -307,7 +307,7 @@ CCarCtrl::GenerateOneRandomCar()
 			break;
 		}
 	}
-#ifdef VICEEXT_LIMITS
+#ifdef VICEEXT_SPAWN_RADIUS_MULT
 	preferredDistance *= VICEEXT_SPAWN_RADIUS_MULT;
 #endif
 	if (!ThePaths.GenerateCarCreationCoors(vecTargetPos.x, vecTargetPos.y, frontX, frontY,
@@ -610,7 +610,7 @@ CCarCtrl::GenerateOneRandomCar()
 	}
 	CVisibilityPlugins::SetClumpAlpha(pVehicle->GetClump(), 0);
 	float odDespawnK = (pVehicle->bExtendedRange ? EXTENDED_RANGE_DESPAWN_MULTIPLIER : 1.0f);
-#ifdef VICEEXT_LIMITS
+#ifdef VICEEXT_SPAWN_RADIUS_MULT
 	odDespawnK *= VICEEXT_SPAWN_RADIUS_MULT;
 #endif
 	if (!pVehicle->GetIsOnScreen()){
@@ -1127,7 +1127,7 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 #endif
 		if (pVehicle->bExtendedRange)
 			threshold *= EXTENDED_RANGE_DESPAWN_MULTIPLIER;
-	#ifdef VICEEXT_LIMITS
+	#ifdef VICEEXT_SPAWN_RADIUS_MULT
 	threshold *= VICEEXT_SPAWN_RADIUS_MULT;
 #endif
 	if (distanceToPlayer > threshold && !CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){

@@ -162,7 +162,11 @@ struct
   { "sword", "swordA" },
   { "chainsaw", "chainsawA" },
   { "grenade", "grenadeA" },
+#ifdef VICEEXT_WEAPON_RCGRENADE
+  { "rcgrenade", "rcgrenadeA" },
+#else
   { "grenade", "grenadeA" },
+#endif
   { "teargas", "teargasA" },
   { "molotov", "molotovA" },
   { "rocket", "rocketA" },
@@ -217,7 +221,31 @@ struct
   { "sitelaser", "sitelaserm" },
   { "laserdot", "laserdotm" },
   { "viewfinder_128", "viewfinder_128m" },
-  { "bleeder", "" }
+  { "bleeder", "" },
+#ifdef VICEEXT_WEAPON_AK47
+  { "ak47", "ak47A" },
+#endif
+#ifdef VICEEXT_WEAPON_M16
+  { "m16", "m16A" },
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+  { "shotgun2", "shotgun2A" },
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+  { "uziold", "uzioldA" },
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+  { "desert_deagle", "desert_deagleA" },
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+  { "beretta", "berettaA" },
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+  { "steyr", "steyrA" },
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+  { "gr_launch", "gr_launchA" },
+#endif
 };
 
 RwTexture *gpSniperSightTex;
@@ -415,7 +443,7 @@ void CHud::Draw()
 					if (WeaponType >= WEAPONTYPE_COLT45 && WeaponType <= WEAPONTYPE_ROCKETLAUNCHER
 						|| WeaponType == WEAPONTYPE_M60 || WeaponType == WEAPONTYPE_MINIGUN
 						|| WeaponType == WEAPONTYPE_FLAMETHROWER
-						|| (WeaponType >= WEAPONTYPE_BERETTA && WeaponType <= WEAPONTYPE_GRENADE_LAUNCHER)) {
+						|| (WeaponType >= WEAPONTYPE_AK47 && WeaponType <= WEAPONTYPE_GRENADE_LAUNCHER)) {
 						DrawCrossHairPC = 1;
 					}
 				}
@@ -451,8 +479,11 @@ void CHud::Draw()
 			}
 		}
 #endif
-		if ((DrawCrossHair || DrawCrossHairPC || odAimLaw)
-				&& !ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR)) {
+		bool odCross = DrawCrossHair || DrawCrossHairPC;
+#ifdef VICEEXT_AIM_CLASSICAXIS
+		odCross = odCross || odAimLaw;
+#endif
+		if (odCross && !ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR)) {
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
 
 			SpriteBrightness = Min(SpriteBrightness+1, 30);
@@ -2206,6 +2237,7 @@ void CHud::Initialise()
 	ODTRACES("KEYICONS txd=pcbtns cargado");
 #endif
 #endif
+	m_pLastZoneName = nil;
 	GetRidOfAllHudMessages();
 	m_pLastVehicleName = nil;
 

@@ -941,7 +941,7 @@ CPlayerPed::DoWeaponSmoothSpray(void)
 					return PI / 80.f;
 
 			case WEAPONTYPE_PYTHON:
-			case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+			case WEAPONTYPE_DEAGLE:	// Vice Extended
 				return PI / 112.f;
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_SPAS12_SHOTGUN:
@@ -4016,14 +4016,14 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 				odLevel, s_odSwimTicks, odSprintBtn ? 1 : 0,
 				(odSwimAssoc ? odSwimAssoc->speed : -1.0f), (int)m_nPedState,
 				m_fRotationCur, TheCamera.Orientation, TheCamera.Cams[TheCamera.ActiveCam].Beta,
-				(int)ViceExtIsAiming(), (int)CCamera::s_viceExtAimLawActive, s_odLastDest,
+				0, 0, s_odLastDest,
 				(odSwimAssoc ? odSwimAssoc->blendAmount : -1.0f),
 				(RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL) ? RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL)->blendAmount : -1.0f),
 				(int)bIsInWater, odAire, m_vecMoveSpeed.z,
 				odLevelW, odDepth, (int)m_nSelectedWepSlot,
-		ViceExtBlendWeight(GetClump(), ANIM_STD_FALL_GLIDE),
+		0.0f,
 		(int)bIsStanding, (int)bHasCollided, (int)bIsDucking,
-		(int)(m_pPointGunAt != nil), odSuelo, (int)odCrouched);
+		(int)(m_pPointGunAt != nil), odSuelo, 0);
 			ODTRACES(t);
 			float odEsperada = odLevel * GAME_SPEED_TO_METERS_PER_SECOND;
 			bool odErrCat = odAvance > 8.0f;
@@ -5695,20 +5695,10 @@ CPlayerPed::ViceExtWeaponInfoOf(eWeaponType weaponType)
 {
 	ViceExtWeaponInfoTrace(weaponType, CWeaponInfo::GetWeaponInfo(weaponType));
 }
+#endif // __EMSCRIPTEN__
+#endif // VICEEXT_CROUCH
 
-// R19: "¿dónde estoy y a qué velocidad avanza DE VERDAD?", una línea por
-// segundo y en cualquier estado (de pie, agachado, nadando, en coche).
-//
-// Hace falta para dos cosas:
-//  1. `av`/`velo` = metros y m/s medidos con la POSICIÓN, no con lo que pide el
-//     mando. Es la referencia de la marcha de serie (la del motor, ~1,6 m/s)
-//     contra la que comparar agachado y nado, y sirve para cualquier estado.
-//  2. la sonda de agua necesita `x`/`y` para NAVEGAR hasta el mar: antes andaba
-//     a ciegas 4×30 s y a veces se quedaba contra una pared sin llegar nunca
-//     (pasó el 22/09: la parte de nado quedó sin medir).
-// `ms` es el reloj del motor, `nf` los frames y `ts` los segundos de MUNDO
-// (suma de `GetTimeStep()`, filtrada por frame): si `ts` ≈ `ms`/1000 la
-// simulación va a tiempo real y `velo` es comparable entre estados.
+#ifdef __EMSCRIPTEN__
 void
 CPlayerPed::ViceExtPedAtTrace(void)
 {
@@ -5742,24 +5732,12 @@ CPlayerPed::ViceExtPedAtTrace(void)
 	}
 	float odTs = s_odWorld - s_odWorldLast;
 	CVector odCamPos = TheCamera.GetPosition();
-	// R19c: ¿hacia dónde está el MAR y a qué distancia? Se sondea con el propio
-	// motor (`GetWaterLevelNoWaves` devuelve falso cuando en ese punto hay
-	// tierra) en 16 rumbos × 4 pasos de 12 m. Es la señal con la que la sonda
-	// navega: en Ocean Beach el suelo es LLANO y el `z` no baja (medido el
-	// 22/09: `dz=0,00` en 13 rumbos seguidos, la sonda daba vueltas a la
-	// manzana), mientras que la distancia al agua baja de forma monótona al
-	// acercarse a la orilla.
 	float odMarDeg = -1.0f, odMarDist = -1.0f;
 	for (int i = 0; i < 16; i++) {
 		float odA = i * (TWOPI / 16.0f);
 		for (int s = 1; s <= 4; s++) {
 			float odD = s * 12.0f;
 			float odWl;
-			// R19d: los puntos son ARBITRARIOS (hasta 48 m del ped), así que
-			// pueden caer fuera de la tabla de agua del motor: el índice de
-			// `aWaterFineBlockList` se calcularía fuera de rango y el motor
-			// leería (y usaría como índice) memoria que no es suya. Se comprueba
-			// el índice ANTES de preguntar; fuera de la tabla = sin dato de agua.
 			float odPx = odPos.x + Cos(odA) * odD, odPy = odPos.y + Sin(odA) * odD;
 			int32 odIx = WATER_TO_SMALL_SECTOR_X(odPx + WATER_X_OFFSET);
 			int32 odIy = WATER_TO_SMALL_SECTOR_Y(odPy);
@@ -5775,11 +5753,6 @@ CPlayerPed::ViceExtPedAtTrace(void)
 		}
 	}
 	char t[300];
-	// R19e: `camz` también de PIE. El bloque H comparaba la `camz` mediana de
-	// agachado con la de pie de TODA la sesión, que son sitios distintos: en la
-	// 15ª partida cantó "la cámara no baja agachado (11,18 vs 11,33)" con el
-	// jugador a 12 m y agachado en otro sitio. Con la cámara de pie en la traza,
-	// la comparación es CÁMARA SOBRE EL PED (camz−z), que no depende del sitio.
 	snprintf(t, sizeof t, "PEDAT x=%.1f y=%.1f z=%.1f est=%d av=%.2f velo=%.2f ms=%u nf=%u ts=%.2f camz=%.2f camdist=%.2f modo=%d mar=%.0f dist=%.0f",
 		odPos.x, odPos.y, odPos.z, (int)m_nPedState, odAv, odVelo, odMs, odFrames, odTs,
 		odCamPos.z,
@@ -5794,8 +5767,7 @@ CPlayerPed::ViceExtPedAtTrace(void)
 	s_odFirst = false;
 	s_odNextTrace = odNow + 1000;
 }
-#endif // __EMSCRIPTEN__
-#endif // VICEEXT_CROUCH
+#endif
 
 // =====================================================================
 // ClassicAXIS · el "ProcessPlayerPedControl" del mod

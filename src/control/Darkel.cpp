@@ -319,7 +319,7 @@ CDarkel::StartFrenzy(eWeaponType weaponType, int32 time, uint16 kill, int32 mode
 	PreviousTime = time / 1000;
 
 	CPlayerPed *player = FindPlayerPed();
-	if (IsWeaponType(fixedWeapon)) {
+	if (fixedWeapon < WEAPONTYPE_TOTALWEAPONS) {
 		InterruptedWeaponSelected = player->GetWeapon()->m_eWeaponType;
 #if (defined FIX_BUGS || !defined GTA_PS2)
 		player->RemoveWeaponAnims(InterruptedWeaponSelected, -1000.0f);
@@ -406,10 +406,10 @@ CDarkel::DealWithWeaponChangeAtEndOfFrenzy()
 	else
 		fixedWeapon = (eWeaponType)WeaponType;
 
-	if (IsWeaponType(fixedWeapon) && InterruptedWeaponType)
+	if (fixedWeapon < WEAPONTYPE_TOTALWEAPONS && InterruptedWeaponType)
 		CModelInfo::GetModelInfo(CWeaponInfo::GetWeaponInfo((eWeaponType)InterruptedWeaponType)->m_nModelId)->RemoveRef();
 
-	if (IsWeaponType(fixedWeapon)) {
+	if (fixedWeapon < WEAPONTYPE_TOTALWEAPONS) {
 		int slot = CWeaponInfo::GetWeaponInfo(fixedWeapon)->m_nWeaponSlot;
 		FindPlayerPed()->RemoveWeaponModel(FindPlayerPed()->GetWeapon(slot).GetInfo()->m_nModelId);
 		FindPlayerPed()->GetWeapon(slot).m_eWeaponType = WEAPONTYPE_UNARMED;
@@ -421,7 +421,7 @@ CDarkel::DealWithWeaponChangeAtEndOfFrenzy()
 	}
 
 	CPlayerPed* player = FindPlayerPed();
-	if (IsWeaponType(fixedWeapon)) {
+	if (fixedWeapon < WEAPONTYPE_TOTALWEAPONS) {
 		player->m_nSelectedWepSlot = CWeaponInfo::GetWeaponInfo((eWeaponType)InterruptedWeaponSelected)->m_nWeaponSlot;
 		player->GiveWeapon((eWeaponType)InterruptedWeaponType, AmmoInterruptedWeapon, true);
 	}

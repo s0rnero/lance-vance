@@ -1956,16 +1956,15 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	TargetCoors.z += odWalkDuckOffset;
 #endif
 	Source = TargetCoors - Front*CamDist;
-#ifdef VICEEXT_AIM_CLASSICAXIS
+#ifdef VICEEXT_SWIMMING
 	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->bTouchingWater) {
 		float odWl = 0.0f;
 		if (CWaterLevel::GetWaterLevelNoWaves(Source.x, Source.y, Source.z, &odWl)
 		 && Source.z < odWl + 0.6f) {
 			RwCameraSetNearClipPlane(Scene.camera, 0.2f);
-			// Se conserva solo la distancia horizontal: `dist * (maxDist/length)`.
 			float odHoriz = (TargetCoors - Source).Magnitude2D();
 			CVector odFwd2D(Front.x, Front.y, 0.0f);
-			odFwd2D.Normalise2D();   // `Normalise2D` (Vector.h:28), que es 2D como el vector
+			odFwd2D.Normalise2D();
 			Source = TargetCoors - odFwd2D * odHoriz;
 			Source.z = odWl + 0.6f;
 		}

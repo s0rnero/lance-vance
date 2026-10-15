@@ -173,13 +173,6 @@ CCopPed::SetArrestPlayer(CPed *player)
 	m_pSeekTarget = player;
 	m_pSeekTarget->RegisterReference((CEntity**) &m_pSeekTarget);
 	SetCurrentWeapon(WEAPONTYPE_COLT45);
-	// Sección 2 / P1: instrumentación de línea base ("busted").
-	{
-		char line[96];
-		snprintf(line, sizeof(line), "WANTEDCOP arrest-begin tag=%u lvl=%d t=%u", WantedTraceTag(),
-			FindPlayerPed()->m_pWanted->GetWantedLevel(), (unsigned)CTimer::GetTimeInMilliseconds());
-		ODTRACES(line);
-	}
 	if (player->InVehicle()) {
 		player->m_pMyVehicle->m_nNumGettingIn = 0;
 		player->m_pMyVehicle->m_nGettingInFlags = 0;
@@ -262,33 +255,6 @@ CCopPed::SetPursuit(bool ignoreCopLimit)
 				m_bIsInPursuit = true;
 				++wanted->m_CurrentCops;
 				wanted->m_pCops[i] = this;
-				// Sección 2 / P1: instrumentación de línea base. En una zona de
-				// "call off chase" (los talleres: Garages.cpp -> CWorld::CallOff-
-				// ChaseForArea) el motor une y suelta al policía en CADA frame:
-				// medido en partida real del 20/09, ~60 líneas/s. Se filtra a una
-				// por segundo y se cuenta la ráfaga (burst=N = uniones habidas
-				// desde la última línea impresa).
-				{
-					static uint32 lastJoinTrace = 0;
-					static int joinBurst = 0;
-					uint32 now = CTimer::GetTimeInMilliseconds();
-					// El reloj del motor RETROCEDE al cargar partida (CTimer viene del
-					// guardado): sin reanclar, `now >= lastJoinTrace + 1000` es falso
-					// durante minutos y la traza se queda muda (medido el 20/09: la sesión
-					// que empezó cargando partida no volvió a imprimir ni una línea).
-					if (now < lastJoinTrace)
-						lastJoinTrace = 0;
-					++joinBurst;
-					if (now >= lastJoinTrace + 1000) {
-						char line[128];
-						snprintf(line, sizeof(line), "WANTEDCOP join tag=%u slot=%d lvl=%d cops=%d/%d burst=%d t=%u", WantedTraceTag(), i,
-							wanted->GetWantedLevel(), (int)wanted->m_CurrentCops, (int)wanted->m_MaxCops, joinBurst,
-							(unsigned)now);
-						ODTRACES(line);
-						joinBurst = 0;
-						lastJoinTrace = now;
-					}
-				}
 				break;
 			}
 		}

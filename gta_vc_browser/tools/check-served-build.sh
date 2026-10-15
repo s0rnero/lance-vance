@@ -161,7 +161,6 @@ MARCAS=(
   "P4 kind=hud_cross schema=1|P4  plan41: reticula con la ley de apuntado (draw/pc/law/lock)|wasm"
   "P4 kind=turners schema=1|P4  plan41: intermitentes (motivo/steer/anchorErr)|wasm"
   "P4 kind=polbike schema=1|P4  plan41: moto policial con un solo ocupante (occ/passengers)|wasm"
-  "P4 kind=limits schema=1|P4  plan9.0: limites del mod (numpeds/numvehicles/mult)|wasm"
   "P4 kind=radio2 schema=1|P4  plan9.1(1)+10.0-C: icono de emisora al cambiar (emisora/icono)|wasm"
   "P4 kind=shift schema=1|P4 plan9.1(3): Shift+tecla en avisos (dos iconos)|wasm"
   "P4 kind=cheat2 schema=1|P4  plan9.1(4)+10.0-C: trucos nuevos del mod (cheat/efecto)|wasm"
@@ -172,7 +171,6 @@ MARCAS=(
   "P4 kind=ini schema=1|P4  plan9.2: opciones del features.ini del mod (opt/flag/a/val)|wasm"
   "P4 kind=inifile schema=1|11  familia 11: su features.ini leido al arrancar (clave/ini/aplica/origen/impl)|wasm"
   "P4 kind=worlddata schema=1|7   familia 7: mundo del mod ingerido (zonas de oclusion del occlu.ipl)|wasm"
-  "P4 kind=modscript schema=1|13  script del mod: los opcodes propios 0x0FA0-0x0FA9 en el interprete|wasm"
   "ViceExtRotateSteeringWheel|plan12.0: volante que gira (v2.5) - la pieza del mod sigue la direccion|wasm"
   "steeringwheel|plan12.0: volante que gira (v2.5): el dummy que traen 18 modelos del gta3.img|wasm"
   "P4 kind=wheelrot schema=1|P4  plan12.0: volante que gira (v2.5): angulo aplicado vs direccion|wasm"
@@ -183,6 +181,9 @@ MARCAS=(
   "P4 kind=distlights schema=1|P4  plan12.0: luces lejanas (v2.6): edificios y dummies con efectos 2D|wasm"
   "P4 kind=gangaim schema=1|P4  plan12.0: punteria de la IA (v1.0/2506): peds 73 y polis del mod|wasm"
   "P4 kind=partcfg schema=1|3/5 particulas: particle.cfg con el tipo resuelto por NOMBRE|wasm"
+  "VEX limits|13.0 T1: limits.ini del mod leido al arrancar (pools)|wasm"
+  "VEX ini|13.0 T1: features.ini del mod leido al arrancar|wasm"
+  "VEX scm|13.0 T1: opcodes propios del main.scm del mod (4000-4099)|wasm"
 )
 
 # Datos del mod que tienen que estar SERVIDOS (no basta con que el motor sepa
@@ -194,6 +195,7 @@ DATOS=(
   "data/main.scm|1191180|41a932cc593e|13  script del mod (antes se servia el vanilla, 1.269.133 B)"
   "models/coll/newWeapons.col|224|-|13  colisiones de las armas nuevas (antes no estaba)"
   "ViceExtended/features.ini|567|bf884c129adb|11  features.ini del mod: ahora lo LEE el motor (familia 11)"
+  "ViceExtended/limits.ini|237|94fa49646fe8|13.0 T1 limits.ini del mod (pools de NUMPEDS, NUMVEHICLES...)"
   "data/object.dat|26779|22b718c7796c|7  mundo del mod servido (familia 7)"
   "data/occlu.ipl|21945|e46192296f2e|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ide|111|b82b774a8958|7  mundo del mod servido (familia 7)"

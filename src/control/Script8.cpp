@@ -28,10 +28,7 @@
 #include "WaterLevel.h"
 #include "World.h"
 #include "Zones.h"
-#ifdef VICEEXT_MOD_SCRIPT
-#include "Timer.h"
-#include "ondemand.h" // web: ODTRACES -> odtrace.log (familia 13)
-#endif
+#include "ondemand.h"
 
 int8 CRunningScript::ProcessCommands1400To1499(int32 command)
 {
@@ -621,153 +618,109 @@ int8 CRunningScript::ProcessCommands1400To1499(int32 command)
 	return -1;
 }
 
-#ifdef VICEEXT_MOD_SCRIPT
-
-// Vice Extended (familia 13): los 10 opcodes propios de su `main.scm` (comandos
-// 4000-4009 = `0x0FA0`-`0x0FA9`). Aridad y semantica medidas en su `ViceEx.exe`
-// (dispatcher `CRunningScript::ProcessCommands4000To4099`): su script los usa 206
-// veces y sin ellos la pila de parametros se desincroniza. El estado va en
-// estaticos de este fichero a proposito: anadir campos a `CRunningScript`
-// cambiaria el tamano de la clase y el formato de guardado.
-
-#define VICEEXT_MODSCRIPT_SLOTS 512
-static uint8 s_odModScriptPedVariant[VICEEXT_MODSCRIPT_SLOTS];
-static int32 s_odModScriptSelectedPed = -1;
-static uint8 s_odModScriptFlagGlobal = 0;  // el byte global 0x93763D de su fork
-static uint8 s_odModScriptFlagSaved = 0;   // su 0xD19CAA
-static uint8 s_odModScriptFlags = 0;       // su `[script + 0x79]`
-static uint16 s_odModScriptFlagTicks = 0;  // su `[script + 0x80]` (contador)
-static uint8 s_odModScriptFlagMode = 0;    // su `[script + 0x82]` (0 = identidad; hoy nadie lo pone)
-static int32 s_odModScriptValue4008 = 0;
-
-#define VICEEXT_MODSCRIPT_P4_EMIT(odBuf, ...) do { int odR = snprintf(odBuf, sizeof(odBuf), __VA_ARGS__); if (odR < 0 || odR >= (int)sizeof(odBuf)) { char odOf[220]; snprintf(odOf, sizeof odOf, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odBuf), odR); ODTRACES(odOf); } else { ODTRACES(odBuf); } } while (0)
-
-// Su `sub_48B120`: escribe, quita (AND) o anade (OR) un byte de flags con un
-// contador de ticks y un modo (identidad o inverso). Se replica su forma exacta:
-// ticks 0 escribe; 1..8 hace AND (y con 1 lo deja a 0); 0x15..0x1C hace OR (y con
-// 0x15 lo deja a 0); el resto no toca nada. Descuenta un tick por llamada.
-static void
-ViceExtModScriptApplyFlag(uint8 value)
-{
-	uint16 ticks = s_odModScriptFlagTicks;
-	uint8 v = s_odModScriptFlagMode ? (uint8)(value ^ 1) : value;
-
-	if (ticks == 0) {
-		s_odModScriptFlags = v;
-		return;
-	}
-
-	if (ticks > 8) {
-		if ((uint16)(ticks - 0x15) > 7)
-			return;
-		s_odModScriptFlags |= v;
-		if (ticks == 0x15) {
-			s_odModScriptFlagTicks = 0;
-			return;
-		}
-	}
-	else {
-		s_odModScriptFlags &= v;
-		if (ticks == 1) {
-			s_odModScriptFlagTicks = 0;
-			return;
-		}
-	}
-
-	s_odModScriptFlagTicks = ticks - 1;
-}
-
+#ifdef VICEEXT_OPCODES
 int8 CRunningScript::ProcessCommands4000To4099(int32 command)
 {
-	char odt[256];
-
-	switch (command) {
-	case COMMAND_VICEEXT_SET_PED_SKIN:
-	{
-		CollectParameters(&m_nIp, 2);
-		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
-		script_assert(pPed);
-		int32 slot = ScriptParams[0] & 0xFFFF;
-		int32 variant = ScriptParams[1];
-		if (slot >= 0 && slot < VICEEXT_MODSCRIPT_SLOTS)
-			s_odModScriptPedVariant[slot] = (uint8)variant;
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA0 cmd=%d ped=%d var=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)slot, (int)variant);
-		return 0;
+#ifdef __EMSCRIPTEN__
+	static bool seen[100];
+	if (command - 4000 >= 0 && command - 4000 < 100 && !seen[command - 4000]) {
+		seen[command - 4000] = true;
+		char t[64];
+		snprintf(t, sizeof t, "VEX scm op=%04X", command);
+		ODTRACES(t);
 	}
-	case COMMAND_VICEEXT_GET_PED_SKIN:
-	{
-		CollectParameters(&m_nIp, 1);
-		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
-		script_assert(pPed);
-		int32 slot = ScriptParams[0] & 0xFFFF;
-		int32 variant = (slot >= 0 && slot < VICEEXT_MODSCRIPT_SLOTS) ? (int32)s_odModScriptPedVariant[slot] : 0;
-		ScriptParams[0] = variant;
-		StoreParameters(&m_nIp, 1);
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA1 cmd=%d ped=%d var=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)slot, (int)variant);
-		return 0;
-	}
-	case COMMAND_VICEEXT_SELECT_PED:
-	{
-		CollectParameters(&m_nIp, 2);
-		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
-		int32 on = ScriptParams[1] != 0;
-		// Su handler valida la generacion del handle contra el pool y guarda el
-		// INDICE; con on/off = 0 lo limpia a -1. `GetAt` ya valida la generacion.
-		s_odModScriptSelectedPed = (pPed != nil && on) ? (int32)(ScriptParams[0] & 0xFFFF) : -1;
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA2 cmd=%d on=%d sel=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)on, (int)s_odModScriptSelectedPed);
-		return 0;
-	}
-	case COMMAND_VICEEXT_AUTOSAVE:
-#ifdef VICEEXT_AUTOSAVE
-		// Su `DoAutoSave`: el port guarda por su propia via (ranura 9) cuando el
-		// script de mision termina, que es cuando su `main.scm` usa esto.
-		ViceExtAutosavePending = true;
 #endif
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA3 cmd=%d autosave=1", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command);
-		return 0;
-	case COMMAND_VICEEXT_SCRIPT_FLAG_OFF:
-		ViceExtModScriptApplyFlag(0);
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA4 cmd=%d flags=%d ticks=%d modo=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptFlags, (int)s_odModScriptFlagTicks, (int)s_odModScriptFlagMode);
-		return 0;
-	case COMMAND_VICEEXT_SCRIPT_FLAG_INVERT:
-		ViceExtModScriptApplyFlag(s_odModScriptFlagGlobal == 0 ? 1 : 0);
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA5 cmd=%d global=%d flags=%d ticks=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptFlagGlobal, (int)s_odModScriptFlags, (int)s_odModScriptFlagTicks);
-		return 0;
-	case COMMAND_VICEEXT_SCRIPT_FLAG_SAVE:
-		s_odModScriptFlagSaved = s_odModScriptFlagGlobal;
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA6 cmd=%d global=%d guardado=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptFlagGlobal, (int)s_odModScriptFlagSaved);
-		return 0;
-	case COMMAND_VICEEXT_SCRIPT_FLAG_RESTORE:
-		ViceExtModScriptApplyFlag(s_odModScriptFlagSaved);
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA7 cmd=%d guardado=%d flags=%d ticks=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptFlagSaved, (int)s_odModScriptFlags, (int)s_odModScriptFlagTicks);
-		return 0;
-	case COMMAND_VICEEXT_SCRIPT_VALUE:
-		// Su `sub_5E1070(param)`: escribe dos globales suyos (0xCF8474/0xCF8478)
-		// con una formula de tiempo/aleatorio que todavia no esta identificada. Se
-		// guarda el parametro y se traza; no se inventa destino.
-		CollectParameters(&m_nIp, 1);
-		s_odModScriptValue4008 = ScriptParams[0];
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA8 cmd=%d val=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptValue4008);
-		return 0;
-	case COMMAND_VICEEXT_VEHICLE_HEADING_DEG:
+	switch (command) {
+	case COMMAND_SET_CHAR_CLOTHING_VARIATION:
 	{
-		// Su handler escribe `veh[+0x300] = grados * PI/180`, que en este motor es
-		// el rumbo del vehiculo (misma cuenta que COMMAND_SET_CAR_HEADING).
+		CollectParameters(&m_nIp, 2);
+#ifdef VICEEXT_PED_VARIATIONS
+		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
+		script_assert(pPed);
+		int curVariation = ScriptParams[1];
+
+		CPedModelInfo* modelInfo = (CPedModelInfo*)CModelInfo::GetModelInfo(pPed->GetModelIndex());
+		RwTexDictionary* playerTxd = CTxdStore::GetSlot(modelInfo->GetTxdSlot())->texDict;
+		if (playerTxd) {
+			char sTemp[16];
+
+			if (curVariation == 0)
+				sprintf(sTemp, "%s", modelInfo->GetModelName());
+			else
+				sprintf(sTemp, "%s_%i", modelInfo->GetModelName(), curVariation);
+
+			pPed->texClothingVariation = RwTexDictionaryFindNamedTexture(playerTxd, sTemp);
+			pPed->curClothingVariation = curVariation;
+			modelInfo->currentClothingVariation = curVariation;
+
+			CWorld::Players[0].m_pSkinTexture = pPed->texClothingVariation;
+		}
+#endif
+		return 0;
+	}
+	case COMMAND_GET_CHAR_CLOTHING_VARIATION:
+	{
+		CollectParameters(&m_nIp, 1);
+#ifdef VICEEXT_PED_VARIATIONS
+		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
+		script_assert(pPed);
+		ScriptParams[0] = pPed->curClothingVariation;
+#else
+		ScriptParams[0] = 0;
+#endif
+		StoreParameters(&m_nIp, 1);
+		return 0;
+	}
+	case COMMAND_SET_BLIP_ROUTE:
+		CollectParameters(&m_nIp, 2);
+#ifdef VICEEXT_GPS
+		CRadar::SetBlipRoute(ScriptParams[0], ScriptParams[1]);
+#endif
+		return 0;
+	case COMMAND_DO_AUTO_SAVE:
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+		DoAutoSave();
+#endif
+		return 0;
+	case COMMAND_IS_AUTO_SAVE_IN_PROGRESS:
+		UpdateCompareFlag(false);
+		return 0;
+	case COMMAND_GET_IS_AUTOSAVE_OFF:
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+		UpdateCompareFlag(!FrontEndMenuManager.m_PrefsAutosave);
+#else
+		UpdateCompareFlag(true);
+#endif
+		return 0;
+	case COMMAND_REQUEST_AUTO_SAVE:
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+		bIsAutoSaveRequested = FrontEndMenuManager.m_PrefsAutosave;
+#endif
+		return 0;
+	case COMMAND_IS_AUTO_SAVE_REQUESTED:
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+		UpdateCompareFlag(bIsAutoSaveRequested);
+#else
+		UpdateCompareFlag(false);
+#endif
+		return 0;
+	case COMMAND_SET_NEXT_NEWSPAPER:
+		CollectParameters(&m_nIp, 1);
+#ifdef VICEEXT_UNIQUE_NEWSPAPERS
+		CRubbish::SetNextNewspaper(ScriptParams[0]);
+#endif
+		return 0;
+	case COMMAND_SET_CAR_STEER_ANGLE:
+	{
 		CollectParameters(&m_nIp, 2);
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetAt(ScriptParams[0]);
 		script_assert(pVehicle);
-		float grados = *(float*)&ScriptParams[1];
-		pVehicle->SetHeading(DEGTORAD(grados));
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA9 cmd=%d veh=%d grados=%.4f rumbo=%.4f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)(ScriptParams[0] & 0xFFFF), grados, pVehicle->GetForward().Heading());
+		pVehicle->m_fSteerAngle = DEGTORAD(*(float*)&ScriptParams[1]);
 		return 0;
 	}
 	default:
-		// Comando desconocido dentro de 4000-4099: su aridad se desconoce, asi que
-		// se deja constancia en la traza (no hay nada que consumir con seguridad).
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x%04X cmd=%d desconocido=1", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)command, (int)command);
 		script_assert(0);
 	}
 	return -1;
 }
-
 #endif

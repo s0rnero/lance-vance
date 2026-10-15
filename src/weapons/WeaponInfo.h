@@ -31,12 +31,10 @@ enum
 };
 
 class CWeaponInfo {
-	// WEAPONTYPE_TOTALALLTYPES (no TOTALWEAPONS): las armas nuevas del mod
-	// (48+) también indexan estas tablas.
-	static char ms_aWeaponNames[WEAPONTYPE_TOTALALLTYPES][32];
+	static char ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32];
 public:
-	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALALLTYPES];
-	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALALLTYPES];
+	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS];
+	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS];
 
 	eWeaponFire m_eWeaponFire;
 	float m_fRange;

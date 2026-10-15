@@ -16,20 +16,6 @@
 int32 CWanted::MaximumWantedLevel = 6;
 int32 CWanted::nMaximumWantedLevel = 9600;
 
-// ---------------------------------------------------------------------------
-// Sección 2 / P1 «esconderse de la policía»: INSTRUMENTACIÓN de la línea base.
-//
-// El plan pide, antes de tocar el sistema, cuántos segundos tarda en bajar el
-// nivel de búsqueda sin que te vean y qué hacen los CCopPed mientras tanto.
-// Vanilla no publica nada de eso, así que aquí se imprime una línea por segundo
-// (printf -> consola de la página y `window.__vcLog`, que es de donde tira la
-// sonda tools/hidecops-smoke-test.mjs).
-//
-// IMPORTANTE: esto NO cambia ninguna decisión del motor (solo lee estado).
-// Cuando el bloque esté implementado, la misma traza se queda detrás de
-// VICEEXT_HIDE_COPS como evidencia de la mecánica nueva.
-// ---------------------------------------------------------------------------
-
 // Radio de "ve al jugador": mismo orden de magnitud que el alcance útil de un
 // arma corta y bastante más que los 18 m del chequeo de presencia vanilla, para
 // distinguir "hay policía cerca" de "el policía te está viendo".
@@ -154,90 +140,6 @@ WantedCopSeesPlayer(CPed *cop, const CVector &playerPos)
 			return false;   // lo tapa un edificio/objeto
 	}
 	return true;
-}
-
-// Cuántos segundos llevas sin que nadie te vea y si hay búsqueda en curso. Con
-// el bloque apagado esos campos no existen: la traza informa unseen=0 hiding=0,
-// que es justo la línea base (vanilla no tiene ni el concepto).
-static unsigned
-WantedTraceUnseenFor(CWanted *wanted)
-{
-#ifdef VICEEXT_HIDE_COPS
-	if (wanted->m_nHiddenSince == 0)
-		return 0;
-	return (CTimer::GetTimeInMilliseconds() - wanted->m_nHiddenSince) / 1000;
-#else
-	(void)wanted;
-	return 0;
-#endif
-}
-
-static int
-WantedTraceHiding(CWanted *wanted)
-{
-#ifdef VICEEXT_HIDE_COPS
-	return wanted->m_bHiding ? 1 : 0;
-#else
-	(void)wanted;
-	return 0;
-#endif
-}
-
-// Una línea por segundo: nivel, chaos, cuántos policías persiguen, cuántos hay
-// en 18 m (el radio que usa el propio Update()), cuántos te ven y qué
-// objetivo (m_objective) lleva cada perseguidor. Va por ODTRACES (no printf):
-// el stdout de C va "a bloques" y la sonda perdía la mayor parte de las líneas.
-static void
-WantedTraceState(CWanted *wanted)
-{
-	// El bloque de 1 s de Update() se ejecuta EN CADA FRAME mientras haya
-	// policía a menos de 18 m (m_nLastUpdateTime solo se refresca cuando la vía
-	// está despejada), así que aquí se filtra a una línea por segundo.
-	//
-	// El reloj del motor RETROCEDE al cargar partida (CTimer viene del guardado:
-	// medido el 20/09, de t≈4.4M a t≈3.66M). Sin reanclar, `now < lastTrace+1000`
-	// se cumple durante minutos y la traza se queda MUDA (fue justo lo que pasó:
-	// la sesión cargada no imprimió ni una línea `WANTED tag=`).
-	static uint32 lastTrace = 0;
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	if (now < lastTrace)
-		lastTrace = 0;
-	if (now < lastTrace + 1000)
-		return;
-	lastTrace = now;
-
-	CVector playerPos = FindPlayerCoors();
-	int pursuing = 0;
-	int seeing = 0;
-	float nearest = -1.0f;
-	char objectives[64];
-	int len = 0;
-
-	objectives[0] = '\0';
-	for (int i = 0; i < ARRAY_SIZE(wanted->m_pCops); i++) {
-		CCopPed *cop = wanted->m_pCops[i];
-		if (!cop)
-			continue;
-		pursuing++;
-		if (len < (int)sizeof(objectives) - 4)
-			len += snprintf(objectives + len, sizeof(objectives) - len, "%d,", (int)cop->m_objective);
-		float dist = (cop->GetPosition() - playerPos).Magnitude();
-		if (nearest < 0.0f || dist < nearest)
-			nearest = dist;
-		if (WantedCopSeesPlayer(cop, playerPos))
-			seeing++;
-	}
-
-	// `veh`/`spd` no son del sistema de búsqueda: los necesita la sonda para
-	// saber si el jugador va a pie (te detienen) o conduciendo (no pueden).
-	CVehicle *playerVeh = FindPlayerVehicle();
-	char line[240];
-	snprintf(line, sizeof(line), "WANTED tag=%u t=%u lvl=%d chaos=%d minlvl=%d cops=%d/%d listed=%d presence18=%d seeing=%d near=%.1f unseen=%u hiding=%d veh=%d spd=%.1f objs=%s",
-		WantedTraceTag(), (unsigned)CTimer::GetTimeInMilliseconds(), wanted->GetWantedLevel(), wanted->m_nChaos,
-		wanted->m_nMinWantedLevel, (int)wanted->m_CurrentCops, (int)wanted->m_MaxCops, pursuing,
-		CWanted::WorkOutPolicePresence(playerPos, 18.0f), seeing, nearest, WantedTraceUnseenFor(wanted), WantedTraceHiding(wanted),
-		playerVeh ? 1 : 0, playerVeh ? playerVeh->m_vecMoveSpeed.Magnitude() : 0.0f, objectives);
-	ODTRACES(line);
 }
 
 void
@@ -603,14 +505,8 @@ CWanted::UpdateWantedLevel()
 		m_RoadblockDensity = 30;
 	}
 
-	if (CurrWantedLevel != m_nWantedLevel) {
-		// Sección 2 / P1: traza de línea base (el momento exacto del cambio).
-		char line[96];
-		snprintf(line, sizeof(line), "WANTEDCHANGE tag=%u %d->%d chaos=%d t=%u", WantedTraceTag(), CurrWantedLevel,
-			m_nWantedLevel, m_nChaos, (unsigned)CTimer::GetTimeInMilliseconds());
-		ODTRACES(line);
+	if (CurrWantedLevel != m_nWantedLevel)
 		m_nLastWantedLevelChange = CTimer::GetTimeInMilliseconds();
-	}
 }
 
 int32
@@ -819,9 +715,6 @@ CWanted::Update(void)
 				UpdateWantedLevel();
 			}
 		}
-		// Sección 2 / P1: instrumentación de línea base (una línea por segundo,
-		// con cualquier nivel: es lo que se quiere medir).
-		WantedTraceState(this);
 		UpdateCrimesQ();
 		bool orderMessedUp = false;
 		int currCopNum = 0;
@@ -863,14 +756,6 @@ CWanted::Update(void)
 void
 CWanted::ResetPolicePursuit(void)
 {
-	// Sección 2 / P1: en vanilla esta es la ÚNICA vía de escape sin morir o ser
-	// detenido: la llama el respray de un taller (Garages.cpp) y CWanted::Reset().
-	{
-		char line[96];
-		snprintf(line, sizeof(line), "WANTEDPURGE tag=%u pursuit-cleared cops=%d lvl=%d chaos=%d t=%u", WantedTraceTag(),
-			(int)m_CurrentCops, m_nWantedLevel, m_nChaos, (unsigned)CTimer::GetTimeInMilliseconds());
-		ODTRACES(line);
-	}
 	for(int i = 0; i < ARRAY_SIZE(m_pCops); i++) {
 		CCopPed *cop = m_pCops[i];
 		if (!cop)
@@ -915,14 +800,6 @@ CWanted::UpdateCrimesQ(void)
 void
 CWanted::Suspend(void)
 {
-	// Sección 2 / P1: Suspend() = garaje/guardado de misión: guarda el nivel
-	// mínimo y pone el nivel a 0.
-	{
-		char line[96];
-		snprintf(line, sizeof(line), "WANTEDSUSPEND tag=%u lvl=%d chaos=%d t=%u", WantedTraceTag(), m_nWantedLevel, m_nChaos,
-			(unsigned)CTimer::GetTimeInMilliseconds());
-		ODTRACES(line);
-	}
 	CStats::WantedStarsEvaded += m_nWantedLevel;
 	m_nMinChaos = m_nChaos;
 	m_nMinWantedLevel = m_nWantedLevel;

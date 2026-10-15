@@ -5,62 +5,169 @@
 #define VANILLA_DEFINES
 #endif
 
+#define VICEEXT_VICE_EXTENDED
+
+#ifdef VICEEXT_VICE_EXTENDED
+enum Config {
+	NUMPLAYERS = 1,
+
+	NUMCDIMAGES = 6,
+	MAX_CDIMAGES = 32,
+	MAX_CDCHANNELS = 5,
+
+	MODELINFOSIZE = 10000,
+	TXDSTORESIZE = 1500,
+	COLSTORESIZE = 100,
+	EXTRADIRSIZE = 512,
+	CUTSCENEDIRSIZE = 512,
+
+	SIMPLEMODELSIZE = 10000,
+	TIMEMODELSIZE = 10000,
+	CLUMPMODELSIZE = 100,
+	WEAPONMODELSIZE = 77,
+	PEDMODELSIZE = 130,
+	VEHICLEMODELSIZE = 210,
+	TWODFXSIZE = 3000,
+
+	MAXVEHICLESLOADED = 50,
+
+	NUMOBJECTINFO = 210,
+
+	NUMCUTSCENEOBJECTS = 50,
+
+	NUMANIMBLOCKS = 40,
+	NUMANIMATIONS = 512,
+
+	NUMTEMPOBJECTS = 40,
+
+	NUM_PATHNODES = 9650,
+	NUM_CARPATHLINKS = 3500,
+	NUM_MAPOBJECTS = 1250,
+	NUM_PATHCONNECTIONS = 20400,
+	NUM_WANTEDPATHNODES = 20,
+	NUM_WANTEDPATHS = 100,
+
+	NUMALPHALIST = 20,
+	NUMBOATALPHALIST = 20,
+	NUMALPHAENTITYLIST = 2000,
+	NUMALPHAUNTERWATERENTITYLIST = 30,
+	NUMCOLCACHELINKS = 50,
+	NUMREFERENCES = 800,
+
+	NUMAUDIOZONES = 14,
+	NUMINFOZONES = 169,
+	NUMMAPZONES = 39,
+	NUMNAVIGZONES = 20,
+
+	NUMATTRIBZONES = 704,
+
+	NUMOCCLUSIONVOLUMES = 350,
+	NUMACTIVEOCCLUDERS = 48,
+
+	PATHNODESIZE = 4500,
+
+	NUMWEATHERS = 7,
+	NUMHOURS = 24,
+
+	NUMEXTRADIRECTIONALS = 4,
+	NUMANTENNAS = 8,
+	NUMCORONAS = 2000,
+	NUMPOINTLIGHTS = 32,
+	NUM3DMARKERS = 32,
+	NUMBRIGHTLIGHTS = 32,
+	NUMSHINYTEXTS = 32,
+	NUMMONEYMESSAGES = 16,
+	NUMPICKUPMESSAGES = 16,
+	NUMBULLETTRACES = 16,
+	NUMMBLURSTREAKS = 4,
+	NUMSKIDMARKS = 32,
+
+	NUMONSCREENCLOCKS = 1,
+	NUMONSCREENCOUNTERS = 3,
+	NUMRADARBLIPS = 300,
+	NUMGENERALPICKUPS = 320,
+	NUMSCRIPTEDPICKUPS = 100,
+	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
+	NUMCOLLECTEDPICKUPS = 100,
+	NUMPACMANPICKUPS = 256,
+	NUMEVENTS = 64,
+
+	NUM_CARGENS = 185,
+
+	NUM_PATH_NODES_IN_AUTOPILOT = 8,
+
+	NUM_ACCIDENTS = 20,
+	NUM_FIRES = 40,
+	NUM_GARAGES = 35,
+	NUM_PROJECTILES = 32,
+
+	NUM_GLASSPANES = 45,
+	NUM_GLASSENTITIES = 32,
+	NUM_WATERCANNONS = 3,
+
+	NUMPEDROUTES = 200,
+	NUMPHONES = 50,
+	NUMPEDGROUPS = 67,
+	NUMMODELSPERPEDGROUP = 16,
+	MAXZONEPEDSLOADED = 8,
+	NUMSHOTINFOS = 100,
+
+	NUMROADBLOCKS = 300,
+	NUM_SCRIPT_ROADBLOCKS = 16,
+
+	NUMVISIBLEENTITIES = 2000,
+	NUMINVISIBLEENTITIES = 150,
+
+	NUM_AUDIOENTITY_EVENTS = 4,
+	NUM_PED_COMMENTS_SLOTS = 20,
+
+	NUM_SOUND_QUEUES = 2,
+	NUM_AUDIOENTITIES = 250,
+
+	NUM_SCRIPT_MAX_ENTITIES = 40,
+
+	NUM_GARAGE_STORED_CARS = 4,
+
+	NUM_CRANES = 8,
+	NUM_ESCALATORS = 22,
+	NUM_WATER_CREATURES = 8,
+
+	NUM_EXPLOSIONS = 48,
+
+	NUM_SETPIECES = 96,
+	NUM_SHORTCUT_START_POINTS = 16
+};
+#else
 enum Config {
 	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
-	// Vice Extended añade 8 IMG propias (anims/generic/objects/peds/player/
-	// radar/vehicles/weapons) además de gta3.img. Con 8 el CdStreamAddImage
-	// petaba en el ASSERT; 12 deja margen. Coste: gOdLoose[] + un fd por imagen.
-	MAX_CDIMAGES = 12, // additional cdimages
+	MAX_CDIMAGES = 8, // additional cdimages
 	MAX_CDCHANNELS = 5,
 
-	// Vice Extended usa IDs por encima de 6500 (armas 6661-6669, coches
-	// 6500-6599). Sin subirlo, esos IDs caen fuera de ms_modelInfoPtrs y de
-	// ms_aInfoForModel: modelo/colisión nulos o tabla corrupta.
-	MODELINFOSIZE = 6700,	// 6500 vanilla, 4900 on PS2
-	// Contador de slots de TXD. El gta3.dir del port tiene 1389 entradas .txd
-	// tras importar weapons.img (pack 3) y newVehicles.img (pack 4): con 1385
-	// (que era el número justo antes de estos packs) `CTxdStore::AddTxdSlot`
-	// revienta con ASSERT(def) al cargar el directorio. Margen para los bloques
-	// que quedan (el resto de IMG del mod traen más TXD).
-	TXDSTORESIZE = 1500,
-	// 31 = las 30 .col de los mapas + GENERIC.COL (justo al límite). Vice
-	// Extended añade bryx.col, plusroad.col (objects.img) y newgen.col
-	// (COLFILE): 34 slots -> sin subirlo, CColStore::AddColSlot peta
-	// (ASSERT(def) en ColStore.cpp:48) al cargar el directorio de la IMG.
-	COLSTORESIZE = 48,
+	MODELINFOSIZE = 6500,	// 4900 on PS2
+	TXDSTORESIZE = 1385,
+	COLSTORESIZE = 31,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,
 
 	SIMPLEMODELSIZE = 3885,
 	TIMEMODELSIZE = 385,
 	CLUMPMODELSIZE = 5,
-	// 37 armas de serie (258-294) + las 10 del mod (6660-6669, sección `weap`
-	// de su default.ide). Sin este hueco, CModelInfo::AddWeaponModel no puede
-	// crear sus CWeaponModelInfo y SetWeaponInfo escribe sobre un puntero nulo.
-	WEAPONMODELSIZE = 47,
+	WEAPONMODELSIZE = 37,
 	PEDMODELSIZE = 130,
-	VEHICLEMODELSIZE = 130, // 110 vanilla; el mod añade coches
+	VEHICLEMODELSIZE = 110,
 	TWODFXSIZE = 1210,
 
 	MAXVEHICLESLOADED = 50, // 70 on mobile
 
 	NUMOBJECTINFO = 210,
 
-#define VICEEXT_LIMITS
-#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
-
 	// Pool sizes
 	NUMPTRNODES = 50000,
 	NUMENTRYINFOS = 3200,
-#ifdef VICEEXT_LIMITS
-	NUMPEDS = 140,
-	NUMVEHICLES = 130,
-#else
 	NUMPEDS = 140,
 	NUMVEHICLES = 110,
-#endif
 	NUMBUILDINGS = 7000,
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
@@ -69,14 +176,8 @@ enum Config {
 	NUMCOLMODELS = 4400,
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
-	// 29 bloques de serie (28 .ifp de gta3.img + ped.ifp) + 3 del mod
-	// (deagle/steyr/rocket) + margen. cuts.img no cuenta: CutsceneMgr carga
-	// un IFP a la vez.
-	NUMANIMBLOCKS = 40,
-	// 410 de serie + 38 nuevas del ped.ifp del mod + 24 de sus bloques de
-	// moto + 2 de buddy + 12 de deagle/steyr/rocket = 486, con margen para
-	// un bloque de cuts a la vez.
-	NUMANIMATIONS = 512,
+	NUMANIMBLOCKS = 35,
+	NUMANIMATIONS = 450,
 
 	NUMTEMPOBJECTS = 40,
 
@@ -179,6 +280,7 @@ enum Config {
 	NUM_SETPIECES = 96,
 	NUM_SHORTCUT_START_POINTS = 16
 };
+#endif
 
 // We don't expect to compile for PS2 or Xbox
 // but it might be interesting for documentation purposes
@@ -457,7 +559,6 @@ enum Config {
 #define VICEEXT_POLICE_BIKE
 #define VICEEXT_NO_WHEEL_PIERCE
 #define VICEEXT_SKIP_PHONE_CALL
-#define VICEEXT_MOD_SCRIPT		// familia 13: los 10 opcodes propios de su `main.scm` (comandos 4000-4009 = `0x0FA0`-`0x0FA9`) en el interprete
 #define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
 // D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
@@ -515,6 +616,29 @@ enum Config {
 #define VICEEXT_AIM_SENSITIVITY	// 2506 "Aim sensitivity fix"
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
 #define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
+#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
+
+#ifdef VICEEXT_VICE_EXTENDED
+#define VICEEXT_UTILS
+#define VICEEXT_OPCODES
+#define VICEEXT_IMPROVED_TECH_PART
+#define VICEEXT_DISPLAYED_COLLECTIBLES
+#define VICEEXT_SECOND_SAMPLE_BANK
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+#define VICEEXT_NEW_WEAPONS
+#ifdef VICEEXT_NEW_WEAPONS
+#define VICEEXT_WEAPON_RCGRENADE
+#define VICEEXT_WEAPON_AK47
+#define VICEEXT_WEAPON_M16
+#define VICEEXT_WEAPON_SHOTGUN2
+#define VICEEXT_WEAPON_UZIOLD
+#define VICEEXT_WEAPON_DEAGLE
+#define VICEEXT_WEAPON_BERETTA
+#define VICEEXT_WEAPON_STEYR
+#define VICEEXT_WEAPON_GRENADE_LAUNCHER
+#endif
+#endif
+#endif
 
 // Hud, frontend and radar
 #define PC_MENU

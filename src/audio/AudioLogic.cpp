@@ -4654,14 +4654,14 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			// 0/1 ROTAS de fabrica (ruido): vacias, manda la serie. 2 (recarga), 7/8 (disparo sin
 			// identificar) y 12 (nadar) no son disparo de estas armas: sin enganchar (ver plan).
 			// Beretta/Uziold/AK47/M16 suenan con su equivalente de serie (casos COLT45/UZI/M4).
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 			case WEAPONTYPE_SHOTGUN2:
 			case WEAPONTYPE_STEYR:
 			case WEAPONTYPE_GRENADE_LAUNCHER:
 			{
 				int32 odSfx;
 				switch (weapon->m_eWeaponType) {
-				case WEAPONTYPE_DESERT_EAGLE:	odSfx = SFX_VICEEX_05; break;
+				case WEAPONTYPE_DEAGLE:	odSfx = SFX_VICEEX_05; break;
 				case WEAPONTYPE_SHOTGUN2:		odSfx = SFX_VICEEX_03; break;
 				case WEAPONTYPE_STEYR:			odSfx = SFX_VICEEX_09; break;
 				case WEAPONTYPE_GRENADE_LAUNCHER:	odSfx = SFX_VICEEX_11; break;
@@ -4994,7 +4994,7 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			case WEAPONTYPE_COLT45:
 			case WEAPONTYPE_PYTHON:
 			case WEAPONTYPE_BERETTA:	// Vice Extended
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 				m_sQueueSample.m_nSampleIndex = SFX_PISTOL_RELOAD;
 				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_PISTOL_RELOAD) + RandomDisplacement(300);
 				break;

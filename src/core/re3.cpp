@@ -1,6 +1,7 @@
 #include <csignal>
 #define WITHWINDOWS
 #include "common.h"
+#include "ondemand.h"
 #if defined DETECT_JOYSTICK_MENU && defined XINPUT
 #include <xinput.h>
 #if !defined(PSAPI_VERSION) || (PSAPI_VERSION > 1)
@@ -204,6 +205,146 @@ mINI::INIFile ini(
 #endif
 );
 mINI::INIStructure cfg;
+
+#ifdef VICEEXT_VICE_EXTENDED
+mINI::INIFile limitsIni("ViceExtended/limits.ini");
+mINI::INIStructure limitsCfg;
+
+uint16 NUMPTRNODES = 50000;
+uint16 NUMENTRYINFOS = 3200;
+uint16 NUMPEDS = 140;
+uint16 NUMVEHICLES = 130;
+uint16 NUMBUILDINGS = 7000;
+uint16 NUMTREADABLES = 1;
+uint16 NUMOBJECTS = 460;
+uint16 NUMDUMMIES = 2340;
+uint16 NUMAUDIOSCRIPTOBJECTS = 192;
+uint16 NUMCOLMODELS = 4400;
+
+uint16 ReadAndGetGameLimit(const char* key, uint16 fallback)
+{
+	mINI::INIMap<std::string> section = limitsCfg.get("Limits");
+	if (section.has(key)) {
+		char* endPtr;
+		return strtol(section.get(key).c_str(), &endPtr, 0);
+	}
+	return fallback;
+}
+
+void ReadGameLimits(void)
+{
+	bool found = limitsIni.read(limitsCfg);
+	NUMPTRNODES = ReadAndGetGameLimit("NUMPTRNODES", NUMPTRNODES);
+	NUMENTRYINFOS = ReadAndGetGameLimit("NUMENTRYINFOS", NUMENTRYINFOS);
+	NUMPEDS = ReadAndGetGameLimit("NUMPEDS", NUMPEDS);
+	NUMVEHICLES = ReadAndGetGameLimit("NUMVEHICLES", NUMVEHICLES);
+	NUMBUILDINGS = ReadAndGetGameLimit("NUMBUILDINGS", NUMBUILDINGS);
+	NUMTREADABLES = ReadAndGetGameLimit("NUMTREADABLES", NUMTREADABLES);
+	NUMOBJECTS = ReadAndGetGameLimit("NUMOBJECTS", NUMOBJECTS);
+	NUMDUMMIES = ReadAndGetGameLimit("NUMDUMMIES", NUMDUMMIES);
+	NUMAUDIOSCRIPTOBJECTS = ReadAndGetGameLimit("NUMAUDIOSCRIPTOBJECTS", NUMAUDIOSCRIPTOBJECTS);
+	NUMCOLMODELS = ReadAndGetGameLimit("NUMCOLMODELS", NUMCOLMODELS);
+#ifdef __EMSCRIPTEN__
+	char t[200];
+	snprintf(t, sizeof t, "VEX limits ini=%d ptr=%d entry=%d peds=%d veh=%d bld=%d tread=%d obj=%d dummy=%d audio=%d col=%d",
+		found ? 1 : 0, NUMPTRNODES, NUMENTRYINFOS, NUMPEDS, NUMVEHICLES, NUMBUILDINGS, NUMTREADABLES,
+		NUMOBJECTS, NUMDUMMIES, NUMAUDIOSCRIPTOBJECTS, NUMCOLMODELS);
+	ODTRACES(t);
+#endif
+}
+#endif
+
+#ifdef VICEEXT_FEATURES_INI
+mINI::INIFile featuresIni("ViceExtended/features.ini");
+mINI::INIStructure featuresCfg;
+
+uint16 ReadAndGetFeature(const char* key)
+{
+	mINI::INIMap<std::string> section = featuresCfg.get("Features");
+	if (section.has(key)) {
+		char* endPtr;
+		return strtol(section.get(key).c_str(), &endPtr, 0);
+	}
+	return 0;
+}
+
+CRGBA ReadAndGetWaypointColor(const char* key)
+{
+	CRGBA color = CRGBA(180, 24, 24, 255);
+
+	mINI::INIMap<std::string> section = featuresCfg.get("Features");
+	if (section.has(key)) {
+		uint32 red, green, blue;
+		sscanf(section.get(key).c_str(), "%i, %i, %i", &red, &green, &blue);
+		color = CRGBA(red, green, blue, 255);
+		return color;
+	}
+	return color;
+}
+
+bool bVehiclesDontCatchFireWhenTurningOver;
+bool bHealthRegenerationUpToHalf;
+bool bWantedStarsHideOnScreenWhenThereIsNoSearch;
+bool bRemoveMoneyZerosInTheHud;
+bool bPlayerDoesntBounceAwayFromMovingCar;
+bool bStandardCarsUseTurnSignals;
+bool bCameraShakeInVehicleAtHighSpeed;
+bool bMilitaryFiringFromTankAtPlayer;
+bool bDisableBulletTraces;
+CRGBA WaypointColor = CRGBA(180, 24, 24, 255);
+#ifdef VICEEXT_DISTANT_LIGHTS
+bool bEnableDistantLights;
+#endif
+bool bRecoilWhenFiring;
+#ifdef VICEEXT_CLIMBING
+bool bEnableClimbing;
+#endif
+#ifdef VICEEXT_SWIMMING
+bool bEnableSwimming;
+#endif
+#ifdef VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
+bool bRocketLauncherThirdPersonAiming;
+#endif
+bool bMirrorModeByDefault;
+
+void ReadFeatures(void)
+{
+	bool found = featuresIni.read(featuresCfg);
+	bVehiclesDontCatchFireWhenTurningOver = ReadAndGetFeature("VehiclesDontCatchFireWhenTurningOver");
+	bHealthRegenerationUpToHalf = ReadAndGetFeature("HealthRegenerationUpToHalf");
+	bWantedStarsHideOnScreenWhenThereIsNoSearch = ReadAndGetFeature("WantedStarsHideOnScreenWhenThereIsNoSearch");
+	bRemoveMoneyZerosInTheHud = ReadAndGetFeature("RemoveMoneyZerosInTheHud");
+	bPlayerDoesntBounceAwayFromMovingCar = ReadAndGetFeature("PlayerDoesntBounceAwayFromMovingCar");
+	bStandardCarsUseTurnSignals = ReadAndGetFeature("StandardCarsUseTurnSignals");
+	bCameraShakeInVehicleAtHighSpeed = ReadAndGetFeature("CameraShakeInVehicleAtHighSpeed");
+	bMilitaryFiringFromTankAtPlayer = ReadAndGetFeature("MilitaryFiringFromTankAtPlayer");
+	bDisableBulletTraces = ReadAndGetFeature("DisableBulletTraces");
+	WaypointColor = ReadAndGetWaypointColor("WaypointColorRGB");
+#ifdef VICEEXT_DISTANT_LIGHTS
+	bEnableDistantLights = ReadAndGetFeature("EnableDistantLights");
+#endif
+	bRecoilWhenFiring = ReadAndGetFeature("RecoilWhenFiring");
+#ifdef VICEEXT_CLIMBING
+	bEnableClimbing = ReadAndGetFeature("EnableClimbing");
+#endif
+#ifdef VICEEXT_SWIMMING
+	bEnableSwimming = ReadAndGetFeature("EnableSwimming");
+#endif
+#ifdef VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
+	bRocketLauncherThirdPersonAiming = ReadAndGetFeature("RocketLauncherThirdPersonAiming");
+#endif
+	bMirrorModeByDefault = ReadAndGetFeature("MirrorModeByDefault");
+#ifdef __EMSCRIPTEN__
+	char t[200];
+	snprintf(t, sizeof t, "VEX ini ini=%d fire=%d regen=%d stars=%d zeros=%d bounce=%d turn=%d shake=%d tank=%d traces=%d recoil=%d mirror=%d wp=%d,%d,%d",
+		found ? 1 : 0, bVehiclesDontCatchFireWhenTurningOver, bHealthRegenerationUpToHalf,
+		bWantedStarsHideOnScreenWhenThereIsNoSearch, bRemoveMoneyZerosInTheHud, bPlayerDoesntBounceAwayFromMovingCar,
+		bStandardCarsUseTurnSignals, bCameraShakeInVehicleAtHighSpeed, bMilitaryFiringFromTankAtPlayer,
+		bDisableBulletTraces, bRecoilWhenFiring, bMirrorModeByDefault, WaypointColor.r, WaypointColor.g, WaypointColor.b);
+	ODTRACES(t);
+#endif
+}
+#endif
 
 bool ReadIniIfExists(const char *cat, const char *key, uint32 *out)
 {
@@ -494,6 +635,12 @@ void SaveINIControllerSettings()
 
 bool LoadINISettings()
 {
+#ifdef VICEEXT_VICE_EXTENDED
+	ReadGameLimits();
+#endif
+#ifdef VICEEXT_FEATURES_INI
+	ReadFeatures();
+#endif
 	if (!ini.read(cfg))
 		return false;
 
@@ -1220,6 +1367,32 @@ extern bool gbRenderWorld2;
 		DebugMenuAddCmd("Game", "Place Car on Road", PlaceOnRoad);
 		DebugMenuAddCmd("Game", "Switch car collision", SwitchCarCollision);
 		DebugMenuAddCmd("Game", "Toggle Comedy Controls", ToggleComedy);
+#ifdef VICEEXT_UTILS
+		static const char *areanames[] = {
+			"0 - Main map",
+			"1 - Hotel",
+			"2 - Mansion",
+			"3 - Bank",
+			"4 - Mall",
+			"5 - Strip club",
+			"6 - Lawyers",
+			"7 - Coffee shop",
+			"8 - Concert hall",
+			"9 - Studio",
+			"10 - Rifle range",
+			"11 - Biker bar",
+			"12 - Police station",
+			"13 - Everywhere",
+			"14 - Dirt",
+			"15 - Blood",
+			"16 - Ovalring",
+			"17 - Malibu club",
+			"18 - Print works",
+		};
+		e = DebugMenuAddVar("Game", "Current area", &CGame::currArea,
+			[](){ CStreaming::RemoveBuildingsNotInArea(CGame::currArea); }, 1, 0, ARRAY_SIZE(areanames) - 1, areanames);
+		DebugMenuEntrySetWrap(e, true);
+#endif
 
 
 #ifdef MISSION_SWITCHER
@@ -1404,4 +1577,35 @@ void re3_usererror(const char *format, ...)
 
 #ifdef VALIDATE_SAVE_SIZE
 int32 _saveBufCount;
+#endif
+
+#ifdef VICEEXT_UTILS
+float InterpFloat(float currentValue, float newValue, float interpSpeed)
+{
+	if (currentValue == newValue)
+		return currentValue;
+
+	float distance = newValue - currentValue;
+
+	float deltaSeconds = CTimer::GetTimeStepInSeconds();
+	float deltaSpeed = deltaSeconds * interpSpeed;
+
+	return currentValue + distance * deltaSpeed;
+}
+
+CVector InterpVector(CVector currentValue, CVector newValue, float interpSpeed)
+{
+	if (currentValue == newValue)
+		return currentValue;
+
+	CVector distance = newValue - currentValue;
+
+	float distanceMagnitude = distance.Magnitude();
+
+	float deltaSeconds = CTimer::GetTimeStepInSeconds();
+	float deltaSpeed = deltaSeconds * interpSpeed;
+
+	CVector deltaNormal = distance / distanceMagnitude;
+	return currentValue + deltaNormal * deltaSpeed;
+}
 #endif

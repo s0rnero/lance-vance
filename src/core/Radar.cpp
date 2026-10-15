@@ -72,6 +72,17 @@ CSprite2d CRadar::RadioWaveSprite;
 #ifdef MAP_ENHANCEMENTS
 CSprite2d CRadar::WaypointSprite;
 #endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+CSprite2d CRadar::HouseForSaleSprite;
+CSprite2d CRadar::BombShopSprite;
+CSprite2d CRadar::RaceSprite;
+CSprite2d CRadar::StoreSprite;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+CSprite2d CRadar::PackageSprite;
+CSprite2d CRadar::JumpSprite;
+CSprite2d CRadar::RampageSprite;
+#endif
 
 CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = { 
 	nil,
@@ -116,6 +127,17 @@ CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = {
 	&RadioWaveSprite,
 #ifdef MAP_ENHANCEMENTS
 	&WaypointSprite,
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	&HouseForSaleSprite,
+	&BombShopSprite,
+	&RaceSprite,
+	&StoreSprite,
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	&PackageSprite,
+	&JumpSprite,
+	&RampageSprite,
 #endif
 };
 
@@ -1084,7 +1106,11 @@ CRadar::LoadTextures()
 	KCabsSprite.SetTexture("kcabs");
 	LovefistSprite.SetTexture("lovefist");
 	PrintworksSprite.SetTexture("printworks");
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	PropertySprite.SetTexture("business");
+#else
 	PropertySprite.SetTexture("property");
+#endif
 	SunYardSprite.SetTexture("SunYard");
 	SpraySprite.SetTexture("spray");
 	TShirtSprite.SetTexture("tshirt");
@@ -1145,6 +1171,17 @@ CRadar::LoadTextures()
 #endif
 #endif
 	}
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	HouseForSaleSprite.SetTexture("property");
+	BombShopSprite.SetTexture("bomb");
+	RaceSprite.SetTexture("race");
+	StoreSprite.SetTexture("store");
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	PackageSprite.SetTexture("package");
+	JumpSprite.SetTexture("jump");
+	RampageSprite.SetTexture("rampage");
 #endif
 	CTxdStore::PopCurrentTxd();
 }
@@ -1342,6 +1379,17 @@ void CRadar::Shutdown()
 	RadioWaveSprite.Delete();
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.Delete();
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	HouseForSaleSprite.Delete();
+	BombShopSprite.Delete();
+	RaceSprite.Delete();
+	StoreSprite.Delete();
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	PackageSprite.Delete();
+	JumpSprite.Delete();
+	RampageSprite.Delete();
 #endif
 	RemoveRadarSections();
 }
@@ -1767,9 +1815,11 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 		case RADAR_SPRITE_PRINTWORKS:
 			text = TheText.Get("LG_20");
 		break;
+#ifndef VICEEXT_IMPROVED_TECH_PART
 		case RADAR_SPRITE_PROPERTY:
 			text = TheText.Get("LG_21");
 		break;
+#endif
 		case RADAR_SPRITE_SUNYARD:
 			text = TheText.Get("LG_36");
 		break;
@@ -1816,6 +1866,32 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
         case RADAR_SPRITE_WAYPOINT:
 			text = TheText.Get("LG_38");
 		break;
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		case RADAR_SPRITE_HOUSE_FOR_SALE:
+		case RADAR_SPRITE_PROPERTY:
+			text = TheText.Get("LG_39");
+		break;
+		case RADAR_SPRITE_BOMB_SHOP:
+			text = TheText.Get("LG_40");
+		break;
+		case RADAR_SPRITE_RACE:
+			text = TheText.Get("LG_41");
+		break;
+		case RADAR_SPRITE_STORE:
+			text = TheText.Get("LG_42");
+		break;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+		case RADAR_SPRITE_PACKAGE:
+			text = TheText.Get("LG_43");
+			break;
+		case RADAR_SPRITE_STUNT:
+			text = TheText.Get("LG_44");
+			break;
+		case RADAR_SPRITE_RAMPAGE:
+			text = TheText.Get("LG_45");
+			break;
 #endif
 		default:
 		break;

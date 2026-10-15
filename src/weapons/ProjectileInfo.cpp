@@ -206,7 +206,7 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 		case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
 			// El modelo va SIEMPRE residente (CStreaming::LoadInitialWeapons),
 			// como el misil del lanzacohetes, porque no es el arma en mano.
-			ms_apProjectile[i] = new CProjectile(MI_GR_GRENADE);
+			ms_apProjectile[i] = new CProjectile(MI_GR_LAUNCH_GREN);
 			break;
 		default: break;
 	}

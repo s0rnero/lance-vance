@@ -9,7 +9,7 @@
 #include "ModelInfo.h"
 #include "ModelIndices.h"
 
-uint16 CWeaponInfo::ms_aReloadSampleTime[WEAPONTYPE_TOTALALLTYPES] =
+uint16 CWeaponInfo::ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS] =
 {
 	0,			// UNARMED
 	0,
@@ -48,29 +48,67 @@ uint16 CWeaponInfo::ms_aReloadSampleTime[WEAPONTYPE_TOTALALLTYPES] =
 	0,			// DETONATOR
 	0,			// HELICANNON
 	0,			// CAMERA
-	// 37..47: tipos de daño (HEALTH..ANYWEAPON), nunca indexan esta tabla
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	// Vice Extended
-	250,		// BERETTA
-	250,		// DESERT_EAGLE
-	650,		// SHOTGUN2
-	400,		// UZIOLD
-	300,		// AK47
-	300,		// M16
-	300,		// STEYR
-	400,		// GRENADE_LAUNCHER
-	0			// GRENADE_LAUNCHER_GRENADE
+#ifdef VICEEXT_WEAPON_AK47
+	89,
+#endif
+#ifdef VICEEXT_WEAPON_M16
+	89,
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+	650,
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+	400,
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	250,
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+	250,
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+	89,
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	400,
+	0,
+#endif
 };
 
 // Yeah...
-int32 CWeaponInfo::ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALALLTYPES] =
+int32 CWeaponInfo::ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS] =
 {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+	-1, -1, -1, -1, -1, -1, -1, -1, -1,
+#ifdef VICEEXT_WEAPON_AK47
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_M16
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+	-1,
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	-1,
+	0,
+#endif
 };
 
-CWeaponInfo aWeaponInfo[WEAPONTYPE_TOTALALLTYPES];
-char CWeaponInfo::ms_aWeaponNames[WEAPONTYPE_TOTALALLTYPES][32] =
+CWeaponInfo aWeaponInfo[WEAPONTYPE_TOTALWEAPONS];
+char CWeaponInfo::ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32] =
 {
 	"Unarmed",
 	"BrassKnuckle",
@@ -109,20 +147,31 @@ char CWeaponInfo::ms_aWeaponNames[WEAPONTYPE_TOTALALLTYPES][32] =
 	"Detonator",
 	"HeliCannon",
 	"Camera",
-	// 37..47: tipos de daño (HEALTH..ANYWEAPON); nombre vacío para que no
-	// casen nunca con una línea de weapon.dat
-	"", "", "", "", "", "", "", "", "", "", "",
-	// Vice Extended: los nombres deben coincidir EXACTAMENTE con weapon.dat
-	// (FindWeaponType usa strcmp y sin coincidencia escribe sobre Unarmed)
-	"Beretta",
-	"DesertEagle",
-	"Shotgun2",
-	"Uziold",
+#ifdef VICEEXT_WEAPON_AK47
 	"Ak47",
+#endif
+#ifdef VICEEXT_WEAPON_M16
 	"M16",
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+	"Shotgun2",
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+	"Uziold",
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	"DesertEagle",
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+	"Beretta",
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 	"Steyr",
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
 	"Gr_launch",
 	"Gr_launch_gren",
+#endif
 };
 
 CWeaponInfo*
@@ -135,7 +184,7 @@ void
 CWeaponInfo::Initialise(void)
 {
 	debug("Initialising CWeaponInfo...\n");
-	for (int i = 0; i < WEAPONTYPE_TOTALALLTYPES; i++) {
+	for (int i = 0; i < WEAPONTYPE_TOTALWEAPONS; i++) {
 		aWeaponInfo[i].m_eWeaponFire = WEAPON_FIRE_INSTANT_HIT;
 		aWeaponInfo[i].m_fRange = 0.0f;
 		aWeaponInfo[i].m_nFiringRate = 0;
@@ -312,7 +361,7 @@ CWeaponInfo::LoadWeaponData(void)
 eWeaponType
 CWeaponInfo::FindWeaponType(char *name)
 {
-	for (int i = 0; i < WEAPONTYPE_TOTALALLTYPES; i++) {
+	for (int i = 0; i < WEAPONTYPE_TOTALWEAPONS; i++) {
 		if (strcmp(ms_aWeaponNames[i], name) == 0) {
 			return static_cast<eWeaponType>(i);
 		}

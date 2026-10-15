@@ -202,7 +202,7 @@ ViceExtRecoilTypeName(eWeaponType type)
 	case WEAPONTYPE_COLT45: return "Colt45";
 	case WEAPONTYPE_PYTHON: return "Python";
 	case WEAPONTYPE_BERETTA: return "Beretta";
-	case WEAPONTYPE_DESERT_EAGLE: return "DesertEagle";
+	case WEAPONTYPE_DEAGLE: return "DesertEagle";
 	case WEAPONTYPE_SHOTGUN: return "Shotgun";
 	case WEAPONTYPE_SPAS12_SHOTGUN: return "Spas12";
 	case WEAPONTYPE_STUBBY_SHOTGUN: return "Stubby";
@@ -253,7 +253,7 @@ ViceExtRecoilProfile(eWeaponType type, CWeaponInfo *info, const char **profile)
 	case WEAPONTYPE_COLT45: *profile = "colt45"; return 0.0080f;
 	case WEAPONTYPE_PYTHON: *profile = "python"; return 0.0150f;
 	case WEAPONTYPE_BERETTA: *profile = "beretta"; return 0.0080f;
-	case WEAPONTYPE_DESERT_EAGLE: *profile = "desert-eagle"; return 0.0160f;
+	case WEAPONTYPE_DEAGLE: *profile = "desert-eagle"; return 0.0160f;
 	case WEAPONTYPE_SHOTGUN: *profile = "shotgun"; return 0.0220f;
 	case WEAPONTYPE_SPAS12_SHOTGUN: *profile = "spas12"; return 0.0220f;
 	case WEAPONTYPE_STUBBY_SHOTGUN: *profile = "stubby"; return 0.0240f;
@@ -689,7 +689,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_HELICANNON:
 			// Vice Extended (gun hitscan como sus equivalente de serie)
 			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 			case WEAPONTYPE_UZIOLD:
 			case WEAPONTYPE_AK47:
 			case WEAPONTYPE_M16:
@@ -831,7 +831,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_MINIGUN:
 				// Vice Extended
 				case WEAPONTYPE_BERETTA:
-				case WEAPONTYPE_DESERT_EAGLE:
+				case WEAPONTYPE_DEAGLE:
 				case WEAPONTYPE_SHOTGUN2:
 				case WEAPONTYPE_UZIOLD:
 				case WEAPONTYPE_AK47:
@@ -3765,7 +3765,7 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 
 		case WEAPONSTATE_RELOADING:
 		{
-			if  ( AEHANDLE_IS_OK(audioEntity) && IsWeaponType(m_eWeaponType))
+			if  ( AEHANDLE_IS_OK(audioEntity) && m_eWeaponType < WEAPONTYPE_TOTALWEAPONS)
 			{
 				CAnimBlendAssociation *reloadAssoc = nil;
 				if (pedToAdjustSound) {
@@ -4036,7 +4036,7 @@ CWeapon::BlowUpExplosiveThings(CEntity *thing)
 		CObject *object = (CObject*)thing;
 		int32 mi = object->GetModelIndex();
 #ifdef VICEEXT_PROJECTILE_BLOW
-		if ( !object->bHasBeenDamaged && object->IsObject() && (mi == MI_MISSILE || mi == MI_GRENADE || mi == MI_GR_GRENADE || mi == MI_MOLOTOV || mi == MI_TEARGAS) )
+		if ( !object->bHasBeenDamaged && object->IsObject() && (mi == MI_MISSILE || mi == MI_GRENADE || mi == MI_GR_LAUNCH_GREN || mi == MI_MOLOTOV || mi == MI_TEARGAS) )
 		{
 			object->bHasBeenDamaged = true;
 

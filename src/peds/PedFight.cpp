@@ -2959,7 +2959,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 			case WEAPONTYPE_UZI_DRIVEBY:
 			// Vice Extended (mueren como con su arma de serie equivalente)
 			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 			case WEAPONTYPE_SHOTGUN2:
 			case WEAPONTYPE_UZIOLD:
 			case WEAPONTYPE_AK47:

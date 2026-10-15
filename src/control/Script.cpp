@@ -1092,10 +1092,8 @@ int8 CRunningScript::ProcessOneCommand()
 		retval = ProcessCommands1300To1399(command);
 	else if (command < 1500)
 		retval = ProcessCommands1400To1499(command);
-#ifdef VICEEXT_MOD_SCRIPT
-	// Vice Extended (familia 13): su `main.scm` usa 7 opcodes propios en el rango
-	// 4000-4009, que en el juego de serie no existe.
-	else if (command >= 4000 && command < 4100)
+#ifdef VICEEXT_OPCODES
+	else if (command < 4100)
 		retval = ProcessCommands4000To4099(command);
 #endif
 #ifdef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT
