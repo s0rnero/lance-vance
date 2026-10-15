@@ -256,6 +256,9 @@ public:
 	static CRGBA ArrowBlipColour2;
 	static int16 MapLegendList[NUM_MAP_LEGENDS];
 	static int16 MapLegendCounter;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	static int32 RadarZoomOutTimer;
+#endif
 
 #ifdef MAP_ENHANCEMENTS
 	static CSprite2d WaypointSprite;

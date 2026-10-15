@@ -1026,12 +1026,20 @@ CPed::Attack(void)
 
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_MADECONTACT, (float)damagerType);
 			if (IsPlayer()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(240, 180, 0);
+#else
 				CPad::GetPad(0)->StartShake(240, 180);
+#endif
 			}
 		} else {
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_ATTACK, 0.0f);
 			if (IsPlayer()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(240, 90, 0);
+#else
 				CPad::GetPad(0)->StartShake(240, 90);
+#endif
 			}
 		}
 		attackShouldContinue = false;
@@ -2788,6 +2796,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		if ((method == WEAPONTYPE_FLAMETHROWER || method == WEAPONTYPE_MOLOTOV) && CWorld::Players[CWorld::PlayerInFocus].m_bFireproof)
 			return false;
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->StartShake(100, 55, 55);
+#endif
+
 		player->AnnoyPlayerPed(false);
 	}
 
@@ -3783,7 +3795,11 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 			} else {
 				shakeFreq = 250.0f;
 			}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			CPad::GetPad(0)->StartShake(40000 / shakeFreq, shakeFreq, shakeFreq);
+#else
 			CPad::GetPad(0)->StartShake(40000 / shakeFreq, shakeFreq);
+#endif
 		}
 		bIsStanding = false;
 		damageDir = GetLocalDirection(-m_vecMoveSpeed);

@@ -115,9 +115,31 @@ enum
 	BUTTON_RSTICK_DOWN,
 	BUTTON_RSTICK_LEFT,
 	BUTTON_RSTICK_RIGHT,
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+	BUTTON_LEFT_RIGHT,
+	BUTTON_UP_DOWN,
+	BUTTON_SELECT,
+	BUTTON_LSTICK,
+	BUTTON_RSTICK,
+	BUTTON_DPAD_UP,
+	BUTTON_DPAD_DOWN,
+	BUTTON_DPAD_LEFT,
+	BUTTON_DPAD_RIGHT,
+#endif
 	MAX_BUTTON_ICONS
 };
 #endif // BUTTON_ICONS
+
+#ifdef VICEEXT_PC_KEY_ICONS
+enum
+{
+	SPRITE_MOUSE_WHEEL_UP = 254 + 1,
+	SPRITE_MOUSE_WHEEL_DOWN,
+	SPRITE_MOUSE_WHEEL_UP_AND_DOWN,
+	SPRITE_MOUSE,
+	MAX_PC_KEY_SPRITES,
+};
+#endif
 
 
 class CFont
@@ -144,20 +166,13 @@ public:
 	static void DrawButton(float x, float y);
 #endif // BUTTON_ICONS
 
-#ifdef VICEEXT_HINT_KEYS
-	// D7 (sección 1): iconos de TECLA para los avisos ("PC key icons in game
-	// hints", su v3.0). Las texturas de su `pcbtns.txd` se llaman con el código
-	// de tecla en decimal, así que el sprite se crea bajo demanda y se cachea
-	// (`255` = el índice más alto posible).
-	static CSprite2d KeyIconSprite[256];
-	static bool KeyIconSearched[256];
-	static int32 KeyIconsSlot;
-	static int KeyIconCode;
-	static int KeyIconCode2;   // el `~K<vk>~` que se está dibujando ahora (0 = no hay)
+#ifdef VICEEXT_PC_KEY_ICONS
+	static int32 PCKeySlot;
+	static CSprite2d PCKeySprite[MAX_PC_KEY_SPRITES];
+	static int PCSymbol;
 
-	static void LoadKeyIcons(void);
-	static bool HasKeyIcon(int vk);
-	static void DrawKeyIcon(float x, float y, int vk);
+	static void LoadPCKeys(const char* txdPath);
+	static void DrawPCKey(float x, float y);
 #endif
 
 

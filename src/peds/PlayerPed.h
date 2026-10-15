@@ -97,6 +97,14 @@ public:
 	CVector m_cachedCamUp;
 #endif
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	bool m_bSkipPhoneCall;
+#endif
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool bIsAutoAiming;
+#endif
+
 	static bool bDontAllowWeaponChange;
 #ifndef MASTER
 	static bool bDebugPlayerInfo;
@@ -117,9 +125,6 @@ public:
 	void MakeChangesForNewWeapon(eWeaponType);
 	void SetInitialState(void);
 	void ProcessControl(void);
-#ifdef VICEEXT_MANUAL_RELOAD
-	bool ViceExtTryManualReload(void); // Sección 3, C3.1: recarga a mano
-#endif
 #ifdef VICEEXT_SWIMMING
 	bool ViceExtSwimControl(CPad *padUsed); // Sección 3, C4: nadar
 	static bool ViceExtIsSwimming(void);    // H2: la cámara va a la superficie

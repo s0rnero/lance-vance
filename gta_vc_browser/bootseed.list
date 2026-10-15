@@ -1828,6 +1828,10 @@ models/x360btns.txd
 models/frontend_x360.txd
 models/fonts_r.txd
 models/ps3btns.txd
+models/ps4btns.txd
+models/ps5btns.txd
+models/x1btns.txd
+models/frontend_ds5.txd
 models/nswbtns.txd
 models/fronten1.txd
 models/frontend_ds4.txd

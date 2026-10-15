@@ -59,17 +59,25 @@ enum e_ControllerAction
 	NETWORK_TALK,
 	PED_1RST_PERSON_LOOK_UP,
 	PED_1RST_PERSON_LOOK_DOWN,
-	PED_TOGGLE_1RST_PERSON,				// Sección 3, C1: antes `_CONTROLLERACTION_36` ("Unused"); mismo hueco
+#ifdef VICEEXT_FIRST_PERSON
+	PED_TOGGLE_1RST_PERSON,
+#else
+	_CONTROLLERACTION_36,					// Unused
+#endif
 	TOGGLE_DPAD,
 	SWITCH_DEBUG_CAM_ON,
 	TAKE_SCREEN_SHOT,
 	SHOW_MOUSE_POINTER_TOGGLE,
-	PED_RELOAD,					// Sección 3, C3.1: antes `UNKNOWN_ACTION` (hueco sin uso); mismo índice
-	PED_WALK,						// ClassicAXIS C17 `WalkKey` (`ClassicAxisVC.ini:9` = `LALT`, `NULL` = desactivar).
-								// AL FINAL a propósito: `PED_RELOAD` ya ocupó el último hueco y reindexar el
-								// enum rompería las configs de controles guardadas del jugador.
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	SKIP_PHONE_CALL,
+	UNKNOWN_ACTION,
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	PED_WALK,
+	RADAR_ZOOM_OUT,
+	PED_RELOAD,
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	VEHICLE_LEFT_TURNSIGNALS,
+	VEHICLE_RIGHT_TURNSIGNALS,
+	VEHICLE_EMERGENCYLIGHTS,
 #endif
 	MAX_CONTROLLERACTIONS,
 };
@@ -151,6 +159,10 @@ public:
 	bool                  m_aSimCheckers[MAX_SIMS][MAX_CONTROLLERTYPES];
 	bool                  m_bMouseAssociated;
 
+#ifdef VICEEXT_PC_KEY_ICONS
+	int					  m_curActionsInMessage[4];
+#endif
+
 #ifdef LOAD_INI_SETTINGS
 	static uint32 ms_padButtonsInited;
 #endif
@@ -225,15 +237,13 @@ public:
 	wchar *GetControllerSettingTextMouse          (e_ControllerAction action);
 	wchar *GetControllerSettingTextJoystick       (e_ControllerAction action);
 
+#ifdef VICEEXT_PC_KEY_ICONS
+	int GetControllerSettingNonJoystick(e_ControllerAction action);
+	int GetCurrentPCKeyFromCurrentAction();
+#endif
+
 	int32 GetNumOfSettingsForAction(e_ControllerAction action);
 	void  GetWideStringOfCommandKeys(uint16 action, wchar *text, uint16 leight);
-#ifdef VICEEXT_HINT_KEYS
-	// D7 (sección 1): el código de tecla ("VK", el mismo con el que su
-	// `pcbtns.txd` nombra sus iconos) con el que está configurada esa acción, o
-	// 0 si no hay icono posible (rueda del ratón, mando).
-	int32 GetKeyIconCodeForAction(uint16 action);
-	bool GetShiftKeyIconCodesForAction(uint16 action, int32 *pShift, int32 *pKey);
-#endif
 	int32 GetControllerKeyAssociatedWithAction(e_ControllerAction action, eControllerType type);
 
 	void  UpdateJoyButtonState(int32 padnumber);

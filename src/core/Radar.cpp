@@ -24,6 +24,9 @@
 #include "SaveBuf.h"
 #include "ondemand.h"
 #include "Timer.h"
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#include "Pad.h"
+#endif
 
 float CRadar::m_radarRange;
 sRadarTrace CRadar::ms_RadarTrace[NUMRADARBLIPS];
@@ -162,6 +165,9 @@ CRGBA CRadar::ArrowBlipColour1;
 CRGBA CRadar::ArrowBlipColour2;
 int16 CRadar::MapLegendCounter;
 int16 CRadar::MapLegendList[NUM_MAP_LEGENDS];
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+int32 CRadar::RadarZoomOutTimer;
+#endif
 #ifdef MAP_ENHANCEMENTS
 int CRadar::TargetMarkerId = -1;
 CVector CRadar::TargetMarkerPos;
@@ -700,6 +706,27 @@ void CRadar::DrawMap()
 {
 	if (!TheCamera.m_WideScreenOn && CHud::m_Wants_To_Draw_Hud) {
 		CalculateCachedSinCos();
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if (CPad::GetPad(0)->GetRadarZoomOut())
+			RadarZoomOutTimer = CTimer::GetTimeInMilliseconds();
+
+		if (CTimer::GetTimeInMilliseconds() < RadarZoomOutTimer + 2000) {
+			float maxRange = FindPlayerVehicle() ? RADAR_MAX_RANGE + 150.0f : RADAR_MAX_RANGE;
+			m_radarRange = InterpFloat(m_radarRange, maxRange, 5.0);
+		} else {
+			if (FindPlayerVehicle()) {
+				float speed = FindPlayerSpeed().Magnitude();
+				if (speed < RADAR_MIN_SPEED)
+					m_radarRange = InterpFloat(m_radarRange, RADAR_MIN_RANGE, 5.0);
+				else if (speed < RADAR_MAX_SPEED) {
+					int newRadarRange = (speed - RADAR_MIN_SPEED)/(RADAR_MAX_SPEED-RADAR_MIN_SPEED) * (RADAR_MAX_RANGE-RADAR_MIN_RANGE) + RADAR_MIN_RANGE;
+					m_radarRange = InterpFloat(m_radarRange, newRadarRange, 5.0f);
+				} else
+					m_radarRange = InterpFloat(m_radarRange, RADAR_MAX_RANGE, 5.0);
+			} else
+				m_radarRange = InterpFloat(m_radarRange, RADAR_MIN_RANGE, 5.0);
+		}
+#else
 		if (FindPlayerVehicle()) {
 			float speed = FindPlayerSpeed().Magnitude();
 			if (speed < RADAR_MIN_SPEED)
@@ -711,6 +738,7 @@ void CRadar::DrawMap()
 		}
 		else
 			m_radarRange = RADAR_MIN_RANGE;
+#endif
 
 		vec2DRadarOrigin = CVector2D(FindPlayerCentreOfWorld_NoSniperShift());
 		if (FrontEndMenuManager.m_PrefsRadarMode != 1)

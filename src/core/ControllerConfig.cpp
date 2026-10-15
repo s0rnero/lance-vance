@@ -179,6 +179,148 @@ void CControllerConfigManager::LoadSettings(int32 file)
 
 void CControllerConfigManager::InitDefaultControlConfiguration()
 {
+#ifdef VICEEXT_VICE_EXTENDED
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKLEFT,                    'Q',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKLEFT,                    rsPADEND,   OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKRIGHT,                   'E',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKRIGHT,                   rsPADDOWN,  OPTIONAL_EXTRA);
+
+	if ( _dwOperatingSystemVersion == OS_WIN98 )
+		SetControllerKeyAssociatedWithAction(VEHICLE_HORN,                        rsSHIFT,    OPTIONAL_EXTRA);
+	else
+	{
+		SetControllerKeyAssociatedWithAction(VEHICLE_HORN,                        rsLSHIFT,   KEYBOARD);
+		SetControllerKeyAssociatedWithAction(VEHICLE_HORN,                        rsRSHIFT,   OPTIONAL_EXTRA);
+	}
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   ' ',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   rsRCTRL,    OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  'F',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  rsENTER,    OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  'W',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  rsUP,       OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_CHANGE_RADIO_STATION,        'R',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_CHANGE_RADIO_STATION,        rsINS,      OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_BRAKE,                       'S',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_BRAKE,                       rsDOWN,     OPTIONAL_EXTRA);
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKBEHIND,                  'C',		  KEYBOARD);
+#endif
+
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	SetControllerKeyAssociatedWithAction    (VEHICLE_LEFT_TURNSIGNALS,            'Z',		  KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_RIGHT_TURNSIGNALS,           'X',		  KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_EMERGENCYLIGHTS,             'Y',		  KEYBOARD);
+#endif
+
+	SetControllerKeyAssociatedWithAction    (TOGGLE_SUBMISSIONS,                  rsPLUS,     KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (TOGGLE_SUBMISSIONS,                  rsCAPSLK,   OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (GO_LEFT,                             'A',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (GO_LEFT,                             rsLEFT,     OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (GO_RIGHT,                            'D',		  KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (GO_RIGHT,                            rsRIGHT,    OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (GO_FORWARD,                          'W',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (GO_FORWARD,                          rsUP,       OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (GO_BACK,                             'S',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (GO_BACK,                             rsDOWN,     OPTIONAL_EXTRA);
+
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SetControllerKeyAssociatedWithAction    (NETWORK_TALK,                        'K',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (RADAR_ZOOM_OUT,                      'T',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_RELOAD,						  'R',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_WALK,							  rsLALT,     KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_LOOKBEHIND,                      'C',		  KEYBOARD);
+#else
+	SetControllerKeyAssociatedWithAction    (NETWORK_TALK,                        'T',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_LOOKBEHIND,                      rsPADEND,   KEYBOARD);
+#endif
+	SetControllerKeyAssociatedWithAction    (PED_LOOKBEHIND,                      rsCAPSLK,   OPTIONAL_EXTRA);
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SetControllerKeyAssociatedWithAction    (PED_DUCK,                            rsLCTRL,	  KEYBOARD);
+#else
+	SetControllerKeyAssociatedWithAction    (PED_DUCK,                            'C',        KEYBOARD);
+#endif
+
+	SetControllerKeyAssociatedWithAction    (PED_FIREWEAPON,                      rsPADINS,   KEYBOARD);
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SetControllerKeyAssociatedWithAction    (PED_FIREWEAPON,                      rsLCTRL,    OPTIONAL_EXTRA);
+#endif
+#ifdef BIND_VEHICLE_FIREWEAPON
+	SetControllerKeyAssociatedWithAction    (VEHICLE_FIREWEAPON,                  rsLCTRL,    KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_FIREWEAPON,                  rsPADINS,   OPTIONAL_EXTRA);
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_WEAPON_LEFT,               'Q', KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_WEAPON_RIGHT,              'E', OPTIONAL_EXTRA);
+#else
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_WEAPON_LEFT,               rsPADDEL,   KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_WEAPON_RIGHT,              rsPADENTER, OPTIONAL_EXTRA);
+#endif
+
+	SetControllerKeyAssociatedWithAction    (PED_LOCK_TARGET,                     rsDEL,      KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_JUMPING,                         ' ',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (PED_JUMPING,                         rsRCTRL,    OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (PED_ANSWER_PHONE,                    rsTAB,      KEYBOARD);
+
+	if ( _dwOperatingSystemVersion == OS_WIN98 )
+		SetControllerKeyAssociatedWithAction(PED_SPRINT,                          rsSHIFT,    OPTIONAL_EXTRA);
+	else
+	{
+		SetControllerKeyAssociatedWithAction(PED_SPRINT,                          rsLSHIFT,   KEYBOARD);
+	}
+
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_TARGET_LEFT,               '[',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_CYCLE_TARGET_RIGHT,              ']',        OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (PED_CENTER_CAMERA_BEHIND_PLAYER,     '#',        KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_SNIPER_ZOOM_IN,                  'Z',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (PED_SNIPER_ZOOM_IN,                  rsPGUP,     OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (PED_SNIPER_ZOOM_OUT,                 'X',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (PED_SNIPER_ZOOM_OUT,                 rsPGDN,     OPTIONAL_EXTRA);
+
+	SetControllerKeyAssociatedWithAction    (PED_1RST_PERSON_LOOK_LEFT,           rsPADLEFT,  KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_1RST_PERSON_LOOK_RIGHT,          rsPADRIGHT, KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_1RST_PERSON_LOOK_UP,             rsPADUP,    KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (PED_1RST_PERSON_LOOK_DOWN,           rsPAD5,     KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETLEFT,                  rsPADLEFT,  KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETRIGHT,                 rsPAD5,     KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETUP,                    rsPADPGUP,  KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETDOWN,                  rsPADRIGHT, KEYBOARD);
+
+	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   'V',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   rsHOME,     OPTIONAL_EXTRA);
+#else
 	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKLEFT,                    rsPADEND,   KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_LOOKLEFT,                    'Q',        OPTIONAL_EXTRA);
 										    						              
@@ -196,7 +338,8 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   rsRCTRL,    KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_HANDBRAKE,                   ' ',        OPTIONAL_EXTRA);
 															                      
-	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  'F',        KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  rsENTER,    KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_ENTER_EXIT,                  'F',        OPTIONAL_EXTRA);
 										    					                  
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  rsUP,       KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_ACCELERATE,                  'W',        OPTIONAL_EXTRA);
@@ -287,32 +430,7 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_TURRETDOWN,                  rsPADRIGHT, KEYBOARD);
 										    
 	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   rsHOME,     KEYBOARD);
-	// Sección 3, bloque C1b (20/09): la 'V' era el extra de "cambiar cámara" y el
-	// jugador la usa para la 1ª persona (pulsó V en partida y no pasó nada porque
-	// el conmutador estaba en B). "Cambiar cámara" se queda en su tecla principal
-	// (rsHOME) y 'V' pasa al conmutador; las dos siguen siendo rebindables.
-
-	// Sección 3, bloque C1: conmutador de vista en 1ª persona (tecla por defecto V;
-	// se puede rebindar en el menú de controles como cualquier otra acción).
-	SetControllerKeyAssociatedWithAction    (PED_TOGGLE_1RST_PERSON,             'V',        KEYBOARD);
-
-	// Sección 3, bloque C3.1: recarga manual (v2.5 "Reloading a weapon on the
-	// key"). 'R' está libre a pie: VEHICLE_CHANGE_RADIO_STATION también la usa,
-	// pero es un mando de vehículo (OPTIONAL_EXTRA) y sólo se lee conduciendo.
-	SetControllerKeyAssociatedWithAction    (PED_RELOAD,                        'R',        KEYBOARD);
-
-	// ClassicAXIS C17 `WalkKey` (Main.cpp:1196-1201, 1215-1217): con la tecla de
-	// andar pulsada la velocidad es 0, para poder caminar en vez de correr. El
-	// default es el del mod, `LALT` (`ClassicAxisVC.ini:9`), que en nuestro
-	// `RsKeyCodes` es `rsLALT` = 1051 (`skeleton.h:173`): el token `LALT` del INI
-	// se resuelve a ese mismo código, así que la acción es rebindable como
-	// cualquier otra y sale con su nombre en el menú de controles.
-	// Su `NULL` = desactivar (comentario del propio INI del mod) es la tecla 0:
-	// lo comprueba el consumidor en `PlayerPed.cpp` (`if (odWalk && ...)`).
-	SetControllerKeyAssociatedWithAction    (PED_WALK,                          rsLALT,     KEYBOARD);
-
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	SetControllerKeyAssociatedWithAction    (SKIP_PHONE_CALL,                     rsENTER,    KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (CAMERA_CHANGE_VIEW_ALL_SITUATIONS,   'V',        OPTIONAL_EXTRA);
 #endif
 
 	for (int32 i = 0; i < MAX_SIMS; i++)
@@ -543,12 +661,6 @@ void CControllerConfigManager::InitialiseControllerActionNameArray()
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_RIGHT);
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_UP);
 	SETACTIONNAME(PED_1RST_PERSON_LOOK_DOWN);
-	SETACTIONNAME(PED_TOGGLE_1RST_PERSON); // Sección 3, C1: conmutador de 1ª persona
-	SETACTIONNAME(PED_RELOAD); // Sección 3, C3.1: recarga manual
-	SETACTIONNAME(PED_WALK); // ClassicAXIS C17: tecla de andar (default LALT)
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	SETACTIONNAME(SKIP_PHONE_CALL);
-#endif
 	SETACTIONNAME(SHOW_MOUSE_POINTER_TOGGLE);
 	SETACTIONNAME(CAMERA_CHANGE_VIEW_ALL_SITUATIONS);
 	SETACTIONNAME(PED_FIREWEAPON);
@@ -568,6 +680,16 @@ void CControllerConfigManager::InitialiseControllerActionNameArray()
 	SETACTIONNAME(TOGGLE_DPAD);
 	SETACTIONNAME(SWITCH_DEBUG_CAM_ON);
 	SETACTIONNAME(TAKE_SCREEN_SHOT);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	SETACTIONNAME(PED_WALK);
+	SETACTIONNAME(RADAR_ZOOM_OUT);
+	SETACTIONNAME(PED_RELOAD);
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	SETACTIONNAME(VEHICLE_LEFT_TURNSIGNALS);
+	SETACTIONNAME(VEHICLE_RIGHT_TURNSIGNALS);
+	SETACTIONNAME(VEHICLE_EMERGENCYLIGHTS);
+#endif
 
 #undef SETACTIONNAME
 }
@@ -687,6 +809,9 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown(int32 button, 
 
 		bool firstPerson = false;
 		bool playerDriving = false;
+#ifdef VICEEXT_FIRING_AND_AIMING
+		bool playerDriveby = false;
+#endif
 
 		if (FindPlayerVehicle() != NULL)
 		{
@@ -695,6 +820,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown(int32 button, 
 			{
 				if (plr->m_nPedState == PED_DRIVING)
 					playerDriving = true;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+				if (plr->m_nPedState == PED_AIM_GUN || plr->m_nPedState == PED_ATTACK)
+					playerDriveby = true;
+#endif
 			}
 		}
 
@@ -732,7 +862,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown(int32 button, 
 
 		if (pad != NULL)
 		{
+#ifdef VICEEXT_FIRING_AND_AIMING
+			if (playerDriving || playerDriveby)
+#else
 			if (playerDriving)
+#endif
 			{
 				AffectControllerStateOn_ButtonDown_Driving(button, type, *state);
 				AffectControllerStateOn_ButtonDown_VehicleAndThirdPersonOnly(button, type, *state);
@@ -787,6 +921,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 		state.Square = 255;
 	if (button == GetControllerKeyAssociatedWithAction(TOGGLE_SUBMISSIONS, type))
 		state.RightShock = 255;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	if (button == GetControllerKeyAssociatedWithAction(PED_LOCK_TARGET, type))
+		state.DPadDown = 255;
+#endif
 	
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_TURRETLEFT, type))
 	{
@@ -869,6 +1008,41 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 		else
 			state.RightStickY = -128;
 	}
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (button == GetControllerKeyAssociatedWithAction(GO_LEFT, type)) 
+	{
+		if (state.DPadRight || m_aSimCheckers[SIM_X1][type])
+		{
+			m_aSimCheckers[SIM_X1][type] = true;
+			state.DPadLeft = 0;
+			state.DPadRight = 0;
+		}
+		else
+			state.DPadLeft = 255;
+	}
+
+	if (button == GetControllerKeyAssociatedWithAction(GO_RIGHT, type)) 
+	{
+		if (state.DPadLeft || m_aSimCheckers[SIM_X1][type])
+		{
+			m_aSimCheckers[SIM_X1][type] = true;
+			state.DPadLeft = 0;
+			state.DPadRight = 0;
+		}
+		else
+			state.DPadRight = 255;
+	}
+#endif
+
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_LEFT_TURNSIGNALS, type))
+		state.bLeftTurnSignals = 255;
+	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_RIGHT_TURNSIGNALS, type))
+		state.bRightTurnSignals = 255;
+	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_EMERGENCYLIGHTS, type))
+		state.bEmergencyLights = 255;
+#endif
 }
 
 void CControllerConfigManager::AffectControllerStateOn_ButtonDown_FirstPersonOnly(int32 button, eControllerType type, CControllerState &state)
@@ -888,7 +1062,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_ThirdPersonOnl
 	if (button == GetControllerKeyAssociatedWithAction(PED_JUMPING, type))
 		state.Square = 255;
 	if (button == GetControllerKeyAssociatedWithAction(PED_ANSWER_PHONE, type))
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		state.Circle = 255;
+#else
 		state.LeftShoulder1 = 255;
+#endif
 	if (button == GetControllerKeyAssociatedWithAction(PED_CYCLE_WEAPON_LEFT, type))
 		state.LeftShoulder2 = 255;
 	if (button == GetControllerKeyAssociatedWithAction(PED_CYCLE_WEAPON_RIGHT, type))
@@ -897,6 +1075,14 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_ThirdPersonOnl
 		state.Cross = 255;
 	if (button == GetControllerKeyAssociatedWithAction(PED_DUCK, type))
 		state.LeftShock = 255;
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (button == GetControllerKeyAssociatedWithAction(PED_WALK, type))
+		state.bWalk = 255;
+
+	if (button == GetControllerKeyAssociatedWithAction(PED_RELOAD, type))
+		state.bReload = 255;
+#endif
 	
 	if (FrontEndMenuManager.m_ControlMethod == CONTROL_CLASSIC)
 	{
@@ -915,13 +1101,20 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_FirstAndThirdP
 
 #ifdef BIND_VEHICLE_FIREWEAPON
 	if (button == GetControllerKeyAssociatedWithAction(PED_FIREWEAPON, type))
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		state.LeftShoulder1 = 255;
+#else
 		state.Circle = 255;
+#endif
 #endif
 	if (button == GetControllerKeyAssociatedWithAction(PED_LOCK_TARGET, type))
 		state.RightShoulder1 = 255;
 
 	if (button == GetControllerKeyAssociatedWithAction(GO_FORWARD, type))
 	{
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		state.LeftStickY = -255;
+#else
 		if (state.DPadDown || m_aSimCheckers[SIM_Y1][type])
 		{
 			m_aSimCheckers[SIM_Y1][type] = true;
@@ -930,10 +1123,14 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_FirstAndThirdP
 		}
 		else
 			state.DPadUp = 255;
+#endif
 	}
 
 	if (button == GetControllerKeyAssociatedWithAction(GO_BACK, type))
 	{
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		state.LeftStickY = 255;
+#else
 		if (state.DPadUp || m_aSimCheckers[SIM_Y1][type])
 		{
 			m_aSimCheckers[SIM_Y1][type] = true;
@@ -942,6 +1139,7 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_FirstAndThirdP
 		}
 		else
 			state.DPadDown = 255;
+#endif
 	}
 
 	if (button == GetControllerKeyAssociatedWithAction(PED_1RST_PERSON_LOOK_LEFT, type))
@@ -992,6 +1190,14 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_FirstAndThirdP
 				state.RightStickY = -128;
 		}
 	}
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (button == GetControllerKeyAssociatedWithAction(GO_LEFT, type))
+		state.LeftStickX = -255;
+
+	if (button == GetControllerKeyAssociatedWithAction(GO_RIGHT, type))
+		state.LeftStickX = 255;
+#endif
 }
 
 void CControllerConfigManager::AffectControllerStateOn_ButtonDown_AllStates(int32 button, eControllerType type, CControllerState &state)
@@ -1004,6 +1210,7 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_AllStates(int3
 		state.Circle = 255;
 #endif
 
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 	if (button == GetControllerKeyAssociatedWithAction(GO_LEFT, type))
 	{
 		if (state.DPadRight || m_aSimCheckers[SIM_X1][type])
@@ -1027,6 +1234,7 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_AllStates(int3
 		else
 			state.DPadRight = 255;
 	}
+#endif
 
 	if (button == GetControllerKeyAssociatedWithAction(NETWORK_TALK, type))
 		state.NetworkTalk = 255;
@@ -1036,6 +1244,11 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_VehicleAndThir
 {
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_ENTER_EXIT, type))
 		state.Triangle = 255;
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (button == GetControllerKeyAssociatedWithAction(RADAR_ZOOM_OUT, type))
+		state.DPadUp = 255;
+#endif
 }
 
 void CControllerConfigManager::UpdateJoyInConfigMenus_ButtonUp(int32 button, int32 padnumber)
@@ -1820,6 +2033,11 @@ void CControllerConfigManager::DeleteMatchingVehicleControls(e_ControllerAction 
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_TURRETRIGHT);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_TURRETUP);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_TURRETDOWN);
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+		CLEAR_ACTION_IF_NEEDED(VEHICLE_LEFT_TURNSIGNALS);
+		CLEAR_ACTION_IF_NEEDED(VEHICLE_RIGHT_TURNSIGNALS);
+		CLEAR_ACTION_IF_NEEDED(VEHICLE_EMERGENCYLIGHTS);
+#endif
 	}
 }
 
@@ -1828,6 +2046,11 @@ void CControllerConfigManager::DeleteMatchingVehicle_3rdPersonControls(e_Control
 	if (!GetIsKeyBlank(key, type))
 	{
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_ENTER_EXIT);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CLEAR_ACTION_IF_NEEDED(PED_WALK);
+		CLEAR_ACTION_IF_NEEDED(RADAR_ZOOM_OUT);
+		CLEAR_ACTION_IF_NEEDED(PED_RELOAD);
+#endif
 	}
 }
 
@@ -1880,6 +2103,16 @@ bool CControllerConfigManager::IsAnyVehicleActionAssignedToMouseKey(int32 key)
 		CHECK_ACTION(TOGGLE_DPAD);
 		CHECK_ACTION(TAKE_SCREEN_SHOT);
 		CHECK_ACTION(SHOW_MOUSE_POINTER_TOGGLE);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CHECK_ACTION(PED_WALK);
+		CHECK_ACTION(RADAR_ZOOM_OUT);
+		CHECK_ACTION(PED_RELOAD);
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+		CHECK_ACTION(VEHICLE_LEFT_TURNSIGNALS);
+		CHECK_ACTION(VEHICLE_RIGHT_TURNSIGNALS);
+		CHECK_ACTION(VEHICLE_EMERGENCYLIGHTS);
+#endif
 	}
 	return false;
 }
@@ -1975,9 +2208,6 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case SWITCH_DEBUG_CAM_ON:
 	case TAKE_SCREEN_SHOT:
 	case SHOW_MOUSE_POINTER_TOGGLE:
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	case SKIP_PHONE_CALL:
-#endif
 		return ACTIONTYPE_COMMON;
 		break;
 
@@ -1991,6 +2221,10 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case PED_CYCLE_TARGET_LEFT:
 	case PED_CYCLE_TARGET_RIGHT:
 	case PED_CENTER_CAMERA_BEHIND_PLAYER:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	case PED_WALK:
+	case PED_RELOAD:
+#endif
 		return ACTIONTYPE_3RDPERSON;
 		break;
 
@@ -2010,10 +2244,18 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case VEHICLE_TURRETRIGHT:
 	case VEHICLE_TURRETUP:
 	case VEHICLE_TURRETDOWN:
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	case VEHICLE_LEFT_TURNSIGNALS:
+	case VEHICLE_RIGHT_TURNSIGNALS:
+	case VEHICLE_EMERGENCYLIGHTS:
+#endif
 		return ACTIONTYPE_VEHICLE;
 		break;
 
 	case VEHICLE_ENTER_EXIT:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	case RADAR_ZOOM_OUT:
+#endif
 		return ACTIONTYPE_VEHICLE_3RDPERSON;
 		break;
 
@@ -2027,9 +2269,6 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case PED_LOCK_TARGET:
 	case PED_1RST_PERSON_LOOK_UP:
 	case PED_1RST_PERSON_LOOK_DOWN:
-	case PED_TOGGLE_1RST_PERSON: // Sección 3, C1
-	case PED_RELOAD: // Sección 3, C3.1: recarga manual (misma clasificación: a pie)
-	case PED_WALK: // ClassicAXIS C17: tecla de andar (es de a pie, como la recarga)
 		return ACTIONTYPE_1RST3RDPERSON;
 		break;
 
@@ -2499,6 +2738,197 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 #define VFB(b)
 #endif
 
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+#define CONTROLLER_BUTTONS(T, O, X, Q, L1, L2, L3, R1, R2, R3, SELECT, RSU, RSD, RSL, RSR)                                                                                         \
+	{{                                                                                                                                                         \
+	     O, \
+	     R2, \
+	     L2, \
+	     nil, \
+	     nil, \
+	     LEFT, \
+	     RIGHT, \
+	     Q, \
+	     X, \
+	     T, \
+	     SELECT, \
+	     Q, \
+	     X, \
+	     R3, \
+	     L3, \
+	     L1, \
+	     VFB(O) \
+	     X, \
+	     Q, \
+	     L1, \
+	     L3, \
+	     R3, \
+	     R1, \
+	     nil, \
+	     nil, \
+	     L2, \
+	     R2, \
+	     nil, \
+	     RSL, \
+	     RSR, \
+	     UP, \
+	     DOWN, \
+	     L2, \
+	     R2, \
+	     L1, \
+	     R1, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	 },                                                                                                                                                        \
+	 {                                                                                                                                                         \
+	     R2, \
+	     DPAD_RIGHT, \
+	     DPAD_LEFT, \
+	     nil, \
+	     nil, \
+	     LEFT, \
+	     RIGHT, \
+	     DPAD_UP, \
+	     DPAD_DOWN, \
+	     T, \
+	     SELECT, \
+	     Q, \
+	     X, \
+	     R3, \
+	     L3, \
+	     L1, \
+	     VFB(O) \
+	     R2, \
+	     L2, \
+	     SELECT, \
+	     L3, \
+	     DPAD_UP, \
+	     X, \
+	     nil, \
+	     nil, \
+	     L1, \
+	     R1, \
+	     nil, \
+	     RSL, \
+	     RSR, \
+	     UP, \
+	     DOWN, \
+	     DPAD_LEFT, \
+	     DPAD_RIGHT, \
+	     L1, \
+	     L2, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	 },                                                                                                                                                        \
+	 {                                                                                                                                                         \
+	     L1, \
+	     R2, \
+	     L2, \
+	     nil, \
+	     nil, \
+	     LEFT, \
+	     RIGHT, \
+	     Q, \
+	     X, \
+	     T, \
+	     SELECT, \
+	     Q, \
+	     X, \
+	     R3, \
+	     L3, \
+	     L1, \
+	     VFB(O) \
+	     X, \
+	     Q, \
+	     L1, \
+	     L3, \
+	     R3, \
+	     R1, \
+	     nil, \
+	     nil, \
+	     L2, \
+	     R2, \
+	     nil, \
+	     RSL, \
+	     RSR, \
+	     UP, \
+	     DOWN, \
+	     L2, \
+	     R2, \
+	     L1, \
+	     R1, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	 },                                                                                                                                                        \
+	 {                                                                                                                                                         \
+	     R1, \
+	     R2, \
+	     L2, \
+	     nil, \
+	     nil, \
+	     LEFT, \
+	     RIGHT, \
+	     Q, \
+	     X, \
+	     T, \
+	     SELECT, \
+	     Q, \
+	     X, \
+	     R3, \
+	     L3, \
+	     O, \
+	     VFB(R1) \
+	     RSU, \
+	     RSD, \
+	     O, \
+	     L3, \
+	     Q, \
+	     L1, \
+	     nil, \
+	     nil, \
+	     L2, \
+	     R2, \
+	     nil, \
+	     RSL, \
+	     RSR, \
+	     UP, \
+	     DOWN, \
+	     L2, \
+	     R2, \
+	     O, \
+	     L1, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	     nil, \
+	 }}
+#else
 #define CONTROLLER_BUTTONS(T, O, X, Q, L1, L2, L3, R1, R2, R3, SELECT, RSU, RSD, RSL, RSR)                                                                                         \
 	{{                                                                                                                                                         \
 	     O,      /* PED_FIREWEAPON */                                                                                                                          \
@@ -2688,18 +3118,60 @@ int32 CControllerConfigManager::GetNumOfSettingsForAction(e_ControllerAction act
 	     nil,    /* UNKNOWN_ACTION */                                                                                                                          \
 	     nil,    /* SHOW_MOUSE_POINTER_TOGGLE */                                                                                                               \
 	 }}
+#endif
 
 #ifdef BUTTON_ICONS
 #define UP "~U~"
 #define DOWN "~D~"
 #define LEFT "~<~"
 #define RIGHT "~>~"
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+#define DPAD_UP "~^~"
+#define DPAD_DOWN "~_~"
+#define DPAD_LEFT "~W~"
+#define DPAD_RIGHT "~R~"
+#endif
 #else
 #define UP "UP"
 #define DOWN "DOWN"
 #define LEFT "LEFT"
 #define RIGHT "RIGHT"
 #endif
+
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+const char *XboxButtons_noIcons[][MAX_CONTROLLERACTIONS] = CONTROLLER_BUTTONS("Y", "B", "A", "X", "LB", "LT", "LS", "RB", "RT", "RS", "BACK", "right stick up", "right stick down", "right stick left", "right stick right");
+
+#ifdef BUTTON_ICONS
+const char *XboxButtons[][MAX_CONTROLLERACTIONS] = CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "~S~", "~H~", "~L~", "~(~", "~)~");
+#endif
+
+
+#define PS2_TRIANGLE "TRIANGLE"
+#define PS2_CIRCLE "CIRCLE"
+#define PS2_CROSS "CROSS"
+#define PS2_SQUARE "SQUARE"
+
+const char *PlayStationButtons_noIcons[][MAX_CONTROLLERACTIONS] =
+    CONTROLLER_BUTTONS(PS2_TRIANGLE, PS2_CIRCLE, PS2_CROSS, PS2_SQUARE, "L1", "L2", "L3", "R1", "R2", "R3", "SELECT", "right stick up", "right stick down", "right stick left", "right stick right");
+
+#ifdef BUTTON_ICONS
+const char *PlayStationButtons[][MAX_CONTROLLERACTIONS] =
+    CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "~S~", "~H~", "~L~", "~(~", "~)~");
+#endif
+
+#undef PS2_TRIANGLE
+#undef PS2_CIRCLE
+#undef PS2_CROSS
+#undef PS2_SQUARE
+
+const char *NintendoSwitchButtons_noIcons[][MAX_CONTROLLERACTIONS] =
+    CONTROLLER_BUTTONS("Y", "A", "B", "X", "L", "ZL", "LS", "R", "ZR", "RS", "BACK", "right stick up", "right stick down", "right stick left", "right stick right");
+
+#ifdef BUTTON_ICONS
+const char *NintendoSwitchButtons[][MAX_CONTROLLERACTIONS] =
+    CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "~S~", "~H~", "~L~", "~(~", "~)~");
+#endif
+#else
 
 const char *XboxButtons_noIcons[][MAX_CONTROLLERACTIONS] = CONTROLLER_BUTTONS("Y", "B", "A", "X", "LB", "LT", "LS", "RB", "RT", "RS", "BACK", "right stick up", "right stick down", "right stick left", "right stick right");
 
@@ -2740,6 +3212,12 @@ const char *NintendoSwitchButtons_noIcons[][MAX_CONTROLLERACTIONS] =
 const char *NintendoSwitchButtons[][MAX_CONTROLLERACTIONS] =
     CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "BACK", "~H~", "~L~", "~(~", "~)~");
 #endif
+#endif
+
+#ifdef VICEEXT_PC_KEY_ICONS
+const char* KeyboardKeys[][MAX_CONTROLLERACTIONS] =
+	CONTROLLER_BUTTONS("~T~", "~O~", "~X~", "~Q~", "~K~", "~M~", "~A~", "~J~", "~V~", "~C~", "~S~", "~H~", "~L~", "~(~", "~)~");
+#endif
 
 #undef UP
 #undef DOWN
@@ -2764,6 +3242,9 @@ void CControllerConfigManager::GetWideStringOfCommandKeys(uint16 action, wchar *
 		case CMenuManager::CONTROLLER_DUALSHOCK2:
 		case CMenuManager::CONTROLLER_DUALSHOCK3:
 		case CMenuManager::CONTROLLER_DUALSHOCK4:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		case CMenuManager::CONTROLLER_DUALSENSE:
+#endif
 			Buttons = CFont::ButtonsSlot != -1 ? PlayStationButtons : PlayStationButtons_noIcons;
 			break;
 		case CMenuManager::CONTROLLER_NINTENDO_SWITCH:
@@ -2795,6 +3276,20 @@ void CControllerConfigManager::GetWideStringOfCommandKeys(uint16 action, wchar *
 
 		assert(Buttons[CPad::GetPad(0)->Mode][action] != nil); // we cannot use these
 		AsciiToUnicode(Buttons[CPad::GetPad(0)->Mode][action], wstr);
+
+		CMessages::WideStringCopy(text, wstr, leight);
+		return;
+	}
+#endif
+
+#ifdef VICEEXT_PC_KEY_ICONS
+	if (CFont::PCKeySlot != -1) {
+		wchar wstr[16];
+
+		const char* (*PCKeys)[MAX_CONTROLLERACTIONS] = KeyboardKeys;
+
+		assert(PCKeys[CPad::GetPad(0)->Mode][action] != nil);
+		AsciiToUnicode(PCKeys[CPad::GetPad(0)->Mode][action], wstr);
 
 		CMessages::WideStringCopy(text, wstr, leight);
 		return;
@@ -2848,121 +3343,6 @@ int32 CControllerConfigManager::GetControllerKeyAssociatedWithAction(e_Controlle
 {
 	return m_aSettings[action][type].m_Key;
 }
-
-#ifdef VICEEXT_HINT_KEYS
-// D7 (sección 1): su `pcbtns.txd` nombra cada icono con el **código de tecla de
-// Windows** ("1" = botón izquierdo, "8" = retroceso, "13" = intro, "16" =
-// mayúsculas, "27" = esc, "32" = espacio, "65".."90" = letras, "96".."105" =
-// teclado numérico, "112".."123" = F1..F12). El port no guarda ese código:
-// guarda el **carácter** para las teclas imprimibles (0..255) y las constantes
-// `rs*` (>= 1000) para el resto. Esto traduce de uno al otro; 0 = sin icono
-// (y entonces el aviso sigue mostrando el nombre de la tecla en texto, como
-// antes de este bloque).
-static int32
-ViceExtKeyToVK(int32 key, eControllerType type)
-{
-	if (key == rsNULL)
-		return 0;
-
-	if (type == MOUSE) {
-		switch (key) {
-		case rsMOUSELEFTBUTTON:  return 1;	// VK_LBUTTON
-		case rsMOUSERIGHTBUTTON: return 2;	// VK_RBUTTON
-		case rsMOUSMIDDLEBUTTON: return 4;	// VK_MBUTTON
-		default: return 0;                  // rueda / X1 / X2: sin icono
-		}
-	}
-
-	// Teclas imprimibles: el VK de una letra es su mayúscula; los dígitos y la
-	// puntuación básica coinciden con su ASCII.
-	if (key > 0 && key < 128) {
-		if (key >= 'a' && key <= 'z')
-			return key - 'a' + 'A';
-		return key;
-	}
-
-	switch (key) {
-	// Función, edición y navegación
-	case rsESC:      return 27;
-	case rsF1: case rsF2: case rsF3: case rsF4: case rsF5: case rsF6:
-	case rsF7: case rsF8: case rsF9: case rsF10: case rsF11: case rsF12:
-		return 112 + (key - rsF1);
-	case rsINS:      return 45;
-	case rsDEL:      return 46;
-	case rsHOME:     return 36;
-	case rsEND:      return 35;
-	case rsPGUP:     return 33;
-	case rsPGDN:     return 34;
-	case rsUP:       return 38;
-	case rsDOWN:     return 40;
-	case rsLEFT:     return 37;
-	case rsRIGHT:    return 39;
-	// Teclado numérico
-	case rsDIVIDE:   return 111;
-	case rsTIMES:    return 106;
-	case rsPLUS:     return 107;
-	case rsMINUS:    return 109;
-	case rsPADDEL:   return 110;
-	case rsPADINS:   return 96;
-	case rsPADEND:   return 97;
-	case rsPADDOWN:  return 98;
-	case rsPADPGDN:  return 99;
-	case rsPADLEFT:  return 100;
-	case rsPAD5:     return 101;
-	case rsPADRIGHT: return 102;
-	case rsPADHOME:  return 103;
-	case rsPADUP:    return 104;
-	case rsPADPGUP:  return 105;
-	case rsPADENTER: return 13;
-	case rsNUMLOCK:  return 144;
-	// Modificadores y bloques
-	case rsSCROLL:   return 145;
-	case rsPAUSE:    return 19;
-	case rsBACKSP:   return 8;
-	case rsTAB:      return 9;
-	case rsCAPSLK:   return 20;
-	case rsENTER:    return 13;
-	case rsLSHIFT: case rsRSHIFT: case rsSHIFT: return 16;
-	case rsLCTRL:  case rsRCTRL:               return 17;
-	case rsLALT:   case rsRALT:                return 18;
-	case rsLWIN:     return 91;
-	case rsRWIN:     return 92;
-	case rsAPPS:     return 93;
-	default:         return 0;
-	}
-}
-
-int32 CControllerConfigManager::GetKeyIconCodeForAction(uint16 action)
-{
-	// Mismo orden de preferencia que GetWideStringOfCommandKeys: primero el
-	// teclado, luego su tecla extra opcional y por último el ratón.
-	static const eControllerType tipos[] = { KEYBOARD, OPTIONAL_EXTRA, MOUSE };
-
-	for (int i = 0; i < ARRAY_SIZE(tipos); i++) {
-		int32 vk = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, tipos[i]), tipos[i]);
-		if (vk > 0)
-			return vk;
-	}
-	return 0;
-}
-
-bool CControllerConfigManager::GetShiftKeyIconCodesForAction(uint16 action, int32 *pShift, int32 *pKey)
-{
-	int32 vkKb = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, KEYBOARD), KEYBOARD);
-	int32 vkEx = ViceExtKeyToVK(GetControllerKeyAssociatedWithAction((e_ControllerAction)action, OPTIONAL_EXTRA), OPTIONAL_EXTRA);
-	if (vkKb == 16 && vkEx > 0 && vkEx != 16) {
-		*pShift = vkKb;
-		*pKey = vkEx;
-		return true;
-	}
-	if (vkEx == 16 && vkKb > 0 && vkKb != 16) {
-		*pShift = vkEx;
-		*pKey = vkKb;
-		return true;
-	}
-	return false;
-}
-#endif
 
 void CControllerConfigManager::UpdateJoyButtonState(int32 padnumber)
 {
@@ -3091,3 +3471,148 @@ void CControllerConfigManager::ResetSettingOrder(e_ControllerAction action)
 		}
 	}
 }
+
+#ifdef VICEEXT_PC_KEY_ICONS
+int CControllerConfigManager::GetControllerSettingNonJoystick(e_ControllerAction action)
+{
+	int key = GetControllerKeyAssociatedWithAction(action, MOUSE);
+
+	if (key != 0 && key != rsNULL)
+		return key;
+
+	for (int i = KEYBOARD; i < MAX_CONTROLLERTYPES; i++) {
+		if (i == JOYSTICK || i == MOUSE)
+			continue;
+
+		key = GetControllerKeyAssociatedWithAction(action, (eControllerType)i);
+
+		if (key == 0 || key == rsNULL)
+			continue;
+
+		return key;
+	}
+
+	return -1;
+}
+
+static int
+GetVirtualKeyFromPCKey(int key)
+{
+	if (key >= 'A' && key <= 'Z' || key >= '0' && key <= '9' || key == ' ')
+		return key;
+
+	switch (key)
+	{
+		case ';': return 186;
+		case '=': return 187;
+		case ',': return 188;
+		case '-': return 189;
+		case '.': return 190;
+		case '/': return 191;
+		case '`': return 192;
+		case '[': return 219;
+		case '\\': return 226;
+		case ']': return 221;
+		case '\'': return 222;
+		case rsESC: return 27;
+		case rsF1: case rsF2: case rsF3: case rsF4: case rsF5: case rsF6:
+		case rsF7: case rsF8: case rsF9: case rsF10: case rsF11: case rsF12:
+			return 112 + key - rsF1;
+		case rsINS: return 45;
+		case rsDEL: return 46;
+		case rsHOME: return 36;
+		case rsEND: return 35;
+		case rsPGUP: return 33;
+		case rsPGDN: return 34;
+		case rsUP: return 38;
+		case rsDOWN: return 40;
+		case rsLEFT: return 37;
+		case rsRIGHT: return 39;
+		case rsDIVIDE: return 111;
+		case rsTIMES: return 106;
+		case rsPLUS: return 107;
+		case rsMINUS: return 109;
+		case rsPADDEL: return 110;
+		case rsPADEND: return 97;
+		case rsPADDOWN: return 98;
+		case rsPADPGDN: return 99;
+		case rsPADLEFT: return 100;
+		case rsPAD5: return 101;
+		case rsNUMLOCK: return 144;
+		case rsPADRIGHT: return 102;
+		case rsPADHOME: return 103;
+		case rsPADUP: return 104;
+		case rsPADPGUP: return 105;
+		case rsPADINS: return 96;
+		case rsPADENTER: return 13;
+		case rsSCROLL: return 145;
+		case rsPAUSE: return 19;
+		case rsBACKSP: return 8;
+		case rsTAB: return 9;
+		case rsCAPSLK: return 20;
+		case rsENTER: return 13;
+		case rsLSHIFT: return 160;
+		case rsRSHIFT: return 161;
+		case rsLCTRL: return 17;
+		case rsRCTRL: return 17;
+		case rsLALT: return 18;
+		case rsRALT: return 18;
+		case rsLWIN: return 91;
+		case rsRWIN: return 92;
+		case rsAPPS: return 93;
+		default: return 0;
+	}
+}
+
+int CControllerConfigManager::GetCurrentPCKeyFromCurrentAction()
+{
+	static uint8 currentAction = 0;
+
+	int key = -1;
+
+	key = GetControllerSettingNonJoystick((e_ControllerAction(ControlsManager.m_curActionsInMessage[currentAction])));
+
+	if (currentAction == 3 || ControlsManager.m_curActionsInMessage[currentAction] == -1 || ControlsManager.m_curActionsInMessage[currentAction + 1] == -1)
+		currentAction = 0;
+	else if (ControlsManager.m_curActionsInMessage[currentAction + 1] != -1)
+		currentAction++;
+
+	if (key == -1)
+		return -1;
+
+	int symbol = -1;
+
+	if (key <= rsMOUSEX2BUTTON) {
+		switch (key)
+		{
+			case rsMOUSELEFTBUTTON:
+				symbol = 0;
+				break;
+			case rsMOUSERIGHTBUTTON:
+				symbol = 1;
+				break;
+			case rsMOUSMIDDLEBUTTON:
+				symbol = 3;
+				break;
+			case rsMOUSEWHEELUPBUTTON:
+				symbol = SPRITE_MOUSE_WHEEL_UP;
+				break;
+			case rsMOUSEWHEELDOWNBUTTON:
+				symbol = SPRITE_MOUSE_WHEEL_DOWN;
+				break;
+			case rsMOUSEX1BUTTON:
+				symbol = 4;
+				break;
+			case rsMOUSEX2BUTTON:
+				symbol = 5;
+				break;
+		}
+	} else {
+		int virtualKey = GetVirtualKeyFromPCKey(key);
+		if (virtualKey != 0)
+			symbol = virtualKey - 1;
+	}
+
+	return symbol;
+}
+#endif

@@ -29,7 +29,13 @@
 #include "PedPlacement.h"
 #include "VarConsole.h"
 #include "SaveBuf.h"
-#include "ControllerConfig.h"  // web: ControlsManager / PED_RELOAD (sección 3, C3.1)
+#include "ControllerConfig.h"
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#include "Frontend.h"
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#include "AudioManager.h"
+#endif
 #include "ondemand.h"          // web: ODTRACES -> odtrace.log (sección 3, C3.1)
 #include "WaterLevel.h"        // Sección 3, C4 (nadar): CWaterLevel::GetWaterLevel
 #include "WeaponInfo.h"
@@ -365,11 +371,22 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 #ifdef FREE_CAM
 	m_bFreeAimActive = false;
 #endif
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bIsAutoAiming = false;
+#endif
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_bSkipPhoneCall = false;
+#endif
 }
 
 void
 CPlayerPed::ClearWeaponTarget()
 {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bIsAutoAiming = false;
+#endif
 	if (m_nPedType == PEDTYPE_PLAYER1) {
 		SetWeaponLockOnTarget(nil);
 		TheCamera.ClearPlayerWeaponMode();
@@ -490,7 +507,9 @@ CPlayerPed::MakeChangesForNewWeapon(eWeaponType weapon)
 	SetCurrentWeapon(weapon);
 	m_nSelectedWepSlot = m_currentWeapon;
 
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 	GetWeapon()->m_nAmmoInClip = Min(GetWeapon()->m_nAmmoTotal, CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nAmountofAmmunition);
+#endif
 
 	if (CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_CANAIM))
 		ClearWeaponTarget();
@@ -1128,7 +1147,11 @@ CPlayerPed::ProcessWeaponSwitch(CPad *padUsed)
 		s_odWpnWas = false;
 #endif
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (!m_pPointGunAt && !bDontAllowWeaponChange && GetWeapon()->m_eWeaponState != WEAPONSTATE_RELOADING) {
+#else
 	if (!m_pPointGunAt && !bDontAllowWeaponChange && GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR) {
+#endif
 		if (padUsed->CycleWeaponRightJustDown()) {
 
 			if (TheCamera.PlayerWeaponMode.Mode != CCam::MODE_M16_1STPERSON
@@ -2525,6 +2548,9 @@ CPlayerPed::FindWeaponLockOnTarget(void)
 	if (!nextTarget)
 		return false;
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bIsAutoAiming = true;
+#endif
 	SetWeaponLockOnTarget(nextTarget);
 	bDontAllowWeaponChange = true;
 	SetPointGunAt(nextTarget);
@@ -2547,7 +2573,9 @@ CPlayerPed::ProcessAnimGroups(void)
 	if (ViceExtStrafeAiming(this, CPad::GetPad(0))) {
 #else
 	if ((m_fWalkAngle <= -DEGTORAD(50.0f) || m_fWalkAngle >= DEGTORAD(50.0f))
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 		&& TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam()
+#endif
 		&& CanStrafeOrMouseControl()) {
 #endif
 
@@ -2750,6 +2778,91 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		}
 	}
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (padUsed->GetMeleeWeapon() && weaponInfo->m_nWeaponSlot <= WEAPONSLOT_MELEE && m_nMoveState != PEDMOVE_SPRINT) {
+		if (m_nSelectedWepSlot == m_currentWeapon) {
+			if (m_nPedState == PED_ATTACK) {
+				if (padUsed->MeleeWeaponJustDown()) {
+					m_bHaveTargetSelected = true;
+				} else if (!m_bHaveTargetSelected) {
+					m_fAttackButtonCounter += CTimer::GetTimeStepNonClipped();
+				}
+			} else {
+				m_fAttackButtonCounter = 0.0f;
+				m_bHaveTargetSelected = false;
+			}
+
+			if (padUsed->MeleeWeaponJustDown()) {
+				if ((GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED || GetWeapon()->m_eWeaponType == WEAPONTYPE_BRASSKNUCKLE || weaponInfo->IsFlagSet(WEAPONFLAG_FIGHTMODE)) &&
+					(m_fMoveSpeed < 1.0f || m_nPedState == PED_FIGHT)) {
+					
+					StartFightAttack(padUsed->GetWeapon());
+				} else {
+					SetAttack(nil);
+				}
+			}
+		}
+	} else if (padUsed->GetWeapon() && m_nMoveState != PEDMOVE_SPRINT) {
+		if (m_nSelectedWepSlot == m_currentWeapon) {
+			if (m_pPointGunAt && FrontEndMenuManager.m_PrefsAutoaim) {
+				if (m_nPedState == PED_ATTACK) {
+					m_fAttackButtonCounter *= Pow(0.94f, CTimer::GetTimeStep());
+				} else {
+					m_fAttackButtonCounter = 0.0f;
+				}
+				SetAttack(m_pPointGunAt);
+			} else {
+				if (m_nPedState == PED_ATTACK) {
+					if (padUsed->WeaponJustDown()) {
+						m_bHaveTargetSelected = true;
+					} else if (!m_bHaveTargetSelected) {
+						m_fAttackButtonCounter += CTimer::GetTimeStepNonClipped();
+					}
+				} else {
+					m_fAttackButtonCounter = 0.0f;
+					m_bHaveTargetSelected = false;
+				}
+
+				if (GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED && GetWeapon()->m_eWeaponType != WEAPONTYPE_BRASSKNUCKLE &&
+					!weaponInfo->IsFlagSet(WEAPONFLAG_FIGHTMODE)) {
+
+					if (GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR && GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR_GRENADE ||
+						padUsed->WeaponJustDown())
+
+						SetAttack(nil);
+				}
+			}
+		}
+	} else {
+		m_pedIK.m_flags &= ~CPedIK::LOOKAROUND_HEAD_ONLY;
+		if (m_nPedState == PED_ATTACK) {
+			m_bHaveTargetSelected = true;
+			bIsAttacking = false;
+		}
+	}
+
+	if (CPad::GetPad(0)->WeaponReloadJustDown() && weaponInfo->IsFlagSet(WEAPONFLAG_RELOAD)) {
+		CWeapon* weapon = GetWeapon();
+		if (weapon->m_eWeaponState == WEAPONSTATE_READY && weapon->m_nAmmoInClip > 0 && 
+			weapon->m_nAmmoInClip < weaponInfo->m_nAmountofAmmunition && weapon->m_nAmmoTotal != weapon->m_nAmmoInClip) {
+
+			weapon->m_eWeaponState = WEAPONSTATE_RELOADING;
+			weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + weapon->GetInfo()->m_nReload;
+
+			CAnimBlendAssociation* newReloadAssoc = CAnimManager::BlendAnimation(
+				GetClump(), weaponInfo->m_AnimToPlay,
+				bIsDucking && GetCrouchReloadAnim(weaponInfo) ? GetCrouchReloadAnim(weaponInfo) : GetReloadAnim(weaponInfo),
+				8.0f);
+			newReloadAssoc->SetFinishCallback(FinishedReloadCB, this);
+
+			ClearLookFlag();
+			ClearAimFlag();
+			bIsAttacking = false;
+			bIsPointingGunAt = false;
+			m_shootTimer = CTimer::GetTimeInMilliseconds();
+		}
+	}
+#else
 	if (padUsed->GetWeapon() && m_nMoveState != PEDMOVE_SPRINT) {
 		if (m_nSelectedWepSlot == m_currentWeapon) {
 			if (m_pPointGunAt) {
@@ -2792,6 +2905,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			bIsAttacking = false;
 		}
 	}
+#endif
 
 #ifdef __EMSCRIPTEN__
 	{
@@ -2824,7 +2938,11 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	// `bFreeCam` (que es quien cortaba antes `CanStrafeOrMouseControl`): el
 	// apuntado con ratón es cosa de `m_bUseMouse3rdPerson`, y encarar el arma al
 	// centro de la pantalla es este bloque.
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (CCamera::bFreeCam &&
+#else
 	if (CCamera::m_bUseMouse3rdPerson &&
+#endif
 		m_nSelectedWepSlot == m_currentWeapon && m_nMoveState != PEDMOVE_SPRINT) {
 
 #define CAN_AIM_WITH_ARM ((weaponInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) || ViceExtAimWithArm(GetWeapon()->m_eWeaponType)) && !bIsDucking && !bCrouchWhenShooting)
@@ -2915,6 +3033,20 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	}
 #endif
 
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_FIRING_AND_AIMING
+	if (!FrontEndMenuManager.m_PrefsAutoaim)
+		return;
+	else {
+		if (CPad::GetPad(0)->GetTarget()) {
+			bool bCantAim = CPad::GetPad(0)->NewState.RightShoulder1 == 0 && CPad::GetPad(0)->Mode == 2 ||
+							CPad::GetPad(0)->NewState.LeftShoulder2 < 128 && CPad::GetPad(0)->Mode == 1;
+
+			if (bCantAim && !bIsAutoAiming || GetWeaponSlot(GetWeapon()->m_eWeaponType) == WEAPONSLOT_SNIPER || InVehicle())
+				return;
+		}
+	}
+#endif
+
 	if (padUsed->GetTarget() && m_nSelectedWepSlot == m_currentWeapon &&			 m_nMoveState != PEDMOVE_SPRINT && !TheCamera.Using1stPersonWeaponMode() && ViceExtCanAim(GetWeapon()->m_eWeaponType, weaponInfo)) { // Sección 3, C7
 		if (m_pPointGunAt) {
 			// what??
@@ -2957,7 +3089,11 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			TheCamera.UpdateAimingCoors(m_pPointGunAt->GetPosition());
 
 		} else if (!CCamera::m_bUseMouse3rdPerson) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			if (!bIsAutoAiming || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget)
+#else
 			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget)
+#endif
 				FindWeaponLockOnTarget();
 		}
 	} else if (m_pPointGunAt) {
@@ -3241,6 +3377,14 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 			}
 		}
 #endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#ifdef VICEEXT_FIRING_AND_AIMING
+		if (CPad::GetPad(0)->GetPedWalk() && !bIsPlayerAiming)
+#else
+		if (CPad::GetPad(0)->GetPedWalk())
+#endif
+			m_fMoveSpeed /= 2;
+#endif
 		float maxAcc = 0.07f * CTimer::GetTimeStep();
 		m_fMoveSpeed = Min(padMoveInGameUnit, m_fMoveSpeed + maxAcc);
 #ifdef VICEEXT_AIM_WALK
@@ -3412,147 +3556,6 @@ CPlayerPed::FindNewAttackPoints(void)
 			m_vecSafePos[i] = attackerPos;
 	}
 }
-
-#ifdef VICEEXT_MANUAL_RELOAD
-// Sección 3 (C3.1, corrección de la traza 20/09): distingue la recarga pedida
-// con la tecla de la automática al vaciar el cargador. Las dos pasan por
-// `WEAPONSTATE_RELOADING`, así que sin esta marca la traza "reload done" daba
-// por buena una recarga manual que el jugador no había pedido (pasó en la
-// partida del 20/09: un único `done` con el cargador lleno y ningún `start`).
-static bool s_viceExtManualReload = false;
-// R10: para distinguir `done` (cargador rellenado) de `fail` (aborto: cambio de
-// arma, coche, muerte...) se guarda el punto de partida.
-static int s_viceExtReloadStartClip = 0;
-static int s_viceExtReloadStartType = -1;
-
-// Sección 3 (Vice Extended v2.5, "Reloading a weapon on the key"): recarga a
-// mano. Reutiliza el camino de la recarga automática al vaciar el cargador
-// (`m_eWeaponState = WEAPONSTATE_RELOADING` + `m_nTimer`): con ese estado, el
-// motor ya reproduce la animación y el sonido de recarga (PedFight.cpp /
-// Weapon.cpp) y, al vencer el temporizador, llama a CWeapon::Reload() para
-// rellenar el cargador desde la munición total.
-bool
-CPlayerPed::ViceExtTryManualReload(void)
-{
-	// C3.1b (20/09): cada salida deja traza con su MOTIVO. En la partida real
-	// del jugador no hubo una sola línea de este bloque (ni `start` ni `no`), así
-	// que no se podía saber si la tecla no llegaba o si el estado la rechazaba:
-	// había 4 salidas silenciosas. Ahora ninguna sale sin decirlo.
-#ifdef __EMSCRIPTEN__
-#define VICEEXT_RELOAD_NO(razon) do { \
-		char t[150]; \
-		snprintf(t, sizeof t, "VICEEXT reload no motivo=%s arma=%d estado=%d clip=%d/%d total=%d", \
-			razon, (int)weapon->m_eWeaponType, (int)weapon->m_eWeaponState, \
-			weapon->m_nAmmoInClip, (int)info->m_nAmountofAmmunition, weapon->m_nAmmoTotal); \
-		ODTRACES(t); \
-	} while (0)
-#else
-#define VICEEXT_RELOAD_NO(razon) do {} while (0)
-#endif
-
-	CWeapon *weapon = GetWeapon();
-	CWeaponInfo *info = weapon->GetInfo();
-
-	// La tecla se lee igual que el conmutador de 1ª persona (C1): la acción
-	// rebindable del teclado, así que vale en cualquier método de control.
-	// Sección 2 (5ª partida, a petición del jugador: "la R no recarga"): la tecla
-	// se lee de la acción rebindable y, si esa acción NO apunta a 'R' (una config
-	// de controles guardada de antes de que existiera la acción — el hueco era
-	// UNKNOWN_ACTION y la config vieja se carga tal cual), también se acepta 'R'
-	// directa. Así la recarga no depende de lo que tenga guardado el navegador.
-	RsKeyCodes odKey = (RsKeyCodes)ControlsManager.GetControllerKeyAssociatedWithAction(PED_RELOAD, KEYBOARD);
-	bool odKeyDown = ControlsManager.GetIsKeyboardKeyJustDown(odKey);
-	if (!odKeyDown && odKey != (RsKeyCodes)'R')
-		odKeyDown = ControlsManager.GetIsKeyboardKeyJustDown((RsKeyCodes)'R');
-	if (!odKeyDown)
-		return false;
-
-#ifdef __EMSCRIPTEN__
-	// La tecla SÍ ha llegado al motor (una línea por pulsación, no por frame).
-	{
-		char t[150];
-		snprintf(t, sizeof t, "VICEEXT reload key tecla=%d arma=%d estado=%d clip=%d/%d total=%d",
-			(int)odKey, (int)weapon->m_eWeaponType, (int)weapon->m_eWeaponState,
-			weapon->m_nAmmoInClip, (int)info->m_nAmountofAmmunition, weapon->m_nAmmoTotal);
-		ODTRACES(t);
-	}
-#endif
-
-	if (weapon->m_eWeaponState == WEAPONSTATE_RELOADING) {
-		VICEEXT_RELOAD_NO("ya-recargando");
-		return false;
-	}
-	// Sólo el golpe cuerpo a cuerpo queda fuera: todo lo demás (listo,
-	// disparando y **sin munición en el cargador**) admite recarga a mano.
-	if (weapon->m_eWeaponState == WEAPONSTATE_MELEE_MADECONTACT) {
-		VICEEXT_RELOAD_NO("cuerpo-a-cuerpo");
-		return false;
-	}
-	if (info->m_nAmountofAmmunition <= 1) {
-		VICEEXT_RELOAD_NO("sin-cargador");
-		return false;                       // arma sin cargador (o de un solo tiro)
-	}
-	if (weapon->m_nAmmoTotal <= 0) {
-		VICEEXT_RELOAD_NO("sin-municion");
-		return false;
-	}
-	if (weapon->m_nAmmoInClip >= info->m_nAmountofAmmunition) {
-		VICEEXT_RELOAD_NO("cargador-lleno");
-		return false;
-	}
-
-	uint32 reload = info->m_nReload;
-	if (CWorld::Players[CWorld::PlayerInFocus].m_bFastReload)
-		reload /= 4;                        // mismo atajo que la recarga automática
-	// R10: el bloque NO corta la animación ni deja `m_nTimer` a medias: pone el
-	// mismo estado que la recarga automática (`WEAPONSTATE_RELOADING` + timer) y
-	// a partir de aquí el motor lleva la animación/sonido (PedFight/Weapon.cpp)
-	// y cierra solo con `CWeapon::Reload()` al vencer el timer. Este bloque no
-	// vuelve a tocar el arma hasta que el estado cambia.
-	weapon->m_eWeaponState = WEAPONSTATE_RELOADING;
-	weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + reload;
-	s_viceExtManualReload = true;
-	s_viceExtReloadStartClip = weapon->m_nAmmoInClip;
-	s_viceExtReloadStartType = (int)weapon->m_eWeaponType;
-	// R12 (9ª partida): la ANIMACIÓN. El motor sólo la pone dentro del anim de
-	// ataque (PedFight::ProcessAttack, al cerrar el bucle del clip de disparo) y
-	// recargando quieto —sin ataque en curso— ese bloque no se alcanza: en el log
-	// el cargador se rellenaba (`reload start`/`done` con los dos lados) y el
-	// jugador no veía ninguna animación. Se mezcla aquí el mismo clip que habría
-	// usado el motor: el grupo del arma y el par reload/crouchreload de siempre.
-	if (GetReloadAnim(info)) {
-		// R28: agachado por el port (no `bIsDucking`) también usa el clip de agachado.
-		AnimationId odAnim = (ViceExtCrouchShooting() && GetCrouchReloadAnim(info))
-		    ? GetCrouchReloadAnim(info) : GetReloadAnim(info);
-		CAnimManager::BlendAnimation(GetClump(), info->m_AnimToPlay, odAnim, 8.0f);
-#ifdef __EMSCRIPTEN__
-		{
-			char t[150];
-			snprintf(t, sizeof t, "VICEEXT reload anim grupo=%d clip=%d crouch=%d",
-				(int)info->m_AnimToPlay, (int)odAnim, (int)bIsDucking);
-			ODTRACES(t);
-		}
-#endif
-	}
-#ifdef __EMSCRIPTEN__
-	else {
-		char t[150];
-		snprintf(t, sizeof t, "VICEEXT reload anim grupo=%d clip=0 (arma sin WEAPONFLAG_RELOAD)",
-			(int)info->m_AnimToPlay);
-		ODTRACES(t);
-	}
-#endif
-#ifdef __EMSCRIPTEN__
-	{
-		char t[120];
-		snprintf(t, sizeof t, "VICEEXT reload start clip=%d total=%d type=%d ms=%u",
-			weapon->m_nAmmoInClip, weapon->m_nAmmoTotal, (int)weapon->m_eWeaponType, reload);
-		ODTRACES(t);
-	}
-#endif
-	return true;
-}
-#endif
 
 #ifdef VICEEXT_SWIMMING
 #define VICEEXT_SWIM_SEREGA_ENTRY	0.022f
@@ -6251,42 +6254,6 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 void
 CPlayerPed::ProcessControl(void)
 {
-	// ClassicAXIS C17 `WalkKey` (classicaxis_Main.cpp:1196-1201 y 1215-1217): con
-	// la tecla de andar pulsada la velocidad es 0, para poder CAMINAR en vez de
-	// correr. Va aqu\u00ed, al principio de `ProcessControl` y antes de cualquier
-	// predicado de apuntado, que es donde lo lee el mod (Main.cpp:1215, justo
-	// antes de su bloque de `isAiming`).
-	// Se lee de laacci\u00f3n REBINDABLE `PED_WALK` (mismo patron que `PED_RELOAD`,
-	// PlayerPed.cpp:2230), as\u00ed que vale con cualquier m\u00e9todo de control y no
-	// ata la tecla. `GetIsKeyboardKeyDown` (tenido) y no `...JustDown` (flanco),
-	// porque el efecto es mientras se mantenga pulsada.
-	// El "NULL para desactivar" del INI del mod es la tecla 0 -> `if (odWalk)`: si
-	// el jugador rebinda la acci\u00f3n a `NULL` en el men\u00fa de controles, el
-	// `GetControllerKeyAssociatedWithAction` devuelve 0 y la tecla deja de hacer
-	// nada, que es justo lo que significa `NULL` en `ClassicAxisVC.ini:8`.
-	// Con `VICEEXT_ALT_SIT` (v2.0 del mod: "Walking on ALT for the keyboard") la
-	// decision la toma su API `CPad::GetPedWalk()`, y sin la bandera no hay bloque.
-#ifdef VICEEXT_ALT_SIT
-	{
-		RsKeyCodes odWalk = (RsKeyCodes)ControlsManager.GetControllerKeyAssociatedWithAction(PED_WALK, KEYBOARD);
-		bool odWalkDown = CPad::GetPad(0)->GetPedWalk();
-		if (odWalkDown)
-			m_fMoveSpeed = 0.0f;
-		// Traza por FLANCO (pulsar y soltar), no por frame: `AIMWALK tecla=%d spd=%.2f`.
-		// El criterio de \u00a78 es `spd=0.00` con la tecla pulsada y la velocidad de
-		// antes al soltar.
-#ifdef __EMSCRIPTEN__
-		static bool s_odWalkWas = false;
-		if (odWalkDown != s_odWalkWas) {
-			s_odWalkWas = odWalkDown;
-			char t[80];
-			snprintf(t, sizeof t, "AIMWALK tecla=%d spd=%.2f", (int)odWalk, m_fMoveSpeed);
-			ODTRACES(t);
-		}
-#endif
-	}
-#endif
-
 	// ClassicAXIS: la ley de apuntado DEL MOD entra a sustituir el control de
 	// apuntado del motor. Va antes de `CPed::ProcessControl()` y antes que la
 	// seccion de nado (`:4465`) y de agachado (`:4472`), que no toca.
@@ -6436,51 +6403,6 @@ CPlayerPed::ProcessControl(void)
 			SetDead();
 		return;
 	}
-#ifdef VICEEXT_MANUAL_RELOAD
-	// Sección 3 (Vice Extended v2.5, "Reloading a weapon on the key"): recarga a
-	// mano con PED_RELOAD (R por defecto, rebindable). A pie y con el control del
-	// jugador: en vehículo la munición del drive-by tiene su propio camino y con
-	// una cinemática/transición el ped no está en control.
-	// C3.1b (20/09): la lista blanca de estados era demasiado estrecha (sólo
-	// NONE/IDLE/ATTACK/FIGHT/AIM_GUN/SNIPER). Ahora basta con estar a pie, en
-	// control y **no** estar muriendo, conduciendo, cayendo o saltando.
-	if (padUsed && !bInVehicle && IsPedInControl()
-	    && m_nPedState != PED_DIE && m_nPedState != PED_DEAD && m_nPedState != PED_DRIVING
-	    && m_nPedState != PED_FALL && m_nPedState != PED_JUMP)
-		ViceExtTryManualReload();
-#ifdef __EMSCRIPTEN__
-	// R10: cierre de la recarga (`done` con cargador lleno y `total` reducido, o
-	// `fail` con el motivo del aborto). Sólo del arma del jugador y sólo al
-	// cambiar de estado, así que no da ruido aunque la partida tenga NPCs
-	// recargando. Sólo la recarga que pidió el jugador (s_viceExtManualReload):
-	// la automática al vaciar el cargador también pasa por este estado.
-	{
-		static int8 prevWeaponState = WEAPONSTATE_READY;
-		int8 nowState = (int8)GetWeapon()->m_eWeaponState;
-		if (prevWeaponState == WEAPONSTATE_RELOADING && nowState != WEAPONSTATE_RELOADING
-		    && s_viceExtManualReload) {
-			int odClip = GetWeapon()->m_nAmmoInClip;
-			int odCap = GetWeapon()->GetInfo()->m_nAmountofAmmunition;
-			char t[160];
-			if (odClip >= odCap || odClip > s_viceExtReloadStartClip) {
-				snprintf(t, sizeof t, "VICEEXT reload done manual=1 clip=%d/%d total=%d",
-					odClip, odCap, GetWeapon()->m_nAmmoTotal);
-			} else {
-				const char *motivo = bInVehicle ? "vehiculo"
-				    : DyingOrDead() ? "muerto"
-				    : ((int)GetWeapon()->m_eWeaponType != s_viceExtReloadStartType ? "arma-cambiada"
-				    : "interrumpida");
-				snprintf(t, sizeof t, "VICEEXT reload fail motivo=%s clip=%d/%d total=%d",
-					motivo, odClip, odCap, GetWeapon()->m_nAmmoTotal);
-			}
-			ODTRACES(t);
-		}
-		if (nowState != WEAPONSTATE_RELOADING)
-			s_viceExtManualReload = false;
-		prevWeaponState = nowState;
-	}
-#endif
-#endif
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
 			if (m_pMyVehicle->IsCar() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
@@ -6538,6 +6460,15 @@ CPlayerPed::ProcessControl(void)
 	// R6: el agachado ya NO se lleva el movimiento (sólo clip + tope). El
 	// control a pie normal corre siempre; el tope se aplica después.
 	ViceExtCrouchControl(padUsed);
+#endif
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_nPedState == PED_ANSWER_MOBILE && m_bSkipPhoneCall) {
+		for (int slot = 0; slot < MISSION_AUDIO_SLOTS; slot++)
+			AudioManager.FinishMissionAudioPhoneDialogue(slot);
+	} else if (m_nPedState == PED_ANSWER_MOBILE && !m_bSkipPhoneCall && CPad::GetPad(0)->ExitVehicleJustDown()) {
+		m_bSkipPhoneCall = true;
+	}
 #endif
 
 	switch (m_nPedState) {

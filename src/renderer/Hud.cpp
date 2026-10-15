@@ -31,6 +31,9 @@
 #include "main.h"
 #include "General.h"
 #include "VarConsole.h"
+#ifdef VICEEXT_PC_KEY_ICONS
+#include "ControllerConfig.h"
+#endif
 #include "ondemand.h" // D4/D6/D7: trazas de verificación
 #ifdef VICEEXT_WEAPON_SIGHTS
 #include "WeaponInfo.h" // D6: mira por arma (columna 27 de su weapon.dat)
@@ -2229,14 +2232,6 @@ void CHud::Initialise()
 #endif
 	}
 #endif
-#ifdef VICEEXT_HINT_KEYS
-	// D7 (sección 1): TXD de iconos de tecla del mod (`models/pcbtns.txd`), una
-	// vez, para que los avisos puedan pintar la tecla.
-	CFont::LoadKeyIcons();
-#ifdef __EMSCRIPTEN__
-	ODTRACES("KEYICONS txd=pcbtns cargado");
-#endif
-#endif
 	m_pLastZoneName = nil;
 	GetRidOfAllHudMessages();
 	m_pLastVehicleName = nil;
@@ -2429,6 +2424,12 @@ void CHud::SetHelpMessage(wchar *message, bool quick, bool displayForever)
 		for (int i = 0; i < HELP_MSG_LENGTH; i++) {
 			m_HelpMessageToPrint[i] = 0;
 		}
+
+#ifdef VICEEXT_PC_KEY_ICONS
+		for (int j = 0; j < 4; j++) {
+			ControlsManager.m_curActionsInMessage[j] = -1;
+		}
+#endif
 
 		CMessages::WideStringCopy(m_HelpMessage, message, HELP_MSG_LENGTH);
 		CMessages::InsertPlayerControlKeysInString(m_HelpMessage);

@@ -9,9 +9,10 @@
 #include "Timer.h"
 #include "ondemand.h" // R3b: caza-todo de textos dibujados (SCRTXT3)
 #include <string.h>  // R3b: strcmp/strncpy del dedupe de la traza
-#ifdef VICEEXT_HINT_KEYS
-#include "TxdStore.h" // D7: el TXD de iconos de tecla
-#include <stdio.h>   // D7: snprintf del nombre de la textura (código de tecla)
+#ifdef VICEEXT_PC_KEY_ICONS
+#include "string"
+#include "ControllerConfig.h"
+#include "Pad.h"
 #endif
 
 void
@@ -307,12 +308,10 @@ int CFont::PS2Symbol = BUTTON_NONE;
 int CFont::ButtonsSlot = -1;
 #endif // BUTTON_ICONS
 
-#ifdef VICEEXT_HINT_KEYS
-CSprite2d CFont::KeyIconSprite[256];
-bool CFont::KeyIconSearched[256];
-int32 CFont::KeyIconsSlot = -1;
-int CFont::KeyIconCode = 0;
-int CFont::KeyIconCode2 = 0;
+#ifdef VICEEXT_PC_KEY_ICONS
+CSprite2d CFont::PCKeySprite[MAX_PC_KEY_SPRITES];
+int CFont::PCSymbol = -1;
+int CFont::PCKeySlot = -1;
 #endif
 
 void
@@ -375,6 +374,10 @@ CFont::Initialise(void)
 	// loaded in CMenuManager with GAMEPAD_MENU defined
 	LoadButtons("MODELS/X360BTNS.TXD");
 #endif
+
+#ifdef VICEEXT_PC_KEY_ICONS
+	LoadPCKeys("MODELS/PCBTNS.TXD");
+#endif
 }
 
 #ifdef BUTTON_ICONS
@@ -412,6 +415,17 @@ CFont::LoadButtons(const char *txdPath)
 		ButtonSprite[BUTTON_RSTICK_DOWN].SetTexture("thumbryd");
 		ButtonSprite[BUTTON_RSTICK_LEFT].SetTexture("thumbrxl");
 		ButtonSprite[BUTTON_RSTICK_RIGHT].SetTexture("thumbrxr");
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+		ButtonSprite[BUTTON_LEFT_RIGHT].SetTexture("dlr");
+		ButtonSprite[BUTTON_UP_DOWN].SetTexture("dud");
+		ButtonSprite[BUTTON_SELECT].SetTexture("select");
+		ButtonSprite[BUTTON_LSTICK].SetTexture("thumbl");
+		ButtonSprite[BUTTON_RSTICK].SetTexture("thumbr");
+		ButtonSprite[BUTTON_DPAD_UP].SetTexture("up");
+		ButtonSprite[BUTTON_DPAD_DOWN].SetTexture("down");
+		ButtonSprite[BUTTON_DPAD_LEFT].SetTexture("left");
+		ButtonSprite[BUTTON_DPAD_RIGHT].SetTexture("right");
+#endif
 		CTxdStore::PopCurrentTxd();
 	}
 	else {
@@ -424,6 +438,50 @@ CFont::LoadButtons(const char *txdPath)
 	}
 }
 #endif // BUTTON_ICONS
+
+#ifdef VICEEXT_PC_KEY_ICONS
+void CFont::LoadPCKeys(const char* txdPath)
+{
+	if (int file = CFileMgr::OpenFile(txdPath)) {
+		CFileMgr::CloseFile(file);
+		if (PCKeySlot == -1)
+			PCKeySlot = CTxdStore::AddTxdSlot("pckeys");
+		else {
+			for (int i = 0; i < MAX_PC_KEY_SPRITES; i++)
+				PCKeySprite[i].Delete();
+			CTxdStore::RemoveTxd(PCKeySlot);
+		}
+		CTxdStore::LoadTxd(PCKeySlot, txdPath);
+		CTxdStore::AddRef(PCKeySlot);
+		CTxdStore::PushCurrentTxd();
+		CTxdStore::SetCurrentTxd(PCKeySlot);
+
+		for (int i = 1; i < 255; i++) {
+			if (i >= 65 && i <= 90) {
+				std::string keyString(1, (char)i);
+				PCKeySprite[i - 1].SetTexture(keyString.c_str());
+			} else {
+				std::string keyString = std::to_string(i);
+				PCKeySprite[i - 1].SetTexture(keyString.c_str());
+			}
+		}
+
+		PCKeySprite[SPRITE_MOUSE_WHEEL_UP].SetTexture("MWHU");
+		PCKeySprite[SPRITE_MOUSE_WHEEL_DOWN].SetTexture("MWHD");
+		PCKeySprite[SPRITE_MOUSE_WHEEL_UP_AND_DOWN].SetTexture("MWH");
+		PCKeySprite[SPRITE_MOUSE].SetTexture("Mouse");
+
+		CTxdStore::PopCurrentTxd();
+	} else {
+		if (PCKeySlot != -1) {
+			for (int i = 0; i < MAX_PC_KEY_SPRITES; i++)
+				PCKeySprite[i].Delete();
+			CTxdStore::RemoveTxdSlot(PCKeySlot);
+			PCKeySlot = -1;
+		}
+	}
+}
+#endif
 
 #ifdef MORE_LANGUAGES
 void
@@ -475,18 +533,13 @@ CFont::Shutdown(void)
 		ButtonsSlot = -1;
 	}
 #endif
-#ifdef VICEEXT_HINT_KEYS
-	if (KeyIconsSlot != -1) {
-		for (int i = 1; i < 256; i++) {
-			if (KeyIconSearched[i])
-				KeyIconSprite[i].Delete();
-			KeyIconSearched[i] = false;
-		}
-		CTxdStore::RemoveTxdSlot(KeyIconsSlot);
-		KeyIconsSlot = -1;
+#ifdef VICEEXT_PC_KEY_ICONS
+	if (PCKeySlot != -1) {
+		for (int i = 0; i < MAX_PC_KEY_SPRITES; i++)
+			PCKeySprite[i].Delete();
+		CTxdStore::RemoveTxdSlot(PCKeySlot);
+		PCKeySlot = -1;
 	}
-	KeyIconCode = 0;
-	KeyIconCode2 = 0;
 #endif
 	Sprite[0].Delete();
 	Sprite[1].Delete();
@@ -511,75 +564,8 @@ CFont::InitPerFrame(void)
 #ifdef BUTTON_ICONS
 	PS2Symbol = BUTTON_NONE;
 #endif
-#ifdef VICEEXT_HINT_KEYS
-	KeyIconCode = 0;
-	KeyIconCode2 = 0;
-#endif
 }
 
-#ifdef VICEEXT_HINT_KEYS
-// D7 (sección 1): carga, una sola vez, el TXD con los iconos de tecla del mod
-// (`models/pcbtns.txd`). Se llama desde CHud::Initialise.
-void
-CFont::LoadKeyIcons(void)
-{
-	if (KeyIconsSlot == -1)
-		KeyIconsSlot = CTxdStore::AddTxdSlot("pcbtns");
-	CTxdStore::LoadTxd(KeyIconsSlot, "MODELS/PCBTNS.TXD");
-	CTxdStore::AddRef(KeyIconsSlot);
-}
-
-// El sprite de un código de tecla, creado a la primera y cacheado. Devuelve si
-// esa tecla tiene icono en su TXD: si no lo tiene (o el TXD no está), el aviso
-// sigue mostrando el nombre de la tecla en texto.
-bool
-CFont::HasKeyIcon(int vk)
-{
-	if (vk <= 0 || vk > 255)
-		return false;
-	if (KeyIconsSlot == -1)
-		return false;
-	if (!KeyIconSearched[vk]) {
-		KeyIconSearched[vk] = true;
-		char name[8];
-		snprintf(name, sizeof name, "%d", vk);
-		CTxdStore::PushCurrentTxd();
-		CTxdStore::SetCurrentTxd(KeyIconsSlot);
-		KeyIconSprite[vk].SetTexture(name, nil);
-		CTxdStore::PopCurrentTxd();
-	}
-	return KeyIconSprite[vk].m_pTexture != nil;
-}
-
-void
-CFont::DrawKeyIcon(float x, float y, int vk)
-{
-	if (vk <= 0 || !HasKeyIcon(vk))
-		return;
-	if (x <= 0.0f || x > SCREEN_WIDTH || y <= 0.0f || y > SCREEN_HEIGHT)
-		return;
-
-	// Misma caja que los iconos de mando (`DrawButton`): así el icono de tecla
-	// ocupa el mismo hueco en el texto que ocupaba su nombre.
-	CRect rect;
-	rect.left = x;
-	rect.top = RenderState.scaleY + RenderState.scaleY + y;
-	rect.right = RenderState.scaleY * 17.0f + x;
-	rect.bottom = RenderState.scaleY * 19.0f + y;
-
-	int vertexAlphaState;
-	void *raster;
-	RwRenderStateGet(rwRENDERSTATEVERTEXALPHAENABLE, &vertexAlphaState);
-	RwRenderStateGet(rwRENDERSTATETEXTURERASTER, &raster);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)TRUE);
-	if (RenderState.bIsShadow)
-		KeyIconSprite[vk].Draw(rect, RenderState.color);
-	else
-		KeyIconSprite[vk].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
-	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
-	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)vertexAlphaState);
-}
-#endif // VICEEXT_HINT_KEYS
 
 #ifdef BUTTON_ICONS
 void
@@ -606,6 +592,39 @@ CFont::DrawButton(float x, float y)
 			ButtonSprite[PS2Symbol].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
 		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
 		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void *)vertexAlphaState);
+	}
+}
+#endif
+
+#ifdef VICEEXT_PC_KEY_ICONS
+void CFont::DrawPCKey(float x, float y)
+{
+	if (x <= 0.0f || x > SCREEN_WIDTH || y <= 0.0f || y > SCREEN_HEIGHT)
+		return;
+
+	if (PCSymbol != -1) {
+		CRect rect;
+		float charOffsetMultiplier = (float)PCKeySprite[PCSymbol].m_pTexture->raster->width / (float)PCKeySprite[PCSymbol].m_pTexture->raster->height;
+		rect.left = x;
+		rect.top = RenderState.scaleY + RenderState.scaleY + y;
+		rect.right = RenderState.scaleY * (17.0f * charOffsetMultiplier) + x;
+		rect.bottom = RenderState.scaleY * 19.0f + y;
+
+		int vertexAlphaState;
+		int textureFilterState;
+		void* raster;
+		RwRenderStateGet(rwRENDERSTATEVERTEXALPHAENABLE, &vertexAlphaState);
+		RwRenderStateGet(rwRENDERSTATETEXTURERASTER, &raster);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+		RwRenderStateGet(rwRENDERSTATETEXTUREFILTER, &textureFilterState);
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
+		if (RenderState.bIsShadow)
+			PCKeySprite[PCSymbol].Draw(rect, RenderState.color);
+		else
+			PCKeySprite[PCSymbol].Draw(rect, CRGBA(255, 255, 255, RenderState.color.a));
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)textureFilterState);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, raster);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)vertexAlphaState);
 	}
 }
 #endif
@@ -770,26 +789,22 @@ CFont::RenderFontBuffer()
 			PS2Symbol = BUTTON_NONE;
 #endif
 			pRenderStateBufPointer.pStr = ParseToken(pRenderStateBufPointer.pStr, color, bFlash, bBold);
+
+#ifdef VICEEXT_PC_KEY_ICONS
+			if (PCSymbol != -1) {
+				DrawPCKey(textPosX, textPosY);
+				float charOffsetMultiplier = (float)PCKeySprite[PCSymbol].m_pTexture->raster->width / (float)PCKeySprite[PCSymbol].m_pTexture->raster->height;
+				textPosX += RenderState.scaleY * (17.0f * charOffsetMultiplier);
+				PCSymbol = -1;
+				PS2Symbol = -1;
+			}
+#endif
 #ifdef BUTTON_ICONS
 			if(PS2Symbol != BUTTON_NONE) {
 				DrawButton(textPosX, textPosY);
 				textPosX += RenderState.scaleY * 17.0f;
 				PS2Symbol = BUTTON_NONE;
 			}
-#endif
-#ifdef VICEEXT_HINT_KEYS
-			if(KeyIconCode > 0 || KeyIconCode2 > 0) {
-				if (KeyIconCode > 0) {
-					DrawKeyIcon(textPosX, textPosY, KeyIconCode);
-					textPosX += RenderState.scaleY * 17.0f;
-				}
-				if (KeyIconCode2 > 0) {
-					DrawKeyIcon(textPosX, textPosY, KeyIconCode2);
-					textPosX += RenderState.scaleY * 17.0f;
-				}
-				KeyIconCode = 0;
-				KeyIconCode2 = 0;
-				}
 #endif
 			if (bFlash) {
 				if (CTimer::GetTimeInMilliseconds() - Details.nFlashTimer > 300) {
@@ -1593,26 +1608,6 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 {
 	Details.anonymous_23 = false;
 	wchar *s = str + 1;
-#ifdef VICEEXT_HINT_KEYS
-	// D7 (sección 1): `~K<vk>~` = "aquí va el icono de la tecla <vk>". Se
-	// reconoce siempre (las demás marcas del original sólo se miran cuando hay
-	// un color activo, y esa condición no la puedo dar por supuesta). El `while`
-	// de abajo salta hasta el `~` de cierre, así que el texto no cambia.
-	if (*s == 'K') {
-		int vk = 0;
-		wchar *p = s + 1;
-		while (*p >= '0' && *p <= '9') {
-			vk = vk * 10 + (*p - '0');
-			p++;
-		}
-		if (vk > 0 && vk <= 255) {
-			if (KeyIconCode <= 0)
-				KeyIconCode = vk;
-			else
-				KeyIconCode2 = vk;
-			}
-	}
-#endif
 	if (Details.color.r || Details.color.g || Details.color.b)
 	{
 		switch (*s)
@@ -1700,14 +1695,7 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K':
-#ifdef VICEEXT_HINT_KEYS
-			// D7 (sección 1): `~K<n>~` es un icono de TECLA del mod, no el botón L1
-			// del mando. Se reconoce por el dígito que sigue a la K.
-			if (s[1] >= '0' && s[1] <= '9')
-				break;
-#endif
-			PS2Symbol = BUTTON_L1; break;
+		case 'K': PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;
@@ -1717,10 +1705,22 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 		case 'L': PS2Symbol = BUTTON_RSTICK_DOWN; break;
 		case '(': PS2Symbol = BUTTON_RSTICK_LEFT; break;
 		case ')': PS2Symbol = BUTTON_RSTICK_RIGHT; break;
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+		case 'S': PS2Symbol = BUTTON_SELECT; break;
+		case '^': PS2Symbol = BUTTON_DPAD_UP; break;
+		case '_': PS2Symbol = BUTTON_DPAD_DOWN; break;
+		case 'W': PS2Symbol = BUTTON_DPAD_LEFT; break;
+		case 'R': PS2Symbol = BUTTON_DPAD_RIGHT; break;
+#endif
 #endif
 		default:
 			break;
 		}
+
+#ifdef VICEEXT_PC_KEY_ICONS
+		if (PS2Symbol != -1 && !CPad::IsAffectedByController)
+			PCSymbol = ControlsManager.GetCurrentPCKeyFromCurrentAction();
+#endif
 	}
 	while (*s != '~')
 		++s;
@@ -1760,12 +1760,7 @@ CFont::ParseToken(wchar *s, bool japShit)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K':
-#ifdef VICEEXT_HINT_KEYS
-			if (s[1] >= '0' && s[1] <= '9') // D7: icono de tecla, no el botón L1
-				break;
-#endif
-			PS2Symbol = BUTTON_L1; break;
+		case 'K': PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;
@@ -1891,12 +1886,7 @@ CFont::ParseToken(wchar *s)
 		case 'O': PS2Symbol = BUTTON_CIRCLE; break;
 		case 'Q': PS2Symbol = BUTTON_SQUARE; break;
 		case 'T': PS2Symbol = BUTTON_TRIANGLE; break;
-		case 'K':
-#ifdef VICEEXT_HINT_KEYS
-			if (s[1] >= '0' && s[1] <= '9') // D7: icono de tecla, no el botón L1
-				break;
-#endif
-			PS2Symbol = BUTTON_L1; break;
+		case 'K': PS2Symbol = BUTTON_L1; break;
 		case 'M': PS2Symbol = BUTTON_L2; break;
 		case 'A': PS2Symbol = BUTTON_L3; break;
 		case 'J': PS2Symbol = BUTTON_R1; break;
@@ -1906,6 +1896,13 @@ CFont::ParseToken(wchar *s)
 		case 'L': PS2Symbol = BUTTON_RSTICK_DOWN; break;
 		case '(': PS2Symbol = BUTTON_RSTICK_LEFT; break;
 		case ')': PS2Symbol = BUTTON_RSTICK_RIGHT; break;
+#ifdef VICEEXT_MORE_BUTTON_ICONS
+		case 'S': PS2Symbol = BUTTON_SELECT; break;
+		case '^': PS2Symbol = BUTTON_DPAD_UP; break;
+		case '_': PS2Symbol = BUTTON_DPAD_DOWN; break;
+		case 'W': PS2Symbol = BUTTON_DPAD_LEFT; break;
+		case 'R': PS2Symbol = BUTTON_DPAD_RIGHT; break;
+#endif
 #endif
 		}
 	while(*s != '~') s++;

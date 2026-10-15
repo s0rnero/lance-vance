@@ -7895,6 +7895,11 @@ CPed::ClearAnswerMobile(void)
 		RestorePreviousState();
 		m_pVehicleAnim = nil;
 	}
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (IsPlayer())
+		((CPlayerPed*)this)->m_bSkipPhoneCall = false;
+#endif
 }
 
 void

@@ -333,6 +333,42 @@ CCam::Process(void)
 	static CVector SmoothedPos(0.0f, 0.0f, 10000.0f);
 	static CVector SmoothedSpeed(0.0f, 0.0f, 0.0f);
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	CPlayerPed* ped = FindPlayerPed();
+	if (ped) {
+		float curSenseX;
+		float curSenseY;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+		if (ped->bIsPlayerAiming || ped->m_nPedState == PED_SNIPER_MODE) {
+#else
+		if (ped->m_nPedState == PED_SNIPER_MODE) {
+#endif
+			if (CPad::GetPad(0)->IsAffectedByController) {
+				curSenseX = FrontEndMenuManager.m_PrefsPadAimSensX;
+				curSenseY = FrontEndMenuManager.m_PrefsPadAimSensY;
+			} else {
+				curSenseX = FrontEndMenuManager.m_PrefsMouseAimSensX / 2;
+				curSenseY = FrontEndMenuManager.m_PrefsMouseAimSensY / 2;
+			}
+		} else {
+			if (CPad::GetPad(0)->IsAffectedByController) {
+				curSenseX = FrontEndMenuManager.m_PrefsPadLookSensX;
+				curSenseY = FrontEndMenuManager.m_PrefsPadLookSensY;
+			} else {
+				curSenseX = FrontEndMenuManager.m_PrefsMouseLookSensX / 2;
+				curSenseY = FrontEndMenuManager.m_PrefsMouseLookSensY / 2;
+			}
+		}
+
+		if (FrontEndMenuManager.m_PrefsInvertVertically)
+			curSenseY = -curSenseY;
+
+		TheCamera.m_fMouseAccelHorzntl = curSenseX;
+		TheCamera.m_fMouseAccelVertical = curSenseY;
+	}
+#endif
+
 	if(CamTargetEntity == nil)
 		CamTargetEntity = TheCamera.pTargetEntity;
 
@@ -1844,13 +1880,13 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 			LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
 		}
 		if(UseMouse){
-			BetaOffset = LookLeftRight * (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * FOV/80.0f;
-			AlphaOffset = LookUpDown * (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * FOV/80.0f;
+			BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV/80.0f;
+			AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV/80.0f;
 		}else{
 			// B4: base ClassicAXIS del follow (B8: 0.01*(1/20) y 0.01*(0.6/20);
 			// fStickSens ya es el 0.01; la deadzone por eje la pone LookAround*).
-			BetaOffset = LookLeftRight * fStickSens * (1.0f/20.0f) * FOV/80.0f * CTimer::GetTimeStep() * CCamera::ViceExtAimSensPadX();
-			AlphaOffset = LookUpDown * fStickSens * (0.6f/20.0f) * FOV/80.0f * CTimer::GetTimeStep() * CCamera::ViceExtAimSensPadY();
+			BetaOffset = LookLeftRight * fStickSens * (1.0f/20.0f) * FOV/80.0f * CTimer::GetTimeStep();
+			AlphaOffset = LookUpDown * fStickSens * (0.6f/20.0f) * FOV/80.0f * CTimer::GetTimeStep();
 		}
 	}
 
@@ -2555,10 +2591,10 @@ CCam::Process_Cam_On_A_String(const CVector &CameraTarget, float TargetOrientati
 	CA_MAX_DISTANCE = maxDist; CA_MIN_DISTANCE = minDist;
 	float BetaOffset, AlphaOffset;
 	if(useMouse){
-		BetaOffset = LookLeftRight * (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * FOV / 80.0f;
-		AlphaOffset = LookUpDown * (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * FOV / 80.0f;
+		BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
 	}else{
-		BetaOffset = LookLeftRight * fStickSens * (1.0f / 20.0f) * FOV / 80.0f * CTimer::GetTimeStep() * CCamera::ViceExtAimSensPadX();
+		BetaOffset = LookLeftRight * fStickSens * (1.0f / 20.0f) * FOV / 80.0f * CTimer::GetTimeStep();
 		// ve73 (fallo "se sube al vehiculo y al darle a W se comporta como si hubiera
 		// movido el mouse"): en un vehiculo el eje VERTICAL del palo derecho es el
 		// ACELERADOR/FRENO, no mirar (ControllerConfig: VEHICLE_ACCELERATE = rsUP,
@@ -3307,15 +3343,20 @@ CCam::Process_Rocket(const CVector &CameraTarget, float, float, float)
 		LookLeftRight = -CPad::GetPad(0)->SniperModeLookLeftRight();
 		LookUpDown = CPad::GetPad(0)->SniperModeLookUpDown();
 	}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#else
 	if(UseMouse){
-		Beta += (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * LookLeftRight * FOV/80.0f;
-		Alpha += (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * LookUpDown * FOV/80.0f;
+		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
+		Alpha += TheCamera.m_fMouseAccelVertical * LookUpDown * FOV/80.0f;
 	}else{
 		float xdir = LookLeftRight < 0.0f ? -1.0f : 1.0f;
 		float ydir = LookUpDown < 0.0f ? -1.0f : 1.0f;
 		Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 		Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 	}
+#endif
 	while(Beta >= PI) Beta -= 2*PI;
 	while(Beta < -PI) Beta += 2*PI;
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
@@ -3420,9 +3461,13 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 #ifdef VICEEXT_RECOIL
 	float recoilManualAlphaStart = Alpha;
 #endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#else
 	if(UseMouse){
-		Beta += (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * LookLeftRight * FOV/80.0f;
-		Alpha += (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * LookUpDown * FOV/80.0f;
+		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
+		Alpha += TheCamera.m_fMouseAccelVertical * LookUpDown * FOV/80.0f;
 	}else if(Mode == MODE_HELICANNON_1STPERSON){
 		LookLeftRight /= 128.0f;
 		LookUpDown /= 128.0f;
@@ -3434,6 +3479,7 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 		Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 		Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 	}
+#endif
 	if (!isAttached) {
 		while(Beta >= TWOPI) Beta -= TWOPI;
 		while(Beta < 0) Beta += TWOPI;
@@ -3879,15 +3925,20 @@ CCam::Process_1rstPersonPedOnPC(const CVector&, float TargetOrientation, float, 
 			LookLeftRight = -CPad::GetPad(0)->LookAroundLeftRight();
 			LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
 		}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#else
 		if(UseMouse){
-			Beta += (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * LookLeftRight * FOV/80.0f;
-			Alpha += (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * LookUpDown * FOV/80.0f;
+			Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
+			Alpha += TheCamera.m_fMouseAccelVertical * LookUpDown * FOV/80.0f;
 		}else{
 			float xdir = LookLeftRight < 0.0f ? -1.0f : 1.0f;
 			float ydir = LookUpDown < 0.0f ? -1.0f : 1.0f;
 			Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 			Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 		}
+#endif
 		while(Beta >= PI) Beta -= 2*PI;
 		while(Beta < -PI) Beta += 2*PI;
 #ifdef VICEEXT_RECOIL
@@ -4028,15 +4079,20 @@ CCam::Process_Sniper(const CVector &CameraTarget, float TargetOrientation, float
 		LookLeftRight = -CPad::GetPad(0)->SniperModeLookLeftRight();
 		LookUpDown = CPad::GetPad(0)->SniperModeLookUpDown();
 	}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#else
 	if(UseMouse){
-		Beta += (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * LookLeftRight * FOV/80.0f;
-		Alpha += (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * LookUpDown * FOV/80.0f;
+		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
+		Alpha += TheCamera.m_fMouseAccelVertical * LookUpDown * FOV/80.0f;
 	}else{
 		float xdir = LookLeftRight < 0.0f ? -1.0f : 1.0f;
 		float ydir = LookUpDown < 0.0f ? -1.0f : 1.0f;
 		Beta += SQR(LookLeftRight/100.0f)*xdir*0.8f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 		Alpha += SQR(LookUpDown/150.0f)*ydir*1.0f/14.0f * FOV/80.0f * CTimer::GetTimeStep();
 	}
+#endif
 	while(Beta >= PI) Beta -= 2*PI;
 	while(Beta < -PI) Beta += 2*PI;
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
@@ -4479,15 +4535,15 @@ CCam::Process_AimWeapon(const CVector &CameraTarget, float TargetOrientation, fl
 	if (mouseInput) {
 		// CamNew.cpp:149-150. El mod usa `m_fMouseAccelHorzntl` en LOS DOS ejes; aqui
 		// el vertical sigue con su propio acelerador (§5.4d, es un typo del mod).
-		betaOffset  = lookLeftRight * (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * FOV / 80.0f;
-		alphaOffset = lookUpDown   * (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * FOV / 80.0f;
+		betaOffset  = lookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		alphaOffset = lookUpDown   * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
 	} else {
 		// B3(d) ClassicAXIS RightAnalogStickSensitivityX/Y (CamNew.cpp:145-146 / :327-328):
 		// el mod multiplica los offsets por el ajuste; el 0.01 base es nuestro
 		// `fStickSens` (Cam.cpp:1698). En la rama de RATON el ajuste NO se aplica,
 		// porque el mod tampoco lo aplica (pisa los offsets con los del raton).
-		betaOffset  *= CCamera::s_viceExtAim.stickSensX * CCamera::ViceExtAimSensPadX();
-		alphaOffset *= CCamera::s_viceExtAim.stickSensY * CCamera::ViceExtAimSensPadY();
+		betaOffset  *= CCamera::s_viceExtAim.stickSensX;
+		alphaOffset *= CCamera::s_viceExtAim.stickSensY;
 	}
 
 	// CamNew.cpp:335-345
@@ -6326,11 +6382,11 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
 	}	float AlphaOffset, BetaOffset;
 	if(UseMouse){
-		BetaOffset = LookLeftRight * (TheCamera.m_fMouseAccelHorzntl * CCamera::ViceExtAimSensMouseX()) * FOV/80.0f;
-		AlphaOffset = LookUpDown * (TheCamera.m_fMouseAccelVertical * CCamera::ViceExtAimSensMouseY()) * FOV/80.0f;
+		BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV/80.0f;
+		AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV/80.0f;
 	}else{
-		BetaOffset = LookLeftRight * fStickSens * (1.0f/20.0f) * FOV/80.0f * CTimer::GetTimeStep() * CCamera::ViceExtAimSensPadX();
-		AlphaOffset = LookUpDown * fStickSens * (0.6f/20.0f) * FOV/80.0f * CTimer::GetTimeStep() * CCamera::ViceExtAimSensPadY();
+		BetaOffset = LookLeftRight * fStickSens * (1.0f/20.0f) * FOV/80.0f * CTimer::GetTimeStep();
+		AlphaOffset = LookUpDown * fStickSens * (0.6f/20.0f) * FOV/80.0f * CTimer::GetTimeStep();
 	}
 
 	// Stop centering once stick has been touched

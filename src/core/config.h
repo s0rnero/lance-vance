@@ -498,10 +498,8 @@ enum Config {
 #define VICEEXT_FIRST_PERSON	// v1.5 "First-person view": conmutador de vista en 1ª persona (sección 3, bloque C1)
 #define VICEEXT_DRIVEBY_WIDE	// v1.5 "Drive-by shooting": las pistolas (una mano) valen también para disparar desde coche/moto/barco (sección 2, bloque P2)
 #define VICEEXT_WEAPON_SIGHTS	// columna 27 de su weapon.dat ("weapon sight") + su weaponSights.txd (sección 1, bloque D6)
-#define VICEEXT_HINT_KEYS		// v3.0 "PC key icons in game hints": los avisos pintan el icono de la tecla (su pcbtns.txd) en vez de su nombre (sección 1, bloque D7)
 #define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
-#define VICEEXT_MANUAL_RELOAD	// v2.5 "Reloading a weapon on the key": recarga con tecla (R por defecto) (sección 3, bloque C3.1)
 #define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
 #define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
 #define VICEEXT_CROUCH			// v1.5 "Fixed ... crouching animations": agachado a pie con la tecla de la acción PED_DUCK (C) (sección 3, bloque C5)
@@ -558,7 +556,6 @@ enum Config {
 #define VICEEXT_FIX_FV_ROTOR
 #define VICEEXT_POLICE_BIKE
 #define VICEEXT_NO_WHEEL_PIERCE
-#define VICEEXT_SKIP_PHONE_CALL
 #define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
 // D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
@@ -575,11 +572,6 @@ enum Config {
 #define VICEEXT_EXTRA_CHEATS
 #define VICEEXT_CAR_DEATH
 #define VICEEXT_CAR_LIGHTS
-#define VICEEXT_ALT_SIT			// v2.0 "Walking on ALT for the keyboard" + v1.0 "Seated movement":
-							// andar con la tecla de la accion `PED_WALK` (LALT), decidido por su
-							// API `CPad::GetPedWalk()` (`#ifdef IMPROVED_MENU_AND_INPUT`); el
-							// sentarse (attractors + clips SEAT_*, con `SEAT_rvrs` del mod) ya
-							// estaba: `PedAttractor.cpp` del port es identico al suyo
 #define VICEEXT_GANG_AIM
 #define VICEEXT_MOON			// v1.5 "Moving Moon. Its position depends on the position of the Sun":
 							// la luna se coloca en `-sunDir*150` (portado de su `Clouds.cpp`,
@@ -613,7 +605,6 @@ enum Config {
 							// pools enteros, coronas hasta 530 m / el far clip
 #define VICEEXT_COP_COVER		// v2.6 "Cops can crouch down first and then go to cover during the wanted"
 #define VICEEXT_HELI_HEALTH		// v2.0 "Reduced health of police helicopter"
-#define VICEEXT_AIM_SENSITIVITY	// 2506 "Aim sensitivity fix"
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
 #define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
 #define VICEEXT_SPAWN_RADIUS_MULT 1.5f
@@ -638,6 +629,9 @@ enum Config {
 #define VICEEXT_WEAPON_GRENADE_LAUNCHER
 #endif
 #endif
+#define VICEEXT_IMPROVED_MENU_AND_INPUT
+#define VICEEXT_MORE_BUTTON_ICONS
+#define VICEEXT_PC_KEY_ICONS
 #endif
 
 // Hud, frontend and radar
@@ -650,11 +644,14 @@ enum Config {
 //#	define PS2_MENU_USEALLPAGEICONS
 #else
 #	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
-#	if defined(XINPUT) || defined(GTA_HANDHELD)
+#	if defined(XINPUT) || defined(GTA_HANDHELD) || defined(VICEEXT_IMPROVED_MENU_AND_INPUT)
 #		define GAMEPAD_MENU		// Add gamepad menu
 #	endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#	define CIRCLE_BACK_BUTTON
+#else
 #	define TRIANGLE_BACK_BUTTON
-//#	define CIRCLE_BACK_BUTTON
+#endif
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
 // PORTADO (SilentPatch :4086, ver CMenuManager::DrawQuitGameScreen): el outro
 // dura ≈2,5 s legibles (75 ticks × 33 ms) en vez de 750 ms.
@@ -667,7 +664,9 @@ enum Config {
 #		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
 #		define CUTSCENE_BORDERS_SWITCH
 #		define MULTISAMPLING		// adds MSAA option
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 #		define INVERT_LOOK_FOR_PAD // enable the hidden option
+#endif
 #		define PED_CAR_DENSITY_SLIDERS
 #	endif
 #endif
