@@ -150,6 +150,11 @@ public:
 	float   CA_MAX_DISTANCE;
 	float   SpeedVar;
 
+#ifdef VICEEXT_CROUCH
+	float m_fCurrentCameraOffsetZ;
+	float m_fTargetCameraPosZ;
+#endif
+
 	float m_fTargetZoomGroundOne;
 	float m_fTargetZoomGroundTwo;
 	float m_fTargetZoomGroundThree;

@@ -127,7 +127,7 @@ var OD = {
   // (±2,740 -> ±1,500 m/ciclo = 2,05 m/s: pies pegados a 1,13 m/s sin el x1,7
   // de R26c). Sin esta purga el navegador seguiría con el ifp viejo y las
   // pisadas irían a otro ritmo que el cuerpo.
-  dataTag: '2026-10-15-13.0-T2',
+  dataTag: '2026-10-15-13.0-T3',
   manifest: null,
   db: null,
   inflight: {},

@@ -147,18 +147,8 @@ public:
 	void ViceExtPedAtTrace(void);             // R19: posición y velocidad real (todas las sondas)
 	void ViceExtWeaponInfoOf(eWeaponType);    // R13/ve37: ficha WINFO de un arma concreta (arnés web)
 #endif
-#ifdef VICEEXT_CROUCH
-	bool ViceExtCrouchControl(CPad *padUsed); // Sección 3, C5: agachado
-	static bool ViceExtIsCrouched(void);      // R6: la cámara baja su objetivo agachado
-	static float ViceExtCrouchBlend(void);
-	void ViceExtCrouchLimitSpeed(void);       // R6: tope 0,5 m/s tras el control normal
-	void ViceExtCrouchAnim(void);             // R6b: el clip de agachado manda sobre el de serie
-	float ViceExtCrouchMoveSpeed(void);       // R21b: m/s del clip de agachado en uso (ritmo incluido)
-	bool ViceExtCrouchSideHeading(float &odDir); // R26: rumbo MUNDO al que girar a los lados (R29: ya no es static, lee ViceExtIsAiming)
-	bool ViceExtIsAiming(void); // R29/G: API unica del "estoy apuntando" (rueda, pose, giro y CROUCH2 la leen sola)
-#endif
-#ifdef VICEEXT_CLIMB
-	bool ViceExtClimbControl(CPad *padUsed);   // Sección 2, E1: escalar
+#ifdef VICEEXT_AIM_CLASSICAXIS
+	bool ViceExtIsAiming(void);
 #endif
 	void ClearAdrenaline(void);
 	void UseSprintEnergy(void);
@@ -194,6 +184,11 @@ public:
 	void FindNewAttackPoints(void);
 	void SetNearbyPedsToInteractWithPlayer(void);
 	void UpdateMeleeAttackers(void);
+#ifdef VICEEXT_CROUCH
+	void ProcessCrouch(void);
+
+	static void FinishRollCB(CAnimBlendAssociation* assoc, void* arg);
+#endif
 
 	static void SetupPlayerPed(int32);
 	static void DeactivatePlayerPed(int32);

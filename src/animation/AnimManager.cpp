@@ -194,6 +194,21 @@ AnimAssocDesc aStdAnimDescs[] = {
 	{ ANIM_STD_SEAT_RVRS, ASSOC_DELETEFADEDOUT | ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
 	{ ANIM_STD_ATM, ASSOC_DELETEFADEDOUT | ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
 	{ ANIM_STD_ABSEIL, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+#ifdef VICEEXT_CLIMBING
+	{ ANIM_STD_CLIMBING_IDLE, ASSOC_REPEAT | ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMBING_JUMP, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMBING_JUMP_B, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL | ASSOC_HAS_TRANSLATION },
+	{ ANIM_STD_CLIMBING_PULL, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMBING_STAND, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+	{ ANIM_STD_CLIMBING_STAND_FINISH, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+#endif
+#ifdef VICEEXT_CROUCH
+	{ ANIM_STD_CROUCH_IDLE, ASSOC_REPEAT | ASSOC_DELETEFADEDOUT },
+	{ ANIM_STD_CROUCH_FORWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_BACKWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
+	{ ANIM_STD_CROUCH_ROLL_L, ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_FRONTAL },
+	{ ANIM_STD_CROUCH_ROLL_R, ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_FRONTAL },
+#endif
 };
 AnimAssocDesc aVanAnimDescs[] = {
 	{ ANIM_STD_VAN_OPEN_DOOR_REAR_LHS, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
@@ -469,6 +484,21 @@ char const* aStdAnimations[] = {
 	"SEAT_down",
 	"ATM",
 	"abseil",
+#ifdef VICEEXT_CLIMBING
+	"CLIMB_idle",
+	"CLIMB_jump",
+	"CLIMB_jump_B",
+	"CLIMB_Pull",
+	"CLIMB_Stand",
+	"CLIMB_Stand_finish",
+#endif
+#ifdef VICEEXT_CROUCH
+	"Crouch_Idle",
+	"Crouch_Forward",
+	"Crouch_Backward",
+	"Crouch_Roll_L",
+	"Crouch_Roll_R",
+#endif
 };
 char const* aVanAnimations[] = {
 	"VAN_openL",
@@ -611,6 +641,14 @@ char const* aPythonAnimations[] = {
 	"python_reload",
 	"python_crouchreload",
 };
+#ifdef VICEEXT_WEAPON_DEAGLE
+char const* aDeagleAnimations[] = {
+	"deagle_fire",
+	"deagle_crouchfire",
+	"deagle_reload",
+	"deagle_crouchreload",
+};
+#endif
 char const* aColtAnimations[] = {
 	"colt45_fire",
 	"colt45_crouchfire",
@@ -625,10 +663,10 @@ char const* aShotgunAnimations[] = {
 char const* aBuddyAnimations[] = {
 	"buddy_fire",
 	"buddy_crouchfire",
-	// Vice Extended: su buddy.ifp trae también recarga y recarga agachado
-	// (las armas nuevas con grupo buddy llevan el flag RELOAD)
+#ifdef VICEEXT_IMPROVED_TECH_PART
 	"buddy_reload",
 	"buddy_crouchreload",
+#endif
 };
 char const* aTecAnimations[] = {
 	"TEC_fire",
@@ -648,6 +686,14 @@ char const* aRifleAnimations[] = {
 	"RIFLE_load",
 	"RIFLE_crouchload",
 };
+#ifdef VICEEXT_WEAPON_STEYR
+char const* aSteyrAnimations[] = {
+	"STEYR_fire",
+	"STEYR_crouchfire",
+	"STEYR_reload",
+	"STEYR_crouchreload",
+};
+#endif
 char const* aM60Animations[] = {
 	"M60_fire",
 	"M60_fire",
@@ -663,26 +709,6 @@ char const* aThrowAnimations[] = {
 };
 char const* aFlamethrowerAnimations[] = {
 	"FLAME_fire",
-};
-// Vice Extended: los .ifp nuevos del mod. El orden debe casar con
-// aWeaponAnimDescs (fire, crouchfire, reload, crouchreload).
-char const* aDeagleAnimations[] = {
-	"deagle_fire",
-	"deagle_crouchfire",
-	"deagle_reload",
-	"deagle_crouchreload",
-};
-char const* aSteyrAnimations[] = {
-	"STEYR_fire",
-	"STEYR_crouchfire",
-	"STEYR_reload",
-	"STEYR_crouchreload",
-};
-char const* aRocketAnimations[] = {
-	"ROCKET_fire",
-	"ROCKET_crouchfire",
-	"ROCKET_load",
-	"ROCKET_crouchload",
 };
 char const* aMedicAnimations[] = {
 	"CPR",
@@ -730,11 +756,11 @@ char const* aPlayerAnimations[] = {
 char const* aPlayerWithRocketAnimations[] = {
 	"walk_rocket",
 	"run_rocket",
-	// Sección 3, bloque C6 (20/09): Vice Extended v1.5 "Sprint with heavy
-	// weapons". El hueco del esprint (índice ANIM_STD_RUNFAST) estaba con el
-	// MISMO clip que correr, así que el esprint no se veía; el `ped.ifp` del mod
-	// trae `sprint_rocket` (272 clips servidos, comprobado).
+#ifdef VICEEXT_IMPROVED_TECH_PART
 	"sprint_rocket",
+#else
+	"run_rocket",
+#endif
 	"idle_rocket",
 	"walk_start_rocket",
 };
@@ -748,28 +774,44 @@ char const* aPlayer1ArmedAnimations[] = {
 char const* aPlayer2ArmedAnimations[] = {
 	"walk_armed",
 	"run_armed",
-	// Sección 3, bloque C6: ver aPlayerWithRocketAnimations. `sprint_armed` es
-	// el clip del mod para esprintar con arma de dos manos (rifles, M60, UZI...).
+#ifdef VICEEXT_IMPROVED_TECH_PART
 	"sprint_armed",
+#else
+	"run_armed",
+#endif
 	"idle_armed",
 	"walk_start_armed",
 };
 char const* aPlayerBBBatAnimations[] = {
 	"walk_player",
 	"run_player",
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	"SPRINT_civi",
+#else
 	"run_player",
+#endif
 	"IDLE_STANCE",
 	"walk_start",
 };
 char const* aPlayerChainsawAnimations[] = {
 	"walk_csaw",
 	"run_csaw",
-	// Sección 3, bloque C6: ver aPlayerWithRocketAnimations (grupo del
-	// lanzallamas / minigun / motosierra, que el mod también deja esprintar).
+#ifdef VICEEXT_IMPROVED_TECH_PART
 	"sprint_csaw",
+#else
+	"run_csaw",
+#endif
 	"IDLE_csaw",
 	"walk_start_csaw",
 };
+#ifdef VICEEXT_VICE_EXTENDED
+char const* aRocketAnimations[] = {
+	"ROCKET_fire",
+	"ROCKET_crouchfire",
+	"ROCKET_load",
+	"ROCKET_crouchload",
+};
+#endif
 char const* aShuffleAnimations[] = {
 	"WALK_shuffle",
 	"RUN_civi",
@@ -968,80 +1010,6 @@ AnimAssocDesc aSwimAnimDescs[] = {
 	{ ANIM_STD_SWIM_BREAST, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION },
 	{ ANIM_STD_SWIM_JUMPOUT, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
 };
-char const* aCrouchAnimations[] = {
-	"crouch_idle",
-	"GunCrouchFwd",
-	"GunCrouchBwd",
-	"Crouch_Roll_L",
-	"Crouch_Roll_R",
-	// R29 (27/09, E3.9): los cuatro `GunMove_*` del mod ("moverse apuntando"),
-	// servidos en el `ped.ifp` desde siempre y sin usar. Medidos en el fichero
-	// servido (raiz, metros por ciclo / duracion):
-	//   GunMove_FWD  1,854 m / 1,000 s = 1,85 m/s    GunMove_BWD  -1,853 m / 1,031 s
-	//   GunMove_L   -1,803 m / 1,000 s (eje X)       GunMove_R    1,803 m / 1,000 s
-	"GunMove_FWD",
-	"GunMove_BWD",
-	"GunMove_L",
-	"GunMove_R",
-};
-// R17: agachado, el clip que lleva el cuerpo es el del mod, así que TIENE que
-// ser el que avanza (igual que `walk`/`run` de serie): `ASSOC_MOVEMENT` para
-// que el motor lo trate como la animación de marcha (y sincronice el cambio
-// adelante/atrás con `AddAnimationAndSync`) + `ASSOC_HAS_TRANSLATION` para que
-// la velocidad salga de su raíz; `ASSOC_WALK` para los pasos
-// (`CPed::PlayFootSteps`). El ritmo (`speed`) lo escala ViceExtCrouchAnim.
-// R20 (22/09): los dos clips que faltaban, `Crouch_Roll_L` y `Crouch_Roll_R`
-// (los del juego entero de SA, ya en el `ped.ifp` del mod: se leyeron sus
-// nombres del binario servido). Son el desplazamiento DE LADO agachado, y son
-// los que hacen posible moverse en las 8 direcciones sin girar el cuerpo:
-// en III/VC la dirección de avance la pone la RAÍZ del clip (`Crouch_Forward`
-// avanza de frente, los `Roll` de lado, `Crouch_Backward` hacia atrás), así que
-// elegir el clip por el ángulo del mando es lo que convierte el mando en 8
-// direcciones. Avance medido de su raíz (metros por ciclo / duración):
-//   Crouch_Forward  2,615 m / 0,731 s = 3,58 m/s
-//   Crouch_Backward 1,853 m / 1,000 s = 1,85 m/s
-//   Crouch_Roll_L   2,172 m / 0,931 s = 2,33 m/s   (Crouch_Roll_R 2,253 m)
-// R27 (26/09): adelante y atrás ya no son los de VC. El `ped.ifp` servido lleva
-// los dos clips del sa-crouch (`GunCrouchFwd`/`GunCrouchBwd`, añadidos al dato en
-// el plan agachado-calibrado) porque el mod los pide por nombre y el motor
-// empareja por nombre. Medidos en el fichero servido: ±2,740 m / 0,731 s = 3,75
-// m/s, simétricos (el `Crouch_Backward` de VC era 1,853 m / 1,000 s = 1,85). La
-// cadencia que validó el jugador (R26c, x1,7) no cambia: 0,408 × 3,75 = 1,53 m/s
-// de barrido en las dos direcciones.
-AnimAssocDesc aCrouchAnimDescs[] = {
-	{ ANIM_STD_CROUCH_IDLE, ASSOC_REPEAT },
-	{ ANIM_STD_CROUCH_FORWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-	{ ANIM_STD_CROUCH_BACKWARD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-	{ ANIM_STD_CROUCH_LEFT, ASSOC_HAS_TRANSLATION },
-	{ ANIM_STD_CROUCH_RIGHT, ASSOC_HAS_TRANSLATION },
-	// R29 (E3.9): los GunMove_* son clips de MOVIMIENTO como los de arriba
-	// (R17: ASSOC_MOVEMENT + ASSOC_HAS_TRANSLATION para que el motor extraiga su
-	// raiz; ASSOC_WALK para los pasos). El ritmo lo escala ViceExtCrouchAnim.
-	{ ANIM_STD_CROUCH_AIMFWD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-	{ ANIM_STD_CROUCH_AIMBWD, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-	{ ANIM_STD_CROUCH_AIMLEFT, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-	{ ANIM_STD_CROUCH_AIMRIGHT, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION | ASSOC_WALK },
-};
-// Sección 2 (21/09): escalada. Los clips son de San Andreas y vienen en el
-// `ped.ifp` del mod; el grupo no existía, así que no se podían usar.
-char const* aClimbAnimations[] = {
-	"CLIMB_idle",
-	"CLIMB_jump",
-	"CLIMB_jump_B",
-	"CLIMB_jump2fall",
-	"CLIMB_Pull",
-	"CLIMB_Stand",
-	"CLIMB_Stand_finish",
-};
-AnimAssocDesc aClimbAnimDescs[] = {
-	{ ANIM_STD_CLIMB_IDLE, ASSOC_REPEAT | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_JUMP, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_JUMP_B, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_JUMP2FALL, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_PULL, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_STAND, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-	{ ANIM_STD_CLIMB_STAND_FINISH, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
-};
 
 #define awc(a) ARRAY_SIZE(a), a
 const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_GROUPS] = {
@@ -1059,16 +1027,25 @@ const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_
 	{ "golfclub", "baseball", MI_COP, awc(aGolfclubAnimations), aSwingAnimDescs },
 	{ "chainsaw", "chainsaw", MI_COP, awc(aChainsawAnimations), aMeleeAnimDescs },
 	{ "python", "python", MI_COP, awc(aPythonAnimations), aWeaponAnimDescs },
+#ifdef VICEEXT_WEAPON_DEAGLE
+	{ "deagle", "deagle", MI_COP, awc(aDeagleAnimations), aWeaponAnimDescs },
+#endif
 	{ "colt45", "colt45", MI_COP, awc(aColtAnimations), aWeaponAnimDescs },
 	{ "shotgun", "shotgun", MI_COP, awc(aShotgunAnimations), aWeaponAnimDescs },
 	{ "buddy", "buddy", MI_COP, awc(aBuddyAnimations), aWeaponAnimDescs },
 	{ "tec", "tec", MI_COP, awc(aTecAnimations), aWeaponAnimDescs },
 	{ "uzi", "uzi", MI_COP, awc(aUziAnimations), aWeaponAnimDescs },
 	{ "rifle", "rifle", MI_COP, awc(aRifleAnimations), aWeaponAnimDescs },
+#ifdef VICEEXT_WEAPON_STEYR
+	{ "steyr", "steyr", MI_COP, awc(aSteyrAnimations), aWeaponAnimDescs },
+#endif
 	{ "m60", "m60", MI_COP, awc(aM60Animations), aWeaponAnimDescs },
 	{ "sniper", "sniper", MI_COP, awc(aSniperAnimations), aWeaponAnimDescs },
 	{ "grenade", "grenade", MI_COP, awc(aThrowAnimations), aWeaponAnimDescs },
 	{ "flame", "flame", MI_COP, awc(aFlamethrowerAnimations), aWeaponAnimDescs },
+#ifdef VICEEXT_VICE_EXTENDED
+	{ "rocket", "rocket", MI_COP, awc(aRocketAnimations), aWeaponAnimDescs },
+#endif
 	{ "medic", "medic", MI_COP, awc(aMedicAnimations), aMedicAnimDescs },
 	{ "sunbathe", "sunbathe", MI_COP, 1, aSunbatheAnimations, aSunbatheAnimDescs },	// NB: not using awc here!
 	{ "playidles", "playidles", MI_COP, awc(aPlayerIdleAnimations), aPlayerIdleAnimDescs },
@@ -1108,15 +1085,7 @@ const AnimAssocDefinition CAnimManager::ms_aAnimAssocDefinitions[NUM_ANIM_ASSOC_
 	{ "csawleft", "ped", MI_COP, awc(aChainsawStrafeLeftAnimations), aStdAnimDescsSide },
 	{ "csawright", "ped", MI_COP, awc(aChainsawStrafeRightAnimations), aStdAnimDescsSide },
 #endif
-	// Vice Extended (mismo orden que AssocGroupId)
-	{ "deagle", "deagle", MI_COP, awc(aDeagleAnimations), aWeaponAnimDescs },
-	{ "steyr", "steyr", MI_COP, awc(aSteyrAnimations), aWeaponAnimDescs },
-	{ "rocket", "rocket", MI_COP, awc(aRocketAnimations), aWeaponAnimDescs },
-	// Sección 3 (20/09): nadar (C4) y agachado (C5). El bloque es "ped" (los
-	// clips salen del `ped.ifp` del mod, el mismo que carga el juego).
 	{ "playerswim", "ped", MI_COP, awc(aSwimAnimations), aSwimAnimDescs },
-	{ "playercrouch", "ped", MI_COP, awc(aCrouchAnimations), aCrouchAnimDescs },
-	{ "playerclimb", "ped", MI_COP, awc(aClimbAnimations), aClimbAnimDescs },
 };
 #undef awc
 

@@ -23,7 +23,7 @@ static const KeyDef kKeys[] = {
 	{ "HealthRegenerationUpToHalf",                        true  }, // VICEEXT_HEALTH_REGEN
 	{ "WantedStarsHideOnScreenWhenThereIsNoSearch",        true  }, // VICEEXT_HIDE_STARS
 	{ "RemoveMoneyZerosInTheHud",                          true  }, // VICEEXT_MONEY_NO_ZEROS
-	{ "PlayerDoesntBounceAwayFromMovingCar",               true  }, // VICEEXT_NO_CAR_BOUNCE
+	{ "PlayerDoesntBounceAwayFromMovingCar",               true  },
 	{ "StandardCarsUseTurnSignals",                        true  }, // VICEEXT_STD_TURN_SIGNALS
 	{ "CameraShakeInVehicleAtHighSpeed",                   false }, // sin implementar
 	{ "MilitaryFiringFromTankAtPlayer",                    true  }, // VICEEXT_TANK_FIRE
@@ -31,7 +31,7 @@ static const KeyDef kKeys[] = {
 	{ "WaypointColorRGB",                                  true  }, // VICEEXT_GPS_COLOR
 	{ "EnableDistantLights",                               true  }, // VICEEXT_DISTANT_LIGHTS
 	{ "RecoilWhenFiring",                                  true  }, // VICEEXT_RECOIL
-	{ "EnableClimbing",                                    true  }, // VICEEXT_CLIMB
+	{ "EnableClimbing",                                    true  },
 	{ "EnableSwimming",                                    true  }, // VICEEXT_SWIMMING
 	{ "RocketLauncherThirdPersonAiming",                   true  }, // VICEEXT_ROCKET_3RD_PERSON
 	{ "RandomVehicleModsInTraffic",                        false }, // fuera: taller de tuning
@@ -46,7 +46,6 @@ static const int kNumKeys = ARRAY_SIZE(kKeys);
 struct Override { const char *name; int value; const char *why; };
 
 static const Override kOverrides[] = {
-	{ "EnableClimbing", 1, "el jugador pidio escalar (config.h, VICEEXT_CLIMB)" },
 	{ "RemoveMoneyZerosInTheHud", 1, "cambio de HUD pedido (9.2, VICEEXT_MONEY_NO_ZEROS)" },
 	{ "VehiclesDontCatchFireWhenTurningOver", 1, "9.2: el jugador pidio la opcion" },
 	{ "HealthRegenerationUpToHalf", 1, "9.2: el jugador pidio la opcion" },

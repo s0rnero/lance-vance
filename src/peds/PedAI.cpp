@@ -18,6 +18,9 @@
 #include "Pickups.h"
 #include "Train.h"
 #include "PedRoutes.h"
+#ifdef VICEEXT_SWIMMING
+#include "PedArbiter.h"
+#endif
 #include "CopPed.h"
 #include "Script.h"
 #include "CarCtrl.h"
@@ -4192,10 +4195,6 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				optedDoorNode = veh->pPassengers[0] == this ? CAR_BUMP_REAR : CAR_BOOT;
 			} else if (veh->pPassengers[0] == this) {
 				optedDoorNode = CAR_DOOR_LR;
-#ifdef VICEEXT_BIKE_EXIT_SIDE
-				if (IsPlayer() && veh->m_fSteerInput > 0.25f)
-					optedDoorNode = CAR_DOOR_RF;
-#endif
 			} else {
 				optedDoorNode = CAR_DOOR_LF;
 			}
@@ -4291,7 +4290,15 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 			thereIsRoom = veh->IsRoomForPedToLeaveCar(optedDoorNode, nil);
 		}
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		bool bPlayerWantsExitRight = false;
+		if (IsPlayer() && veh->IsBike() && CPad::GetPad(0)->GetSteeringLeftRight() > 0)
+			bPlayerWantsExitRight = true;
+
+		if (!thereIsRoom || bPlayerWantsExitRight) {
+#else
 		if (!thereIsRoom) {
+#endif
 			bool trySideSeat = false;
 			CPed *pedOnSideSeat;
 			int firstOptedDoor = optedDoorNode;
@@ -4374,6 +4381,19 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 			// ...
 			// CVector exitPos = GetPositionToOpenCarDoor(veh, optedDoorNode);
 			if (!veh->IsRoomForPedToLeaveCar(optedDoorNode, nil)) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (thereIsRoom && bPlayerWantsExitRight) {
+					optedDoorNode = firstOptedDoor;
+				} else {
+					if (!IsPlayer() && CharCreatedBy != MISSION_CHAR)
+						return;
+
+					optedDoorNode = firstOptedDoor;
+					m_vehDoor = firstOptedDoor;
+					PositionPedOutOfCollision();
+					teleportNeeded = true;
+				}
+#else
 				if (!IsPlayer() && CharCreatedBy != MISSION_CHAR)
 					return;
 
@@ -4382,6 +4402,7 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				m_vehDoor = firstOptedDoor;
 				PositionPedOutOfCollision();
 				teleportNeeded = true;
+#endif
 			}
 		}
 
@@ -5970,6 +5991,21 @@ CPed::GetLocalPositionToOpenCarDoor(CVehicle *veh, uint32 component, float seatP
 void
 CPed::SetDuck(uint32 time, bool sth)
 {
+#ifdef VICEEXT_SWIMMING
+	if (IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_POSTURA))
+		return;
+#endif
+
+#ifdef VICEEXT_CROUCH
+	if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE))
+		return;
+#endif
+
+#ifdef VICEEXT_CLIMBING
+	if (bIsClimbing)
+		return;
+#endif
+
 	if (bIsDucking || CTimer::GetTimeInMilliseconds() <= m_duckTimer && !sth) {
 		if (sth && CTimer::GetTimeInMilliseconds() + time > m_duckTimer)
 			m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
@@ -5978,7 +6014,11 @@ CPed::SetDuck(uint32 time, bool sth)
 
 	CAnimBlendAssociation *duckAssoc;
 	if (bCrouchWhenShooting) {
+#ifdef VICEEXT_CROUCH
+		duckAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+#else
 		duckAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 4.0f);
+#endif
 		duckAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		bIsDucking = true;
 		m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
@@ -5990,6 +6030,11 @@ CPed::SetDuck(uint32 time, bool sth)
 			m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 		}
 	}
+
+#ifdef VICEEXT_CROUCH
+	if (IsPlayer())
+		TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.6f;
+#endif
 }
 
 void
@@ -5999,7 +6044,16 @@ CPed::Duck(void)
 		ClearDuck();
 	else if (bIsDucking && bCrouchWhenShooting) {
 		CWeaponInfo *weapon = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
+#ifdef VICEEXT_CROUCH
+		CAnimBlendAssociation* crouchAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+		CAnimBlendAssociation* crouchForwardAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD);
+		CAnimBlendAssociation* curCrouchBackwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_BACKWARD);
+		CAnimBlendAssociation* curCrouchRollLeftAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L);
+		CAnimBlendAssociation* curCrouchRollRightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R);
+		bool bIsCrouchAnims = crouchAnim || crouchForwardAnim || curCrouchBackwardAssoc || curCrouchRollLeftAssoc || curCrouchRollRightAssoc;
+#else
 		CAnimBlendAssociation *crouchAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_WEAPON);
+#endif
 		if (!crouchAnim) {
 			if(GetCrouchFireAnim(weapon))
 				crouchAnim = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(weapon));
@@ -6008,7 +6062,11 @@ CPed::Duck(void)
 			if(GetCrouchReloadAnim(weapon))
 				crouchAnim = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchReloadAnim(weapon));
 		}
+#ifdef VICEEXT_CROUCH
+		if (!bIsCrouchAnims && m_nPedState != PED_ROLL) {
+#else
 		if (!crouchAnim) {
+#endif
 			bIsDucking = false;
 #if defined FIX_BUGS || defined FREE_CAM
 			if (IsPlayer())
@@ -6021,23 +6079,50 @@ CPed::Duck(void)
 void
 CPed::ClearDuck(bool clearTimer)
 {
+#ifdef VICEEXT_CROUCH
+	if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE))
+		return;
+
+	CAnimBlendAssociation* crouchForwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD);
+	CAnimBlendAssociation* curCrouchBackwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_BACKWARD);
+#endif
 	CAnimBlendAssociation *animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_DOWN);
 	if (!animAssoc) {
 		animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_LOW);
 	}
 	if (!animAssoc) {
+#ifdef VICEEXT_CROUCH
+		animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+#else
 		animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_WEAPON);
+#endif
 	}
 
 	if (animAssoc) {
 		animAssoc->flags |= ASSOC_DELETEFADEDOUT;
 		animAssoc->blendDelta = -4.0f;
 	}
+#ifdef VICEEXT_CROUCH
+	if (crouchForwardAssoc) {
+		crouchForwardAssoc->flags |= ASSOC_DELETEFADEDOUT;
+		crouchForwardAssoc->blendDelta = -5.0f;
+	}
+
+	if (curCrouchBackwardAssoc) {
+		curCrouchBackwardAssoc->flags |= ASSOC_DELETEFADEDOUT;
+		curCrouchBackwardAssoc->blendDelta = -5.0f;
+	}
+#endif
 	bIsDucking = false;
 
 	if (clearTimer) {
 		m_duckTimer = 0;
 	}
+
+#ifdef VICEEXT_CROUCH
+	if (IsPlayer())
+		TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.0f;
+#endif
 }
 
 void
@@ -6685,7 +6770,11 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 			if (!duckAnim)
 				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_LOW);
 			if (!duckAnim)
+#ifdef VICEEXT_CROUCH
+				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+#else
 				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_WEAPON);
+#endif
 
 			if (duckAnim) {
 				duckAnim->flags |= ASSOC_DELETEFADEDOUT;
@@ -6972,7 +7061,11 @@ CPed::KillCharOnFootMelee(CVector &ourPos, CVector &targetPos, CVector &distWith
 			if (!duckAnim)
 				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_LOW);
 			if (!duckAnim)
+#ifdef VICEEXT_CROUCH
+				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+#else
 				duckAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_WEAPON);
+#endif
 
 			if (duckAnim) {
 				duckAnim->flags |= ASSOC_DELETEFADEDOUT;

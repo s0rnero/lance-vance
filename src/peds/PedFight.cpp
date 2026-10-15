@@ -18,7 +18,6 @@
 #include "Stats.h"
 #include "TempColModels.h"
 #include "VisibilityPlugins.h"
-#include "ViceExtFeatures.h"
 #include "Vehicle.h"
 #include "Automobile.h"
 #include "WaterLevel.h"
@@ -181,13 +180,6 @@ CPed::SetPointGunAt(CEntity *to)
 
 	CAnimBlendAssociation *aimAssoc;
 
-	// R28 (26/09): `ViceExtCrouchShooting()` incluye el agachado del port (R6
-	// limpia `bIsDucking`), asi que agachado sale la pose de agachado del ARMA
-	// (`colt45_crouchfire` sostenido en su `m_fAnim2LoopStart`, que es la pose de
-	// apuntar agachado de SA) en vez de la de pie. Y si el arma no trae clip de
-	// agachado, aqui no se pone NADA: la pose la pone el mod (`WEAPON_crouch`,
-	// `CPlayerPed::ViceExtCrouchAimPose`), porque las dos a la vez son dos
-	// parciales peleandose por el cuerpo (cuerpo deformado, R28).
 	// ClassicAXIS C18-1 (Main.cpp:408-420): apuntando AGACHADO con un arma que NO
 	// trae `WEAPONFLAG_CROUCHFIRE`, el mod apaga `bCrouchWhenShooting` y llama
 	// `RestorePreviousState()`. Va con su propio `return` POR DELANTE del bloque R28
@@ -204,25 +196,18 @@ CPed::SetPointGunAt(CEntity *to)
 		return;
 	}
 #endif
-	// R29 (27/09, plan agachado-correcciones-axis 3/4.1, sintoma D): agachado
-	// del port (R6 limpia `bIsDucking`), la pose de APUNTAR es la del mod
-	// (`WEAPON_crouch`: la pone `CPlayerPed::ViceExtCrouchAimPose`, con
-	// `BlendAnimation` a 4,0 = classicaxis Main.cpp:1393-1415). Aqui no se pone
-	// NINGUN clip del arma, con `WEAPONFLAG_CROUCHFIRE` o sin el: sostener
-	// `colt45_crouchfire` como postura (este era el bloque R28) era el "el
-	// apuntado y disparo agachado es raro" del jugador (un clip de DISPARO como
-	// pose de apuntado). Los `*_crouchfire` entran SOLO disparando
-	// (Attack/SetAttack) y los `*_crouchreload` solo recargando, y solo con el
-	// flag: la costura C18-1/R28 del plan (con el flag se conservan los clips
-	// del motor que R28 activo; sin el flag manda el C18-1 de arriba + la pose
-	// del mod).
-	if (IsPlayer() && CPlayerPed::ViceExtIsCrouched() && !bIsDucking)
-		return;
-
-	aimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_WEAPON_FIRE);
+	if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(curWeapon)) {
+		aimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
+	} else {
+		aimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_WEAPON_FIRE);
+	}
 
 	if (!aimAssoc || aimAssoc->blendDelta < 0.0f) {
-		aimAssoc = CAnimManager::AddAnimation(GetClump(), curWeapon->m_AnimToPlay, ANIM_WEAPON_FIRE);
+		if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(curWeapon)) {
+			aimAssoc = CAnimManager::BlendAnimation(GetClump(), curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon), 4.0f);
+		} else {
+			aimAssoc = CAnimManager::AddAnimation(GetClump(), curWeapon->m_AnimToPlay, ANIM_WEAPON_FIRE);
+		}
 
 		aimAssoc->blendAmount = 0.0f;
 		aimAssoc->blendDelta = 8.0f;
@@ -235,17 +220,6 @@ void
 CPed::PointGunAt(void)
 {
 	CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType);
-	// R29 (sintoma D, ver SetPointGunAt): agachado del port no se SOSTIENE nigun
-	// clip del arma como postura (el `colt45_crouchfire` en su `m_fAnim2LoopStart`
-	// era el "sostenido" del jugador): la pose de apuntar es `WEAPON_crouch`. El
-	// IK del brazo se decide igual que de pie.
-	if (IsPlayer() && CPlayerPed::ViceExtIsCrouched() && !bIsDucking) {
-		if (weaponInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM))
-			m_pedIK.m_flags |= CPedIK::AIMS_WITH_ARM;
-		else
-			m_pedIK.m_flags &= ~CPedIK::AIMS_WITH_ARM;
-		return;
-	}
 	float animLoopStart = weaponInfo->m_fAnimLoopStart;
 	CAnimBlendAssociation *weaponAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_WEAPON_FIRE);
 	if (!weaponAssoc || weaponAssoc->blendDelta < 0.0f) {
@@ -304,6 +278,11 @@ CPed::SetAttack(CEntity *victim)
 
 	if (victim && victim->IsPed())
 		victimPed = (CPed*)victim;
+
+#ifdef VICEEXT_CROUCH
+	if (bIsDucking && (GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_PROJECTILE || GetWeapon()->m_eWeaponType == WEAPONTYPE_DETONATOR))
+		ClearDuck();
+#endif
 
 	if (m_attackTimer > CTimer::GetTimeInMilliseconds() || m_nWaitState == WAITSTATE_SURPRISE || (bIsDucking && !bCrouchWhenShooting))
 		return;
@@ -414,7 +393,11 @@ CPed::SetAttack(CEntity *victim)
 		return;
 	}
 
+#ifdef VICEEXT_CLIMBING
+	if (IsPlayer() || (!victimPed || (victimPed->IsPedInControl() || victimPed->bIsClimbing))) {
+#else
 	if (IsPlayer() || (!victimPed || victimPed->IsPedInControl())) {
+#endif
 		if (IsPlayer())
 			CPad::GetPad(0)->ResetAverageWeapon();
 
@@ -439,8 +422,7 @@ CPed::SetAttack(CEntity *victim)
 
 			SetPedState(PED_ATTACK);
 			SetMoveState(PEDMOVE_NONE);
-			// R28: agachado = el clip de disparo de agachado del arma.
-			if (ViceExtCrouchShooting() && curWeapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
+			if (bCrouchWhenShooting && bIsDucking && curWeapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
 				CAnimBlendAssociation* curMoveAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(curWeapon));
 				if (curMoveAssoc) {
 					if (strcmp(CAnimManager::GetAnimAssociation(curWeapon->m_AnimToPlay, GetCrouchFireAnim(curWeapon))->hierarchy->name, curMoveAssoc->hierarchy->name) != 0) {
@@ -555,13 +537,17 @@ CPed::FinishedAttackCB(CAnimBlendAssociation *attackAssoc, void *arg)
 	CWeaponInfo *currentWeapon = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType);
 
 	if (ped->m_nPedState != PED_ATTACK) {
-		if (ped->ViceExtCrouchShooting() && ped->IsPedInControl()) {
+		if (ped->bIsDucking && ped->IsPedInControl()) {
 			if (GetCrouchReloadAnim(currentWeapon)) {
 				reloadAnimAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), GetCrouchReloadAnim(currentWeapon));
 			}
 			if (GetCrouchFireAnim(currentWeapon) && attackAssoc) {
 				if (attackAssoc->animId == GetCrouchFireAnim(currentWeapon) && !reloadAnimAssoc) {
+#ifdef VICEEXT_CROUCH
+					newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+#else
 					newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
+#endif
 					newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
 					newAnim->flags &= ~ASSOC_RUNNING;
 				}
@@ -577,13 +563,17 @@ CPed::FinishedAttackCB(CAnimBlendAssociation *attackAssoc, void *arg)
 		}
 		newAnim->SetFinishCallback(FinishedAttackCB, ped);
 
-	} else if (ped->ViceExtCrouchShooting() && GetCrouchFireAnim(currentWeapon)) {
+	} else if (ped->bIsDucking && ped->bCrouchWhenShooting) {
 		if (GetCrouchReloadAnim(currentWeapon)) {
 			reloadAnimAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), GetCrouchReloadAnim(currentWeapon));
 		}
 		if (GetCrouchFireAnim(currentWeapon) && attackAssoc) {
 			if (attackAssoc->animId == GetCrouchFireAnim(currentWeapon) && !reloadAnimAssoc) {
+#ifdef VICEEXT_CROUCH
+				newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+#else
 				newAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
+#endif
 				newAnim->SetCurrentTime(newAnim->hierarchy->totalLength);
 				newAnim->flags &= ~ASSOC_RUNNING;
 			}
@@ -635,14 +625,18 @@ CPed::FinishedReloadCB(CAnimBlendAssociation *reloadAssoc, void *arg)
 	if (ped->DyingOrDead())
 		return;
 
-	if (ped->ViceExtCrouchShooting()) {
+	if (ped->bIsDucking && ped->bCrouchWhenShooting) {
 		CAnimBlendAssociation *crouchFireAssoc = nil;
 		if (weapon->IsFlagSet(WEAPONFLAG_CROUCHFIRE)) {
 			crouchFireAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), GetCrouchFireAnim(weapon));
 		}
 		if (weapon->IsFlagSet(WEAPONFLAG_RELOAD) && reloadAssoc) {
 			if (reloadAssoc->animId == GetCrouchReloadAnim(weapon) && !crouchFireAssoc) {
+#ifdef VICEEXT_CROUCH
+				CAnimBlendAssociation* crouchAssoc = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+#else
 				CAnimBlendAssociation *crouchAssoc = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 8.0f);
+#endif
 				crouchAssoc->SetCurrentTime(crouchAssoc->hierarchy->totalLength);
 				crouchAssoc->flags &= ~ASSOC_RUNNING;
 			}
@@ -739,10 +733,8 @@ CPed::Attack(void)
 	}
 #endif
 
-	// R28: el agachado del port no usa `bIsDucking` (R6 lo limpia): el
-	// predicado lleva las dos banderas del motor Y el agachado del port.
-	if (ViceExtCrouchShooting()) {
-		if(GetCrouchFireAnim(ourWeapon)) {
+	if (bIsDucking) {
+		if(GetCrouchFireAnim(ourWeapon) && bCrouchWhenShooting) {
 			weaponAnimAssoc = RpAnimBlendClumpGetAssociation(GetClump(), GetCrouchFireAnim(ourWeapon));
 			if (weaponAnimAssoc) {
 				animLoopStart = ourWeapon->m_fAnim2LoopStart;
@@ -860,7 +852,7 @@ CPed::Attack(void)
 		if (!throwAssoc) {
 			if (attackShouldContinue) {
 				if (ourWeapon->m_eWeaponFire != WEAPON_FIRE_PROJECTILE || !IsPlayer() || ((CPlayerPed*)this)->m_bHaveTargetSelected) {
-					if (ViceExtCrouchShooting() && GetCrouchFireAnim(ourWeapon)) {
+					if (bCrouchWhenShooting && bIsDucking && GetCrouchFireAnim(ourWeapon)) {
 						weaponAnimAssoc = CAnimManager::BlendAnimation(GetClump(), ourWeapon->m_AnimToPlay, GetCrouchFireAnim(ourWeapon), 8.0f);
 
 					} else if(GetSecondFireAnim(ourWeapon) && CGeneral::GetRandomNumber() & 1){
@@ -1100,7 +1092,7 @@ CPed::Attack(void)
 				if (!CWorld::Players[CWorld::PlayerInFocus].m_bFastReload) {
 					CAnimBlendAssociation *newReloadAssoc = CAnimManager::BlendAnimation(
 						GetClump(), ourWeapon->m_AnimToPlay,
-						ViceExtCrouchShooting() && GetCrouchReloadAnim(ourWeapon) ? GetCrouchReloadAnim(ourWeapon) : GetReloadAnim(ourWeapon),
+						bIsDucking && GetCrouchReloadAnim(ourWeapon) ? GetCrouchReloadAnim(ourWeapon) : GetReloadAnim(ourWeapon),
 						8.0f);
 					newReloadAssoc->SetFinishCallback(FinishedReloadCB, this);
 				}
@@ -1190,6 +1182,11 @@ CPed::StartFightAttack(uint8 buttonPressure)
 		m_fightButtonPressure = buttonPressure;
 		return;
 	}
+
+#ifdef VICEEXT_CROUCH
+	if (IsPlayer() && bIsDucking)
+		ClearDuck();
+#endif
 
 	if (m_nPedState != PED_AIM_GUN)
 		SetStoredState();
@@ -2809,7 +2806,11 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	if (method == WEAPONTYPE_DROWNING && !bDrownsInWater)
 		return false;
 
+#ifdef VICEEXT_CLIMBING
+	if (!bUsesCollision && !bIsClimbing && (!bInVehicle || m_nPedState != PED_DRIVING) && method != WEAPONTYPE_DROWNING)
+#else
 	if (!bUsesCollision && (!bInVehicle || m_nPedState != PED_DRIVING) && method != WEAPONTYPE_DROWNING)
+#endif
 		return false;
 
 	if (bOnlyDamagedByPlayer && damagedBy != player && damagedBy != FindPlayerVehicle() &&
@@ -3896,18 +3897,6 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 						distVec.z += unknown;
 					else
 						distVec.z += 1.5f * unknown;
-
-					// Vice Extended (features.ini:
-					// PlayerDoesntBounceAwayFromMovingCar=1): el jugador ya no sale
-					// despedido por el capó en parábola — el coche lo empuja pegado
-					// al suelo (el resto de peds siguen volando como el original).
-					// Familia 11: manda la clave del `features.ini` servido; sin fichero
-					// (o sin la clave) vale lo que el port ya traía (`true`).
-					if (ViceExtFeatures::On("PlayerDoesntBounceAwayFromMovingCar", true) && IsPlayer()) {
-						distVec = car->m_vecMoveSpeed;
-						distVec.z = 0.0f;
-						distVec *= 0.25f;
-					}
 
 					m_vecMoveSpeed = distVec;
 					damageDir += 2;

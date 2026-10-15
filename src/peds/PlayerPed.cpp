@@ -50,21 +50,6 @@
 static void ViceExtMoveReset(void);
 #endif
 
-#if defined(VICEEXT_CROUCH) || defined(__EMSCRIPTEN__)
-static const AnimationId odCrouchPoseIds[9] = {
-	ANIM_STD_CROUCH_IDLE, ANIM_STD_CROUCH_FORWARD, ANIM_STD_CROUCH_BACKWARD,
-	ANIM_STD_CROUCH_LEFT, ANIM_STD_CROUCH_RIGHT, ANIM_STD_CROUCH_AIMFWD,
-	ANIM_STD_CROUCH_AIMBWD, ANIM_STD_CROUCH_AIMLEFT, ANIM_STD_CROUCH_AIMRIGHT
-};
-#endif
-
-#if defined(VICEEXT_CROUCH) || defined(VICEEXT_AIM_WALK)
-// Sección 2 (21/09, 5ª partida): estado de agachado a pie de la sección 3 (C5),
-// compartido con `PlayerControlZelda` para limitar la velocidad a paso de andar
-// mientras se está agachado. Lo mantiene `ViceExtCrouchControl`.
-static bool odCrouched = false;
-#endif
-
 #ifdef VICEEXT_AIM_WALK
 // H4 (12ª partida, 22/09): los dos datos que necesita `SetRealMoveAnim` para
 // elegir el clip del caminado apuntando. Los rellena el control a pie de cada
@@ -73,18 +58,6 @@ static bool odCrouched = false;
 //   - `odAimWalkUncapped`: la velocidad que habría pedido el jugador sin el tope.
 static bool odAimWalkActive = false;
 static float odAimWalkUncapped = 0.0f;
-#endif
-
-#ifdef VICEEXT_CROUCH
-// Sección 3, C5b (21/09): las tres ramas de agachado del motor a pie (sniper,
-// arma y desarmado) daban el agachado de DISPARO (`SetDuck` ->
-// `bCrouchWhenShooting`), que deja al jugador clavado en el sitio. El agachado
-// del jugador lo lleva `ViceExtCrouchControl` (permite andar agachado), así que
-// esas ramas ya no leen la tecla: si no, las dos conmutarían a la vez y el
-// agachado del motor volvería a bloquear el movimiento.
-#define VICEEXT_ENGINE_DUCK_KEY() false
-#else
-#define VICEEXT_ENGINE_DUCK_KEY() padUsed->DuckJustDown()
 #endif
 
 #ifdef VICEEXT_SHOTGUN_AIM
@@ -140,7 +113,7 @@ ViceExtAimWithArm(eWeaponType type)
 static int32 s_odSwimSlot = 0;
 #endif
 
-#ifdef VICEEXT_CROUCH
+#ifdef VICEEXT_AIM_CLASSICAXIS
 // R29 (27/09, plan agachado-correcciones-axis, sintoma G): LA API UNICA DEL
 // "ESTOY APUNTANDO". La rueda, la pose de apuntar, el giro y `CROUCH2 mira=`
 // leen SOLO esta funcion; antes cada uno leia `GetTarget()` a su manera y
@@ -481,6 +454,164 @@ CPlayerPed::ReactivatePlayerPed(int32 index)
 	CWorld::Add(CWorld::Players[index].m_pPed);
 }
 
+#ifdef VICEEXT_CROUCH
+void CPlayerPed::ProcessCrouch(void)
+{
+	if (!bIsDucking)
+		return;
+
+	CAnimBlendAssociation* curCrouchIdleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+	CAnimBlendAssociation* curCrouchForwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD);
+	CAnimBlendAssociation* curCrouchBackwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_BACKWARD);
+	CAnimBlendAssociation* curCrouchRollLeftAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L);
+	CAnimBlendAssociation* curCrouchRollRightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R);
+	bool bIsCurRollAnim = curCrouchRollLeftAssoc || curCrouchRollRightAssoc;
+	bool bIsCurMoveAnim = curCrouchForwardAssoc || curCrouchBackwardAssoc;
+
+	CAnimBlendAssociation* curCrouchFireAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_WEAPON_CROUCHFIRE);
+
+	CPad* pad = GetPadFromPlayer(this);
+	int16 padUpDown = pad->GetPedWalkUpDown();
+	int16 padLeftRight = pad->GetPedWalkLeftRight();
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	bool bIsCrouchAiming = bIsPlayerAiming;
+	bool bIsCrouchAimView = bIsPlayerAiming || TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_REAL_1ST_PERSON;
+#else
+	uint32 crouchAimSlot = GetWeapon()->GetInfo()->m_nWeaponSlot;
+	bool bIsCrouchAiming = pad->GetTarget() && crouchAimSlot >= WEAPONSLOT_HANDGUN && crouchAimSlot <= WEAPONSLOT_SNIPER;
+	bool bIsCrouchAimView = bIsCrouchAiming;
+#endif
+
+	if (curCrouchForwardAssoc)
+		curCrouchForwardAssoc->speed = Clamp(m_fMoveSpeed - 0.5f, 0.5f, 1.0f);
+
+	if (curCrouchBackwardAssoc)
+		curCrouchBackwardAssoc->speed = Clamp(m_fMoveSpeed - 0.5f, 0.5f, 1.0f);
+
+	if (m_nPedState == PED_ROLL)
+	{
+		if (!bIsCurRollAnim)
+			RestorePreviousState();
+
+		return;
+	}
+
+	if (bIsCrouchAiming && GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_SNIPER)
+		return;
+
+	if (bIsCrouchAimView) {
+		TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.4f;
+
+		if ((m_fMoveSpeed < 0.1f || (padLeftRight != 0 && padUpDown == 0)) && !curCrouchIdleAssoc && !bIsCurRollAnim || m_nPedState == PED_ROLL)
+			curCrouchIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+
+		if (pad->GetTarget() && m_fMoveSpeed > 0.1f && (!curCrouchIdleAssoc || curCrouchIdleAssoc && curCrouchIdleAssoc->blendAmount >= 1.0f) && !bIsCurMoveAnim && !bIsCurRollAnim &&
+			(padLeftRight < -20 || padLeftRight > 20)) {
+
+			if (curCrouchForwardAssoc)
+				delete curCrouchForwardAssoc;
+
+			if (curCrouchBackwardAssoc)
+				delete curCrouchBackwardAssoc;
+
+			if (curCrouchFireAssoc) {
+				delete curCrouchFireAssoc;
+				ClearWeaponTarget();
+			}
+
+			float angleToFace;
+			angleToFace = CGeneral::GetRadianAngleBetweenPoints(
+				GetPosition().x - TheCamera.GetRight().x, GetPosition().y - TheCamera.GetRight().y,
+				GetPosition().x, GetPosition().y);
+			angleToFace = CGeneral::LimitRadianAngle(angleToFace);
+			m_fRotationCur = CGeneral::LimitRadianAngle(m_fRotationCur);
+			m_fRotationCur = angleToFace;
+
+			bDontAllowWeaponChange = true;
+
+			SetPedState(PED_ROLL);
+
+			delete curCrouchIdleAssoc;
+
+			if (padLeftRight < 0) {
+				curCrouchRollLeftAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_ROLL_L, 4.0f);
+				curCrouchRollLeftAssoc->SetFinishCallback(FinishRollCB, this);
+			} else if (padLeftRight > 0) {
+				curCrouchRollRightAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_ROLL_R, 4.0f);
+				curCrouchRollRightAssoc->SetFinishCallback(FinishRollCB, this);
+			}
+
+			return;
+		}
+
+		if (m_fMoveSpeed > 0.1 && !bIsCurRollAnim) {
+			if (padUpDown != 0) {
+				if (padUpDown < 0) {
+					if (!curCrouchForwardAssoc)
+						curCrouchForwardAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_FORWARD, 4.0f);
+				} else if (padUpDown > 0) {
+					if (!curCrouchBackwardAssoc)
+						curCrouchBackwardAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_BACKWARD, 4.0f);
+				}
+			}
+		}
+	} else if (pad) {
+		if (m_fMoveSpeed < 0.1f) {
+			TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.6f;
+
+			if (!curCrouchIdleAssoc)
+				curCrouchIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
+		}
+
+		if (m_fMoveSpeed > 0.1f) {
+			TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.3f;
+
+			if (curCrouchIdleAssoc && !curCrouchForwardAssoc || curCrouchBackwardAssoc)
+				curCrouchForwardAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_FORWARD, 4.0f);
+		}
+	}
+}
+
+void CPlayerPed::FinishRollCB(CAnimBlendAssociation* assoc, void* arg)
+{
+	assoc->blendDelta = -1000.0f;
+
+	bDontAllowWeaponChange = false;
+
+	CPlayerPed* ped = (CPlayerPed*)arg;
+
+	CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 1000.0f);
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+static void
+ViceExtMovTrace(CPlayerPed *ped)
+{
+	static int s_odMovSig = -1;
+	int agachado = ped->bIsDucking ? 1 : 0;
+	int rueda = 0;
+	int escala = 0;
+	float camz = 0.0f;
+#ifdef VICEEXT_CROUCH
+	rueda = ped->m_nPedState == PED_ROLL ? 1 : 0;
+	camz = TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ;
+#endif
+#ifdef VICEEXT_CLIMBING
+	escala = ped->bIsClimbing ? 1 : 0;
+#endif
+	int sig = agachado | (rueda << 1) | (escala << 2);
+	if (sig == s_odMovSig)
+		return;
+	s_odMovSig = sig;
+	char t[160];
+	snprintf(t, sizeof t, "VEX mov agachado=%d rueda=%d escala=%d estado=%d nado=%d camz=%.2f",
+		agachado, rueda, escala, (int)ped->m_nPedState, ViceExtPedOwns(PEDLANE_NADO, PEDCAP_POSTURA) ? 1 : 0, camz);
+	ODTRACES(t);
+}
+#endif
+
 void
 CPlayerPed::UseSprintEnergy(void)
 {
@@ -602,15 +733,9 @@ void
 CPlayerPed::SetRealMoveAnim(void)
 {
 #ifdef VICEEXT_CROUCH
-	// R6b (sección 1, revisión del trabajo de R6): agachado, el clip lo pone
-	// `ViceExtCrouchAnim`. Sin este corte, el selector de animación de serie
-	// elegía caminar/correr por `m_fMoveSpeed` y PISABA el clip de agachado que
-	// se había mezclado al principio del frame: el jugador quedaba agachado
-	// medio frame y de pie el resto ("se agacha a medias / desaparece al andar").
-	// El movimiento lo sigue llevando el motor (m_fMoveSpeed + m_fRotationCur),
-	// que es lo que R6 quería: cámara siguiendo al ped y avance hacia donde mira.
-	if (odCrouched) {
-		ViceExtCrouchAnim();
+	if (bIsDucking) {
+		ProcessCrouch();
+
 		return;
 	}
 #endif
@@ -653,7 +778,11 @@ CPlayerPed::SetRealMoveAnim(void)
 			
 			RestoreHeadingRate();
 			if (!curIdleAssoc) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (!CPad::GetPad(0)->ArePlayerControlsDisabled() && m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+#else
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+#endif
 						nil, true, false, false, false, false, false)) {
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 8.0f);
 
@@ -667,7 +796,11 @@ CPlayerPed::SetRealMoveAnim(void)
 
 		} else if (m_fMoveSpeed == 0.0f && !curSprintAssoc) {
 			if (!curIdleAssoc) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (!CPad::GetPad(0)->ArePlayerControlsDisabled() && m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+#else
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f,
+#endif
 						nil, true, false, false, false, false, false)) {
 					curIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
 					
@@ -682,7 +815,11 @@ CPlayerPed::SetRealMoveAnim(void)
 				CAnimManager::BlendAnimation(GetClump(), m_animGroup, ANIM_STD_IDLE, 4.0f);
 
 			} else if (m_nPedState != PED_FIGHT) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (!CPad::GetPad(0)->ArePlayerControlsDisabled() && m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_STD_IDLE_TIRED
+#else
 				if (m_fCurrentStamina < 0.0f && !bIsAimingGun && curIdleAssoc->animId != ANIM_STD_IDLE_TIRED
+#endif
 					&& !CWorld::TestSphereAgainstWorld(GetPosition(), 0.5f, nil, true, false, false, false, false, false)) {
 					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_IDLE_TIRED, 4.0f);
 
@@ -833,6 +970,13 @@ CPlayerPed::SetRealMoveAnim(void)
 				}
 				curWalkAssoc->blendDelta = 0.0f;
 				curRunAssoc->blendDelta = 0.0f;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW ||
+					GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN ||
+					GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER) {
+					curRunAssoc->speed = 0.75f;
+				}
+#endif
 #ifdef VICEEXT_AIM_WALK
 				// H4 (12ª partida, 22/09): CAMINADO APUNTANDO = el clip de andar
 				// normal, más lento. Lo que pasa hoy sin esto:
@@ -901,6 +1045,15 @@ CPlayerPed::SetRealMoveAnim(void)
 	} else if (curSprintAssoc) {
 		if (TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_FIXED) {
 			curSprintAssoc->speed = 0.7f;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		} else if (GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_SHOTGUN ||
+				   GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_RIFLE ||
+				   GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_SNIPER) {
+			curSprintAssoc->speed = 0.85f;
+		} else if (GetWeapon()->m_eWeaponType == WEAPONTYPE_M60 ||
+				   GetWeapon()->m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER) {
+			curSprintAssoc->speed = 0.75f;
+#endif
 		} else
 			curSprintAssoc->speed = 1.0f;
 	}
@@ -1071,10 +1224,10 @@ CPlayerPed::PlayerControlSniper(CPad *padUsed)
 	ProcessWeaponSwitch(padUsed);
 	TheCamera.PlayerExhaustion = (1.0f - (m_fCurrentStamina - -150.0f) / 300.0f) * 0.9f + 0.1f;
 
-	if (VICEEXT_ENGINE_DUCK_KEY() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
+	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
 		bCrouchWhenShooting = true;
 		SetDuck(60000, true);
-	} else if (bIsDucking && (VICEEXT_ENGINE_DUCK_KEY() || m_nMoveState == PEDMOVE_SPRINT)) {
+	} else if (bIsDucking && (padUsed->DuckJustDown() || m_nMoveState == PEDMOVE_SPRINT)) {
 		ClearDuck(true);
 		bCrouchWhenShooting = false;
 	}
@@ -1252,10 +1405,10 @@ CPlayerPed::PlayerControlM16(CPad *padUsed)
 	ProcessWeaponSwitch(padUsed);
 	TheCamera.PlayerExhaustion = (1.0f - (m_fCurrentStamina - -150.0f) / 300.0f) * 0.9f + 0.1f;
 
-	if (VICEEXT_ENGINE_DUCK_KEY() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
+	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
 		bCrouchWhenShooting = true;
 		SetDuck(60000, true);
-	} else if (bIsDucking && (VICEEXT_ENGINE_DUCK_KEY() || m_nMoveState == PEDMOVE_SPRINT)) {
+	} else if (bIsDucking && (padUsed->DuckJustDown() || m_nMoveState == PEDMOVE_SPRINT)) {
 		ClearDuck(true);
 		bCrouchWhenShooting = false;
 	}
@@ -1416,47 +1569,11 @@ ViceExtMoveHeadingOwned(void)
 	return s_odMove.prepared && s_odMove.moving;
 }
 
-#ifdef VICEEXT_CROUCH
-#define ODROLL_READY 0
-#define ODROLL_ACTIVE 1
-static int s_odRollState = ODROLL_READY;
-static bool s_odRollArmed = false;
-static bool s_odRollNeutral = true;
-static bool s_odRollPrevIzq = false;
-static bool s_odRollPrevDer = false;
-static AnimationId s_odRollClip = ANIM_STD_CROUCH_IDLE;
-static uint32 s_odRollId = 0;
-static int s_odRollSide = 0;
-static float s_odRollDirX = 0.0f;
-static float s_odRollDirY = 0.0f;
-static float s_odRollSpeedMps = 0.0f;
-static float s_odRollLength = 0.0f;
-static float s_odRollSpeed = 0.0f;
-static float s_odRollLastCurrent = 0.0f;
-static float s_odRollRate = 0.0f;
-static float s_odRollMaxW = 0.0f;
-static CVector s_odRollStepPos(0.0f, 0.0f, 0.0f);
-static float s_odRollStepM = 0.0f;
-static float s_odRollStepT = 0.0f;
-static uint32 s_odRollStepN = 0;
-static uint32 s_odRollEdgeSeq = 0;
-static uint32 s_odRollFrame = 0;
-static float s_odRollSimStart = 0.0f;
-#endif
-
 static float ViceExtWalkerTargetMps(void);
 
-#ifdef __EMSCRIPTEN__
-static uint32 s_odP4PoseSpan = 1;
-static uint32 s_odP4PoseEnterId = 0;
-static uint32 s_odP4PoseExitId = 0;
-
-static void ViceExtP4PoseExitSampler(CPlayerPed *ped);
-#endif
 static bool s_odMovePrevMoving = false;
 static uint32 s_odMoveStartupMs = 0;
 static int s_odStickBlocked = 0;
-static AnimationId ViceExtCrouchAimPoseClip(CPlayerPed *ped);
 
 void
 CPlayerPed::ViceExtPrepareMove(CPad *padUsed)
@@ -1506,11 +1623,7 @@ CPlayerPed::ViceExtPrepareMove(CPad *padUsed)
 	s_odMove.mag = odMag;
 	s_odMove.moving = odMag > 16.0f;
 	s_odMove.aim = ViceExtIsAiming() ? 1 : 0;
-#ifdef VICEEXT_CROUCH
-	s_odMove.crouch = odCrouched ? 1 : 0;
-#else
 	s_odMove.crouch = 0;
-#endif
 	s_odMove.sprint = padUsed != nil && padUsed->GetSprint();
 	if (CCamera::s_viceExtAimForceRealMoveAnim) {
 		CCamera::s_viceExtAimForceRealMoveAnim = false;
@@ -1527,15 +1640,7 @@ CPlayerPed::ViceExtPrepareMove(CPad *padUsed)
 		if (s_odMove.moving && !s_odMove.sprint && !bInVehicle
 			&& ((s_odMove.policy == 0 && s_odMoveStartupMs != 0 && odNowMs <= s_odMoveStartupMs)
 				|| s_odMove.policy == 1))
-			s_odMove.speedGame = (odCrouched ? ViceExtCrouchMoveSpeed() : ViceExtWalkerTargetMps()) * METERS_PER_SECOND_TO_GAME_SPEED;
-	}
-#endif
-#ifdef VICEEXT_CROUCH
-	if (s_odRollState == ODROLL_ACTIVE) {
-		s_odMove.dirX = s_odRollDirX;
-		s_odMove.dirY = s_odRollDirY;
-		s_odMove.moving = true;
-		s_odMove.speedGame = s_odRollSpeedMps * METERS_PER_SECOND_TO_GAME_SPEED;
+			s_odMove.speedGame = ViceExtWalkerTargetMps() * METERS_PER_SECOND_TO_GAME_SPEED;
 	}
 #endif
 	bool odOk = !bInVehicle && !DyingOrDead() && !CReplay::IsPlayingBack();
@@ -1544,13 +1649,10 @@ CPlayerPed::ViceExtPrepareMove(CPad *padUsed)
 		odOk = false;
 #endif
 	s_odMove.prepared = odOk;
-	if (odOk && (m_nPedState == PED_ATTACK || (padUsed && padUsed->GetWeapon())) && !bIsDucking && !ViceExtIsCrouched() && ViceExtAimLongGun(GetWeapon()->m_eWeaponType) && !TheCamera.Using1stPersonWeaponMode())
+	if (odOk && (m_nPedState == PED_ATTACK || (padUsed && padUsed->GetWeapon())) && !bIsDucking && ViceExtAimLongGun(GetWeapon()->m_eWeaponType) && !TheCamera.Using1stPersonWeaponMode())
 		m_fRotationDest = CGeneral::LimitRadianAngle(-TheCamera.Orientation - VICEEXT_AIM_BLADE);
 	else if (odOk && s_odMove.moving && s_odMove.policy == 0 && !TheCamera.Using1stPersonWeaponMode())
 		m_fRotationDest = ViceExtMoveHeading();
-#ifdef __EMSCRIPTEN__
-	ViceExtP4PoseExitSampler(this);
-#endif
 }
 
 bool
@@ -1672,60 +1774,6 @@ ViceExtP4MoveEnd(float odSim, uint32 odFrame)
 	s_odSpan.active = false;
 }
 
-#ifdef __EMSCRIPTEN__
-static int s_odPoseExitSample = -1;
-
-static void
-ViceExtP4PoseExitSampler(CPlayerPed *ped)
-{
-	if (s_odPoseExitSample < 0)
-		return;
-	if (s_odPoseExitSample >= 30) {
-		s_odPoseExitSample = -1;
-		return;
-	}
-	int odN = 0;
-	int odWorst = -1;
-	float odW = 0.0f;
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *odA = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-		if (odA == nil || odA->blendAmount <= 0.01f)
-			continue;
-		++odN;
-		if (odA->blendAmount > odW) {
-			odW = odA->blendAmount;
-			odWorst = i;
-		}
-	}
-	float odDelta = 0.0f;
-	float odSpeed = 0.0f;
-	unsigned odFlags = 0;
-	if (odWorst >= 0) {
-		CAnimBlendAssociation *odA = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[odWorst]);
-		if (odA != nil) {
-			odDelta = odA->blendDelta;
-			odSpeed = odA->speed;
-			odFlags = (unsigned)odA->flags;
-		}
-	}
-	float odPesoSum = 0.0f;
-	for (CAnimBlendAssociation *odM = RpAnimBlendClumpGetFirstAssociation(ped->GetClump());
-	     odM; odM = RpAnimBlendGetNextAssociation(odM)) {
-		if (odM->IsPartial())
-			continue;
-		if (odM->blendAmount > 0.0f)
-			odPesoSum += odM->blendAmount;
-	}
-	char t[260];
-	VICEEXT_P4_EMIT(s_odMove.gen, t, "P4 kind=pose_exit schema=1 gen=%u frame=%u sim=%.4f case=3 id=%u n=%d sample=%d clip=%d w=%.4f delta=%.4f speed=%.4f flags=%x pesosum=%.2f",
-		(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(),
-		CTimer::GetTimeInMilliseconds() * 0.001f, (unsigned)s_odP4PoseExitId,
-		odN, s_odPoseExitSample,
-		odWorst >= 0 ? (int)odCrouchPoseIds[odWorst] : 0, odW, odDelta, odSpeed, odFlags, odPesoSum);
-	++s_odPoseExitSample;
-}
-#endif
-
 static void
 ViceExtMoveTick(CPlayerPed *ped)
 {
@@ -1743,20 +1791,11 @@ ViceExtMoveTick(CPlayerPed *ped)
 	int odAim = ped->ViceExtIsAiming() ? 1 : 0;
 	const char *odAimWhy = s_odAimWhy;
 	int odCrouch = 0;
-#ifdef VICEEXT_CROUCH
-	odCrouch = odCrouched ? 1 : 0;
-#endif
 	int odWalk = ViceExtP4WalkDown() ? 1 : 0;
 	int odSprint = (odPad && odPad->GetSprint()) ? 1 : 0;
 	int odFire = (odPad && odPad->GetWeapon()) ? 1 : 0;
 	int odRearm = 0;
 	int odEligible = 0;
-#ifdef VICEEXT_CROUCH
-	odRearm = s_odRollArmed ? 1 : 0;
-	if (odAim && odCrouch && s_odRollState == ODROLL_READY && s_odRollArmed
-	    && odWeapon >= 17 && !(odWeapon >= 28 && odWeapon <= 33) && !odFire)
-		odEligible = 1;
-#endif
 	int odJump = (odPad && odPad->JumpJustDown()) ? 1 : 0;
 	{
 		static int s_odAimWas = -1;
@@ -1891,146 +1930,6 @@ ViceExtMoveTick(CPlayerPed *ped)
 #endif
 
 #ifdef __EMSCRIPTEN__
-static bool s_odP4PoseEnterOn = false;
-static float s_odP4PoseEnterSim = 0.0f;
-static bool s_odP4PoseExitOn = false;
-static float s_odP4PoseExitSim = 0.0f;
-static float s_odP4PoseExitMax = 0.0f;
-
-static void
-ViceExtP4PoseWeights(CPlayerPed *ped, float *odW)
-{
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *a = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-		odW[i] = a ? a->blendAmount : 0.0f;
-	}
-}
-
-static float
-ViceExtP4PoseOwn(CPlayerPed *ped)
-{
-	float odW[9];
-	ViceExtP4PoseWeights(ped, odW);
-	float odMax = 0.0f;
-	for (int i = 0; i < 9; i++)
-		if (odW[i] > odMax)
-			odMax = odW[i];
-	CAnimBlendAssociation *odDuck = RpAnimBlendClumpGetAssociation(ped->GetClump(), ANIM_STD_DUCK_WEAPON);
-	if (odDuck && odDuck->blendAmount > odMax)
-		odMax = odDuck->blendAmount;
-	return odMax;
-}
-
-static void
-ViceExtP4PoseBones(CPlayerPed *ped, float &odNf, float &odDg, int &odSmp)
-{
-	odNf = 0.0f;
-	odDg = 0.0f;
-	odSmp = 0;
-	static const PedNode odNodes[5] = { PED_MID, PED_UPPERLEGL, PED_UPPERLEGR, PED_LOWERLEGL, PED_LOWERLEGR };
-	for (int i = 0; i < 5; i++) {
-		if (odNodes[i] < PED_MID || odNodes[i] >= PED_NODE_MAX)
-			continue;
-		AnimBlendFrameData *f = ped->m_pFrames[odNodes[i]];
-		if (f == nil || f->hanimFrame == nil)
-			continue;
-		odSmp++;
-		float odX = f->hanimFrame->q.imag.x;
-		float odY = f->hanimFrame->q.imag.y;
-		float odZ = f->hanimFrame->q.imag.z;
-		float odW = f->hanimFrame->q.real;
-		float odL2 = odX * odX + odY * odY + odZ * odZ + odW * odW;
-		if (odL2 != odL2 || odL2 > 1e30f || odL2 < 0.0f)
-			odNf += 1.0f;
-		else if (odL2 < 0.25f || odL2 > 2.25f)
-			odDg += 1.0f;
-	}
-}
-
-static void
-ViceExtP4PoseBeginP4(CPlayerPed *ped, int odPosture)
-{
-	if (odPosture == 1)
-		s_odP4PoseEnterId = ++s_odP4PoseSpan;
-	else
-		s_odP4PoseExitId = ++s_odP4PoseSpan;
-	char t[240];
-	VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=pose_begin schema=1 gen=%u frame=%u sim=%.4f case=3 id=%u posture=%d",
-		(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(),
-		CTimer::GetTimeInMilliseconds() * 0.001f,
-		(unsigned)(odPosture == 1 ? s_odP4PoseEnterId : s_odP4PoseExitId), odPosture);
-	
-	if (odPosture == 1) {
-		s_odP4PoseEnterOn = true;
-		s_odP4PoseEnterSim = CTimer::GetTimeInMilliseconds() * 0.001f;
-	} else {
-		s_odP4PoseExitOn = true;
-		s_odP4PoseExitSim = CTimer::GetTimeInMilliseconds() * 0.001f;
-		s_odP4PoseExitMax = 0.0f;
-	}
-	(void)ped;
-}
-
-static void
-ViceExtP4PoseEnterTick(CPlayerPed *ped)
-{
-	if (!s_odP4PoseEnterOn)
-		return;
-	static uint32 s_odP4PoseFrame = 0;
-	uint32 odFrame = CTimer::GetFrameCounter();
-	if (odFrame == s_odP4PoseFrame)
-		return;
-	s_odP4PoseFrame = odFrame;
-	float odSim = CTimer::GetTimeInMilliseconds() * 0.001f;
-	float odMax = ViceExtP4PoseOwn(ped);
-	float odElapsed = odSim - s_odP4PoseEnterSim;
-	if (odMax < 0.8f && odElapsed < 1.5f)
-		return;
-	float odT80 = (odMax >= 0.8f) ? odElapsed : 9.0f;
-	float odW[9];
-	ViceExtP4PoseWeights(ped, odW);
-	float odNf, odDg;
-	int odSmp = 0;
-	ViceExtP4PoseBones(ped, odNf, odDg, odSmp);
-	char t[460];
-	VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=pose_end schema=1 gen=%u frame=%u sim=%.4f case=3 id=%u posture=1 weights=%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f t80=%.4f tClear=0.0000 maxOwnAfter500=0.0000 boneNonfinite=%.0f boneDegenerate=%.0f boneSamples=%d bonesIdx=mid,ul,ur,ll,lr",
-		(unsigned)s_odMove.gen, (unsigned)odFrame, odSim,
-		(unsigned)s_odP4PoseEnterId,
-		odW[0], odW[1], odW[2], odW[3], odW[4], odW[5], odW[6], odW[7], odW[8],
-		odT80, odNf, odDg, odSmp);
-	
-	s_odP4PoseEnterOn = false;
-}
-
-static void
-ViceExtP4PoseExitTick(CPlayerPed *ped)
-{
-	if (!s_odP4PoseExitOn)
-		return;
-	float odSim = CTimer::GetTimeInMilliseconds() * 0.001f;
-	float odOwn = ViceExtP4PoseOwn(ped);
-	float odElapsed = odSim - s_odP4PoseExitSim;
-	if (odElapsed > 0.5f && odOwn > s_odP4PoseExitMax)
-		s_odP4PoseExitMax = odOwn;
-	bool odDone = (odOwn <= 0.01f);
-	if (!odDone && odElapsed < 2.0f)
-		return;
-	float odClear = odDone ? odElapsed : 9.0f;
-	float odW[9];
-	ViceExtP4PoseWeights(ped, odW);
-	float odNf, odDg;
-	int odSmp = 0;
-	ViceExtP4PoseBones(ped, odNf, odDg, odSmp);
-	char t[460];
-	VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=pose_end schema=1 gen=%u frame=%u sim=%.4f case=3 id=%u posture=0 weights=%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f t80=0.0000 tClear=%.4f maxOwnAfter500=%.4f boneNonfinite=%.0f boneDegenerate=%.0f boneSamples=%d bonesIdx=mid,ul,ur,ll,lr",
-		(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), odSim,
-		(unsigned)s_odP4PoseExitId,
-		odW[0], odW[1], odW[2], odW[3], odW[4], odW[5], odW[6], odW[7], odW[8],
-		odClear, s_odP4PoseExitMax, odNf, odDg, odSmp);
-	
-	s_odP4PoseExitOn = false;
-}
-
 static bool s_odP4CamOn = false;
 static uint32 s_odP4CamSpan = 1;
 static uint32 s_odP4CamId = 0;
@@ -2142,9 +2041,6 @@ ViceExtP4CamBegin(CPlayerPed *ped, CVector odView, int odFrom, int odTo)
 	else
 		s_odP4CamClamp = (odPitch < -89.5f || odPitch > 60.0f) ? 1 : 0;
 	int odCrouch = 0;
-#ifdef VICEEXT_CROUCH
-	odCrouch = odCrouched ? 1 : 0;
-#endif
 	s_odP4CamCrouch = odCrouch;
 	char t[340];
 	VICEEXT_P4_EMIT(1, t,  "P4 kind=cam_begin schema=1 gen=1 frame=%u sim=%.4f case=6 id=%u from=%d to=%d visibleFront=%.6f,%.6f,%.6f mouse=0 lock=%d collision=0 pitchClamped=%d crouch=%d",
@@ -2231,14 +2127,6 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	odAimWalkUncapped = padMoveInGameUnit;
 #endif
 	if (padMoveInGameUnit > 0.0f) {
-#ifdef VICEEXT_CROUCH
-		// R26: a los lados agachado sin apuntar, el destino es el rumbo mundo
-		// del helper (si no, este forzado a camara lo desharia cada frame).
-		float odSideDir = 0.0f;
-		if (ViceExtCrouchSideHeading(odSideDir))
-			m_fRotationDest = odSideDir;
-		else
-#endif
 #ifdef VICEEXT_AIM_CLASSICAXIS
 		// PORTADO — ClassicAXIS: `playerMovementType` (Main.cpp:121-133). Antes este
 		// `else` encajaba el cuerpo con la cámara SIEMPRE, que es justo lo que el
@@ -2703,7 +2591,11 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		ClearPointGunAt();
 	}
 
-	if (VICEEXT_ENGINE_DUCK_KEY() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT && weaponInfo->m_nWeaponSlot != WEAPONSLOT_HEAVY && GetWeapon()->m_eWeaponType != WEAPONTYPE_CHAINSAW) {
+#else
+	if (padUsed->DuckJustDown() && !bIsDucking && m_nMoveState != PEDMOVE_SPRINT) {
+#endif
 #ifdef FIX_BUGS
 		// fix tommy being locked into looking at the same spot if you duck just after starting to shoot
 		if(!m_pPointGunAt)
@@ -2711,8 +2603,13 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 #endif
 		bCrouchWhenShooting = true;
 		SetDuck(60000, true);
-	} else if (bIsDucking && (VICEEXT_ENGINE_DUCK_KEY() || m_nMoveState == PEDMOVE_SPRINT ||
+	} else if (bIsDucking && (padUsed->DuckJustDown() || m_nMoveState == PEDMOVE_SPRINT ||
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		((padUsed->GetSprint() || padUsed->ExitVehicleJustDown() || padUsed->JumpJustDown()) &&
+		TheCamera.PlayerWeaponMode.Mode != CCam::MODE_SNIPER && TheCamera.PlayerWeaponMode.Mode != CCam::MODE_CAMERA))) {
+#else
 		padUsed->GetSprint() || padUsed->JumpJustDown() || padUsed->ExitVehicleJustDown())) {
+#endif
 
 #ifdef FIX_BUGS
 		// same fix as above except for standing up
@@ -3172,40 +3069,6 @@ CPlayerPed::ViceExtAimDirTrace(CPad *padUsed)
 	AnimationId odCrouchFire = GetCrouchFireAnim(info);
 	if (odCrouchFire)
 		odPeso = Max(odPeso, ViceExtBlendWeight(GetClump(), odCrouchFire));
-#ifdef __EMSCRIPTEN__
-#ifdef VICEEXT_CROUCH
-	{
-		static int s_odArmSig = -1;
-		static uint32 s_odArmMs = 0;
-		int odArmSig = (int)ViceExtCrouchAimPoseClip(this);
-		uint32 odArmNow = CTimer::GetTimeInMilliseconds();
-		bool odArmDue = (odArmSig != s_odArmSig) || (odArmNow + 60000 < s_odArmMs) || (odArmNow >= s_odArmMs + 100);
-		if (odArmDue) {
-			s_odArmSig = odArmSig;
-			s_odArmMs = odArmNow;
-			CAnimBlendAssociation *odArm = RpAnimBlendClumpGetAssociation(GetClump(), (AnimationId)odArmSig);
-			const char *odArmNom = (odArm && odArm->hierarchy) ? odArm->hierarchy->name : "?";
-			float odArmPeso = odArm ? odArm->blendAmount : 0.0f;
-			float odCanon = -1.0f;
-			{
-				RpHAnimHierarchy *odHier = GetAnimHierarchyFromSkinClump(GetClump());
-				int odHidx = RpHAnimIDGetIndex(odHier, m_pFrames[PED_HANDR]->nodeID);
-				RwMatrix *odHm = &RpHAnimHierarchyGetMatrixArray(odHier)[odHidx];
-				CVector odBarrel(odHm->at.x, odHm->at.y, odHm->at.z);
-				if (odBarrel.MagnitudeSqr() > 0.000001f) {
-					odBarrel.Normalise();
-					odCanon = RADTODEG(Acos(Clamp(DotProduct(odBarrel, ViceExtP4AimPointDir()), -1.0f, 1.0f)));
-				}
-			}
-			char t[340];
-			VICEEXT_P4_EMIT(s_odMove.gen, t, "P4 kind=armsight schema=1 gen=%u frame=%u sim=%.4f case=4 id=0 pose=%s posepeso=%.2f errDeg=%.4f canon=%.4f px=%.1f weapon=%d crouch=%d aim=%d",
-				(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-				odArmNom, odArmPeso, odDesv, odCanon, ViceExtP4CamPixelErr(this), (int)wt,
-				ViceExtIsCrouched() ? 1 : 0, ViceExtIsAiming() ? 1 : 0);
-		}
-	}
-#endif
-#endif
 	float odCrouchW = Max(Max(ViceExtBlendWeight(GetClump(), ANIM_STD_CROUCH_FORWARD),
 		ViceExtBlendWeight(GetClump(), ANIM_STD_CROUCH_BACKWARD)),
 		ViceExtBlendWeight(GetClump(), ANIM_STD_CROUCH_IDLE));
@@ -3254,10 +3117,6 @@ CPlayerPed::ViceExtAimDirTrace(CPad *padUsed)
 }
 #endif
 
-#ifdef __EMSCRIPTEN__
-static void ViceExtP4PartialWatch(CPlayerPed *odPed);
-#endif
-
 void
 CPlayerPed::PlayerControlZelda(CPad *padUsed)
 {
@@ -3271,7 +3130,6 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 	s_odStickBlocked = MovementDisabledBecauseOfTargeting() ? 1 : 0;
 
 #ifdef __EMSCRIPTEN__
-	ViceExtP4PartialWatch(this);
 	{
 		static CVector s_odStandPos(0.0f, 0.0f, 0.0f);
 		static bool s_odStandOn = false;
@@ -3428,39 +3286,23 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 	if (m_nPedState != PED_FIGHT)
 		SetRealMoveAnim();
 
-#ifdef VICEEXT_CLIMB
-	// Sección 2 (E1): con la tecla de saltar, si hay un borde escalable delante se
-	// trepa en vez de saltar; mientras dura, el control a pie no corre.
-	// features.ini `EnableClimbing` (familia 11): el fichero del mod manda; con
-	// la clave a 0 no se llama a la escalada y el salto es el de siempre.
-	if (ViceExtFeatures::On("EnableClimbing", true) && ViceExtClimbControl(padUsed))
-		return;
-#endif
-
 	if (!bIsInTheAir && !CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY)
 		&& padUsed->JumpJustDown() && m_nPedState != PED_JUMP) {
 		ClearAttack();
 		ClearWeaponTarget();
-		bool odEvasiveRaw = (m_nEvadeAmount != 0 && m_pEvadingFrom) ? true : false;
-		bool odEvasive = odEvasiveRaw;
-		// features.ini `PlayerDoesntBounceAwayFromMovingCar` (familia 11; antes este
-		// bloque era `#ifdef VICEEXT_NO_JUMP_FROM_CAR`): el fichero del mod manda;
-		// con la clave a 0 el jugador sale despedido como en el original.
-		if (ViceExtFeatures::On("PlayerDoesntBounceAwayFromMovingCar", true)) {
-		odEvasive = false;
-#ifdef __EMSCRIPTEN__
-		{
-			static bool s_odVehJumpWas = false;
-			if (odEvasiveRaw != s_odVehJumpWas) {
-				s_odVehJumpWas = odEvasiveRaw;
-				char t[176];
-				snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=10 id=0 raw=%d applied=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odEvasiveRaw, (int)odEvasive);
-				ODTRACES(t);
-			}
+#ifdef VICEEXT_CROUCH
+		if (bIsDucking) {
+			ClearDuck();
+
+			return;
 		}
 #endif
-		}
-		if (odEvasive) {
+
+#ifdef VICEEXT_FEATURES_INI
+		if (!bPlayerDoesntBounceAwayFromMovingCar && m_nEvadeAmount != 0 && m_pEvadingFrom) {
+#else
+		if (m_nEvadeAmount != 0 && m_pEvadingFrom) {
+#endif
 			SetEvasiveDive((CPhysical*)m_pEvadingFrom, 1);
 			m_nEvadeAmount = 0;
 			m_pEvadingFrom = nil;
@@ -3593,9 +3435,6 @@ ViceExtSwimClipSpeed(AnimationId odAnim, CAnimBlendAssociation *odAssoc)
 	return odRootM / odAssoc->hierarchy->totalLength;
 }
 
-#ifdef VICEEXT_CLIMB
-static bool ViceExtClimbAbort(void);
-#endif
 static bool odSwimActive = false;
 
 static void
@@ -3755,12 +3594,8 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	}
 
 	if (s_odSwimState == 0) {
-#ifdef VICEEXT_CLIMB
-		if (ViceExtClimbAbort()) {
-#ifdef __EMSCRIPTEN__
-			ODTRACES("VICEEXT swim trepa-off");
-#endif
-		}
+#ifdef VICEEXT_CLIMBING
+		bIsReadyToClimbing = false;
 #endif
 		s_odSwimState = 1;
 		s_odSwimTicks = 0;
@@ -4049,329 +3884,9 @@ CPlayerPed::ViceExtIsSwimming(void)
 }
 #endif
 
-#ifdef VICEEXT_CLIMB
-// Sección 2 (21/09, 5ª partida): ESCALAR (bloque opcional E1 del plan; el jugador
-// pidió "encárgate de si puedes que el personaje pueda escalar").
-//
-// El `ped.ifp` del mod trae los clips de escalada de San Andreas (`CLIMB_idle`,
-// `CLIMB_jump`, `CLIMB_jump_B`, `CLIMB_jump2fall`, `CLIMB_Pull`, `CLIMB_Stand`,
-// `CLIMB_Stand_finish` — comprobados leyendo el binario servido) pero **no había
-// ningún grupo que los usara**, así que el port no podía escalar nada. Aquí:
-//   - se mira hacia delante con rayos horizontales a distintas alturas: hay borde
-//     escalable si a la altura de la rodilla pega y a la del pecho no, o sea una
-//     pared que termina entre `VICEEXT_CLIMB_MIN` y `VICEEXT_CLIMB_MAX`;
-//   - se comprueba que arriba del borde haya sitio para estar de pie (si no, es un
-//     tejado hueco y no se trepa);
-//   - se reproduce `CLIMB_Pull` y, durante `odClimbDur`, se lleva al jugador de
-//     donde estaba al borde (sin velocidad), terminando con `CLIMB_Stand_finish`.
-// Con la tecla de saltar: si hay borde se trepa; si no, se salta como siempre.
-#define VICEEXT_CLIMB_MIN     0.55f
-#define VICEEXT_CLIMB_MAX     1.85f
-#define VICEEXT_CLIMB_MIN_MS  700
-#define VICEEXT_CLIMB_MAX_MS  1100
-#define VICEEXT_CLIMB_REACH   0.95f
-
-static bool odClimbActive = false;
-static uint32 odClimbStart = 0;
-
-// Aborta la trepada activa (ver forward junto a ViceExtSwimControl).
-static bool
-ViceExtClimbAbort(void)
-{
-	if (!odClimbActive)
-		return false;
-	odClimbActive = false;
-	return true;
-}
-static uint32 odClimbDur = 0;
-static CVector odClimbFrom;
-static CVector odClimbTo;
-
-// Altura del borde que hay justo delante, sobre los pies del jugador (-1 = no hay).
-static float
-ViceExtClimbLedgeHeight(void)
-{
-	CPed *ped = FindPlayerPed();
-	if (ped == nil)
-		return -1.0f;
-	CVector pos = ped->GetPosition();
-	CVector fwd = ped->GetForward();
-	fwd.z = 0.0f;
-	if (fwd.MagnitudeSqr() < 0.001f)
-		return -1.0f;
-	fwd.Normalise();
-
-	CColPoint cp;
-	CEntity *ent = nil;
-	bool hayParedAbajo = CWorld::ProcessLineOfSight(
-		CVector(pos.x, pos.y, pos.z + 0.45f),
-		CVector(pos.x + fwd.x * VICEEXT_CLIMB_REACH, pos.y + fwd.y * VICEEXT_CLIMB_REACH, pos.z + 0.45f),
-		cp, ent, true, false, false, true, false, true, false);
-	if (!hayParedAbajo)
-		return -1.0f;   // nada delante: salto normal
-
-	// Se sube el rayo hasta que deje de pegar: ese es el borde.
-	float h = VICEEXT_CLIMB_MIN;
-	for (; h <= VICEEXT_CLIMB_MAX; h += 0.1f) {
-		bool hit = CWorld::ProcessLineOfSight(
-			CVector(pos.x, pos.y, pos.z + h),
-			CVector(pos.x + fwd.x * VICEEXT_CLIMB_REACH, pos.y + fwd.y * VICEEXT_CLIMB_REACH, pos.z + h),
-			cp, ent, true, false, false, true, false, true, false);
-		if (!hit)
-			break;
-	}
-	if (h > VICEEXT_CLIMB_MAX)
-		return -1.0f;   // pared más alta que el tope: no se trepa
-	return h;
-}
-
-// Devuelve true mientras dura la escalada (el control a pie no debe correr).
-bool
-CPlayerPed::ViceExtClimbControl(CPad *padUsed)
-{
-	uint32 now = CTimer::GetTimeInMilliseconds();
-#ifdef VICEEXT_SWIMMING
-	// En el agua manda el nado, no la escalada (26/09: al saltar al agua salia
-	// la animacion de trepar). Si trepaba y entro al agua, se abandona.
-	if (ViceExtIsSwimming()) {
-		odClimbActive = false;
-		return false;
-	}
-#endif
-
-	if (odClimbActive) {
-		// El reloj del motor retrocede al cargar partida: en ese caso se abandona.
-		if (now < odClimbStart) {
-			odClimbActive = false;
-			return false;
-		}
-		// Si algo interrumpió el control a pie (muerte, cinemática, coche), no se
-		// puede quedar colgado: se abandona en vez de bloquear el salto para siempre.
-		if (!IsPedInControl() || bInVehicle || DyingOrDead() || now - odClimbStart > odClimbDur + 800) {
-			odClimbActive = false;
-			return false;
-		}
-		float t = (float)(now - odClimbStart) / (float)odClimbDur;
-		if (t >= 1.0f) {
-			SetPosition(odClimbTo);
-			m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-			m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-			CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_PLAYERCLIMB, ANIM_STD_CLIMB_STAND_FINISH, 8.0f);
-			odClimbActive = false;
-#ifdef __EMSCRIPTEN__
-			ODTRACES("VICEEXT climb fin");
-#endif
-			return true;
-		}
-		SetPosition(odClimbFrom + (odClimbTo - odClimbFrom) * t);
-		m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-		return true;
-	}
-
-	if (!padUsed || bInVehicle || !IsPedInControl() || DyingOrDead() || CReplay::IsPlayingBack())
-		return false;
-	if (bIsInTheAir || m_nPedState == PED_JUMP || m_nMoveState == PEDMOVE_SPRINT)
-		return false;
-	if (!padUsed->JumpJustDown())
-		return false;
-
-	float borde = ViceExtClimbLedgeHeight();
-	if (borde < 0.0f) {
-#ifdef __EMSCRIPTEN__
-		ODTRACES("VICEEXT climb no: sin borde");
-#endif
-		return false;
-	}
-
-	CVector pos = GetPosition();
-	CVector fwd = GetForward();
-	fwd.z = 0.0f;
-	fwd.Normalise();
-	CVector destino(pos.x + fwd.x * (VICEEXT_CLIMB_REACH + 0.35f),
-			pos.y + fwd.y * (VICEEXT_CLIMB_REACH + 0.35f), pos.z + borde + 0.15f);
-	if (!CPedPlacement::IsPositionClearForPed(destino)) {
-#ifdef __EMSCRIPTEN__
-		ODTRACES("VICEEXT climb no: sin sitio arriba");
-#endif
-		return false;
-	}
-	// No trepar hacia el agua (26/09): saltar al mar con un borde delante
-	// (rocas, muelle) arrancaba la trepada en vez del salto/nado.
-	{
-		float odClimbLevel = 0.0f;
-		if (CWaterLevel::GetWaterLevel(destino, &odClimbLevel, true) && destino.z < odClimbLevel) {
-#ifdef __EMSCRIPTEN__
-			ODTRACES("VICEEXT climb no: destino en agua");
-#endif
-			return false;
-		}
-	}
-
-	odClimbFrom = pos;
-	odClimbTo = destino;
-	odClimbStart = now;
-	odClimbDur = (uint32)(VICEEXT_CLIMB_MIN_MS
-		+ (VICEEXT_CLIMB_MAX_MS - VICEEXT_CLIMB_MIN_MS) * (borde / VICEEXT_CLIMB_MAX));
-	odClimbActive = true;
-	ClearAttack();
-	ClearWeaponTarget();
-	m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
-	CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_PLAYERCLIMB, ANIM_STD_CLIMB_PULL, 8.0f);
-#ifdef __EMSCRIPTEN__
-	{
-		char t[130];
-		snprintf(t, sizeof t, "VICEEXT climb start borde=%.2f ms=%u", borde, odClimbDur);
-		ODTRACES(t);
-	}
-#endif
-	return true;
-}
-#endif
-
-#ifdef VICEEXT_CROUCH
-// Sección 3, bloque C5 (20/09): AGACHADO (Vice Extended v1.5 "Fixed climbing,
-// crouching and swimming animations").
-//
-// El motor tiene el camino de agachado entero (`SetDuck`/`ClearDuck`,
-// `bIsDucking`, clips `DUCK_down`/`DUCK_low`/`WEAPON_crouch`) y la tecla **C** ya
-// está atada a la acción `PED_DUCK`; el jugador ARMADO puede agacharse (sus
-// llamadas están en el control armado). Lo que faltaba era el caso desarmado /
-// cuerpo a cuerpo, que no tiene ninguna llamada, y el "caminar agachado" del
-// mod: sus clips `crouch_idle`, `crouch_forward` y `crouch_backward` (grupo
-// `ASSOCGRP_PLAYERCROUCH`) se superponen como animación PARCIAL, así que el
-// movimiento lo sigue poniendo el motor (no se reimplementa).
-// C5b (21/09): ¿ha pedido el jugador agacharse en este frame? El pad (L3) o la
-// acción `PED_DUCK` con respaldo: la config de controles que el navegador guarda
-// puede haber dejado la acción sin tecla, y entonces la C no llega a
-// `NewState.LeftShock` (ver CControllerConfigManager::ViceExtActionKeyJustDown).
-static bool
-ViceExtDuckJustDown(CPad *padUsed)
-{
-	return padUsed->DuckJustDown()
-	    || ControlsManager.ViceExtActionKeyJustDown(PED_DUCK, 'C');
-}
-
-static bool
-ViceExtDuckDown(CPad *padUsed)
-{
-	if (padUsed->NewState.LeftShock)
-		return true;
-	int32 odKey = ControlsManager.GetControllerKeyAssociatedWithAction(PED_DUCK, KEYBOARD);
-	if (odKey == 0 || odKey == 1056)
-		odKey = 'C';
-	return ControlsManager.GetIsKeyboardKeyDown((RsKeyCodes)odKey);
-}
-
-// C5b (21/09): el agachado pasa a ser de ESTE bloque, como el nado.
-//
-// R6 (5ª partida): el bloque le QUITABA el movimiento a pie al motor
-// (`odOwnsMovement`: escribía `m_fRotationDest`/`m_fMoveSpeed` y ProcessControl
-// no repartía el control normal). El giro y la velocidad reales los aplica el
-// camino normal, así que el ped avanzaba distinto de cómo miraba (el "va hacia
-// atrás") y la cámara, que sigue al ped, parecía fija. Ahora el movimiento lo
-// pone el MOTOR (camino a pie normal: Zelda/1ª persona) y este bloque sólo:
-// (a) el clip `CROUCH_*` como blend parcial y (b) el tope de velocidad.
-// El agachado de disparo del motor se sigue soltando al cogerlo, para que no
-// vuelva a clavar al jugador.
-//
-// R17 (14ª partida, 22/09): "el personaje sin desplazamiento al agacharse".
-//
-// Lo que lo bloqueaba, hasta la raíz: en III/VC el ped NO anda por
-// `m_fMoveSpeed`. Anda por la TRASLACIÓN DE LA RAÍZ del clip de movimiento
-// (`VELOCITY_EXTRACTION` -> `m_vecAnimMoveDelta` -> `CalculateNewVelocity` ->
-// `m_moved` -> `UpdatePosition` -> `m_vecMoveSpeed` -> `ApplyMoveSpeed`), y
-// `UpdatePosition` sólo corre con `bIsStanding`. Agachado, `SetRealMoveAnim`
-// salía antes de mezclar caminar/correr (`odCrouched` -> sólo el clip del mod),
-// y ese clip venía declarado `ASSOC_PARTIAL` (sin `ASSOC_MOVEMENT` ni
-// `ASSOC_HAS_TRANSLATION`): no aportaba velocidad y encima su traslación se
-// aplicaba a la POSE. Resultado: `m_moved` = 0, el motor anulaba `m_vecMoveSpeed`
-// cada frame y el ped no andaba nada; la cámara, que sigue al ped, tampoco se
-// movía. Los clips ya son de movimiento (ver `aCrouchAnimDescs`), así que el
-// avance lo pone el clip.
-//
-// Velocidad: la natural del clip no vale (su raíz recorre 2,615 m en 0,731 s =
-// 3,58 m/s, más que correr a pie). Se escala el RITMO del clip (igual que el H4
-// del caminado apuntando: mismo clip, cadencia escalada, los pies no patinan)
-// para que el avance sea `VICEEXT_CROUCH_WALK_SPEED`.
-//
-// R28 (jugador, 26/09): el agachado iba a 0,83 m/s medidos en su partida
-// (`CROUCH2 velo`) contra 0,90 pedidos, y el andar de pie de serie son 1,13 m/s:
-// iba al 80 % del andar y la sensación era "lentísimo". El objetivo pasa a ser
-// EL MISMO que el andar de pie: 1,13 m/s.
-#define VICEEXT_CROUCH_WALK_SPEED 1.13f  // m/s de avance agachado (= andar de pie)
-// Metros que avanza la RAÍZ del clip en una animación entera, medidos en el
-// `ped.ifp` servido con `gta_vc_browser/tools/ifp_inspect.py`. La velocidad
-// natural = esto partido por `hierarchy->totalLength`.
-#define VICEEXT_CROUCH_FWD_ROOT_M  2.615f
-#define VICEEXT_CROUCH_BACK_ROOT_M 1.853f
-// Toque de velocidad que el motor sigue mirando (m_fMoveSpeed en unidades de
-// juego: 1,0 = andar), para que no quede un valor de correr colgado. R28: sube
-// con el objetivo (1,13), porque con el tope en 0,90 el motor recortaba justo la
-// velocidad que pide el jugador, que es la del andar de pie.
-#define VICEEXT_CROUCH_SPEED 1.13f
-
-// R20 (22/09): RITMO de los clips de agachado, y por qué ya no se recorta.
-//
-// En III/VC la velocidad de un paseo ES el avance de la raíz del clip (ver el
-// camino completo en `AnimManager.cpp`), así que ritmo y velocidad son el mismo
-// número: bajar el ritmo para clavar los "0,9 m/s" de R17 dejaba los pies a un
-// cuarto de velocidad (el jugador: "va demasiado lenta"). Decisión del jugador
-// (22/09): los clips como ESTÁN en el mod, a ritmo del motor (1,0):
-//
-//   Crouch_Forward   3,58 m/s (2,615 m / 0,731 s)   Crouch_Backward  1,85 m/s
-//   Crouch_Roll_L    2,33 m/s (2,172 m / 0,931 s)   Crouch_Roll_R    2,42 m/s
-//
-// R22 (18ª partida, 23/09): VELOCIDAD OBJETIVO de la caminata agachada.
-//
-// Lo que dijo el jugador: "al estar agachado y moverme el personaje se mueve a
-// una super velocidad sin razón... ajusta la velocidad del caminado como
-// debería". Tenía razón y el dato estaba delante: en este motor la velocidad ES
-// el avance de la raíz del clip, y los clips del mod van de 1,85 a 3,58 m/s
-// (medidos con `tools/ifp_inspect.py`):
-//   Crouch_Forward  3,58 m/s   Crouch_Backward 1,85   Roll_L 2,33   Roll_R 2,42
-// Con la regla anterior ("el clip como está, a ritmo 1") el agachado andaba más
-// que el propio `walk` de serie y ADEMÁS cada dirección iba a una velocidad
-// distinta (adelante el doble que atrás), que es cosa del clip, no del juego.
-//
-// La referencia del propio mod para su propia familia (`Crouch_Backward` y los
-// `GunMove_FWD/BWD/L/R`, su "moverse apuntando") es 1,85 m/s, pero eso es MÁS que
-// el andar de pie del motor (0,79-1,13 medido en traza `PEDAT`), y el jugador lo
-// tiene claro: "el estar agachado es más lento o la misma velocidad que el
-// caminar". Así que el valor es **0,90 m/s** (por debajo del caminar).
-// R26 (jugador): agachado = caminar menos un poquito (caminar=1 -> 0,90).
-// R26d: el jugador lo fija al reves que R26: si el caminar con WASD es 1,
-// el agachado es 0,90. La CADENCIA no se toca (piernas a x1,7, bien).
-// R28 (26/09, jugador): cierra el vaivén de R26/R26d/R22b. El agachado va a la
-// MISMA velocidad que el andar de pie: 1,13 m/s (la del `walk` de serie medida en
-// el motor). El jugador es explícito: "debe ser casi la misma velocidad que el
-// caminado normal". Con el ritmo de R26c (x1,7) los pies barren
-// 1,13/3,75 x1,7 x3,75 = 1,92 m/s (el mismo patinaje relativo que ya validó).
-#define VICEEXT_CROUCH_WALK_MPS 1.13f
-#define VICEEXT_CROUCH_ROLL_MPS 2.35f
+#ifdef VICEEXT_AIM_CLASSICAXIS
 #define VICEEXT_WALK_MPS_PER_MFS 1.13f
 #define VICEEXT_WALK_MAX_MFS 2.15f
-
-// R22b (23/09, prueba del jugador): PALANCA ÚNICA EN m/s.
-//
-// El jugador probó la 18ª partida con los 1,85 m/s de R22 y el agachado seguía
-// siendo "velocidad excesiva". Los puntos de referencia medidos, para poder
-// elegir sin adivinar:
-//   · andar de pie del motor (traza PEDAT del propio juego) = 0,79-1,13 m/s
-//   · la familia de agachado del mod (Crouch_Backward y sus GunMove_*) = 1,85
-//   · el clip Crouch_Forward a ritmo natural = 3,58 m/s (es una zancada larga)
-// Cualquier valor por encima del andar de pie está mal: agachado se va más
-// despacio o igual que andando. Por defecto **0,90 m/s**, que es justo el número
-// que el propio jugador se puso en la 19ª partida (y que es lo que pide: "el
-// estar agachado es más lento o la misma velocidad que el caminar").
-//
-// R24 (23/09, 19ª partida): FUERA LAS PALANCAS DE URL Y DE CONSOLA.
-//
-// El jugador: "quítame query params, no necesito ni pedí eso; basate en logs,
-// deja las cosas en logs así puedes ver de primera mano todo". Así que la
-// velocidad es esta constante y nada más, y lo único que se toca para medir es
-// la TRAZA: cada segundo sale la línea `CROUCH2` con lo que pide la palanca
-// (`mps`), lo que lleva el clip (`pies`), lo que mueve el motor (`mvec`) y lo que
-// se ha desplazado de verdad (`avance`/`velo`, con marca de tirón `hit`).
 static float
 ViceExtWalkerTargetMps(void)
 {
@@ -4384,1322 +3899,17 @@ ViceExtWalkerTargetMps(void)
 	}
 	float odMfs = Min(odMag / PAD_MOVE_TO_GAME_WORLD_MOVE, VICEEXT_WALK_MAX_MFS);
 	float odMps = odMfs * VICEEXT_WALK_MPS_PER_MFS;
-	return (odMps > VICEEXT_CROUCH_WALK_MPS) ? odMps : VICEEXT_CROUCH_WALK_MPS;
-}
-
-static float
-ViceExtCrouchWalkMps(void)
-{
-	return VICEEXT_CROUCH_WALK_MPS;
-}
-
-// R20: el ángulo del mando EN EL SISTEMA DEL PED (0 = adelante; positivo =
-// izquierda). Se calcula con la MISMA función que el motor usa para sus grupos
-// de costado (`CPed::WorkOutHeadingForMovingFirstPerson`), así que la
-// equivalencia con `m_fWalkAngle` es exacta, y se elige el clip con los mismos
-// cortes que `CPlayerPed::ProcessAnimGroups`: ±50° separa adelante de costado y
-// ±130° separa costado de atrás (`ASSOCGRP_PLAYERLEFT/RIGHT/BACK` del motor).
-//
-// R28 (jugador, 26/09): la rueda SÍ salía en el log de `crouch1` (10 eventos
-// `motivo=ok`, ang=±90) pero no se VEÍA: con la pose de apuntar a peso 1 el clip
-// de la rueda entraba multiplicado por `1 - 1 = 0` (ver el presupuesto de
-// parciales en `ViceExtCrouchAimPose`). Además del peso, el corte de 50° exigía
-// el costado "puro" y con W+A / W+D (45°) no rodaba. El mod no exige el costado
-// puro: rueda con el botón de costado de la cruceta (`IS_BUTTON_PRESSED 0,10` /
-// `0,11` de su `.cs`) manteniendo apuntar y sin disparar. En teclado el costado
-// es A/D, así que el corte baja a 25° y las diagonales también ruedan.
-#define VICEEXT_CROUCH_SIDE_DEG  25.0f
-#define VICEEXT_CROUCH_BACK_DEG 130.0f
-
-// R21b: clip de agachado elegido en el último frame (ver `ViceExtCrouchClipSpeed`).
-static AnimationId s_odCrouchClip = ANIM_STD_CROUCH_IDLE;
-
-
-static float
-ViceExtCrouchPadAngle(CPad *padUsed)
-{
-	float leftRight = padUsed ? padUsed->GetPedWalkLeftRight() : 0.0f;
-	float upDown = padUsed ? padUsed->GetPedWalkUpDown() : 0.0f;
-	if (leftRight == 0.0f && upDown == 0.0f)
-		return 0.0f;
-	return CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -leftRight, upDown);
-}
-
-// R26 (jugador + SA + handoff 6.5): a los lados y sin apuntar, el cuerpo GIRA
-// hacia el avance (como de pie). El rumbo se guarda en el MUNDO (camara + mando)
-// y no en el cuerpo: con raton, girar m_fRotationCur sin mas realimenta el
-// calculo del rumbo (walkAngle = Cur + angulo) y el ped andaria en circulo.
-// Asi el objetivo es fijo mientras el mando y la camara no se muevan, y el
-// giro lo hace el motor a su ritmo (STAT_PLAYER: 15 grados/frame). Apuntando
-// no se gira (ahi se encara y se rueda/dispara de lado: R21).
-// R29 (27/09, sintoma F): gira en las 8 direcciones, no solo el costado
-// 50-130 grados (el "el personaje no gira hacia la direccion que camina" del
-// jugador). Solo el ATRAS PURO no gira (decision D3: `GunCrouchBwd` sin girar).
-// R26b: 0 = girar; si no, el motivo (sale en CROUCH2 como `giro=`).
-static int odSideWhy = 0;
-bool
-CPlayerPed::ViceExtCrouchSideHeading(float &odDir)
-{
-	odSideWhy = 0;
-	if (!odCrouched) { odSideWhy = 2; return false; }
-	// R29 (G): apuntando NO se gira (el encaramiento lo manda el axis), y se lee
-	// por la API unica: con punos el pad "apunta" pero no hay mira
-	// (`ViceExtIsAiming`).
-	if (ViceExtIsAiming()) { odSideWhy = 3; return false; }
-	if (!s_odMove.prepared || !s_odMove.moving || s_odMove.policy != 0) { odSideWhy = 4; return false; }
-	odDir = ViceExtMoveHeading();
-	return true;
-}
-
-// R15 (13ª partida, 22/09): el clip de agachado NO se retiraba al desagacharse.
-//
-// Síntoma del jugador: "estando agachado le vuelvo a dar para pararse y sólo
-// cambia la altura de la cámara: el personaje sigue agachado".
-//
-// Causa raíz (leída en `CAnimManager::BlendAnimation`): el barrido que retira
-// las animaciones que había puestas sólo mira las del MISMO tipo
-// (`isPartial == anim->IsPartial()`). Los clips del mod (`crouch_*`) son
-// `ASSOC_PARTIAL` y viven en su propio grupo (`ASSOCGRP_PLAYERCROUCH`), pero de
-// pie el motor mezcla caminar/idle NO parciales de `ASSOCGRP_STD`: nadie apagaba
-// el clip de agachado, así que el cuerpo seguía agachado (el clip `ASSOC_REPEAT`
-// se queda puesto para siempre). Y como el único dato que dependía de
-// `odCrouched` era el objetivo de altura de la cámara (`CCam` vía
-// `ViceExtIsCrouched`), el jugador veía exactamente eso: "sólo cambia la altura
-// de la cámara".
-//
-// Arreglo: al desagacharse se retiran los clips de agachado igual que hace el
-// motor en `CPed::ClearDuck` (`ASSOC_DELETEFADEDOUT` + `blendDelta = -4.0f`),
-// de modo que el caminar/idle del motor recupera el cuerpo en ~0,25 s.
-static uint32 s_odCrouchOffTime = 0;
-static uint32 s_odCrouchOnTime = 0;
-
-// R22: contador de sesiones de agachado (cada vez que se agacha o se levanta).
-// Lo usa la traza `CROUCH2` para no comparar la posición de una sesión con la de
-// la anterior: la primera muestra de cada sesión salía con un `avance` absurdo
-// (medido en la partida del jugador: 84,70 m y "velo=137,34") porque el punto de
-// referencia guardado era de otra parte del mapa. Eso ensuciaba la medida de la
-// velocidad justo en los primeros metros, que son los que se quieren medir.
-static uint32 s_odCrouchSession = 0;
-static bool s_odCrouchKeyHeld = false;
-
-// R21 (23/09, 17ª partida): APUNTAR AGACHADO — la pose la trae el propio mod.
-//
-// Síntoma del jugador: "falta que al apuntar estando agachado haga su respectiva
-// animación de apuntado".
-//
-// La pose existe y es del mod: el motor la llama `ANIM_STD_DUCK_WEAPON` y en la
-// tabla de nombres de animación es "WEAPON_crouch"; el `ped.ifp` que sirve el
-// navegador es el del mod (comprobado por md5), así que ese clip ES la animación
-// de apuntar agachado del mod (el `WEAPON_crouch` de San Andreas).
-//
-// Lo que faltaba es que alguien la PIDIERA: el motor sólo la pone desde
-// `CPed::SetDuck` (rama `bCrouchWhenShooting`), y ese camino marca
-// `bIsDucking`, que clava al jugador en el sitio — por eso R6 lo limpia al
-// agacharse, y con él se iba también la pose. Aquí se mezcla la MISMA pose por
-// el camino de animación, sin tocar `bIsDucking`:
-//   · el jugador puede seguir andando agachado (el movimiento lo lleva R20c),
-//   · el IK del brazo sigue activo (`CPed::AimGun` lo apaga sólo si `bIsDucking`),
-//   · y es un blend PARCIAL (`ASSOCGRP_STD`: `ASSOC_PARTIAL` en su descriptor),
-//     así que se mezcla ENCIMA del clip de agachado (no parcial), igual que el
-//     motor mezcla la pose de apuntar de pie encima del caminar.
-//
-// El clip no es `ASSOC_REPEAT`: se reproduce una vez y se queda en el último
-// fotograma (`CAnimBlendAssociation::UpdateTime` suelta `ASSOC_RUNNING` al
-// llegar al final), que es la pose de apuntar. Por eso NO se vuelve a pedir cada
-// frame: `CAnimManager::BlendAnimation` reinicia el clip cuando ha terminado
-// (`if(!found->IsRunning() && found->currentTime == totalLength) found->Start(0)`)
-// y la pose se quedaría repitiendo la transición. Se pide sólo si no está o si
-// se está apagando —el mismo patrón que `CPed::SetPointGunAt`—, y al terminar se
-// le quita `ASSOC_FADEOUTWHENDONE` (como hace `SetDuck`) para que se quede
-// puesta en vez de borrarse.
-static const AnimationId odCrouchAimPoseAnim = ANIM_STD_DUCK_WEAPON;
-
-static AnimationId
-ViceExtCrouchAimPoseClip(CPlayerPed *ped)
-{
-	CWeapon *odW = ped->GetWeapon();
-	CWeaponInfo *odInfo = odW ? CWeaponInfo::GetWeaponInfo(odW->m_eWeaponType) : nil;
-	if (odInfo) {
-		AnimationId odCrouchFire = CPlayerPed::GetCrouchFireAnim(odInfo);
-		if (odCrouchFire)
-			return odCrouchFire;
-		if (odInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM))
-			return CPlayerPed::GetPrimaryFireAnim(odInfo);
-	}
-	return odCrouchAimPoseAnim;
-}
-
-static AssocGroupId
-ViceExtCrouchAimPoseGroup(CPlayerPed *ped)
-{
-	CWeapon *odW = ped->GetWeapon();
-	CWeaponInfo *odInfo = odW ? CWeaponInfo::GetWeaponInfo(odW->m_eWeaponType) : nil;
-	if (odInfo && ViceExtCrouchAimPoseClip(ped) != odCrouchAimPoseAnim)
-		return odInfo->m_AnimToPlay;
-	return ASSOCGRP_STD;
-}
-
-static float
-ViceExtCrouchAimPoseHold(CPlayerPed *ped)
-{
-	CWeapon *odW = ped->GetWeapon();
-	CWeaponInfo *odInfo = odW ? CWeaponInfo::GetWeaponInfo(odW->m_eWeaponType) : nil;
-	if (odInfo == nil)
-		return 0.0f;
-	if (odInfo->IsFlagSet(WEAPONFLAG_CROUCHFIRE))
-		return odInfo->m_fAnim2LoopStart;
-	return odInfo->m_fAnimLoopStart;
-}
-
-// R21: la pose de apuntar agachado VA PUESTA (es lo que pidió el jugador: "al
-// apuntar agachado, su respectiva animación de apuntado"). R24: su palanca de
-// URL/consola se quitó con las demás, así que ya no hay nada que la apague.
-// R21b (23/09): velocidad natural (m/s) de cada clip de agachado del mod, medida
-// en su `ped.ifp` con `tools/ifp_inspect.py --curva` (avance de la RAÍZ por ciclo
-// dividido por la duración del ciclo; = lo que da el clip a ritmo 1).
-//
-// R27 (26/09): las medidas de abajo son las del `ped.ifp` SERVIDO, que desde R27
-// lleva los dos clips del sa-crouch para adelante/atrás (`GunCrouchFwd`/`GunCrouchBwd`,
-// ±2,740 m / 0,731 s); los de costado siguen siendo los mismos.
-//
-// Hace falta porque el motor no siempre deja ese avance disponible: apuntando,
-// `CPed::SetPointGunAt` fuerza `SetMoveState(PEDMOVE_STILL)` y además la pose de
-// apuntar es un blend PARCIAL a peso 1, y el reparto de la raíz
-// (`FrameUpdateCallBackWithVelocityExtractionSkinned`) multiplica la traslación
-// de los clips no parciales por `1 - totalBlendAmount` = 0. Resultado medido en
-// `ve42`: apuntando agachado y con el mando de lado el ped se movía **0,00 m/s**
-// mientras el clip pedido era `Crouch_Roll_L` (o sea: la pose y la dirección
-// estaban bien, se perdía el avance). El desplazamiento por código de R20c usa
-// esta velocidad cuando el motor no le da ninguna.
-static float
-ViceExtCrouchClipSpeed(AnimationId anim)
-{
-	switch (anim) {
-	case ANIM_STD_CROUCH_FORWARD:  return 2.05f;   // R29: 1,50 m / 0,731 s = 2,05 m/s (raiz reescalada, E1)
-	case ANIM_STD_CROUCH_BACKWARD: return 2.05f;   // R29: -1,50 m / 0,731 s (simetrico)
-	case ANIM_STD_CROUCH_AIMFWD:   return 1.85f;   // GunMove_FWD  1,854 m / 1,000 s (E3.9)
-	case ANIM_STD_CROUCH_AIMBWD:   return 1.80f;   // GunMove_BWD  1,853 m / 1,031 s
-	case ANIM_STD_CROUCH_AIMLEFT:  return 1.80f;   // GunMove_L    1,803 m / 1,000 s (raiz en X)
-	case ANIM_STD_CROUCH_AIMRIGHT: return 1.80f;   // GunMove_R    1,803 m / 1,000 s
-	case ANIM_STD_CROUCH_LEFT:     return 2.33f;   // 2,172 m / 0,931 s
-	case ANIM_STD_CROUCH_RIGHT:    return 2.42f;   // 2,253 m / 0,931 s
-	default:                       return 0.0f;    // parado (`Crouch_Idle`)
-	}
-}
-
-// R22: velocidad objetivo (m/s) del clip en uso a ritmo 1 — la rueda conserva
-// la suya (es un movimiento rápido de esquiva, no un paso).
-static float
-ViceExtCrouchTargetSpeed(AnimationId anim)
-{
-	if (anim == ANIM_STD_CROUCH_LEFT || anim == ANIM_STD_CROUCH_RIGHT)
-		return VICEEXT_CROUCH_ROLL_MPS;
-	return ViceExtCrouchWalkMps();
-}
-
-// R22: RITMO del clip para que sus pies avancen exactamente lo que avanza el
-// ped: `ritmo = velocidad objetivo / velocidad de la raíz del clip`. Es lo que
-// hace SA (`relSpeed` del clip = velocidad del ped) y es lo único que evita las
-// dos formas de que se vea mal: a ritmo bajo, pies en cámara lenta; a ritmo alto
-// (o con el clip de adelante, 3,75 m/s, sin escalar), pies patinando y super velocidad.
-//
-//   GunCrouchFwd     1,13 / 2,05 = 0,55   (R29: raiz reescalada a 1,5 m/ciclo, E1)
-//   GunCrouchBwd     1,13 / 2,05 = 0,55   (R29: simetrico, pies pegados)
-//   Crouch_Roll_L    2,35 / 2,33 = 1,01     Crouch_Roll_R   2,35 / 2,42 = 0,97 (rueda: esquiva, sin impulso)
-// R26c (jugador): las piernas iban a 0,28 (zancada de 2,6 m a 1 m/s = camara
-// lenta) y pide cadencia de pasos mas alta SIN subir el cuerpo. Fisica: a
-// igual zancada, mas cadencia = los pies barren mas que el avance (patinan
-// xCADENCIA). Se iguala a la cadencia del andar de pie (ciclo ~1,5 s):
-// 0,28 x 1,70 = 0,48. Solo caminar (la rueda va a ritmo natural).
-// R29 (27/09, D1=(a)): SIN multiplicador. La raiz de `GunCrouchFwd/Bwd` se
-// reescala en el dato servido (E1: 2,74 -> 1,5 m/ciclo = cadencia de andar con
-// los pies pegados: rate 0,55 y zancada cada 1,33 s) y el x1,7 de R26c (que
-// patinaba x1,7 por construccion) se retira.
-#define VICEEXT_CROUCH_CADENCE 1.0f
-static float
-ViceExtCrouchRateFor(AnimationId anim)
-{
-	float odRoot = ViceExtCrouchClipSpeed(anim);
-	if (odRoot <= 0.01f)
-		return 1.0f;                     // `Crouch_Idle`: en el sitio
-	float odRate = ViceExtCrouchTargetSpeed(anim) / odRoot;
-	if (anim == ANIM_STD_CROUCH_FORWARD || anim == ANIM_STD_CROUCH_BACKWARD)
-		odRate *= VICEEXT_CROUCH_CADENCE;   // R29: sin multiplicador (la raiz servida ya es la de andar)
-	// R22b: el tope bajo era 0,25 y recortaba la velocidad por debajo de ~0,9 m/s
-	// (con `Crouch_Forward`, 3,58 m/s de raíz: 0,25 × 3,58 = 0,895). El objetivo
-	// tiene que mandar, no el tope.
-	if (odRate < 0.04f) odRate = 0.04f;
-	if (odRate > 1.6f) odRate = 1.6f;
-	return odRate;
-}
-
-// R28 (26/09, build `crouch2`): EL PRESUPUESTO DE LAS ANIMACIONES PARCIALES.
-//
-// Es la raiz comun de tres de los sintomas del jugador tras jugar `crouch1`: el
-// cuerpo estirado/aplastado de su captura, la rueda que no se ve ("no rueda al
-// apuntar") y el "la animacion de disparar agachado lucha entre 2 animaciones".
-//
-// Como reparte el motor (`FrameUpdateCallBackSkinned` + `CAnimBlendNode::Update`
-// + `CAnimBlendAssociation::GetBlendAmount`):
-//   - las animaciones PARCIALES (la pose de apuntar, el clip del arma) entran
-//     con su peso tal cual (`IsPartial()` devuelve `blendAmount`, sin multiplicar),
-//   - las de MOVIMIENTO (caminar y los clips de agachado del mod, que llevan
-//     `ASSOC_MOVEMENT`) multiplican su peso por `1 - suma de parciales`,
-//   - y la pose del hueso es la SUMA de cuaterniones con esos pesos, con una
-//     normalizacion al final.
-// De ahi los tres desastres, los tres vistos en `crouch1`:
-//   - suma > 1: las de movimiento entran en NEGATIVO y, si las dos parciales van
-//     en sentidos distintos, la suma puede quedar casi nula: al normalizar sale
-//     una matriz degenerada y el cuerpo aparece ESTIRADO o APLASTADO (la captura
-//     del jugador). Es exactamente nuestra pose a peso 1 mas el clip del arma a
-//     peso 1, que es lo que pasaba apuntando agachado.
-//   - suma = 1: toda animacion de movimiento vale 0, asi que las PIERNAS del
-//     agachado y el clip de la RUEDA desaparecen: el jugador ve al ped
-//     deslizarse con las piernas congeladas y dice "no rueda".
-//   - dos parciales a la vez: se pelean hueso a hueso y encima con
-//     realimentacion, porque `CAnimManager::BlendAnimation` retira (funde) TODA
-//     parcial ajena que encuentra (`isPartial == anim->IsPartial()`, sin mirar el
-//     grupo: ver AnimManager.cpp), incluido el clip del arma; el motor lo vuelve
-//     a pedir en el frame siguiente y asi indefinidamente = la "lucha entre 2
-//     animaciones" que reporta el jugador al mantener el gatillo.
-//
-// Regla que se implanta aqui: nuestra pose NUNCA compite.
-//   - Si el motor tiene puesta su propia parcial (el clip del arma), la pose se
-//     retira y NO se vuelve a pedir. El cuerpo lo lleva el clip del arma, que
-//     desde R28 es el de AGACHADO (`CPed::ViceExtCrouchShooting` ->
-//     `colt45_crouchfire` en vez de `colt45_fire`).
-//   - Si no hay ninguna, la pose entra con lo que SOBRA del presupuesto
-//     (`1 - parciales ajenas`), y andando se queda en 0,4 para que las piernas
-//     del clip de agachado sigan mandando (R22).
-//   - Rodando se retiran TODAS las parciales: la rueda del mod mueve el cuerpo
-//     entero y con una pose a peso 1 no se veria.
-static float s_odCrouchPoseOthers = 0.0f;      // suma de parciales ajenas (`otros=` de CROUCH2)
-static const char *s_odCrouchPoseWho = "-";    // clip que lleva la pose (`pose=`)
-static float s_odCrouchWeaponW = 0.0f;         // parcial del arma mas pesada (`pesoarma=`)
-static const char *s_odCrouchWeaponNom = "-";  // y su nombre (`nomarma=`)
-
-// R28: suma de las parciales AJENAS a la nuestra (las que de verdad ocupan
-// cuerpo, incluidas las que aun se estan apagando). La comparacion es por PUNTERO
-// y no por `animId`: los ids son del grupo (los `ANIM_STD_*` y los del arma
-// comparten numeros) y compararlos metia clips del arma en la cuenta de la pose.
-static float
-ViceExtCrouchOtherPartials(RpClump *odClump, CAnimBlendAssociation *odOurs)
-{
-	float odSum = 0.0f;
-	for (CAnimBlendAssociation *odA = RpAnimBlendClumpGetFirstAssociation(odClump);
-	     odA; odA = RpAnimBlendGetNextAssociation(odA)) {
-		if (odA == odOurs)
-			continue;
-		if (!odA->IsPartial())
-			continue;
-		if (odA->blendAmount > 0.0f)
-			odSum += odA->blendAmount;
-	}
-	return odSum;
-}
-
-// R28: la parcial ajena MAS PESADA y su nombre. Es la medida del disparo
-// agachado: con el arma en mano y el gatillo pulsado, `nomarma` tiene que ser el
-// `*_crouchfire` del arma (`colt45_crouchfire`), no el `colt45_fire` de pie.
-static float
-ViceExtCrouchHeaviestPartial(RpClump *odClump, CAnimBlendAssociation *odOurs, const char **odName)
-{
-	float odBest = 0.0f;
-	*odName = "-";
-	for (CAnimBlendAssociation *odA = RpAnimBlendClumpGetFirstAssociation(odClump);
-	     odA; odA = RpAnimBlendGetNextAssociation(odA)) {
-		if (odA == odOurs || !odA->IsPartial() || odA->blendDelta < 0.0f)
-			continue;
-		if (odA->blendAmount > odBest) {
-			odBest = odA->blendAmount;
-			*odName = (odA->hierarchy && odA->hierarchy->name) ? odA->hierarchy->name : "?";
-		}
-	}
-	return odBest;
-}
-
-// R28: la rueda necesita el cuerpo entero, asi que mientras dura se retiran
-// (fundido rapido) todas las parciales: la pose del mod y la del arma. Sin esto
-// el clip de la rueda (de movimiento) entra multiplicado por `1 - 1 = 0` y el
-// jugador no ve ninguna rueda (su queja del 26/09).
-static void
-ViceExtCrouchRollClearPartials(CPlayerPed *odPed)
-{
-	for (CAnimBlendAssociation *odA = RpAnimBlendClumpGetFirstAssociation(odPed->GetClump());
-	     odA; odA = RpAnimBlendGetNextAssociation(odA)) {
-		if (!odA->IsPartial() || odA->blendDelta < 0.0f)
-			continue;
-		odA->flags |= ASSOC_DELETEFADEDOUT;
-		odA->blendDelta = -8.0f;
-	}
-}
-
-// R21: al dejar de apuntar (o al desagacharse) la pose se retira con el mismo
-// fundido que usa el motor (`ASSOC_DELETEFADEDOUT` + `blendDelta = -4`), el
-// mismo camino que `CPed::ClearDuck` y que R15 usa para los clips de agachado.
-static void
-ViceExtCrouchAimPoseOff(CPlayerPed *ped)
-{
-	const AnimationId odIds[3] = { odCrouchAimPoseAnim, ANIM_WEAPON_FIRE, ANIM_WEAPON_CROUCHFIRE };
-	for (int i = 0; i < 3; i++) {
-		CAnimBlendAssociation *odPose = RpAnimBlendClumpGetAssociation(ped->GetClump(), odIds[i]);
-		if (odPose && odPose->blendDelta >= 0.0f) {
-			odPose->flags |= ASSOC_DELETEFADEDOUT;
-			odPose->blendDelta = -8.0f;
-		}
-	}
-}
-
-static void
-ViceExtCrouchAimPose(CPlayerPed *odPed, bool odWalking, bool odRolling)
-{
-	AnimationId odCrouchPoseClip = ViceExtCrouchAimPoseClip(odPed);
-	AssocGroupId odCrouchPoseGroup = ViceExtCrouchAimPoseGroup(odPed);
-	float odCrouchPoseHold = ViceExtCrouchAimPoseHold(odPed);
-	CAnimBlendAssociation *odPose = RpAnimBlendClumpGetAssociation(odPed->GetClump(), odCrouchPoseClip);
-
-	// R28: la rueda manda sobre todo lo demas (ver el comentario de arriba).
-	if (odRolling) {
-		s_odCrouchPoseOthers = 0.0f;
-		s_odCrouchPoseWho = "-";
-		s_odCrouchWeaponW = 0.0f;
-		s_odCrouchWeaponNom = "-";
-		ViceExtCrouchRollClearPartials(odPed);
-		return;
-	}
-
-	// R28: el presupuesto. Si el arma tiene puesta su parcial, la pose se retira y
-	// NO se vuelve a pedir en este frame: pedirla (`BlendAnimation`) retiraria la
-	// del arma y empezaria la "lucha entre 2 animaciones".
-	float odOthers = ViceExtCrouchOtherPartials(odPed->GetClump(), odPose);
-	s_odCrouchPoseOthers = odOthers;
-	s_odCrouchWeaponW = 0.0f;
-	s_odCrouchWeaponNom = "-";
-	if (odOthers > 0.01f) {
-		s_odCrouchPoseWho = "-";
-		s_odCrouchWeaponW = ViceExtCrouchHeaviestPartial(odPed->GetClump(), odPose, &s_odCrouchWeaponNom);
-		ViceExtCrouchAimPoseOff(odPed);
-		return;
-	}
-	float odBudget = Max(1.0f - odOthers, 0.0f);   // lo que queda libre del reparto
-
-	if (!odPose || odPose->blendDelta < 0.0f) {
-		// R29 (C18-4, spec del mod): `BlendAnimation(..., 4.0)` como en
-		// classicaxis Main.cpp:1393-1415 (antes 8,0 aqui).
-		odPose = CAnimManager::BlendAnimation(odPed->GetClump(), odCrouchPoseGroup, odCrouchPoseClip, 4.0f);
-		if (odPose)
-			odPose->flags &= ~ASSOC_FADEOUTWHENDONE;
-	}
-	if (!odPose)
-		return;
-	if (odCrouchPoseHold > 0.0f && odPose->currentTime > odCrouchPoseHold * 0.4f) {
-		odPose->SetCurrentTime(odCrouchPoseHold);
-		odPose->flags &= ~ASSOC_RUNNING;
-	}
-	s_odCrouchPoseWho = (odPose->hierarchy && odPose->hierarchy->name) ? odPose->hierarchy->name : "WEAPON_crouch";
-
-	// R22 (18a partida): ANDANDO, la pose no llega a peso completo.
-	//
-	// Por que: `ANIM_STD_DUCK_WEAPON` es un clip PARTIAL y el reparto de la raiz
-	// de `FrameUpdateCallBackWithVelocityExtractionSkinned` multiplica los clips
-	// no parciales por `1 - totalBlendAmount`. Con la pose a peso 1 las PIERNAS
-	// del agachado valen 0: el cuerpo lo pone entero la pose (que es una pose
-	// quieta) y el jugador ve a Tommy deslizandose con las piernas congeladas
-	// ("la animación de apuntar no es la que debería tener"). Con la pose a 0,4
-	// andando, las piernas del clip de agachado siguen mandando (0,6) y los
-	// brazos y el torso llevan la pose de apuntar del mod. Quieto la pose vuelve
-	// a peso completo (es una pose, no un movimiento).
-	const float odWalkWeight = 0.4f;
-	float odWant = odWalking ? odWalkWeight : 1.0f;
-	if (odWant > odBudget)
-		odWant = odBudget;
-	if (odPose->blendAmount > odBudget) {
-		odPose->blendAmount = odBudget;
-		odPose->blendDelta = 0.0f;
-	} else if (odPose->blendAmount < odWant) {
-		odPose->blendDelta = 4.0f;
-	} else if (odPose->blendAmount > odWant && odPose->blendDelta == 0.0f) {
-		odPose->blendDelta = -4.0f;
-	}
-}
-
-static void
-ViceExtCrouchRollFinish(CAnimBlendAssociation *odR, bool odFin, const char *odCause)
-{
-	if (s_odRollState != ODROLL_ACTIVE)
-		return;
-	float odProgress = 0.0f;
-	if (odR && odR->hierarchy && odR->hierarchy->totalLength > 0.0001f) {
-		odProgress = odR->currentTime / odR->hierarchy->totalLength;
-		if (odProgress > 1.0f)
-			odProgress = 1.0f;
-	} else if (s_odRollLength > 0.0001f) {
-		odProgress = s_odRollLastCurrent / s_odRollLength;
-	}
-	if (odFin && odProgress < 0.999f)
-		odFin = false;
-#ifdef __EMSCRIPTEN__
-	{
-		char t[520];
-		const char *odClipNom = (odR && odR->hierarchy && odR->hierarchy->name) ? odR->hierarchy->name : "Crouch_Roll";
-		if (odFin)
-		VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=roll_end schema=1 gen=%u frame=%u sim=%.4f case=5 id=%u side=%s clip=%s current=%.4f progress=%.4f rateIntegral=%.4f travel=%.4f maxWeight=%.4f simStart=%.4f simElapsed=%.4f stepM=%.4f stepT=%.4f stepN=%u",
-			(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-			(unsigned)s_odRollId, s_odRollSide < 0 ? "L" : "R", odClipNom,
-			odR ? odR->currentTime : s_odRollLastCurrent, odProgress,
-			s_odRollRate, s_odRollRate * s_odRollSpeedMps, s_odRollMaxW, s_odRollSimStart, CTimer::GetTimeInMilliseconds() * 0.001f - s_odRollSimStart,
-			s_odRollStepM, s_odRollStepT, s_odRollStepN);
-		else
-			VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=roll_cancel schema=1 gen=%u frame=%u sim=%.4f case=5 id=%u side=%s cause=%s progress=%.4f current=%.4f rateIntegral=%.4f",
-				(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-				(unsigned)s_odRollId, s_odRollSide < 0 ? "L" : "R", odCause, odProgress,
-				odR ? odR->currentTime : s_odRollLastCurrent, s_odRollRate);
-		
-	}
-#endif
-	s_odRollState = ODROLL_READY;
-	s_odRollClip = ANIM_STD_CROUCH_IDLE;
-	s_odRollLastCurrent = 0.0f;
-	s_odRollRate = 0.0f;
-	s_odRollMaxW = 0.0f;
-	s_odRollArmed = s_odRollNeutral;
-}
-
-static void
-ViceExtCrouchRollStart(CPlayerPed *odPed, bool odIzq, AnimationId odClip)
-{
-	s_odRollState = ODROLL_ACTIVE;
-	s_odRollArmed = false;
-	s_odRollSimStart = CTimer::GetTimeInMilliseconds() * 0.001f;
-	++s_odRollId;
-	s_odRollSide = odIzq ? -1 : 1;
-	s_odRollClip = odClip;
-	s_odRollSpeedMps = ViceExtCrouchTargetSpeed(odClip);
-	s_odRollLastCurrent = 0.0f;
-	s_odRollRate = 0.0f;
-	s_odRollMaxW = 0.0f;
-	s_odRollStepPos = odPed->GetPosition();
-	s_odRollStepM = 0.0f;
-	s_odRollStepT = 0.0f;
-	s_odRollStepN = 0;
-	if (ViceExtMovePrepared(odPed) && s_odMove.moving) {
-		s_odRollDirX = s_odMove.dirX;
-		s_odRollDirY = s_odMove.dirY;
-	} else {
-		float odFx = s_odMove.baseX, odFy = s_odMove.baseY;
-		float odLx = -odFy, odLy = odFx;
-		if (odIzq) { s_odRollDirX = odLx; s_odRollDirY = odLy; }
-		else { s_odRollDirX = -odLx; s_odRollDirY = -odLy; }
-	}
-}
-
-static void
-ViceExtCrouchRollStarted(CAnimBlendAssociation *odAssoc)
-{
-#ifdef __EMSCRIPTEN__
-	{
-		char t[520];
-		char odEdge[24];
-		int odWep = (s_odMove.owner != nil && s_odMove.owner->GetWeapon() != nil) ? (int)s_odMove.owner->GetWeapon()->m_eWeaponType : 0;
-		snprintf(odEdge, sizeof odEdge, "%s%u", s_odRollSide < 0 ? "A" : "D", (unsigned)++s_odRollEdgeSeq);
-		const char *odClipNom = (odAssoc && odAssoc->hierarchy && odAssoc->hierarchy->name) ? odAssoc->hierarchy->name : "Crouch_Roll";
-		VICEEXT_P4_EMIT(s_odMove.gen, t,  "P4 kind=roll_start schema=1 gen=%u frame=%u sim=%.4f case=5 id=%u side=%s edge=%s aim=%d crouch=%d weapon=%d req=%.6f,%.6f,0.000000 clip=%s length=%.4f speed=%.4f",
-			(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-			(unsigned)s_odRollId, s_odRollSide < 0 ? "L" : "R", odEdge,
-			s_odMove.aim, s_odMove.crouch, odWep,
-			s_odRollDirX, s_odRollDirY, odClipNom, s_odRollLength, 1.0f);
-		
-	}
-#endif
-}
-
-static void
-ViceExtCrouchStopAnims(CPlayerPed *ped)
-{
-	if (s_odRollState == ODROLL_ACTIVE)
-		ViceExtCrouchRollFinish(nil, false, "postura");
-#ifdef __EMSCRIPTEN__
-	if (!s_odP4PoseExitOn)
-		ViceExtP4PoseBeginP4(ped, 0);
-	s_odPoseExitSample = 0;
-#endif
-	float odCrouchSum = 0.0f;
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *odC = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-		if (odC && odC->blendAmount > 0.0f)
-			odCrouchSum += odC->blendAmount;
-	}
-	float odMoveSum = 0.0f;
-	for (CAnimBlendAssociation *odN = RpAnimBlendClumpGetFirstAssociation(ped->GetClump());
-	     odN; odN = RpAnimBlendGetNextAssociation(odN)) {
-		if (!odN->IsPartial() && odN->blendAmount > 0.0f)
-			odMoveSum += odN->blendAmount;
-	}
-	float odLibre = 1.0f - (odMoveSum - odCrouchSum);
-	if (odLibre < 0.0f)
-		odLibre = 0.0f;
-	int odCleared = 0;
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *a = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-		if (a && a->blendDelta >= 0.0f) {
-			if (a->blendAmount > odLibre)
-				a->blendAmount = odLibre;
-			a->flags |= ASSOC_DELETEFADEDOUT;
-			a->blendDelta = -8.0f;
-			++odCleared;
-		}
-	}
-	// R21: la pose de apuntar agachado también se retira (si no, el cuerpo se
-	// queda con la pose del arma puesta tras levantarse).
-	ViceExtCrouchAimPoseOff(ped);
-	++s_odCrouchSession;                 // R22: nueva sesión de agachado
-	s_odCrouchOffTime = CTimer::GetTimeInMilliseconds();
-#ifdef __EMSCRIPTEN__
-	{
-		char t[420];
-		char odDet[220];
-		int odDetLen = 0;
-		float odWorstW = -1.0f;
-		float odWorstD = 0.0f;
-		odDet[0] = '\0';
-		for (int i = 0; i < 9; i++) {
-			CAnimBlendAssociation *odD = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-			float odDw = (odD != nil && odD->blendAmount > 0.0f) ? odD->blendAmount : 0.0f;
-			if (odD != nil && odDw > odWorstW) {
-				odWorstW = odDw;
-				odWorstD = odD->blendDelta;
-			}
-			int odRet = snprintf(odDet + odDetLen, sizeof(odDet) - odDetLen, "%s%.2f", i ? "," : "", odDw);
-			if (odRet < 0 || odRet >= (int)(sizeof(odDet) - odDetLen))
-				break;
-			odDetLen += odRet;
-		}
-		snprintf(t, sizeof t, "VICEEXT crouch pose off clips=%d det=%s dd=%.4f", odCleared, odDet, odWorstD);
-		ODTRACES(t);
-	}
-#endif
-}
-
-// R15: vigilante de la pose. Mientras NO se esté agachado, si algún clip de
-// agachado sigue mezclado (peso > 0,01) se deja una línea por segundo con los
-// pesos reales y los ms desde el desagachado. Es la prueba desde el log de que
-// el cuerpo vuelve a estar DE PIE: con el fundido de 0,25 s, cualquier línea
-// con `desde >= 700` tiene que salir con los tres pesos a 0.
-#ifdef __EMSCRIPTEN__
-static void
-ViceExtP4PartialWatch(CPlayerPed *odPed)
-{
-	static uint32 s_odNextPart = 0;
-	static uint32 s_odPartEdge = 0;
-	uint32 odNow = CTimer::GetTimeInMilliseconds();
-	if (odNow < s_odNextPart && odNow + 60000 >= s_odNextPart)
-		return;
-	int odAim = odPed->ViceExtIsAiming() ? 1 : 0;
-	if (odAim)
-		s_odPartEdge = 0;
-	else if (s_odPartEdge == 0)
-		s_odPartEdge = odNow;
-	uint32 odRel = (s_odPartEdge != 0 && odNow >= s_odPartEdge) ? (odNow - s_odPartEdge) : 0;
-	float odCrouchMax = 0.0f;
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *odC = RpAnimBlendClumpGetAssociation(odPed->GetClump(), odCrouchPoseIds[i]);
-		float odW = odC ? odC->blendAmount : 0.0f;
-		if (odW > odCrouchMax)
-			odCrouchMax = odW;
-	}
-	const char *odNom1 = "-";
-	const char *odNom2 = "-";
-	float odW1 = 0.0f;
-	float odW2 = 0.0f;
-	int odN = 0;
-	for (CAnimBlendAssociation *odA = RpAnimBlendClumpGetFirstAssociation(odPed->GetClump());
-	     odA; odA = RpAnimBlendGetNextAssociation(odA)) {
-		if (!odA->IsPartial() || odA->blendAmount <= 0.0f)
-			continue;
-		++odN;
-		const char *odNom = (odA->hierarchy && odA->hierarchy->name) ? odA->hierarchy->name : "?";
-		if (odA->blendAmount > odW1) {
-			odW2 = odW1;
-			odNom2 = odNom1;
-			odW1 = odA->blendAmount;
-			odNom1 = odNom;
-		} else if (odA->blendAmount > odW2) {
-			odW2 = odA->blendAmount;
-			odNom2 = odNom;
-		}
-	}
-	if (odN == 0 && odCrouchMax <= 0.01f && (odRel == 0 || odRel > 1500))
-		return;
-	s_odNextPart = odNow + (((odN > 0) || (odRel > 0 && odRel <= 1500)) ? 100 : 1000);
-	char t[420];
-	snprintf(t, sizeof t, "P4 kind=partials schema=1 gen=1 frame=%u sim=%.4f case=2 id=0 aim=%d crouch=%d desde=%u n=%d uno=%s w1=%.3f dos=%s w2=%.3f cgroup=%.3f",
-		(unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, odAim, odPed->ViceExtIsCrouched() ? 1 : 0,
-		odRel, odN, odNom1, odW1, odNom2, odW2, odCrouchMax);
-	ODTRACES(t);
+	return Max(odMps, VICEEXT_WALK_MPS_PER_MFS);
 }
 #endif
 
-static void
-ViceExtCrouchPoseTrace(CPlayerPed *ped)
-{
 #ifdef __EMSCRIPTEN__
-	ViceExtP4PartialWatch(ped);
-	float odW[9];
-	float odPose = 0.0f;
-	float odMaxW = 0.0f;
-	for (int i = 0; i < 9; i++) {
-		CAnimBlendAssociation *odAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), odCrouchPoseIds[i]);
-		odW[i] = odAssoc ? odAssoc->blendAmount : 0.0f;
-		if (odW[i] > odMaxW)
-			odMaxW = odW[i];
-	}
-	{
-		CAnimBlendAssociation *odAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), ViceExtCrouchAimPoseClip(ped));
-		odPose = odAssoc ? odAssoc->blendAmount : 0.0f;
-	}
-	ViceExtP4PoseExitTick(ped);
-	if (odMaxW <= 0.01f && odPose <= 0.01f)
-		return;
-	static uint32 s_odNextPose = 0;
-	uint32 odNow = CTimer::GetTimeInMilliseconds();
-	if (odNow < s_odNextPose && odNow + 60000 >= s_odNextPose)
-		return;   // el reloj retrocedió: no bloquear la traza
-	s_odNextPose = odNow + 1000;
-	uint32 odDesde = (odNow >= s_odCrouchOffTime) ? (odNow - s_odCrouchOffTime) : 0;
-	char t[240];
-	snprintf(t, sizeof t, "CROUCHPOSE desde=%u idle=%.2f fwd=%.2f back=%.2f izq=%.2f der=%.2f aimfwd=%.2f aimbwd=%.2f aimizq=%.2f aimder=%.2f pose=%.2f",
-		odDesde, odW[0], odW[1], odW[2], odW[3], odW[4], odW[5], odW[6], odW[7], odW[8], odPose);
-	ODTRACES(t);
-#else
-	(void)ped;
-#endif
-}
-
-// R28 (26/09): ver `Ped.h`. El agachado del port no usa `bIsDucking` (R6 lo
-// limpia al agacharse, que es la bandera que clava al jugador en el sitio), asi
-// que el motor tiene que preguntar por el para elegir sus clips de agachado: la
-// pose de apuntar del arma (`colt45_crouchfire` en vez de `colt45_fire`), el
-// clip de disparo, la recarga y la vuelta a la pose al acabar el tiro.
-// Para los NPCs y para el agachado de disparo de VC siguen valiendo las dos
-// banderas del motor.
-bool
-CPed::ViceExtCrouchShooting(void) const
-{
-	if (bCrouchWhenShooting && bIsDucking)
-		return true;
-	// R29 (27/09, costura C18-1/R28 del plan agachado-correcciones-axis): el
-	// disparo agachado del port solo usa los clips del motor (`*_crouchfire`/
-	// `*_crouchreload`) con armas que traen `WEAPONFLAG_CROUCHFIRE`. Sin el flag
-	// manda C18-1 literal: el arma dispara de pie (sin disparo agachado forzado)
-	// y la pose de apuntar agachado es la del mod (`WEAPON_crouch`). Para los
-	// NPCs y el agachado de disparo de VC siguen valiendo las banderas del motor.
-	if (!CWeaponInfo::GetWeaponInfo(((CPed*)this)->GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_CROUCHFIRE))
-		return false;
-	return IsPlayer() && CPlayerPed::ViceExtIsCrouched();
-}
-
-bool
-CPlayerPed::ViceExtIsCrouched(void)
-{
-	return odCrouched;
-}
-
-#define VICEEXT_CROUCH_BLEND_MS 125.0f
-float
-CPlayerPed::ViceExtCrouchBlend(void)
-{
-	uint32 odNow = CTimer::GetTimeInMilliseconds();
-	float odT;
-	if (odCrouched) {
-		uint32 odElapsed = (odNow >= s_odCrouchOnTime) ? odNow - s_odCrouchOnTime : 0;
-		odT = (float)odElapsed / VICEEXT_CROUCH_BLEND_MS;
-	} else {
-		uint32 odElapsed = (odNow >= s_odCrouchOffTime) ? odNow - s_odCrouchOffTime : 0;
-		odT = 1.0f - (float)odElapsed / VICEEXT_CROUCH_BLEND_MS;
-	}
-	if (odT < 0.0f)
-		odT = 0.0f;
-	if (odT > 1.0f)
-		odT = 1.0f;
-	return odT;
-}
-
-bool
-CPlayerPed::ViceExtCrouchControl(CPad *padUsed)
-{
-	if (!padUsed || bInVehicle || !IsPedInControl() || DyingOrDead() || CReplay::IsPlayingBack()
-		|| ViceExtPedOwns(PEDLANE_NADO, PEDCAP_POSTURA)) {
-		s_odCrouchKeyHeld = false;
-		// R15: salir de la posesión con el clip puesto (coche, muerte, cinemática)
-		// dejaba al ped agachado para siempre, igual que el botón.
-		if (odCrouched) {
-			odCrouched = false;
-			ViceExtCrouchStopAnims(this);
-		}
-		return false;
-	}
-
-	// La tecla es la misma con arma o sin ella (antes, armado, esto sólo SEGUÍA el
-	// agachado de disparo del motor, y de ahí que el jugador armado no pudiera
-	// moverse agachado).
-	bool odDuckDown = ViceExtDuckDown(padUsed);
-	bool odEdge = odDuckDown && !s_odCrouchKeyHeld;
-#ifdef __EMSCRIPTEN__
-	bool odDup = odDuckDown && !odEdge && ViceExtDuckJustDown(padUsed);
-#endif
-	s_odCrouchKeyHeld = odDuckDown;
-	if (odEdge) {
-		odCrouched = !odCrouched;
-		++s_odCrouchSession;
-		if (odCrouched)
-			s_odCrouchOnTime = CTimer::GetTimeInMilliseconds();
-#ifdef __EMSCRIPTEN__
-		if (odCrouched)
-			ViceExtP4PoseBeginP4(this, 1);
-#endif
-		if (!odCrouched)
-			ViceExtCrouchStopAnims(this);
-	}
-#ifdef __EMSCRIPTEN__
-	if (odEdge || odDup) {
-		char t[130];
-		snprintf(t, sizeof t, "VICEEXT crouch %s arma=%d motor=%d repetido=%d",
-			odEdge ? (odCrouched ? "on" : "off") : "ignorado",
-			(int)GetWeapon()->m_eWeaponType, (int)bIsDucking, (int)odDup);
-		ODTRACES(t);
-	}
-#endif
-
-	// De pie al empezar a correr/esprintar o al saltar.
-	if (odCrouched && (padUsed->GetSprint() || padUsed->JumpJustDown())) {
-		odCrouched = false;
-		ViceExtCrouchStopAnims(this);   // R15
-#ifdef __EMSCRIPTEN__
-		ODTRACES("VICEEXT crouch off motivo=carrera");
-#endif
-	}
-
-	// El agachado de disparo del motor clava al jugador en el sitio: si está
-	// puesto y el agachado es nuestro, se suelta.
-	if (bIsDucking && odCrouched) {
-		ClearDuck(true);
-		bCrouchWhenShooting = false;
-	}
-
-	if (!odCrouched) {
-		// R15: comprobar (y dejar traza) de que el cuerpo está de pie de verdad.
-		ViceExtCrouchPoseTrace(this);
-		return false;
-	}
-
-	// R6: el MOVIMIENTO lo pone el motor (aquí no se toca `m_fRotationDest` ni
-	// `m_fMoveSpeed` y se devuelve false para que ProcessControl reparta el
-	// control a pie normal). Sólo el clip del mod y el tope de velocidad, que se
-	// aplica después del control normal (ver `ViceExtCrouchLimitSpeed`).
-	//
-	// R6b: el clip se aplica DOS veces a propósito — aquí (para que se vea el
-	// agachado aunque el estado no llame a `SetRealMoveAnim`) y otra vez desde
-	// `SetRealMoveAnim`, que es quien decide la animación de movimiento del
-	// motor y por tanto el que la pisaba. `BlendAnimation` con el mismo clip es
-	// idempotente (mismo patrón que el nado: se vuelve a pedir cada frame).
-	ViceExtCrouchAnim();
-#ifdef __EMSCRIPTEN__
-	ViceExtP4PoseEnterTick(this);
-#endif
-	// R6: false = el control a pie normal corre (el motor mueve).
-	return false;
-}
-
-// R6b: el clip de agachado del mod, elegido por el mando. Idempotente: se puede
-// llamar varias veces por frame (devuelve la misma asociación ya mezclada).
-void
-CPlayerPed::ViceExtCrouchAnim(void)
-{
-	CPad *padUsed = CPad::GetPad(0);
-	float leftRight = padUsed ? padUsed->GetPedWalkLeftRight() : 0.0f;
-	float upDown = padUsed ? padUsed->GetPedWalkUpDown() : 0.0f;
-	float padMove = CVector2D(leftRight, upDown).Magnitude();
-
-	// R21 (23/09, 17ª partida): LOS LADOS USAN SU CLIP POR DEFECTO. El jugador,
-	// tras probar la 16ª partida: "caminando a un lado se desplaza pero la
-	// animación... no se gira el personaje al lado donde está caminando". El
-	// clip de costado del mod es el de REVOLCARSE de SA (`Crouch_Roll_L/R`, los
-	// mismos nombres que lleva el `ViceEx.exe` del mod), así que lo que se ve al
-	// andar de lado es la rueda: es lo que hace el mod y lo que pidió el jugador
-	// para apuntar ("si apunto y presiono el lado izquierdo o derecho el
-	// personaje rueda hacia ese lado"). El desplazamiento de lado lo sigue
-	// poniendo el código (R20c), así que la raíz del clip no arrastra al ped.
-	// (R24: la palanca `?crouchlado=` se quitó; la pose de costado es la que va.)
-	//
-	// R20b (22/09, con los clips ya medidos en el juego): agachado se anda COMO
-	// DE PIE — el cuerpo gira hacia donde se anda y el clip es el de adelante.
-	//	// Por qué no los clips de costado, que era la idea de la primera versión de
-	// R20 (elegir clip por el ángulo del mando, como hacen los grupos
-	// PLAYERLEFT/RIGHT del motor en el control de ratón): porque en este
-	// `ped.ifp` NO son de costado. Medido con `tools/ifp_inspect.py` (metros que
-	// avanza la RAÍZ por ciclo, ejes LOCALES del clip: +Y adelante, −X izquierda
-	// —el mismo patrón que el `walk_left` de serie, con −1,836 en X y 0,03 en Y):
-	//
-	//   Crouch_Forward   dx −0,002  dy +2,615   → adelante ✓
-	//   Crouch_Backward  dx  0,000  dy −1,853   → atrás ✓
-	//   Crouch_Roll_L    dx −0,219  dy −2,172   → HACIA ATRÁS (no de lado)
-	//   Crouch_Roll_R    dx −0,244  dy +2,253   → HACIA ADELANTE
-	//
-	// R27 (26/09): las medidas de arriba son las de los clips VIEJOS (los de VC). El
-	// `ped.ifp` servido lleva ya los dos del sa-crouch para adelante/atrás
-	// (`GunCrouchFwd`/`GunCrouchBwd`, ±2,740 m / 0,731 s = 3,75 m/s); los dos de
-	// costado de la tabla siguen siendo los mismos.
-	//
-	// Y confirmado en el motor: con `Crouch_Roll_L` puesto, el ped medido se movió
-	// 179,6° respecto a su rumbo (o sea hacia atrás) al pulsar izquierda. Son los
-	// clips de REVOLCARSE/rodar de SA, no un paso lateral. O sea: con los clips
-	// que el mod trae, el cuerpo TIENE que girar para andar de lado, o se anda
-	// hacia donde no se pide. Y es lo que hace el mod: en su vídeo (`pc.mp4`,
-	// t≈64-67 s) se le ve la espalda mientras anda agachado, el cuerpo alineado
-	// con el avance. El giro lo da `ViceExtCrouchFaceMovement` (abajo).
-	//
-	// Lo único que el clip de atrás aporta —y es correcto— es con la MIRA puesta,
-	// que es cuando el motor clava el rumbo del ped a la cámara
-	// (`VICEEXT_AIM_WALK`) y el mando se lee en el sistema del cuerpo: retroceder
-	// apuntando.
-	float odAng = ViceExtCrouchPadAngle(padUsed);
-	bool odWalking = padMove > 16.0f;   // spec sa-crouch deadzone +-16 (antes 60*0.25=15)
-
-	// R21: ¿se está apuntando? (se decide AQUÍ, antes del clip: la rueda sólo
-	// sale apuntando). La pose de apuntar agachado es `WEAPON_crouch`, y es del
-	// mod: su `ped.ifp` no trae NINGÚN otro clip de agachado con arma (medido:
-	// `WEAPON_crouch` es el único; `WEAPON_crouchfire`/`WEAPON_crouchreload`, que
-	// el motor pide para armas con `WEAPONFLAG_CROUCHFIRE`, NO están en el ifp).
-	// O sea: la animación de apuntar agachado que pide el mod es ésa, no hay otra.
-	// R29 (G): el "estoy apuntando" se lee de la API unica (la ley del port del
-	// ClassicAXIS manda desde C17/C18); antes cada consumidor lo leia a su
-	// manera y por eso rueda, pose y giro discordaban.
-	bool odAim = ViceExtIsAiming();
-	eWeaponType odAimWep = GetWeapon()->m_eWeaponType;
-
-	// R22 (18ª partida, 23/09): LA RUEDA ES **UNA**. El jugador: "me muero si
-	// camino hacia a un lado". Con la rueda puesta por defecto para los lados
-	// (R21) y el clip en `ASSOC_REPEAT`, mantener la tecla dejaba a Tommy
-	// revolcándose POR EL SUELO sin parar (en el vídeo del mod, `pc.mp4`
-	// t≈60-62 s, las ruedas se ven sueltas y encadenadas a golpe de tecla, no
-	// girando en bucle). Ahora: una rueda por petición, y para repetir hay que
-	// soltar el lado (es la esquiva de SA). Mientras rueda, el desplazamiento lo
-	// pone R20c a la velocidad de la rueda.
-	uint32 odNowMs = CTimer::GetTimeInMilliseconds();
-	bool odLateralPuro = Abs(upDown) <= 16.0f && Abs(leftRight) > 16.0f;
-	bool odNeutral = Abs(leftRight) <= 16.0f && Abs(upDown) <= 16.0f;
-	bool odLadoIzq = odLateralPuro && leftRight < 0.0f;
-	bool odLadoDer = odLateralPuro && leftRight > 0.0f;
-	bool odFlancoIzq = odLadoIzq && !s_odRollPrevIzq;
-	bool odFlancoDer = odLadoDer && !s_odRollPrevDer;
-	s_odRollPrevIzq = odLadoIzq;
-	s_odRollPrevDer = odLadoDer;
-	s_odRollNeutral = odNeutral;
-	if (odNeutral)
-		s_odRollArmed = true;
-	if (s_odRollState == ODROLL_ACTIVE && CTimer::GetFrameCounter() != s_odRollFrame) {
-		s_odRollFrame = CTimer::GetFrameCounter();
-		CAnimBlendAssociation *odR = RpAnimBlendClumpGetAssociation(GetClump(), s_odRollClip);
-		if (odR == nil || odR->hierarchy == nil)
-			ViceExtCrouchRollFinish(nil, false, "borrada");
-		else if (odR->currentTime >= odR->hierarchy->totalLength)
-			ViceExtCrouchRollFinish(odR, true, "fin");
-		else {
-			if (odR->currentTime > s_odRollLastCurrent)
-				s_odRollRate += odR->currentTime - s_odRollLastCurrent;
-			s_odRollLastCurrent = odR->currentTime;
-			if (odR->blendAmount > s_odRollMaxW)
-				s_odRollMaxW = odR->blendAmount;
-			CVector odStepP = GetPosition();
-			float odStepD = CVector2D(odStepP.x - s_odRollStepPos.x, odStepP.y - s_odRollStepPos.y).Magnitude();
-			s_odRollStepM += odStepD;
-			s_odRollStepT += CTimer::GetTimeStep() / 50.0f;
-			s_odRollStepPos = odStepP;
-			++s_odRollStepN;
-			{
-				char t[420];
-				const char *odStepNom = (odR->hierarchy && odR->hierarchy->name) ? odR->hierarchy->name : "?";
-				float odStepMps = (s_odRollStepT > 0.0001f) ? (s_odRollStepM / s_odRollStepT) : 0.0f;
-				VICEEXT_P4_EMIT(s_odMove.gen, t, "P4 kind=roll_step schema=1 gen=%u frame=%u sim=%.4f case=5 id=%u clip=%s current=%.4f step=%.4f total=%.4f t=%.4f mps=%.4f speedTarget=%.4f mvec=%.4f mfspd=%.4f n=%u",
-					(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-					(unsigned)s_odRollId, odStepNom, odR->currentTime, odStepD, s_odRollStepM, s_odRollStepT,
-					odStepMps, s_odRollSpeedMps, m_vecMoveSpeed.Magnitude(), m_fMoveSpeed, s_odRollStepN);
-			}
-		}
-	}
-	if (s_odRollState == ODROLL_ACTIVE && (!odAim || !odCrouched || !IsPedInControl() || bInVehicle || DyingOrDead()
-	    || CReplay::IsPlayingBack() || ViceExtPedOwns(PEDLANE_NADO, PEDCAP_POSTURA)))
-		ViceExtCrouchRollFinish(nil, false, "abandono");
-	AnimationId odCrouchAnim = ANIM_STD_CROUCH_IDLE;
-	bool odRollNow = false;   // R27: ¿ha salido rueda en ESTE frame?
-	if (s_odRollState == ODROLL_ACTIVE) {
-		odCrouchAnim = (s_odRollSide < 0) ? ANIM_STD_CROUCH_LEFT : ANIM_STD_CROUCH_RIGHT;
-	} else if (odWalking) {
-		int odWepId = (int)GetWeapon()->m_eWeaponType;
-		bool odWepOk = odWepId >= 17 && !(odWepId >= 28 && odWepId <= 33);   // spec sa-crouch filtro armas >=17 sin 28-33
-		// R27: la rueda es SIN DISPARAR, como el mod (`NOT IS_BUTTON_PRESSED 17`:
-		// el Circle es `CPad::GetWeapon`). Apuntando y disparando a la vez, el mod
-		// dispara: la rueda no sale.
-		if ((odFlancoIzq || odFlancoDer) && odAim && odWepOk && !padUsed->GetWeapon() && s_odRollArmed && s_odRollFrame != CTimer::GetFrameCounter()) {
-			odRollNow = true;
-			odCrouchAnim = odFlancoIzq ? ANIM_STD_CROUCH_LEFT : ANIM_STD_CROUCH_RIGHT;
-			ViceExtCrouchRollStart(this, odFlancoIzq, odCrouchAnim);
-#ifdef __EMSCRIPTEN__
-			{
-				char t[130];
-				snprintf(t, sizeof t, "VICEEXT crouch roll lado=%s clip=%d veloc=%.2f dur=0 motivo=ok",
-					(odFlancoIzq) ? "izq" : "der", (int)odCrouchAnim,
-					ViceExtCrouchTargetSpeed(odCrouchAnim));
-				ODTRACES(t);
-			}
-#endif
-		} else if (odAim) {
-			// R29 (E3.9): APUNTANDO + mando = "moverse apuntando" (el movimiento
-			// que pidio el jugador: "apuntar y desplazarse"): los cuatro
-			// `GunMove_*` del mod por angulo (cortes del motor: +-50
-			// adelante/costado, +-130 costado/atras), con el encaramiento que
-			// manda la camara (axis) y la velocidad del aim-walk de pie (tope
-			// R9 = paso de andar). Hacia atras el cuerpo no gira (D3=(a)).
-			float odAbsA = Abs(odAng);
-			if (odAbsA > DEGTORAD(VICEEXT_CROUCH_BACK_DEG))
-				odCrouchAnim = ANIM_STD_CROUCH_AIMBWD;
-			else if (odAbsA < DEGTORAD(50.0f))
-				odCrouchAnim = ANIM_STD_CROUCH_AIMFWD;
-			else
-				odCrouchAnim = (odAng > 0.0f) ? ANIM_STD_CROUCH_AIMLEFT : ANIM_STD_CROUCH_AIMRIGHT;
-		} else {
-			// R22: SIN apuntar, de costado se anda con el clip de ADELANTE y el
-			// cuerpo gira hacia donde se anda (lo hace R20c). Es el modelo de SA
-			// (el ped se gira al andar) y evita que andar de lado sea una rueda:
-			// el mod sólo trae clips de rueda para el costado, así que la
-			// alternativa a girar el cuerpo es revolcarse.
-			odCrouchAnim = ANIM_STD_CROUCH_FORWARD;
-		}
-	}
-#ifdef __EMSCRIPTEN__
-	// R27: POR QUÉ NO SALE LA RUEDA. Cuatro puertas (mira, disparo, bloqueo y
-	// rueda en curso) y hasta ahora el log no decía cuál la paraba: los logs
-	// del jugador del 26/09 traían 0 ruedas y 0 muestras con `mira=1`, así que
-	// el fallo ni se podía localizar. Una línea por CAMBIO de motivo, y sólo con
-	// el lado pulsado (si no, cambiaría cada frame al andar). El `motivo=ok` va
-	// en el evento de la rueda (arriba); el árbol de diagnóstico está en el
-	// plan agachado-calibrado, E5.
-	{
-		int odWhy = 0;                            // 0 = nada que contar
-		if (odWalking && odLateralPuro && !odRollNow) {
-			if (s_odRollState == ODROLL_ACTIVE) odWhy = 1;
-			else if (!odAim) odWhy = 2;           // sin-mira: `tgt`/`cana` de CROUCH2 dicen cuál
-			else if (padUsed->GetWeapon()) odWhy = 3;
-		}
-		static int s_odWhyLast = 0;
-		if (odWhy != s_odWhyLast) {
-			s_odWhyLast = odWhy;
-			if (odWhy != 0) {
-				static const char *const odWhyNom[] = { "-", "activa", "sin-mira", "disparo" };
-				char t[150];
-				snprintf(t, sizeof t, "VICEEXT crouch roll skip motivo=%s arma=%d ang=%.0f",
-					odWhyNom[odWhy], (int)GetWeapon()->m_eWeaponType, RADTODEG(odAng));
-				ODTRACES(t);
-			}
-		}
-	}
-#endif
-	// spec sa-crouch entrada sin parpadeo: SET 0 un frame -> PLAY blend 10 -> WAIT 500 -> SET 1 (+ blend 30 parado).
-	// Aqui: ClearDuck ya hizo SET 0 (Control), blend 10 los primeros 500ms tras cambio de clip, luego 4.0f. Idempotente (R6b).
-	static uint32 s_odCrouchEnterMs = 0;
-	static AnimationId s_odCrouchLastAnim = ANIM_STD_CROUCH_IDLE;
-	float odBlend = 4.0f;
-	if (odCrouchAnim != s_odCrouchLastAnim) { s_odCrouchEnterMs = odNowMs; s_odCrouchLastAnim = odCrouchAnim; }
-	if (odNowMs - s_odCrouchEnterMs < 500) odBlend = 10.0f;
-	CAnimBlendAssociation *odAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_PLAYERCROUCH, odCrouchAnim, odBlend);
-	// R21b: el clip elegido se recuerda para que `CPed::CalculateNewVelocity`
-	// (R20c) pueda pedir su velocidad objetivo cuando el motor no le dé ninguna
-	// (apuntando: la pose parcial a peso 1 anula la traslación del clip).
-	s_odCrouchClip = odCrouchAnim;
-
-	// R22: RITMO del clip = velocidad objetivo / velocidad de su raíz, para que
-	// los pies avancen lo mismo que el ped (ver `ViceExtCrouchRateFor`). Para un
-	// clip con `ASSOC_MOVEMENT`, `speed` ES el ritmo
-	// (`AnimBlendAssociation::UpdateTimeStep`: `timeStep = speed*dt`), así que
-	// escala avance y cadencia a la vez.
-	if (odAssoc && odCrouchAnim != ANIM_STD_CROUCH_IDLE)
-		odAssoc->speed = ViceExtCrouchRateFor(odCrouchAnim);
-#ifdef __EMSCRIPTEN__
-	{
-		static int s_odCrouchSpdSig = -1;
-		int odSpdSig = (int)odCrouchAnim;
-		if (odSpdSig != s_odCrouchSpdSig) {
-			s_odCrouchSpdSig = odSpdSig;
-			float odTargetMps = ViceExtCrouchTargetSpeed(odCrouchAnim);
-			float odRate = (odAssoc != nil) ? odAssoc->speed : 0.0f;
-			char t[240];
-			const char *odClipNombre = ViceExtClipName(ASSOCGRP_STD, odCrouchAnim);
-			VICEEXT_P4_EMIT(s_odMove.gen, t, "P4 kind=crouchspeed schema=1 gen=%u frame=%u sim=%.4f case=4 id=0 mps=%.4f rate=%.4f mfs=%.4f target=%.4f clip=%s",
-				(unsigned)s_odMove.gen, (unsigned)CTimer::GetFrameCounter(),
-				CTimer::GetTimeInMilliseconds() * 0.001f,
-				odTargetMps, odRate, m_fMoveSpeed, odTargetMps, odClipNombre);
-		}
-	}
-#endif
-	// R29 (E3.7): el peso REAL del clip de rueda mientras dura (tiene que entrar
-	// alto, > 0,5, con `RollClearPartials` limpiando las parciales): sale por
-	// cada `roll fin peso=`.
-	if (odRollNow && odAssoc && odAssoc->hierarchy) {
-		s_odRollLength = odAssoc->hierarchy->totalLength;
-		s_odRollSpeed = 1.0f;
-		odAssoc->speed = 1.0f;
-		odAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
-		ViceExtCrouchRollStarted(odAssoc);
-	} else if (s_odRollState == ODROLL_ACTIVE && odAssoc && odAssoc->blendAmount > s_odRollMaxW) {
-		s_odRollMaxW = odAssoc->blendAmount;
-	} else if (odAssoc != nil && s_odRollState != ODROLL_ACTIVE
-		&& (odAssoc->animId == ANIM_STD_CROUCH_LEFT || odAssoc->animId == ANIM_STD_CROUCH_RIGHT)
-		&& !(odAssoc->flags & ASSOC_FADEOUTWHENDONE)) {
-		odAssoc->flags |= ASSOC_FADEOUTWHENDONE;
-	}
-
-	// R28: la pose cede ante la del arma y ante la rueda (ver `ViceExtCrouchAimPose`).
-	if (odAim)
-		ViceExtCrouchAimPose(this, odWalking, odRollNow || s_odRollState == ODROLL_ACTIVE);
-	else {
-		s_odCrouchPoseOthers = 0.0f;
-		s_odCrouchPoseWho = "-";
-		s_odCrouchWeaponW = 0.0f;
-		s_odCrouchWeaponNom = "-";
-		ViceExtCrouchAimPoseOff(this);
-	}
-#ifdef __EMSCRIPTEN__
-	// R25 (23/09, 19ª partida): MEDIDOR DEL TRAMO AGACHADO.
-	//
-	// El jugador: "no estás modificando el valor de la velocidad del personaje;
-	// mide con logs la velocidad, cuántos metros se ha desplazado desde que tiene
-	// la W pulsada; estando agachado voy más rápido que cualquier auto". Aquí está
-	// eso exactamente, y medido de la única forma que no engaña:
-	//
-	//   · la distancia es la SUMA de los desplazamientos de cada frame (no la
-	//     diferencia entre dos muestras separadas un segundo, que es lo que
-	//     convertía un tirón del navegador o un respawn en un "20 m/s" falso),
-	//   · el tiempo es la suma del tiempo de MUNDO de esos mismos frames,
-	//   · `maxfr` es el mayor desplazamiento de UN frame: andando bien vale
-	//     ~0,02 m (0,9 m/s ÷ 50 fps); un catapultazo o un teletransporte sale con
-	//     su tamaño a la vista,
-	//   · y va al lado de lo que el juego CREE que hace: `mvec` (m_vecMoveSpeed),
-	//     `fspd` (m_fMoveSpeed) y `anim` (m_vecAnimMoveDelta, la traslación de la
-	//     RAÍZ del clip: si eso manda sin pulsar nada, se ve aquí).
-	//
-	// Se publica al SOLTAR la tecla: una línea `CROUCHMOVE fin` con el tramo
-	// entero desde que la pulsó. Deduplicado por contador de frame porque esta
-	// función se llama dos veces por frame a propósito.
-	static CVector s_odTripPos(0.0f, 0.0f, 0.0f);
-	static bool s_odTripOn = false;
-	static float s_odTripT = 0.0f, s_odTripM = 0.0f, s_odTripMax = 0.0f;
-	static uint32 s_odTripFrames = 0, s_odTripLastFrame = 0;
-	static uint32 s_odTripSes = 0;
-	uint32 odTripFrame = CTimer::GetFrameCounter();
-	if (odTripFrame != s_odTripLastFrame) {
-		s_odTripLastFrame = odTripFrame;
-		// Al empezar/acabar una sesión de agachado el tramo se empieza de cero: si
-		// no, la primera muestra vendría de la posición de la sesión anterior y
-		// `m`/`maxfr` saldrían con el salto de por medio (la misma trampa que el
-		// `avance` de R22).
-		if (s_odTripSes != s_odCrouchSession) {
-			s_odTripSes = s_odCrouchSession;
-			s_odTripOn = false;
-		}
-		CVector odTripP = GetPosition();
-		if (odWalking) {
-			if (!s_odTripOn) {
-				s_odTripOn = true;
-				s_odTripT = 0.0f; s_odTripM = 0.0f; s_odTripMax = 0.0f; s_odTripFrames = 0;
-			} else {
-				float odStep = CVector2D(odTripP.x - s_odTripPos.x, odTripP.y - s_odTripPos.y).Magnitude();
-				s_odTripM += odStep;
-				if (odStep > s_odTripMax) s_odTripMax = odStep;
-			}
-			s_odTripT += CTimer::GetTimeStep() / 50.0f;
-			++s_odTripFrames;
-			s_odTripPos = odTripP;
-		} else if (s_odTripOn) {
-			s_odTripOn = false;
-			char t[230];
-			float odAvg = (s_odTripT > 0.001f) ? s_odTripM / s_odTripT : 0.0f;				snprintf(t, sizeof t,
-					"CROUCHMOVE fin mov=%u t=%.2f m=%.2f mps=%.2f maxfr=%.3f obj=%.2f obju=%.3f mvec=%.2f fspd=%.2f anim=%.2f pad=%.0f clip=%s piesMps=%.2f",
-					s_odTripFrames, s_odTripT, s_odTripM, odAvg, s_odTripMax,
-					ViceExtCrouchMoveSpeed(),
-					ViceExtCrouchMoveSpeed() * METERS_PER_SECOND_TO_GAME_SPEED,   // R25: m/s -> unidad del motor
-					m_vecMoveSpeed.Magnitude(), m_fMoveSpeed,
-				m_vecAnimMoveDelta.Magnitude(), padMove,					(odAssoc && odAssoc->hierarchy) ? odAssoc->hierarchy->name : "?",
-					odAssoc ? odAssoc->speed * ViceExtCrouchClipSpeed(s_odCrouchClip) : 0.0f);
-			ODTRACES(t);
-		}
-	}
-#endif
-	// R17: la traza del avance real (m/s) la publica el vigilante de abajo.
-#ifdef __EMSCRIPTEN__
-	// Una línea por segundo: cierra C5 desde el log ("¿se mueve agachado?").
-	// R6: además CROUCH2 con altura del ped y rumbo pedido vs. real.
-	// R6b: y `peso`, el peso real del clip de agachado en la mezcla: si baja de
-	// ~0,5 es que otro clip está compitiendo por el cuerpo (sería el fallo de
-	// que "se agacha a medias" aunque la traza diga que el clip es el correcto).
-	{
-			static uint32 s_odNextTrace = 0;
-			uint32 odNow = CTimer::GetTimeInMilliseconds();
-			// R18: `avance` es metros por segundo de RELOJ, y el reloj corre MÁS que
-			// el mundo cuando la simulación va limitada por el timestep máximo (en
-			// el navegador, con el agua en pantalla, la sonda midió 0,95 m/s de un
-			// nado que va a 2,3). Se acumula el tiempo de MUNDO (suma de
-			// `GetTimeStep()`, en unidades de 1/50 s) para publicar `velo` = m/s de
-			// verdad.
-			// R19: esta función se llama DOS veces por frame (a propósito, ver
-			// arriba: el clip se pide también desde `SetRealMoveAnim`), así que el
-			// reloj de mundo se sumaba dos veces y `velo` salía a la mitad (medido:
-			// dt=2,04 s por segundo de reloj). Se filtra por contador de frame.
-			static float s_odWorld = 0.0f, s_odWorldLast = 0.0f;
-			static uint32 s_odLastFrame = 0;
-			// R24: frames de esta muestra. Un tirón (stall del navegador) hacía que
-			// `avance`/`velo` salieran a 20-58 m/s sin serlo; con `nf` y `hit` la
-			// muestra se puede descartar al leer el log en vez de creerse un
-			// disparate (medido en la 19ª partida: `hit=1` justo en los valores
-			// altos, con `FPSLOG maxdelta=4336ms`).
-			static uint32 s_odFrames = 0;
-			if (CTimer::GetFrameCounter() != s_odLastFrame) {
-				s_odWorld += CTimer::GetTimeStep() / 50.0f;
-				s_odLastFrame = CTimer::GetFrameCounter();
-				++s_odFrames;
-			}
-			if (odNow < s_odNextTrace && odNow + 60000 >= s_odNextTrace) {}
-			else {
-				s_odNextTrace = odNow + 1000;
-				uint32 odNf = s_odFrames;
-				s_odFrames = 0;
-				static CVector s_odLastPos(0.0f, 0.0f, 0.0f);
-				static bool s_odLastPosOk = false;
-				// R22: primera muestra de cada sesión de agachado = sin referencia
-				// (la de la sesión anterior era de otra parte del mapa y el `avance`
-				// salía absurdo: 84,70 m en la partida del jugador).
-				static uint32 s_odSeenSession = 0;
-				if (s_odSeenSession != s_odCrouchSession) {
-					s_odSeenSession = s_odCrouchSession;
-					s_odLastPosOk = false;
-				}
-				// R17: `avance` = metros RECORRIDOS de verdad desde la traza
-				// anterior. Es la prueba de que el ped anda agachado: `spd` sólo
-				// dice lo que pide el mando y el clip, no lo que el motor mueve.
-				float odAvance = 0.0f, odVelo = 0.0f, odDtWorld = s_odWorld - s_odWorldLast;
-				s_odWorldLast = s_odWorld;
-				CVector odPos = GetPosition();
-				if (s_odLastPosOk) {
-					CVector odDelta = odPos - s_odLastPos;
-					odAvance = CVector2D(odDelta.x, odDelta.y).Magnitude();
-					// R18: m/s de mundo (metros entre el tiempo de simulación).
-					if (odDtWorld > 0.001f)
-						odVelo = odAvance / odDtWorld;
-				}
-				s_odLastPos = odPos;
-				s_odLastPosOk = true;
-				float odPeso = ViceExtBlendWeight(GetClump(), odCrouchAnim);
-				CVector odCamPos = TheCamera.GetPosition();
-				// R20: el NOMBRE del clip, no sólo su número: el arnés comprueba la
-				// dirección con "¿qué clip pidió el motor?" y con el número tendría
-				// que copiar a mano los valores del enum (que además se movieron al
-				// reordenar el bloque de agachado).
-				const char *odClipNom = (odAssoc && odAssoc->hierarchy) ? odAssoc->hierarchy->name : "?";
-				// R25: era de 300 y la línea YA se cortaba en el log del jugador
-				// (salía "rued" en vez de "rueda=").
-				// R28: 720 por los cuatro campos nuevos del presupuesto de parciales
-				// (`otros`, `pose`, `pesoarma` y `nomarma`), que son la prueba del
-				// disparo agachado y de la rueda.
-				char t[768];
-				snprintf(t, sizeof t, "VICEEXT crouch move spd=%.1f andando=%.1f clip=%d nom=%s arma=%d mio=0 estado=%d medida=1x cal=1 clipr=%.2f",
-					m_fMoveSpeed, padMove, (int)odCrouchAnim, odClipNom, (int)GetWeapon()->m_eWeaponType,
-					(int)m_nPedState, ViceExtCrouchClipSpeed(odCrouchAnim));
-				ODTRACES(t);
-				// R21: `mira` = se está apuntando con el agachado puesto y `pesomira` =
-				// peso real de la pose de apuntar del mod (`WEAPON_crouch`): es la
-				// prueba de que "al apuntar agachado sale su animación".
-				// `tgt` y `cana` van aparte a propósito: si `mira` sale 0 hay que poder
-				// distinguir "el mando no ve el apuntado" (`tgt=0`: tecla/ratón) de
-				// "el arma en mano no es de apuntar" (`cana=0`: puños o melee).
-				CAnimBlendAssociation *odPoseA = RpAnimBlendClumpGetAssociation(GetClump(), ViceExtCrouchAimPoseClip(this));
-				float odPesoMira = odPoseA ? odPoseA->blendAmount : 0.0f;
-				int odTgt = (padUsed && padUsed->GetTarget()) ? 1 : 0;
-				int odCana = ViceExtCanAim(odAimWep, CWeaponInfo::GetWeaponInfo(odAimWep)) ? 1 : 0;
-				snprintf(t, sizeof t, "CROUCH2 h=%.2f avance=%.2f velo=%.2f moved=%.2f mvec=%.2f anim=%.2f fspd=%.2f dt=%.2f nf=%u hit=%d rotDest=%.2f rumbo=%.2f clip=%d nom=%s peso=%.2f camz=%.2f camdist=%.2f modo=%d baja=%.2f ang=%.1f mps=%.2f obju=%.3f pies=%.2f strafe=%d mira=%d gat=%d pesomira=%.2f tgt=%d cana=%d arma=%d veloc=%.2f rueda=%d giro=%d hdgr=%.0f cal=1 clipr=%.2f entrada=%.0f otros=%.2f pose=%s pesoarma=%.2f nomarma=%s piesMps=%.2f",
-					odPos.z, odAvance, odVelo, m_moved.Magnitude(), m_vecMoveSpeed.Magnitude(),
-					m_vecAnimMoveDelta.Magnitude(), m_fMoveSpeed, odDtWorld,
-					odNf, (odNf < 40) ? 1 : 0,
-					m_fRotationDest, m_fRotationCur, (int)odCrouchAnim, odClipNom, odPeso,
-					odCamPos.z, CVector2D(odCamPos.x - odPos.x, odCamPos.y - odPos.y).Magnitude(),
-					(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, VICEEXT_CROUCH_CAM_DROP,
-					RADTODEG(ViceExtCrouchPadAngle(padUsed)), ViceExtCrouchWalkMps(),
-					// R25: `obju` = la velocidad objetivo en UNIDADES DEL MOTOR (m/s ÷ 50):
-					// tiene que coincidir con `mvec`, mientras `mps` (m/s) coincide con
-					// `velo`. Con eso la unidad deja de ser un misterio en el log.
-					ViceExtCrouchWalkMps() * METERS_PER_SECOND_TO_GAME_SPEED,
-					// R23: `pies` = el ritmo que lleva el clip AHORA (el que se le pone a
-					// `speed`), y por tanto los m/s a los que barren los pies. Si no
-					// coincide con `mps`, los pies no van a la par del ped: es la
-					// medida exacta de la queja ("los pies no van a la par de la
-					// velocidad real de Tommy").
-					// R27: `cal=1` marca la build calibrada (sin ella el verificador no da
-					// PASS) y `clipr` es la RAÍZ declarada del clip en uso, la que convierte
-					// `mps` en `pies` (caminando: pies = mps/clipr, sin multiplicador desde R29). `entrada` son los ms
-					// desde el cambio de clip (ventana del blend 10 de la spec sa-crouch).
-					(odAssoc ? odAssoc->speed : -1.0f),
-					(TheCamera.Cams[0].Using3rdPersonMouseCam() && CanStrafeOrMouseControl()) ? 1 : 0,
-					odAim ? 1 : 0, (padUsed && padUsed->GetWeapon()) ? 1 : 0, odPesoMira, odTgt, odCana, (int)odAimWep,
-					ViceExtCrouchTargetSpeed(odCrouchAnim), ((s_odRollState == ODROLL_ACTIVE) ? 1 : 0),
-					odSideWhy, m_headingRate,
-					ViceExtCrouchClipSpeed(odCrouchAnim), (float)(odNowMs - s_odCrouchEnterMs),
-					// R28: `otros` = presupuesto de parciales gastado por otros clips
-					// (`otros` mas `peso` nunca puede pasar de 1: por encima el motor
-					// extrapola y el cuerpo sale deformado), `pose` = clip que lleva la
-					// pose, y `pesoarma`/`nomarma` = la parcial del arma mas pesada y su
-					// NOMBRE (`*_crouchfire` si el disparo agachado esta bien).
-					s_odCrouchPoseOthers, s_odCrouchPoseWho, s_odCrouchWeaponW, s_odCrouchWeaponNom,
-					(odAssoc ? odAssoc->speed * ViceExtCrouchClipSpeed(odCrouchAnim) : 0.0f));
-				ODTRACES(t);
-			}
-		}
-#endif
-}
-
-// R22: velocidad objetivo (m/s) del clip de agachado en uso — la del clip si
-// el motor no le da ninguna (apuntando: la pose parcial se come su traslación).
-// La usa el desplazamiento por código de R20c.
-float
-CPlayerPed::ViceExtCrouchMoveSpeed(void)
-{
-	return ViceExtCrouchTargetSpeed(s_odCrouchClip);
-}
-
-// R6: tope de velocidad agachado, aplicado DESPUÉS del control a pie normal
-// (que ya corrió y puso `m_fMoveSpeed`). Sin esto el motor correría de pie.
-void
-CPlayerPed::ViceExtCrouchLimitSpeed(void)
-{
-	if (!odCrouched)
-		return;
-	if (m_fMoveSpeed > VICEEXT_CROUCH_SPEED)
-		m_fMoveSpeed = VICEEXT_CROUCH_SPEED;
-}
-
-#ifdef __EMSCRIPTEN__
-// Arnés web (ve37): la ficha `WINFO` de un arma CONCRETA, aunque el jugador no
-// la tenga en la mano. La publica `ProcessPlayerWeapon` cuando el arma cambia,
-// pero el truco de armas del mod reparte 8 armas de golpe y la sonda web no
-// consigue cambiarlas (el ciclo con el teclado numérico no responde ahí): con
-// esto la prueba de armas mide los clips de las OCHO sin depender del teclado.
-//
-// `WLOAD arma=%s cargado=%d txd=%s txdCargado=%d` la acompaña (Pad.cpp, la
-// medida del streaming: el modelo y el diccionario del mod en memoria).
 void
 CPlayerPed::ViceExtWeaponInfoOf(eWeaponType weaponType)
 {
 	ViceExtWeaponInfoTrace(weaponType, CWeaponInfo::GetWeaponInfo(weaponType));
 }
-#endif // __EMSCRIPTEN__
-#endif // VICEEXT_CROUCH
+#endif
 
 #ifdef __EMSCRIPTEN__
 void
@@ -6164,7 +4374,7 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 		// nuestro motor, que ya esta escrita y que gira el cuerpo solo; no se llama
 		// `SetHeading` a proposito (ver la nota de `front` mas arriba: asi se midio el
 		// error de 90 grados). Lo que si se replica literal son los flags.
-		if (!bIsDucking && !CPlayerPed::ViceExtIsCrouched())
+		if (!bIsDucking)
 			m_fRotationDest = front - (ViceExtAimLongGun(wt) ? VICEEXT_AIM_BLADE : 0.0f);
 		SetLookFlag(front, true, true);
 		SetAimFlag(front);
@@ -6283,6 +4493,14 @@ CPlayerPed::ProcessControl(void)
 	// El objetivo blando de raton (Main.cpp:1474-1517) lo acquisitiona el propio
 	// mod DESPUES de su control, en el mismo punto (Main.cpp:307).
 	ViceExtFind3rdPersonMouseTarget();
+
+#ifdef VICEEXT_CROUCH
+	if (!bIsDucking && TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ != 0.0f)
+		TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.0f;
+#endif
+#ifdef __EMSCRIPTEN__
+	ViceExtMovTrace(this);
+#endif
 
 	// Mobile has some debug/abandoned cheat thing in here: "gbFrankenTommy"
 
@@ -6447,6 +4665,18 @@ CPlayerPed::ProcessControl(void)
 		}
 	}
 
+#ifdef VICEEXT_CROUCH
+	if (m_nPedState == PED_ROLL && !bIsStanding) {
+		RestorePreviousState();
+
+		ClearDuck();
+	}
+
+	if (m_nPedState == PED_ROLL && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L) && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R)) {
+		SetRealMoveAnim();
+	}
+#endif
+
 #ifdef VICEEXT_SWIMMING
 	// Sección 3, bloque C4 (20/09): nadar. Va antes del reparto de control
 	// porque mientras se nada el control a pie no debe correr (ver
@@ -6455,11 +4685,6 @@ CPlayerPed::ProcessControl(void)
 	bool odSwimming = ViceExtSwimControl(padUsed);
 	if (odSwimming && (m_nPedState == PED_FALL || m_nPedState == PED_JUMP))
 		SetPedState(PED_IDLE);
-#endif
-#ifdef VICEEXT_CROUCH
-	// R6: el agachado ya NO se lleva el movimiento (sólo clip + tope). El
-	// control a pie normal corre siempre; el tope se aplica después.
-	ViceExtCrouchControl(padUsed);
 #endif
 
 #ifdef VICEEXT_IMPROVED_TECH_PART
@@ -6506,10 +4731,6 @@ CPlayerPed::ProcessControl(void)
 				} else if (padUsed) {
 					PlayerControlZelda(padUsed);
 				}
-#ifdef VICEEXT_CROUCH
-				// R6: tope de velocidad agachado tras el control normal.
-				ViceExtCrouchLimitSpeed();
-#endif
 			}
 		if (IsPedInControl() && m_nPedState != PED_ANSWER_MOBILE && padUsed)
 #ifdef VICEEXT_SWIMMING
@@ -6659,7 +4880,11 @@ CPlayerPed::ProcessControl(void)
 	}
 
 	if (bDontAllowWeaponChange && FindPlayerPed() == this) {
+#ifdef VICEEXT_CROUCH
+		if (!CPad::GetPad(0)->GetTarget() && m_nPedState != PED_ROLL)
+#else
 		if (!CPad::GetPad(0)->GetTarget())
+#endif
 			bDontAllowWeaponChange = false;
 	}
 
@@ -6691,14 +4916,12 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 {
 	CAnimBlendAssociation* assoc;
 
-	if (TheCamera.m_WideScreenOn || bIsDucking
-#ifdef VICEEXT_CROUCH
-	    // R17: agachado, el cuerpo lo lleva el clip del mod (ya NO parcial): una
-	    // idle de aburrimiento (que sí es no parcial) retiraría el clip de
-	    // agachado y el ped se pondría de pie solo tras 25-30 s sin tocar nada.
-	    || odCrouched
+#ifdef VICEEXT_CLIMBING
+	if (bIsClimbing)
+		return;
 #endif
-	   )
+
+	if (TheCamera.m_WideScreenOn || bIsDucking)
 		return;
 
 	struct animAndGroup {

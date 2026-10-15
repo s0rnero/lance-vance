@@ -59,6 +59,17 @@ bool CPed::bViceExtBigHeads;
 bool CPed::bViceExtRcRocket;
 CVector2D CPed::ms_vec2DFleePosition;
 
+#ifdef VICEEXT_CLIMBING
+bool CPed::bClimbingInInteriors = false;
+bool CPed::bClimbingOnVehicles = false;
+bool CPed::bClimbingPeds = true;
+float CPed::maxPossibleClimbingHeight = 2.25f;
+float CPed::maxPossibleCheckHeightForPeds = 2.85f;
+float CPed::maxHighClimbingHeight = 1.5f;
+float CPed::highClimbingOffsetSpeed = 3.0f;
+float CPed::playerVerticalVelocityAtWhichStartsToFall = -0.2f;
+#endif
+
 void *CPed::operator new(size_t sz) throw() { return CPools::GetPedPool()->New();  }
 void *CPed::operator new(size_t sz, int handle) throw() { return CPools::GetPedPool()->New(handle); }
 void CPed::operator delete(void *p, size_t sz) throw() { CPools::GetPedPool()->Delete((CPed*)p); }
@@ -414,6 +425,35 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 	m_delayedSoundTimer = 0;
 	CPopulation::UpdatePedCount((ePedType)m_nPedType, false);
 	m_lastComment = UINT32_MAX;
+
+#ifdef VICEEXT_CLIMBING
+	bIsReadyToClimbing = false;
+
+	bIsClimbing = false;
+
+	currentClimbingHeight = 0.0f;
+	newClimbingPosition = CVector(0.0f, 0.0f, 0.0f);
+
+	correctedClimbingStandPosition = CVector(0.0f, 0.0f, 0.0f);
+	currentClimbingStandAnim = nil;
+
+	bIsStartHighClimbing = false;
+	bIsClimbingHighJump = false;
+	bIsClimbingIdle = false;
+	bIsClimbingPull = false;
+	newClimbingIdlePosition = CVector(0.0f, 0.0f, 0.0f);
+	newStartClimbingIdlePosition = CVector(0.0f, 0.0f, 0.0f);
+	currentClimbingIdleAnim = nil;
+
+	bIsClimbingJumpB = false;
+	newStartClimbingJumpBPosition = CVector(0.0f, 0.0f, 0.0f);
+	newClimbingJumpBPosition = CVector(0.0f, 0.0f, 0.0f);
+	currentClimbingJumpBAnim = nil;
+
+	currentJumpGlideAnim = nil;
+
+	m_tJumpAllowedTimer = 0.0f;
+#endif
 }
 
 CPed::~CPed(void)
@@ -421,6 +461,14 @@ CPed::~CPed(void)
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	if ( m_pRTShadow ) delete m_pRTShadow;
 #endif
+
+#ifdef VICEEXT_CLIMBING
+	currentClimbingStandAnim = nil;
+	currentClimbingIdleAnim = nil;
+	currentClimbingJumpBAnim = nil;
+	currentJumpGlideAnim = nil;
+#endif
+
 	CWorld::Remove(this);
 	if (m_attractor)
 		GetPedAttractorManager()->DeRegisterPed(this, m_attractor);
@@ -695,9 +743,11 @@ CPed::SetMoveAnim(void)
 	}
 
 	AssocGroupId animGroupToUse;
+#ifndef VICEEXT_IMPROVED_TECH_PART
 	if (m_leader && m_leader->IsPlayer())
 		animGroupToUse = ASSOCGRP_PLAYER;
 	else
+#endif
 		animGroupToUse = m_animGroup;
 
 	CAnimBlendAssociation *animAssoc = RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_BLOCK);
@@ -1472,6 +1522,15 @@ CPed::CalculateNewVelocity(void)
 			limitedRotDest -= 2 * PI;
 		}
 
+#if defined VICEEXT_IMPROVED_TECH_PART && defined VICEEXT_CROUCH
+		if (IsPlayer() && !ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO)) {
+			if (bIsDucking)
+				headAmount *= 0.5f;
+			else
+				headAmount *= 0.7f;
+		}
+#endif
+
 		float neededTurn = limitedRotDest - m_fRotationCur;
 		if (neededTurn <= headAmount) {
 			if (neededTurn > (-headAmount))
@@ -1494,27 +1553,13 @@ CPed::CalculateNewVelocity(void)
 		m_moved = m_moved * (1 / 100.0f);
 	}
 
-	// R21b (23/09): el agachado propio NO se salta este corte. El corte separa el
-	// control "moderno" (ratón en 3ra persona) del de siempre, y APUNTANDO la
-	// cámara cambia de modo (`camdist` medido: 0,61 m en vez de 3,56), así que se
-	// tomaba el `return` y el bloque R20c (que es quien pone el desplazamiento
-	// agachado) no corría: medido, apuntando agachado y con el mando de lado el ped
-	// se quedaba clavado con `m_fMoveSpeed` a 0,9 (pulsación 127) y el clip
-	// `Crouch_Roll_L` puesto. Con el agachado se pasa de largo (salvo en la cámara
-	// de 1ª persona de armas, donde no debe moverse nadie).
-	bool odCrouchMove = false;
-#ifdef VICEEXT_CROUCH
-	odCrouchMove = FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsCrouched()
-		&& !TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn();
-#endif
-
 	bool odAimMove = false;
-#ifdef VICEEXT_CROUCH
+#ifdef VICEEXT_AIM_CLASSICAXIS
 	odAimMove = FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsAiming()
 		&& !TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn();
 #endif
 
-	if (!odCrouchMove && !odAimMove
+	if (!odAimMove
 	    && ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
 		|| FindPlayerPed() != this || !CanStrafeOrMouseControl())) {
 
@@ -1571,7 +1616,7 @@ CPed::CalculateNewVelocity(void)
 			snprintf(t, sizeof t, "P4 kind=move_apply schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 src=%d spdReq=%.4f spdEff=%.4f mag=%.4f dir=%.4f frames=%u duck=%d aim=%d crouch=%d stickBlocked=%d",
 				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
 				odSrc, pedSpeed, odUseSpeed, odMagNow, odDirErr, (unsigned)s_odApplyFrames, bIsDucking ? 1 : 0,
-				((CPlayerPed*)this)->ViceExtIsAiming() ? 1 : 0, ((CPlayerPed*)this)->ViceExtIsCrouched() ? 1 : 0,
+				((CPlayerPed*)this)->ViceExtIsAiming() ? 1 : 0, 0,
 				((CPlayerPed*)this)->ViceExtStickBlocked());
 			ODTRACES(t);
 		}
@@ -1585,166 +1630,6 @@ CPed::CalculateNewVelocity(void)
 		TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = pedSpeed;
 		m_moved = CVector2D(-Sin(walkAngle), Cos(walkAngle)) * pedSpeed;
 	}
-
-#ifdef VICEEXT_CROUCH
-	// R20c (22/09, 16ª partida): AGACHADO, el desplazamiento lo manda el MANDO.
-	//
-	// Este bloque es "el caminar en diagonal": con |localWalkAngle| < 50° el
-	// motor sustituye el avance de la RAÍZ del clip por el rumbo del mando (y por
-	// eso las diagonales ya iban bien). Con el mando de LADO, `localWalkAngle`
-	// vale ±90° y el motor esperaba que el clip de costado trajera la traslación
-	// — así funciona con `walk_left`/`walk_right` de pie. Agachado NO hay tal
-	// clip en el `ped.ifp` del mod (medido: `Crouch_Roll_L/R` viajan en el eje Y,
-	// −2,17/+2,25 m; de lado sólo tienen 0,22 m), así que sin esto pulsar
-	// izquierda hacía andar al ped hacia delante o hacia atrás (medido: 179,6°
-	// respecto a su rumbo).
-	//
-	// Se aplica la misma fórmula para las 8 direcciones: es el modelo de SA (la
-	// pose la pone el clip, la velocidad y la dirección las pone el código), y la
-	// velocidad sigue siendo la del clip (`pedSpeed` sale de `m_moved`, o sea del
-	// avance de la raíz de la pose que toca).
-	if (FindPlayerPed() == this && ((CPlayerPed*)this)->ViceExtIsCrouched()) {
-		CPad *odPad = CPad::GetPad(0);
-		// 60 = el mando a tope en unidades del pad (`PAD_MOVE_TO_GAME_WORLD_MOVE`
-		// de PlayerPed.cpp, que es de otro fichero): aquí se pide un cuarto.
-		if (odPad && CVector2D(odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown()).Magnitude() > 16.0f) {   // spec sa-crouch deadzone +-16
-			// R22 (18ª partida, 23/09): LA VELOCIDAD ES LA OBJETIVO, NO LA DEL CLIP.
-			//
-			// Antes esto cogía `pedSpeed` (el avance de la raíz del clip en uso):
-			// 3,58 m/s con `Crouch_Forward` y 1,85 con `Crouch_Backward`, o sea el
-			// agachado andando MÁS que el `walk` de serie y a la mitad de velocidad
-			// yendo hacia atrás — el jugador: "se mueve a una super velocidad sin
-			// razón". Ahora manda `ViceExtCrouchMoveSpeed()` y el RITMO del clip se
-			// calcula de esa velocidad (`ViceExtCrouchRateFor`), así que los pies
-			// avanzan lo mismo que el ped y no hay patinaje. Cuando el ped va
-			// apuntando agachado el motor no da avance (la pose parcial se come la
-			// traslación), y con esto da igual: la velocidad no depende del clip.
-			//
-			// R25 (23/09, 19ª partida): LAS UNIDADES. ERA EL FALLO DE LA "SUPER
-			// VELOCIDAD", y llevaba tres rondas escondido.
-			//
-			// Aquí se escribía `0,90` creyendo que `m_vecMoveSpeed` va en m/s, y NO
-			// va: el motor mueve la posición con `Translate(m_vecMoveSpeed *
-			// CTimer::GetTimeStep())` (`CPhysical::ApplyMoveSpeed`, Physical.cpp) y
-			// `GetTimeStep()` vale ~1,0 a 50 fps, así que la unidad es "metros por
-			// frame de 50 fps" = m/s ÷ 50. Medido en la traza `CROUCHMOVE` del propio
-			// jugador: con `obj=0,90` el ped hizo **331,51 m en 7,38 s = 44,90 m/s** y
-			// `mvec` salía 0,90 — exactamente ×50. (Y la rueda de lado, 2,35 en esas
-			// unidades: 117 m/s, de ahí el "me muero si camino hacia a un lado".)
-			//
-			// El nadado ya lo hacía bien (ver `CPlayerPed::ViceExtSwimMove`), y el
-			// proyecto ya traía la constante para esto (`control/CarCtrl.h`).
-			float odMps = ((CPlayerPed*)this)->ViceExtCrouchMoveSpeed();   // m/s
-			float odSpeed;
-			if (odMps < 0.05f)
-				odSpeed = pedSpeed;   // reserva: sin clip conocido, lo que dé el motor
-			else
-				odSpeed = odMps * METERS_PER_SECOND_TO_GAME_SPEED;   // m/s -> unidad del motor
-			// R26 (giro a los lados): el avance va en base CAMARA (el rumbo
-			// mundo del helper), no en base cuerpo. Mientras el cuerpo mira a
-			// la camara coinciden; una vez girado 90 grados, la base cuerpo
-			// daria el avance desplazado otros 90 (el circulo del handoff 6.5).
-			#ifdef VICEEXT_AIM_CLASSICAXIS
-			float odMoveDir = ((CPlayerPed*)this)->ViceExtStickHeading(odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown());
-#else
-			float odMoveDir = CGeneral::LimitRadianAngle(CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -odPad->GetPedWalkLeftRight(), odPad->GetPedWalkUpDown()) - TheCamera.Orientation);
-#endif
-			float odSideDir = 0.0f;
-#ifdef VICEEXT_AIM_CLASSICAXIS
-			CVector2D odCDir(0.0f, 0.0f);
-			float odCSpeed = 0.0f;
-			bool odCDirOk = ((CPlayerPed*)this)->ViceExtGetMove(odCDir, odCSpeed);
-			if (odCSpeed > 0.01f)
-				odSpeed = odCSpeed;
-#endif
-			if (((CPlayerPed*)this)->ViceExtCrouchSideHeading(odSideDir)) {
-				odMoveDir = odSideDir;
-				// R29 (27/09, sintoma F): el giro ya NO es un snap (R26d ponia
-				// `Cur = Dest` de golpe y el cuerpo "saltaba"). Se fija SOLO el
-				// DESTINO en base MUNDO (una vez por peticion, sin realimentar
-				// con `m_fRotationCur`: handoff 6.5) y el motor gira el cuerpo
-				// hacia el a su ritmo (`m_headingRate`, STAT_PLAYER: 15
-				// grados/frame, el `hdgr=15` de la traza): la vuelta de 90
-				// grados dura ~6 frames, sin snap visible.
-				m_fRotationDest = odSideDir;
-				// R29: con el ped "en control" el giro del motor YA corre (el
-				// bloque de arriba, con la misma puerta `IsPedInControl()`);
-				// cuando no lo esta (ataque/recarga) se ejecuta aqui con el
-				// MISMO ritmo, o el destino se quedaria sin cumplir (el "rumbo
-				// fijo" de ve52-ve54).
-				if (!IsPedInControl()) {
-					float odNeed = CGeneral::LimitRadianAngle(odSideDir - m_fRotationCur);
-					float odStep = DEGTORAD(m_headingRate) * CTimer::GetTimeStep();
-					if (Abs(odNeed) <= odStep)
-						m_fRotationCur = odSideDir;
-					else
-						m_fRotationCur = CGeneral::LimitRadianAngle(m_fRotationCur + (odNeed > 0.0f ? odStep : -odStep));
-					SetHeading(m_fRotationCur);
-				}
-			}
-#if defined(__EMSCRIPTEN__) && defined(VICEEXT_AIM_CLASSICAXIS)
-			{
-				static uint32 s_odCrouchRumboNext = 0;
-				uint32 odCrNow = CTimer::GetTimeInMilliseconds();
-				if (s_odCrouchRumboNext > odCrNow + 60000) s_odCrouchRumboNext = 0;
-				if (odCrNow >= s_odCrouchRumboNext) {
-					s_odCrouchRumboNext = odCrNow + 1000;
-					int odSrc = odCDirOk ? 0 : 2;
-					char t[260];
-					snprintf(t, sizeof t, "ODCROUCHDIR src=%d walk=%.1f side=%.1f dir=%.1f cur=%.1f dest=%.1f cdir=%.1f cspd=%.2f",
-						odSrc, RADTODEG(walkAngle), RADTODEG(odSideDir), RADTODEG(odMoveDir),
-						RADTODEG(m_fRotationCur), RADTODEG(m_fRotationDest),
-						odCDirOk ? RADTODEG(odCDir.Heading()) : 0.0f, odCSpeed);
-					ODTRACES(t);
-				}
-			}
-#endif
-			TheCamera.Cams[TheCamera.ActiveCam].m_fPlayerVelocity = odSpeed;
-#ifdef VICEEXT_AIM_CLASSICAXIS
-			if (odCDirOk) {
-				m_moved = odCDir * odSpeed;
-				if (!IsPedInControl()) {
-					float odNeed = CGeneral::LimitRadianAngle(odCDir.Heading() - m_fRotationCur);
-					float odStep = DEGTORAD(m_headingRate) * CTimer::GetTimeStep();
-					if (Abs(odNeed) <= odStep)
-						m_fRotationCur = odCDir.Heading();
-					else
-						m_fRotationCur = CGeneral::LimitRadianAngle(m_fRotationCur + (odNeed > 0.0f ? odStep : -odStep));
-					SetHeading(m_fRotationCur);
-				}
-			} else
-#endif
-			m_moved = CVector2D(-Sin(odMoveDir), Cos(odMoveDir)) * odSpeed;
-#ifdef __EMSCRIPTEN__
-#ifdef VICEEXT_AIM_CLASSICAXIS
-			{
-				static int s_odCrouchApplySig = -1;
-				static float s_odCrouchApplySim = 0.0f;
-				int odCSig = (odCDirOk ? 0 : 2) | (odCSpeed > 0.01f ? 16 : 0);
-				float odCSim = CTimer::GetTimeInMilliseconds() * 0.001f;
-				if (odCSig != s_odCrouchApplySig || odCSim - s_odCrouchApplySim >= 1.0f) {
-					s_odCrouchApplySig = odCSig;
-					s_odCrouchApplySim = odCSim;
-					float odMagNow = m_moved.Magnitude();
-					float odDirErr = 0.0f;
-					if (odMagNow > 0.0001f && odCDirOk && odCDir.Magnitude() > 0.0001f)
-						odDirErr = RADTODEG(Abs(CGeneral::LimitRadianAngle(
-							CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, m_moved.x, m_moved.y) -
-							CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, odCDir.x, odCDir.y))));
-					char t[320];
-					snprintf(t, sizeof t, "P4 kind=move_apply schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 src=%d spdReq=%.4f spdEff=%.4f mag=%.4f dir=%.4f frames=0 duck=%d aim=%d crouch=1 stickBlocked=%d",
-						(unsigned)CTimer::GetFrameCounter(), odCSim,
-						odCDirOk ? 0 : 2, pedSpeed, odSpeed, odMagNow, odDirErr, bIsDucking ? 1 : 0,
-						((CPlayerPed*)this)->ViceExtIsAiming() ? 1 : 0,
-						((CPlayerPed*)this)->ViceExtStickBlocked());
-					ODTRACES(t);
-				}
-			}
-#endif
-#endif
-		}
-	}
-#endif
 
 	CAnimBlendAssociation *idleAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE);
 	CAnimBlendAssociation *fightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_IDLE);
@@ -1958,6 +1843,11 @@ CPed::ProcessBuoyancy(void)
 	static uint32 nGenerateWaterCircles = 0;
 	CRGBA color;
 
+#ifdef VICEEXT_CLIMBING
+	if (bIsClimbing)
+		return;
+#endif
+
 	if (bInVehicle)
 		return;
 
@@ -2110,6 +2000,92 @@ CPed::ProcessControl(void)
 	bIsDrowning = false;
 	ProcessBuoyancy();
 
+#ifdef VICEEXT_CLIMBING
+	if (bIsReadyToClimbing) {
+		CColPoint hitForwardPoint;
+		CColPoint hitBackwardPoint;
+		CColPoint hitJumpBPoint;
+		if (CanPedClimbingThis(hitForwardPoint, hitBackwardPoint, hitJumpBPoint)) {
+			StartClimbing(hitForwardPoint, hitBackwardPoint, hitJumpBPoint);
+		}
+	}
+
+	if (bIsClimbing) {
+		CPad* pad0 = CPad::GetPad(0);
+		if (pad0->ExitVehicleJustDown() && !bIsClimbingHighJump && IsPlayer()) {
+			pad0->Clear(false);
+
+			EndClimbing(true);
+
+			return;
+		}
+
+		if (bIsClimbingIdle) {
+			CPad* pad0 = CPad::GetPad(0);
+			if (!IsPlayer() || (pad0->JumpJustDown() && IsPlayer())) {
+				bIsClimbingIdle = false;
+				bIsClimbingPull = true;
+
+				currentClimbingIdleAnim->blendDelta = -1000.0f;
+
+				bUsesCollision = 0;
+
+				CAnimBlendAssociation* lowClimbAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_PULL);
+				lowClimbAssoc->SetFinishCallback(FinishClimbingPullCB, this);
+			}
+		}
+
+		CVector currentPedPosition = GetPosition();
+		CVector distance;
+		float speed;
+		if (bIsClimbingHighJump || bIsClimbingIdle) {
+			speed = highClimbingOffsetSpeed;
+			distance = newClimbingIdlePosition - currentPedPosition;
+		}
+		else if (bIsClimbingPull) {
+			speed = 1.3f;
+			CVector newPedClimbingPullPosition = correctedClimbingStandPosition + CVector(0.0f, 0.0f, 0.5f);
+			distance = newPedClimbingPullPosition - currentPedPosition;
+		}
+		else if (bIsClimbingJumpB) {
+			speed = 0.75f;
+			distance = newClimbingJumpBPosition - currentPedPosition;
+		}
+		else if (!bIsClimbingIdle) {
+			speed = 1.5f;
+			distance = newClimbingPosition - currentPedPosition;
+		}
+
+		float distanceMagnitude = distance.Magnitude();
+
+		float deltaSeconds = CTimer::GetTimeStepInSeconds();
+		float deltaSpeed = deltaSeconds * speed;
+
+		if (distanceMagnitude > 0.1f) {
+			if (bIsClimbingIdle) {
+				m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				bUsesCollision = 0;
+			}
+
+			CVector deltaNormal = distance / distanceMagnitude;
+			SetPosition(currentPedPosition + deltaNormal * deltaSpeed);
+		}
+		else if (bIsClimbingIdle) {
+			bUsesCollision = 1;
+		}
+	}
+#endif
+
+#ifdef VICEEXT_CROUCH
+	if (IsPlayer() && bIsDucking && (
+		((!IsPedInControl() && m_nPedState != PED_ROLL)) ||
+		GetWeapon()->GetInfo()->m_nWeaponSlot == WEAPONSLOT_HEAVY || GetWeapon()->m_eWeaponType == WEAPONTYPE_CHAINSAW)) {
+
+		ClearDuck();
+		bCrouchWhenShooting = false;
+	}
+#endif
+
 	if (m_nPedState != PED_ARRESTED) {
 		if (m_nPedState == PED_DEAD) {
 			DeadPedMakesTyresBloody();
@@ -2230,6 +2206,7 @@ CPed::ProcessControl(void)
 				case ENTITY_TYPE_BUILDING:
 				case ENTITY_TYPE_OBJECT:
 				{
+#ifndef VICEEXT_IMPROVED_TECH_PART
 					CBaseModelInfo *collidingModel = CModelInfo::GetModelInfo(collidingEnt->GetModelIndex());
 					CColModel *collidingCol = collidingModel->GetColModel();
 					if (collidingEnt->IsObject() && ((CObject*)collidingEnt)->m_nSpecialCollisionResponseCases != COLLRESPONSE_FENCEPART
@@ -2241,10 +2218,18 @@ CPed::ProcessControl(void)
 							break;
 						}
 					}
+#endif
 					if (IsPlayer()) {
 						bHitSomethingLastFrame = true;
 						break;
 					}
+
+#if defined VICEEXT_IMPROVED_TECH_PART && defined VICEEXT_CLIMBING
+					bool isObstacleUp = !CWorld::GetIsLineOfSightClear(GetPosition(), GetPosition() + CVector(0.0f, 0.0f, maxPossibleCheckHeightForPeds), true, false, false, true, false, true);
+
+					if (isObstacleUp)
+						break;
+#endif
 
 					float angleToFaceWhenHit = CGeneral::GetRadianAngleBetweenPoints(
 						GetPosition().x,
@@ -3232,6 +3217,11 @@ CPed::ProcessControl(void)
 int32
 CPed::ProcessEntityCollision(CEntity *collidingEnt, CColPoint *collidingPoints)
 {
+#ifdef VICEEXT_CLIMBING
+	if (bIsClimbing)
+		return 0;
+#endif
+
 	bool collidedWithBoat = false;
 	bool belowTorsoCollided = false;
 	float gravityEffect = -0.15f * CTimer::GetTimeStep();
@@ -4325,6 +4315,10 @@ CPed::PedLandCB(CAnimBlendAssociation* animAssoc, void* arg)
 
 	if (ped->m_nPedState == PED_JUMP)
 		ped->RestorePreviousState();
+
+#ifdef VICEEXT_CLIMBING
+	ped->bIsReadyToClimbing = false;
+#endif
 }
 
 void
@@ -5839,6 +5833,12 @@ CPed::InTheAir(void)
 				if (GetPosition().z - foundCol.point.z < 1.3f || bIsStanding)
 					SetLanding();
 			} else if (m_nPedState != PED_ABSEIL && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL)) {
+#ifdef VICEEXT_CLIMBING
+				if (m_vecMoveSpeed.z > playerVerticalVelocityAtWhichStartsToFall)
+					return;
+
+				bIsReadyToClimbing = false;
+#endif
 				if (m_vecMoveSpeed.z < -0.1f)
 					CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_FALL, 4.0f);
 			}
@@ -9697,6 +9697,11 @@ CPed::CanPedJumpThis(CEntity *unused, CVector *damageNormal)
 	if (m_nSurfaceTouched == SURFACE_WATER)
 		return true;
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (!IsPlayer() && CGame::IsInInterior())
+		return false;
+#endif
+
 	CVector pos = GetPosition();
 	CVector forwardOffset = GetForward();
 	if (damageNormal && damageNormal->z > 0.17f) {
@@ -9719,6 +9724,11 @@ CPed::CanPedJumpThis(CEntity *unused, CVector *damageNormal)
 		pos.z -= 0.15f;
 	}
 
+#ifdef VICEEXT_CLIMBING
+	if (bEnableClimbing && !IsPlayer() && bClimbingPeds)
+		pos.z += maxPossibleCheckHeightForPeds;
+#endif
+
 	CVector forwardPos = pos + forwardOffset;
 	return CWorld::GetIsLineOfSightClear(pos, forwardPos, true, false, false, true, false, false, false);
 }
@@ -9726,12 +9736,32 @@ CPed::CanPedJumpThis(CEntity *unused, CVector *damageNormal)
 void
 CPed::SetJump(void)
 {
+#ifdef VICEEXT_CLIMBING
+	if (bIsClimbing)
+		return;
+
+	if (!IsPlayer()) {
+		if (m_tJumpAllowedTimer < CTimer::GetTimeInMilliseconds() - 2000)
+			m_tJumpAllowedTimer = CTimer::GetTimeInMilliseconds();
+		else
+			return;
+	}
+#endif
+
 	if (!bInVehicle && m_nPedState != PED_JUMP && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_JUMP_LAUNCH) &&
 		(m_nSurfaceTouched != SURFACE_STEEP_CLIFF || DotProduct(GetForward(), m_vecDamageNormal) >= 0.0f)) {
 
 		SetStoredState();
 		SetPedState(PED_JUMP);
 		CAnimBlendAssociation *jumpAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_LAUNCH, 8.0f);
+#ifdef VICEEXT_CLIMBING
+		CColPoint hitForwardPoint;
+		CColPoint hitBackwardPoint;
+		CColPoint hitJumpBPoint;
+		if (CanPedClimbingThis(hitForwardPoint, hitBackwardPoint, hitJumpBPoint))
+			jumpAssoc->blendDelta = 4.25f;
+
+#endif
 		jumpAssoc->SetFinishCallback(FinishLaunchCB, this);
 		m_fRotationDest = m_fRotationCur;
 #ifdef VICEEXT_AIM_CLASSICAXIS
@@ -9777,9 +9807,27 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 {
 	CPed *ped = (CPed*)arg;
 
+#ifdef VICEEXT_CLIMBING
+	CColPoint hitForwardPoint;
+	CColPoint hitBackwardPoint;
+	CColPoint hitJumpBPoint;
+	if (ped->CanPedClimbingThis(hitForwardPoint, hitBackwardPoint, hitJumpBPoint)) {
+		animAssoc->blendDelta = -1000.0f;
+
+		ped->StartClimbing(hitForwardPoint, hitBackwardPoint, hitJumpBPoint);
+		return;
+	}
+#endif
+
 	if (ped->m_nPedState != PED_JUMP)
 		return;
 
+#ifdef VICEEXT_CLIMBING
+	if ((!CGame::IsInInterior() || bClimbingInInteriors)
+		&& (ped->IsPlayer() || bClimbingPeds))
+		ped->bIsReadyToClimbing = true;
+
+#else
 	CVector forward(0.09f * ped->GetForward() + ped->GetPosition());
 	forward.z += CModelInfo::GetColModel(ped->GetModelIndex())->spheres[2].center.z + 0.35f;
 
@@ -9807,6 +9855,7 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 #endif
 		return;
 	}
+#endif
 
 	float velocityFromAnim = 0.1f;
 	CAnimBlendAssociation *sprintAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), ANIM_STD_RUNFAST);
@@ -9847,9 +9896,20 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 #else
 		if (TheCamera.Cams[0].Using3rdPersonMouseCam()) {
 #endif
+#ifdef VICEEXT_CLIMBING
+			if (!ped->IsPlayer() && bClimbingPeds) {
+				ped->m_vecMoveSpeed.x = ped->GetForward().x * 0.15f;
+				ped->m_vecMoveSpeed.y = ped->GetForward().y * 0.15f;
+			} else {
+				float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
+				ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
+				ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(fpsAngle);
+			}
+#else
 			float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
 			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(fpsAngle);
+#endif
 		} else {
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(ped->m_fRotationCur);
 			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(ped->m_fRotationCur);
@@ -9876,7 +9936,11 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 	ped->bIsStanding = false;
 	ped->bIsInTheAir = true;
 	animAssoc->blendDelta = -1000.0f;
+#ifdef VICEEXT_CLIMBING
+	ped->currentJumpGlideAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_GLIDE);
+#else
 	CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_JUMP_GLIDE);
+#endif
 
 	if (ped->bDoBloodyFootprints) {
 		CVector bloodPos(0.0f, 0.0f, 0.0f);
@@ -9939,6 +10003,64 @@ CPed::FinishHitHeadCB(CAnimBlendAssociation *animAssoc, void *arg)
 
 	ped->bIsLanding = false;
 }
+
+#ifdef VICEEXT_CLIMBING
+void CPed::FinishHighClimbingCB(CAnimBlendAssociation* animAssoc, void* arg)
+{
+	CPed* ped = (CPed*)arg;
+
+	animAssoc->blendDelta = -1.0f;
+
+	ped->bIsClimbingIdle = true;
+	ped->bIsClimbingHighJump = false;
+
+	ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+
+	ped->currentClimbingIdleAnim = CAnimManager::BlendAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_IDLE, 10.0f);
+}
+
+void CPed::FinishClimbingPullCB(CAnimBlendAssociation* animAssoc, void* arg)
+{
+	CPed* ped = (CPed*)arg;
+
+	animAssoc->blendDelta = -1000.0f;
+
+	ped->bIsClimbingPull = false;
+
+	if (ped->bIsClimbingJumpB) {
+		ped->currentClimbingJumpBAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_JUMP_B);
+		ped->currentClimbingJumpBAnim->SetFinishCallback(FinishClimbingCB, ped);
+	} else {
+		ped->currentClimbingStandAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_STAND);
+		ped->currentClimbingStandAnim->SetFinishCallback(FinishClimbingCB, ped);
+	}
+}
+
+void
+CPed::FinishClimbingCB(CAnimBlendAssociation *animAssoc, void *arg)
+{
+	CPed* ped = (CPed*)arg;
+
+	if (ped->bIsClimbing)
+	{
+		if (!ped->bIsClimbingJumpB) {
+			animAssoc->blendDelta = -1000.0f;
+
+			CAnimBlendAssociation* lowClimbFinishAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_STAND_FINISH);
+			lowClimbFinishAnim->SetFinishCallback(FinishFinallyStandClimbingCB, ped);
+		}
+
+		ped->EndClimbing(false);
+	}
+}
+
+void CPed::FinishFinallyStandClimbingCB(CAnimBlendAssociation* animAssoc, void* arg)
+{
+	CPed* ped = (CPed*)arg;
+
+	animAssoc->blendDelta = -3.0f;
+}
+#endif
 
 bool
 CPed::CanPedDriveOff(void)
@@ -10227,6 +10349,336 @@ CPed::Say(uint16 audio, int32 time)
 		m_delayedSoundTimer = CTimer::GetTimeInMilliseconds() + time;
 	}
 }
+
+#ifdef VICEEXT_CLIMBING
+bool CPed::CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint)
+{
+	if (!bEnableClimbing)
+		return false;
+
+#ifdef VICEEXT_SWIMMING
+	if (IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO))
+		return false;
+#endif
+
+	if (!IsPlayer() && !bClimbingPeds)
+		return false;
+
+	if (CGame::IsInInterior() && !bClimbingInInteriors)
+		return false;
+
+	if (CheckObjectFrontPlayer(hitForwardPoint) && !CheckObjectAbovePlayer(hitForwardPoint)) {
+		if (CheckPotentialClimbingPlaceFind(hitForwardPoint, hitBackwardPoint))
+			return CheckClimbingPlaceFree(hitBackwardPoint) && hitBackwardPoint.normal.z >= 0.8f;
+
+		return CheckClimbingTheFence(hitForwardPoint, hitBackwardPoint, hitJumpBPoint);
+	} else {
+		return false;
+	}
+}
+
+bool CPed::CheckObjectFrontPlayer(CColPoint& hitForwardPoint)
+{
+	CVector startPosition = GetPosition() + CVector(0.0f, 0.0f, -0.25f);
+	CVector forward = GetForward();
+
+	CEntity* hitEntity;
+
+	if (CWorld::ProcessLineOfSight(startPosition, startPosition + forward, hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 1.45f), startPosition + forward + CVector(0.0f, 0.0f, 1.45f), hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 1.55f), startPosition + forward + CVector(0.0f, 0.0f, 1.55f), hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 1.65f), startPosition + forward + CVector(0.0f, 0.0f, 1.65f), hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 3.0f), startPosition + forward * 0.25f, hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 3.0f), startPosition + forward * 0.5f, hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 3.0f), startPosition + forward * 0.75f, hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+	if (CWorld::ProcessLineOfSight(startPosition + CVector(0.0f, 0.0f, 3.0f), startPosition + forward, hitForwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false)) {
+		hitForwardPoint.point.z = startPosition.z;
+
+		return hitEntity->HasClimbable();
+	}
+
+	return false;
+}
+
+bool CPed::CheckObjectAbovePlayer(CColPoint& hitForwardPoint)
+{
+	CEntity* hitEntity;
+	CColPoint hitAbovePoint;
+
+	bool isObjectAbovePlayer = CWorld::ProcessLineOfSight(GetPosition(), GetPosition() + CVector(0.0f, 0.0f, 2.75f), hitAbovePoint, hitEntity, true, false, false, true, false, false);
+
+	CEntity* hitObjectAbovePlayer1 = CWorld::TestSphereAgainstWorld(GetPosition() + CVector(0.0f, 0.0f, 1.0f), 0.25f, this, true, true, true, true, false, false);
+	CEntity* hitObjectAbovePlayer2 = CWorld::TestSphereAgainstWorld(GetPosition() + CVector(0.0f, 0.0f, 1.25f), 0.25f, this, true, true, true, true, false, false);
+	CEntity* hitObjectAbovePlayer3 = CWorld::TestSphereAgainstWorld(GetPosition() + CVector(0.0f, 0.0f, 1.5f), 0.25f, this, true, true, true, true, false, false);
+	CEntity* hitObjectAbovePlayer4 = CWorld::TestSphereAgainstWorld(GetPosition() + CVector(0.0f, 0.0f, 1.75f), 0.25f, this, true, true, true, true, false, false);
+	CEntity* hitObjectAbovePlayer5 = CWorld::TestSphereAgainstWorld(GetPosition() + CVector(0.0f, 0.0f, 2.0f), 0.25f, this, true, true, true, true, false, false);
+
+	return isObjectAbovePlayer || hitObjectAbovePlayer1 || hitObjectAbovePlayer2 || hitObjectAbovePlayer3 || hitObjectAbovePlayer4 || hitObjectAbovePlayer5;
+}
+
+bool CPed::CheckPotentialClimbingPlaceFind(CColPoint hitForwardPoint, CColPoint& hitBackwardPoint)
+{
+	CEntity* hitEntity;
+
+	CVector distance = -hitForwardPoint.normal * 0.25f;
+	CWorld::ProcessLineOfSight(hitForwardPoint.point + distance + CVector(0.0f, 0.0f, maxPossibleClimbingHeight), hitForwardPoint.point + distance, hitBackwardPoint, hitEntity, true, bClimbingOnVehicles, false, true, false, false);
+
+	return hitEntity && hitEntity->HasClimbable();
+}
+
+bool CPed::CheckClimbingPlaceFree(CColPoint hitBackwardPoint)
+{
+	CEntity* hitEntityAtBackwardPoint1 = CWorld::TestSphereAgainstWorld(hitBackwardPoint.point + CVector(0.0f, 0.0f, 0.3f), 0.215f, this, true, true, true, true, false, false);
+	CEntity* hitEntityAtBackwardPoint2 = CWorld::TestSphereAgainstWorld(hitBackwardPoint.point + CVector(0.0f, 0.0f, 0.5f), 0.2f, this, true, true, true, true, false, false);
+	CEntity* hitEntityAtBackwardPoint3 = CWorld::TestSphereAgainstWorld(hitBackwardPoint.point + CVector(0.0f, 0.0f, 0.75f), 0.4f, this, true, true, true, true, false, false);
+	CEntity* hitEntityAtBackwardPoint4 = CWorld::TestSphereAgainstWorld(hitBackwardPoint.point + CVector(0.0f, 0.0f, 1.5f), 0.4f, this, true, true, true, true, false, false);
+
+	CEntity* hitEntityAtBackwardPoint5 = CWorld::TestSphereAgainstWorld(hitBackwardPoint.point + GetForward() * 0.25f + CVector(0.0f, 0.0f, 0.5f), 0.1f, this, true, true, true, true, false, false);
+
+	if (hitEntityAtBackwardPoint1 && hitEntityAtBackwardPoint1->HasClimbable())
+		return false;
+
+	if (hitEntityAtBackwardPoint2 && hitEntityAtBackwardPoint2->HasClimbable())
+		return false;
+
+	if (hitEntityAtBackwardPoint3 && hitEntityAtBackwardPoint3->HasClimbable())
+		return false;
+
+	if (hitEntityAtBackwardPoint4 && hitEntityAtBackwardPoint4->HasClimbable())
+		return false;
+
+	if (hitEntityAtBackwardPoint5 && hitEntityAtBackwardPoint5->HasClimbable())
+		return false;
+
+	return true;
+}
+
+bool CPed::CheckClimbingTheFence(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint)
+{
+	if (IsNeedFixFenceSideNormal(hitForwardPoint))
+		hitForwardPoint.normal = -hitForwardPoint.normal;
+
+	if (CheckPotentialClimbingTheFencePlaceFind(hitForwardPoint, hitBackwardPoint, hitJumpBPoint)) {
+		if (Distance(hitForwardPoint.point, hitJumpBPoint.point) < 0.25f) {
+			newClimbingJumpBPosition = (hitForwardPoint.point - hitForwardPoint.normal * 5.0f);
+
+			bIsClimbingJumpB = true;
+
+			m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+
+			return true;
+		} else {
+			bIsClimbingHighJump = false;
+
+			return false;
+		}
+	} else {
+		bIsClimbingHighJump = false;
+
+		bIsClimbingJumpB = false;
+
+		return false;
+	}
+}
+
+bool CPed::IsNeedFixFenceSideNormal(CColPoint hitForwardPoint)
+{
+	return DotProduct(hitForwardPoint.normal, GetForward()) > 0.0f;
+}
+
+bool CPed::CheckPotentialClimbingTheFencePlaceFind(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint)
+{
+	bool isSideFenceFind = false;
+	bool IsPreviousSideFenceFind = false;
+
+	CVector valueAddition = { 0.0f, 0.0f, 0.0f };
+
+	float startHitForwardPointZ = hitForwardPoint.point.z;
+
+	for (int i = 0; i < 40; i++) {
+		CEntity* hitEntity;
+
+		isSideFenceFind = CWorld::ProcessLineOfSight(hitForwardPoint.point - hitForwardPoint.normal * 2.0f + valueAddition, hitForwardPoint.point + valueAddition, hitJumpBPoint, hitEntity, true, false, false, true, false, false);
+		if (!isSideFenceFind) {
+			isSideFenceFind = CWorld::ProcessLineOfSight(hitForwardPoint.point + hitForwardPoint.normal * 2.0f + valueAddition, hitForwardPoint.point + valueAddition, hitJumpBPoint, hitEntity, true, false, false, true, false, false);
+		}
+
+		if (hitEntity && !hitEntity->HasClimbable())
+			continue;
+
+		CEntity* hitEntityFrontFence = CWorld::TestSphereAgainstWorld(hitForwardPoint.point - hitForwardPoint.normal + CVector(0.0f, 0.0f, 0.25f), 0.5f, this, true, true, true, true, true, false);
+		CEntity* hitEntityAboveFence = CWorld::TestSphereAgainstWorld(hitForwardPoint.point + CVector(0.0f, 0.0f, 0.525f), 0.5f, this, true, true, true, true, true, false);
+
+		if (hitEntityFrontFence && !hitEntityFrontFence->HasClimbable())
+			continue;
+
+		if (hitEntityAboveFence && !hitEntityAboveFence->HasClimbable())
+			continue;
+
+		valueAddition += CVector(0.0f, 0.0f, 0.01f);
+
+		if (!isSideFenceFind && !hitEntityFrontFence && !hitEntityAboveFence) {
+			if (IsClimbingHeightHigherThanHigh(hitJumpBPoint.point.z, startHitForwardPointZ)) {
+				bIsClimbingHighJump = true;
+			}
+
+			break;
+		}
+
+		IsPreviousSideFenceFind = isSideFenceFind;
+
+		hitForwardPoint.point.z = hitJumpBPoint.point.z;
+
+		if (IsClimbingHeightHigherThanPossible(hitJumpBPoint.point.z, startHitForwardPointZ)) {
+			IsPreviousSideFenceFind = false;
+
+			break;
+		}
+	}
+
+	return IsPreviousSideFenceFind;
+}
+
+void CPed::StartClimbing(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint)
+{
+	if (currentJumpGlideAnim)
+		currentJumpGlideAnim->blendDelta = -1000.0f;
+
+	bIsInTheAir = false;
+	bIsStanding = true;
+
+	CVector reverseForwardPointNormal = -hitForwardPoint.normal;
+	m_fRotationCur = reverseForwardPointNormal.Heading();
+	m_fRotationDest = reverseForwardPointNormal.Heading();
+	SetHeading(m_fRotationCur);
+
+	bAffectedByGravity = 0;
+	bUsesCollision = 0;
+
+	SetPedState(PED_CLIMBING);
+	bIsClimbing = true;
+	bIsReadyToClimbing = false;
+
+	newClimbingPosition = hitBackwardPoint.point + CVector(0.0f, 0.0f, 1.0f);
+
+	float correctedPedZOffset = 0.1f;
+
+	correctedClimbingStandPosition = (hitBackwardPoint.point + hitForwardPoint.normal * 0.6f) - CVector(0.0f, 0.0f, correctedPedZOffset);
+
+	currentClimbingHeight = hitBackwardPoint.point.z - hitForwardPoint.point.z;
+	if (currentClimbingHeight > maxHighClimbingHeight && !bIsClimbingJumpB) {
+		bIsClimbingHighJump = true;
+
+		correctedPedZOffset = 2.0f;
+		CVector correctedPedStartPosition = (hitBackwardPoint.point + hitForwardPoint.normal * 0.6f) - CVector(0.0f, 0.0f, correctedPedZOffset);
+
+		newClimbingIdlePosition = correctedPedStartPosition + CVector(0.0f, 0.0f, 0.95f);
+
+		CAnimBlendAssociation* idleClimbAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_JUMP);
+		idleClimbAssoc->SetFinishCallback(FinishHighClimbingCB, this);
+	} else {
+		if (bIsClimbingJumpB) {
+			if (bIsClimbingHighJump) {
+				correctedPedZOffset = 2.0f;
+				CVector correctedPedStartPosition = (hitForwardPoint.point + hitForwardPoint.normal * 0.325f) - CVector(0.0f, 0.0f, correctedPedZOffset);
+
+				newClimbingIdlePosition = correctedPedStartPosition + CVector(0.0f, 0.0f, 0.95f);
+
+				correctedClimbingStandPosition = (hitForwardPoint.point + hitForwardPoint.normal * 0.4f);
+
+				CAnimBlendAssociation* idleClimbAssoc = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_JUMP);
+				idleClimbAssoc->SetFinishCallback(FinishHighClimbingCB, this);
+			}
+			else {
+				correctedClimbingStandPosition = (hitForwardPoint.point + hitForwardPoint.normal * 0.3f);
+				SetPosition(correctedClimbingStandPosition);
+
+				currentClimbingJumpBAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_JUMP_B);
+				currentClimbingJumpBAnim->SetFinishCallback(FinishClimbingCB, this);
+			}
+		}
+		else {
+			SetPosition(correctedClimbingStandPosition + CVector(0.0f, 0.0f, 0.1f));
+
+			currentClimbingStandAnim = CAnimManager::AddAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CLIMBING_STAND);
+			currentClimbingStandAnim->SetFinishCallback(FinishClimbingCB, this);
+		}
+	}
+}
+
+void CPed::EndClimbing(bool bIsCancel)
+{
+	if (bIsClimbing) {
+		if (bIsCancel) {
+			if (currentClimbingIdleAnim) {
+				currentClimbingIdleAnim->blendDelta = -5.0f;
+			}
+
+			if (currentClimbingStandAnim) {
+				currentClimbingStandAnim->blendDelta = -2.5f;
+			}
+
+			if (currentClimbingJumpBAnim) {
+				currentClimbingJumpBAnim->blendDelta = -5.0f;
+			}
+
+			if (bIsClimbingIdle) {
+				SetPosition(newClimbingIdlePosition);
+			}
+			else {
+				SetPosition(correctedClimbingStandPosition);
+			}
+		}
+
+		bIsReadyToClimbing = false;
+		bIsClimbing = false;
+		bIsClimbingHighJump = false;
+		bIsClimbingIdle = false;
+		bIsClimbingPull = false;
+		bIsClimbingJumpB = false;
+		currentClimbingStandAnim = nil;
+		currentClimbingIdleAnim = nil;
+		currentClimbingJumpBAnim = nil;
+		currentJumpGlideAnim = nil;
+
+		bAffectedByGravity = 1;
+		bUsesCollision = 1;
+		m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+
+		RestorePreviousState();
+	}
+}
+#endif
 
 #ifdef COMPATIBLE_SAVES
 #define CopyFromBuf(buf, data) memcpy(&data, buf, sizeof(data)); SkipSaveBuf(buf, sizeof(data));

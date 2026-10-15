@@ -491,7 +491,6 @@ enum Config {
 // taller de tuning quedan fuera (ver .agents/plans/vice-extended-inclusion.md).
 #define VICEEXT_SWIMMING		// EnableSwimming=1: nadar sin morir (el jugador no se ahoga)
 #define VICEEXT_RECOIL			// RecoilWhenFiring=1: el disparo acusa retroceso
-#define VICEEXT_NO_CAR_BOUNCE	// PlayerDoesntBounceAwayFromMovingCar=1
 #define VICEEXT_SPRINT_HEAVY	// v1.5: esprintar con armas pesadas
 #define VICEEXT_POLICE_BIKE_LIGHTS // 6507: sirena (coronas rojo/azul) en la moto policial
 #define VICEEXT_HIDE_COPS		// v1.0 "Changed wanted system": esconderse de la policía (sección 2, bloque P1)
@@ -502,28 +501,6 @@ enum Config {
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
 #define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
 #define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
-#define VICEEXT_CROUCH			// v1.5 "Fixed ... crouching animations": agachado a pie con la tecla de la acción PED_DUCK (C) (sección 3, bloque C5)
-// R14 (12ª partida, 22/09): cuánto baja el OBJETIVO de la cámara mientras se
-// está agachado. Vive aquí porque lo usan los dos procesos de cámara (la bajada)
-// y la traza `CROUCH2` de PlayerPed.cpp (el valor que se está aplicando).
-// Historia: −0,55 (R6/H1) daba un descenso MEDIDO de sólo 0,27 m —al bajar el
-// objetivo, la cámara se separa del ped y vuelve a subir—, así que el bloque H
-// del verificador lo marcaba como "la cámara no baja agachado".
-//
-// R22 (18ª partida, 23/09): vuelve a −0,55 y el bloque H mide bien. El −0,95 se
-// puso porque con −0,55 el descenso medido se quedaba en 0,27 m: se le subió la
-// constante al doble hasta pasar el umbral del test, que es la forma más rápida
-// de romper la cámara. Y la rompió: con −0,95 el objetivo cae POR DEBAJO de la
-// cabeza agachada (la cabeza baja 0,55 m), la cámara apunta al cuerpo y, en la
-// cámara de apuntar (mucho más cerca), termina DENTRO del ped. Medido en la
-// partida del jugador (18ª): agachado + apuntar (botón derecho), `camdist=0,61`
-// en vez de los ~2 m de la cámara de apuntar, y la captura del arnés sale con
-// Tommy llenando la pantalla. Ahora la constante es la bajada REAL de la cabeza
-// y el test mide lo que de verdad importa: que la cámara no acabe dentro del
-// cuerpo (`camdist` ≥ 1,5 m agachado, con y sin apuntado).
-#define VICEEXT_CROUCH_CAM_DROP	0.55f
-#define VICEEXT_CLIMB			// bloque E1 (su features.ini trae EnableClimbing=0, pero el jugador lo pidió):
-							// saltar mirando a un borde bajo trepa con los clips CLIMB_* del mod (sección 2)
 #define VICEEXT_AIM_WALK		// v1.5: apuntando solo se camina (nunca correr/esprintar) y el agachado de
 							// andar del mod (Crouch_forward/backward) — sección 2, 5ª partida
 #define VICEEXT_ROCKET_3RD_PERSON // v3.0 "Enable third-person aiming from a rocket launcher" (su
@@ -547,7 +524,6 @@ enum Config {
 #define VICEEXT_AIM_CLASSICAXIS
 #define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
 #define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
-#define VICEEXT_BIKE_EXIT_SIDE
 #define VICEEXT_AIM_BLADE 0.70f
 
 #define VICEEXT_FIX_SILENTPATCH
@@ -586,7 +562,6 @@ enum Config {
 #define VICEEXT_NO_FLIP_BURN		// features.ini "Vehicles do not light up when flipped"
 #define VICEEXT_HEALTH_REGEN	// features.ini "Restores health to half (when player is not moving)"
 #define VICEEXT_HIDE_STARS		// features.ini "Search stars are hidden on the screen when there is no search"
-#define VICEEXT_NO_JUMP_FROM_CAR	// features.ini "The player does not jump away from a moving car"
 #define VICEEXT_STD_TURN_SIGNALS	// features.ini "Standard cars use turn signals"
 #define VICEEXT_TANK_FIRE		// features.ini "Military firing from a tank at the player"
 #define VICEEXT_GPS_COLOR		// features.ini "Change the color of the GPS by RGB"
@@ -632,6 +607,10 @@ enum Config {
 #define VICEEXT_IMPROVED_MENU_AND_INPUT
 #define VICEEXT_MORE_BUTTON_ICONS
 #define VICEEXT_PC_KEY_ICONS
+#define VICEEXT_CROUCH
+#ifdef VICEEXT_FEATURES_INI
+#define VICEEXT_CLIMBING
+#endif
 #endif
 
 // Hud, frontend and radar

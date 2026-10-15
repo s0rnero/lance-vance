@@ -1800,23 +1800,9 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	TargetCoors = CameraTarget;
 	TargetCoors.z += fTranslateCamUp;
 #ifdef VICEEXT_CROUCH
-	// R6: agachado, el objetivo de la cámara baja (antes apuntaba a la cabeza
-	// "de pie" y la cámara parecía fija).
-	// H1 (7ª partida, t=12: cámara dentro de la cabeza con −0,45): la caída
-	// real de la cabeza agachada es ~0,55.
-	//
-	// R14 (12ª partida, 22/09): el verificador midió el resultado y no llegaba
-	// (`H FALLO: la camara no baja agachado (11.41 vs 11.68)`): con −0,55 el
-	// descenso real era de 0,27 m, porque al bajar el objetivo el ángulo de la
-	// cámara cambia y ésta se separa del ped, subiendo de nuevo. Se dobla el
-	// offset (−0,95) para que el descenso medido supere el umbral de 0,4 m del
-	// bloque H; la medida exacta la vuelve a dar `CROUCH2 camz=`.
-	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->IsPlayer())
-	{
-		float odCrouchBlend = CPlayerPed::ViceExtCrouchBlend();
-		if (odCrouchBlend > 0.0f)
-			TargetCoors.z -= VICEEXT_CROUCH_CAM_DROP * odCrouchBlend;
-	}
+	float newZ = InterpFloat(m_fCurrentCameraOffsetZ, m_fTargetCameraPosZ, 8.0f);
+	m_fCurrentCameraOffsetZ = newZ;
+	TargetCoors.z -= m_fCurrentCameraOffsetZ;
 #endif
 #ifdef VICEEXT_SWIMMING
 	// H2 (7ª partida, t=176: cámara clavada en el plano del agua): nadando, el
@@ -1964,33 +1950,6 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	Front.x = Cos(Alpha) * -Cos(Beta);
 	Front.y = Cos(Alpha) * -Sin(Beta);
 	Front.z = Sin(Alpha);
-	// PORTADO — ClassicAXIS (MIT, © 2022 Classic Axis VC Team)
-	//   gta_vc_browser/tmp/extsrc/CamNew.cpp:82-86 y :215-220
-	//   (ley de a PIE: «Process_CrouchOffset(duckOffset)» + el clamp de agua)
-	// Qué se toma, las dos cosas que el mod hace en la ley de a pie y que en este
-	//   motor solo estaban en la ley de APUNTADO (o no estaban):
-	//   (a) CamNew.cpp:82-86 — `duckOffset` (estado de la camara, CamNew.cpp:45) se
-	//       interpola con la MISMA función que la del apuntado y se SUMA a la z del
-	//       objetivo: `targetCoords.z += duckOffset`. Al agacharse el objetivo baja
-	//       media unidad, que es lo que hunde el encuadre.
-	//   (b) CamNew.cpp:215-220 — si el ped toca el agua y la camara queda por debajo
-	//       del nivel + 0,6: near clip a 0,2, se rehace el `Source` quedándose SOLO
-	//       con la distancia horizontal, y la z se clava en nivel + 0,6. O sea la
-	//       camara nunca se va bajo el agua: se queda pegada a la superficie. El
-	//       `mod_Buoyancy.m_waterlevel` del mod es la variable global de agua; aqui se
-	//       pregunta con `CWaterLevel::GetWaterLevel`, que es como lo consulta el motor.
-	// Adaptación: se reutiliza `Process_AimWeaponCrouchOffset` tal cual (ya calcula
-	//   el `end = -0.5f + ((maxFOV-FOV)/minFOV*maxFOV)/100` del mod, CamNew.cpp:454-455)
-	//   con un `duckOffset` propio de esta ley, que es como el mod lleva uno por
-	//   `CCamNew`. `modernCamera` del mod no se aplica (decision 5.4c).
-	// Medible: criterio PASS = agachado el encuadre baja ~0,5 m y vuelve al soltar
-	//   (FALLO si no se mueve); en agua la camara no se hunde y el near clip va a 0,2
-	//   (FALLO si se ve el corte del agua o la camara queda bajo la superficie).
-#ifdef VICEEXT_AIM_CLASSICAXIS
-	static float odWalkDuckOffset = 0.0f;
-	Process_AimWeaponCrouchOffset(odWalkDuckOffset);
-	TargetCoors.z += odWalkDuckOffset;
-#endif
 	Source = TargetCoors - Front*CamDist;
 #ifdef VICEEXT_SWIMMING
 	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->bTouchingWater) {
@@ -6277,15 +6236,9 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	TargetCoors = DoAverageOnVector(TargetCoors);
 	TargetCoors.z += BaseOffset;	// add offset so alpha evens out to 0
 #ifdef VICEEXT_CROUCH
-	// R6/H1: agachado, la cámara baja con el ped. R14: offset a −0,95 (el bloque H
-	// midió que con −0,55 el descenso real se quedaba en 0,27 m; ver el otro
-	// proceso, donde está la explicación completa).
-	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->IsPlayer())
-	{
-		float odCrouchBlend = CPlayerPed::ViceExtCrouchBlend();
-		if (odCrouchBlend > 0.0f)
-			TargetCoors.z -= VICEEXT_CROUCH_CAM_DROP * odCrouchBlend;
-	}
+	float newZ = InterpFloat(m_fCurrentCameraOffsetZ, m_fTargetCameraPosZ, 8.0f);
+	m_fCurrentCameraOffsetZ = newZ;
+	TargetCoors.z -= m_fCurrentCameraOffsetZ;
 #endif
 #ifdef VICEEXT_SWIMMING
 	// H2: nadando, el objetivo sube a la superficie (ver el otro proceso).
