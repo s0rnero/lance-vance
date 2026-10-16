@@ -300,6 +300,12 @@ CEntity::HasPreRenderEffects(void)
 	   GetModelIndex() == MI_GRENADE ||
 	   GetModelIndex() == MI_MOLOTOV ||
 	   GetModelIndex() == MI_MISSILE ||
+#ifdef VICEEXT_WEAPON_RCGRENADE
+	   GetModelIndex() == MI_RCGRENADE ||
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	   GetModelIndex() == MI_GR_LAUNCH_GREN ||
+#endif
 	   GetModelIndex() == MI_BEACHBALL ||
 	   IsGlass(GetModelIndex()) ||
 	   IsObject() && ((CObject*)this)->bIsPickup ||
@@ -366,7 +372,13 @@ CEntity::PreRender(void)
 			CPickups::DoPickUpEffects(this);
 			GetMatrix().UpdateRW();
 			UpdateRwFrame();
+#if defined VICEEXT_WEAPON_RCGRENADE && defined VICEEXT_WEAPON_GRENADE_LAUNCHER
+		} else if (GetModelIndex() == MI_GRENADE || GetModelIndex() == MI_RCGRENADE || GetModelIndex() == MI_GR_LAUNCH_GREN) {
+#elif defined VICEEXT_WEAPON_RCGRENADE
+		} else if (GetModelIndex() == MI_GRENADE || GetModelIndex() == MI_RCGRENADE) {
+#else
 		} else if (GetModelIndex() == MI_GRENADE) {
+#endif
 			CMotionBlurStreaks::RegisterStreak((uintptr)this,
 				100, 100, 100,
 				GetPosition() - 0.07f * TheCamera.GetRight(),
@@ -773,6 +785,13 @@ CEntity::SetRwObjectAlpha(int32 alpha)
 		}
 	}
 }
+
+#ifdef VICEEXT_CLIMBING
+bool CEntity::HasClimbable()
+{
+	return !bIsStatic && ((m_modelIndex < MI_BRASS_KNUCKLES || m_modelIndex > MI_MINIGUN2) && m_modelIndex != MI_BEACHBALL);
+}
+#endif
 
 bool IsEntityPointerValid(CEntity* pEntity)
 {

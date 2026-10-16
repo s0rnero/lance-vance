@@ -382,6 +382,9 @@ public:
 	void ActivateBomb(void);
 	void ActivateBombWhenEntered(void);
 	void KillPedsInVehicle(void);
+#ifdef VICEEXT_FIRST_PERSON
+	bool IsOpenTopVehicle(void);
+#endif
 
 	void SetComponentAtomicAlpha(RpAtomic *atomic, int32 alpha);
 	void UpdateClumpAlpha(void);

@@ -5,62 +5,169 @@
 #define VANILLA_DEFINES
 #endif
 
+#define VICEEXT_VICE_EXTENDED
+
+#ifdef VICEEXT_VICE_EXTENDED
+enum Config {
+	NUMPLAYERS = 1,
+
+	NUMCDIMAGES = 6,
+	MAX_CDIMAGES = 32,
+	MAX_CDCHANNELS = 5,
+
+	MODELINFOSIZE = 10000,
+	TXDSTORESIZE = 1500,
+	COLSTORESIZE = 100,
+	EXTRADIRSIZE = 512,
+	CUTSCENEDIRSIZE = 512,
+
+	SIMPLEMODELSIZE = 10000,
+	TIMEMODELSIZE = 10000,
+	CLUMPMODELSIZE = 100,
+	WEAPONMODELSIZE = 77,
+	PEDMODELSIZE = 130,
+	VEHICLEMODELSIZE = 210,
+	TWODFXSIZE = 3000,
+
+	MAXVEHICLESLOADED = 50,
+
+	NUMOBJECTINFO = 210,
+
+	NUMCUTSCENEOBJECTS = 50,
+
+	NUMANIMBLOCKS = 40,
+	NUMANIMATIONS = 512,
+
+	NUMTEMPOBJECTS = 40,
+
+	NUM_PATHNODES = 9650,
+	NUM_CARPATHLINKS = 3500,
+	NUM_MAPOBJECTS = 1250,
+	NUM_PATHCONNECTIONS = 20400,
+	NUM_WANTEDPATHNODES = 20,
+	NUM_WANTEDPATHS = 100,
+
+	NUMALPHALIST = 20,
+	NUMBOATALPHALIST = 20,
+	NUMALPHAENTITYLIST = 2000,
+	NUMALPHAUNTERWATERENTITYLIST = 30,
+	NUMCOLCACHELINKS = 50,
+	NUMREFERENCES = 800,
+
+	NUMAUDIOZONES = 14,
+	NUMINFOZONES = 169,
+	NUMMAPZONES = 39,
+	NUMNAVIGZONES = 20,
+
+	NUMATTRIBZONES = 704,
+
+	NUMOCCLUSIONVOLUMES = 350,
+	NUMACTIVEOCCLUDERS = 48,
+
+	PATHNODESIZE = 4500,
+
+	NUMWEATHERS = 7,
+	NUMHOURS = 24,
+
+	NUMEXTRADIRECTIONALS = 4,
+	NUMANTENNAS = 8,
+	NUMCORONAS = 2000,
+	NUMPOINTLIGHTS = 32,
+	NUM3DMARKERS = 32,
+	NUMBRIGHTLIGHTS = 32,
+	NUMSHINYTEXTS = 32,
+	NUMMONEYMESSAGES = 16,
+	NUMPICKUPMESSAGES = 16,
+	NUMBULLETTRACES = 16,
+	NUMMBLURSTREAKS = 4,
+	NUMSKIDMARKS = 32,
+
+	NUMONSCREENCLOCKS = 1,
+	NUMONSCREENCOUNTERS = 3,
+	NUMRADARBLIPS = 300,
+	NUMGENERALPICKUPS = 320,
+	NUMSCRIPTEDPICKUPS = 100,
+	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
+	NUMCOLLECTEDPICKUPS = 100,
+	NUMPACMANPICKUPS = 256,
+	NUMEVENTS = 64,
+
+	NUM_CARGENS = 185,
+
+	NUM_PATH_NODES_IN_AUTOPILOT = 8,
+
+	NUM_ACCIDENTS = 20,
+	NUM_FIRES = 40,
+	NUM_GARAGES = 35,
+	NUM_PROJECTILES = 32,
+
+	NUM_GLASSPANES = 45,
+	NUM_GLASSENTITIES = 32,
+	NUM_WATERCANNONS = 3,
+
+	NUMPEDROUTES = 200,
+	NUMPHONES = 50,
+	NUMPEDGROUPS = 67,
+	NUMMODELSPERPEDGROUP = 16,
+	MAXZONEPEDSLOADED = 8,
+	NUMSHOTINFOS = 100,
+
+	NUMROADBLOCKS = 300,
+	NUM_SCRIPT_ROADBLOCKS = 16,
+
+	NUMVISIBLEENTITIES = 2000,
+	NUMINVISIBLEENTITIES = 150,
+
+	NUM_AUDIOENTITY_EVENTS = 4,
+	NUM_PED_COMMENTS_SLOTS = 20,
+
+	NUM_SOUND_QUEUES = 2,
+	NUM_AUDIOENTITIES = 250,
+
+	NUM_SCRIPT_MAX_ENTITIES = 40,
+
+	NUM_GARAGE_STORED_CARS = 4,
+
+	NUM_CRANES = 8,
+	NUM_ESCALATORS = 22,
+	NUM_WATER_CREATURES = 8,
+
+	NUM_EXPLOSIONS = 48,
+
+	NUM_SETPIECES = 96,
+	NUM_SHORTCUT_START_POINTS = 16
+};
+#else
 enum Config {
 	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
-	// Vice Extended añade 8 IMG propias (anims/generic/objects/peds/player/
-	// radar/vehicles/weapons) además de gta3.img. Con 8 el CdStreamAddImage
-	// petaba en el ASSERT; 12 deja margen. Coste: gOdLoose[] + un fd por imagen.
-	MAX_CDIMAGES = 12, // additional cdimages
+	MAX_CDIMAGES = 8, // additional cdimages
 	MAX_CDCHANNELS = 5,
 
-	// Vice Extended usa IDs por encima de 6500 (armas 6661-6669, coches
-	// 6500-6599). Sin subirlo, esos IDs caen fuera de ms_modelInfoPtrs y de
-	// ms_aInfoForModel: modelo/colisión nulos o tabla corrupta.
-	MODELINFOSIZE = 6700,	// 6500 vanilla, 4900 on PS2
-	// Contador de slots de TXD. El gta3.dir del port tiene 1389 entradas .txd
-	// tras importar weapons.img (pack 3) y newVehicles.img (pack 4): con 1385
-	// (que era el número justo antes de estos packs) `CTxdStore::AddTxdSlot`
-	// revienta con ASSERT(def) al cargar el directorio. Margen para los bloques
-	// que quedan (el resto de IMG del mod traen más TXD).
-	TXDSTORESIZE = 1500,
-	// 31 = las 30 .col de los mapas + GENERIC.COL (justo al límite). Vice
-	// Extended añade bryx.col, plusroad.col (objects.img) y newgen.col
-	// (COLFILE): 34 slots -> sin subirlo, CColStore::AddColSlot peta
-	// (ASSERT(def) en ColStore.cpp:48) al cargar el directorio de la IMG.
-	COLSTORESIZE = 48,
+	MODELINFOSIZE = 6500,	// 4900 on PS2
+	TXDSTORESIZE = 1385,
+	COLSTORESIZE = 31,
 	EXTRADIRSIZE = 256,
 	CUTSCENEDIRSIZE = 512,
 
 	SIMPLEMODELSIZE = 3885,
 	TIMEMODELSIZE = 385,
 	CLUMPMODELSIZE = 5,
-	// 37 armas de serie (258-294) + las 10 del mod (6660-6669, sección `weap`
-	// de su default.ide). Sin este hueco, CModelInfo::AddWeaponModel no puede
-	// crear sus CWeaponModelInfo y SetWeaponInfo escribe sobre un puntero nulo.
-	WEAPONMODELSIZE = 47,
+	WEAPONMODELSIZE = 37,
 	PEDMODELSIZE = 130,
-	VEHICLEMODELSIZE = 130, // 110 vanilla; el mod añade coches
+	VEHICLEMODELSIZE = 110,
 	TWODFXSIZE = 1210,
 
 	MAXVEHICLESLOADED = 50, // 70 on mobile
 
 	NUMOBJECTINFO = 210,
 
-#define VICEEXT_LIMITS
-#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
-
 	// Pool sizes
 	NUMPTRNODES = 50000,
 	NUMENTRYINFOS = 3200,
-#ifdef VICEEXT_LIMITS
-	NUMPEDS = 140,
-	NUMVEHICLES = 130,
-#else
 	NUMPEDS = 140,
 	NUMVEHICLES = 110,
-#endif
 	NUMBUILDINGS = 7000,
 	NUMTREADABLES = 1,
 	NUMOBJECTS = 460,
@@ -69,14 +176,8 @@ enum Config {
 	NUMCOLMODELS = 4400,
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
-	// 29 bloques de serie (28 .ifp de gta3.img + ped.ifp) + 3 del mod
-	// (deagle/steyr/rocket) + margen. cuts.img no cuenta: CutsceneMgr carga
-	// un IFP a la vez.
-	NUMANIMBLOCKS = 40,
-	// 410 de serie + 38 nuevas del ped.ifp del mod + 24 de sus bloques de
-	// moto + 2 de buddy + 12 de deagle/steyr/rocket = 486, con margen para
-	// un bloque de cuts a la vez.
-	NUMANIMATIONS = 512,
+	NUMANIMBLOCKS = 35,
+	NUMANIMATIONS = 450,
 
 	NUMTEMPOBJECTS = 40,
 
@@ -179,6 +280,7 @@ enum Config {
 	NUM_SETPIECES = 96,
 	NUM_SHORTCUT_START_POINTS = 16
 };
+#endif
 
 // We don't expect to compile for PS2 or Xbox
 // but it might be interesting for documentation purposes
@@ -388,67 +490,13 @@ enum Config {
 // los que están en 0 en su ini no se portan y los que piden su renderer o el
 // taller de tuning quedan fuera (ver .agents/plans/vice-extended-inclusion.md).
 #define VICEEXT_SWIMMING		// EnableSwimming=1: nadar sin morir (el jugador no se ahoga)
-#define VICEEXT_RECOIL			// RecoilWhenFiring=1: el disparo acusa retroceso
-#define VICEEXT_NO_CAR_BOUNCE	// PlayerDoesntBounceAwayFromMovingCar=1
-#define VICEEXT_SPRINT_HEAVY	// v1.5: esprintar con armas pesadas
 #define VICEEXT_POLICE_BIKE_LIGHTS // 6507: sirena (coronas rojo/azul) en la moto policial
 #define VICEEXT_HIDE_COPS		// v1.0 "Changed wanted system": esconderse de la policía (sección 2, bloque P1)
-#define VICEEXT_FIRST_PERSON	// v1.5 "First-person view": conmutador de vista en 1ª persona (sección 3, bloque C1)
-#define VICEEXT_DRIVEBY_WIDE	// v1.5 "Drive-by shooting": las pistolas (una mano) valen también para disparar desde coche/moto/barco (sección 2, bloque P2)
-#define VICEEXT_WEAPON_SIGHTS	// columna 27 de su weapon.dat ("weapon sight") + su weaponSights.txd (sección 1, bloque D6)
-#define VICEEXT_HINT_KEYS		// v3.0 "PC key icons in game hints": los avisos pintan el icono de la tecla (su pcbtns.txd) en vez de su nombre (sección 1, bloque D7)
 #define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
-#define VICEEXT_MANUAL_RELOAD	// v2.5 "Reloading a weapon on the key": recarga con tecla (R por defecto) (sección 3, bloque C3.1)
 #define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
-#define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
-#define VICEEXT_CROUCH			// v1.5 "Fixed ... crouching animations": agachado a pie con la tecla de la acción PED_DUCK (C) (sección 3, bloque C5)
-// R14 (12ª partida, 22/09): cuánto baja el OBJETIVO de la cámara mientras se
-// está agachado. Vive aquí porque lo usan los dos procesos de cámara (la bajada)
-// y la traza `CROUCH2` de PlayerPed.cpp (el valor que se está aplicando).
-// Historia: −0,55 (R6/H1) daba un descenso MEDIDO de sólo 0,27 m —al bajar el
-// objetivo, la cámara se separa del ped y vuelve a subir—, así que el bloque H
-// del verificador lo marcaba como "la cámara no baja agachado".
-//
-// R22 (18ª partida, 23/09): vuelve a −0,55 y el bloque H mide bien. El −0,95 se
-// puso porque con −0,55 el descenso medido se quedaba en 0,27 m: se le subió la
-// constante al doble hasta pasar el umbral del test, que es la forma más rápida
-// de romper la cámara. Y la rompió: con −0,95 el objetivo cae POR DEBAJO de la
-// cabeza agachada (la cabeza baja 0,55 m), la cámara apunta al cuerpo y, en la
-// cámara de apuntar (mucho más cerca), termina DENTRO del ped. Medido en la
-// partida del jugador (18ª): agachado + apuntar (botón derecho), `camdist=0,61`
-// en vez de los ~2 m de la cámara de apuntar, y la captura del arnés sale con
-// Tommy llenando la pantalla. Ahora la constante es la bajada REAL de la cabeza
-// y el test mide lo que de verdad importa: que la cámara no acabe dentro del
-// cuerpo (`camdist` ≥ 1,5 m agachado, con y sin apuntado).
-#define VICEEXT_CROUCH_CAM_DROP	0.55f
-#define VICEEXT_CLIMB			// bloque E1 (su features.ini trae EnableClimbing=0, pero el jugador lo pidió):
-							// saltar mirando a un borde bajo trepa con los clips CLIMB_* del mod (sección 2)
-#define VICEEXT_AIM_WALK		// v1.5: apuntando solo se camina (nunca correr/esprintar) y el agachado de
-							// andar del mod (Crouch_forward/backward) — sección 2, 5ª partida
-#define VICEEXT_ROCKET_3RD_PERSON // v3.0 "Enable third-person aiming from a rocket launcher" (su
-							// features.ini: RocketLauncherThirdPersonAiming=1): el lanzacohetes apunta en
-							// TERCERA persona (no entra en el modo francotirador/1ª persona que clava al
-							// jugador en el sitio) y se puede andar apuntando. El misil sigue saliendo
-							// hacia donde mira la cámara (`ProjectileInfo` usa su matriz).
-// ClassicAXIS (gennariarmando/DK22Pac, SIN LICENSE → reimplementación con atribución):
-// su sección [ClassicAxis] del INI de 2022 (`mods/Classic AXIS/ClassicAxisVC.ini`)
-// y su ley de cámara propia de apuntado (`CamNew.cpp Process_AimWeapon`,
-// cláusula 2 / ítem 4 del 12-handoff). Sin este define no se compila ninguna
-// de las leyes de ClassicAXIS (plan `apuntado-classicaxis-100` §10.2, B0-B11).
-// Lo que NO entra, y por qué (decisiones del jugador del 27/09):
-//   · Stick crudo sin zona muerta  → se queda `LookAroundLeftRight()` (§5.4b)
-//   · `modernCamera`              → fuera, además su default se desconoce (§5.4c)
-//   · Acelerador horizontal para el ratón vertical → fuera, es un typo del mod (§5.4d)
-//   · Botón de recentrar        → fuera, el jugador lo quitó en ve65 (§5.4e)
-//   · `StoriesAimingCoords`       → sin conmutador natural, sin implementación (§9)
-//   · Ley de coche                → se queda la nuestra, no es del mod (§5.1a)
-//   · Near-clip dual              → es del GeniusZ, otro carril (§5.6)
-#define VICEEXT_AIM_CLASSICAXIS
 #define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
 #define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
-#define VICEEXT_BIKE_EXIT_SIDE
-#define VICEEXT_AIM_BLADE 0.70f
 
 #define VICEEXT_FIX_SILENTPATCH
 #define VICEEXT_FIX_WFP
@@ -456,8 +504,6 @@ enum Config {
 #define VICEEXT_FIX_FV_ROTOR
 #define VICEEXT_POLICE_BIKE
 #define VICEEXT_NO_WHEEL_PIERCE
-#define VICEEXT_SKIP_PHONE_CALL
-#define VICEEXT_MOD_SCRIPT		// familia 13: los 10 opcodes propios de su `main.scm` (comandos 4000-4009 = `0x0FA0`-`0x0FA9`) en el interprete
 #define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
 // D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
@@ -474,11 +520,6 @@ enum Config {
 #define VICEEXT_EXTRA_CHEATS
 #define VICEEXT_CAR_DEATH
 #define VICEEXT_CAR_LIGHTS
-#define VICEEXT_ALT_SIT			// v2.0 "Walking on ALT for the keyboard" + v1.0 "Seated movement":
-							// andar con la tecla de la accion `PED_WALK` (LALT), decidido por su
-							// API `CPad::GetPedWalk()` (`#ifdef IMPROVED_MENU_AND_INPUT`); el
-							// sentarse (attractors + clips SEAT_*, con `SEAT_rvrs` del mod) ya
-							// estaba: `PedAttractor.cpp` del port es identico al suyo
 #define VICEEXT_GANG_AIM
 #define VICEEXT_MOON			// v1.5 "Moving Moon. Its position depends on the position of the Sun":
 							// la luna se coloca en `-sunDir*150` (portado de su `Clouds.cpp`,
@@ -493,7 +534,6 @@ enum Config {
 #define VICEEXT_NO_FLIP_BURN		// features.ini "Vehicles do not light up when flipped"
 #define VICEEXT_HEALTH_REGEN	// features.ini "Restores health to half (when player is not moving)"
 #define VICEEXT_HIDE_STARS		// features.ini "Search stars are hidden on the screen when there is no search"
-#define VICEEXT_NO_JUMP_FROM_CAR	// features.ini "The player does not jump away from a moving car"
 #define VICEEXT_STD_TURN_SIGNALS	// features.ini "Standard cars use turn signals"
 #define VICEEXT_TANK_FIRE		// features.ini "Military firing from a tank at the player"
 #define VICEEXT_GPS_COLOR		// features.ini "Change the color of the GPS by RGB"
@@ -506,15 +546,47 @@ enum Config {
 #define VICEEXT_CAR_WHEEL_KEEP	// v2.0 "The front wheels of the car retain their current rotation after exiting the car"
 #define VICEEXT_CAR_FOUR_COLORS	// v2.5 "Support for four colors for added vehicles"
 #define VICEEXT_GAS_STATION_BLOW	// v2.6 "A gas station will explode if a vehicle crashes into it"
-#define VICEEXT_PROJECTILE_BLOW	// v2.6 "A projectile will explode if you shoot it"
 #define VICEEXT_DISTANT_LIGHTS	// v2.6 "Distant lights. Can be disabled in features.ini": portado de
 							// su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): los dos
 							// pools enteros, coronas hasta 530 m / el far clip
 #define VICEEXT_COP_COVER		// v2.6 "Cops can crouch down first and then go to cover during the wanted"
 #define VICEEXT_HELI_HEALTH		// v2.0 "Reduced health of police helicopter"
-#define VICEEXT_AIM_SENSITIVITY	// 2506 "Aim sensitivity fix"
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
 #define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
+#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
+
+#ifdef VICEEXT_VICE_EXTENDED
+#define VICEEXT_UTILS
+#define VICEEXT_OPCODES
+#define VICEEXT_IMPROVED_TECH_PART
+#define VICEEXT_DISPLAYED_COLLECTIBLES
+#define VICEEXT_SECOND_SAMPLE_BANK
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+#define VICEEXT_NEW_WEAPONS
+#ifdef VICEEXT_NEW_WEAPONS
+#define VICEEXT_WEAPON_RCGRENADE
+#define VICEEXT_WEAPON_AK47
+#define VICEEXT_WEAPON_M16
+#define VICEEXT_WEAPON_SHOTGUN2
+#define VICEEXT_WEAPON_UZIOLD
+#define VICEEXT_WEAPON_DEAGLE
+#define VICEEXT_WEAPON_BERETTA
+#define VICEEXT_WEAPON_STEYR
+#define VICEEXT_WEAPON_GRENADE_LAUNCHER
+#endif
+#endif
+#define VICEEXT_IMPROVED_MENU_AND_INPUT
+#define VICEEXT_MORE_BUTTON_ICONS
+#define VICEEXT_PC_KEY_ICONS
+#define VICEEXT_CROUCH
+#ifdef VICEEXT_FEATURES_INI
+#define VICEEXT_CLIMBING
+#define VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
+#endif
+#define VICEEXT_FIRING_AND_AIMING
+#define VICEEXT_FIRST_PERSON
+#define VICEEXT_WEAPON_SIGHT
+#endif
 
 // Hud, frontend and radar
 #define PC_MENU
@@ -526,11 +598,14 @@ enum Config {
 //#	define PS2_MENU_USEALLPAGEICONS
 #else
 #	define MAP_ENHANCEMENTS			// Adding waypoint and better mouse support
-#	if defined(XINPUT) || defined(GTA_HANDHELD)
+#	if defined(XINPUT) || defined(GTA_HANDHELD) || defined(VICEEXT_IMPROVED_MENU_AND_INPUT)
 #		define GAMEPAD_MENU		// Add gamepad menu
 #	endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#	define CIRCLE_BACK_BUTTON
+#else
 #	define TRIANGLE_BACK_BUTTON
-//#	define CIRCLE_BACK_BUTTON
+#endif
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
 // PORTADO (SilentPatch :4086, ver CMenuManager::DrawQuitGameScreen): el outro
 // dura ≈2,5 s legibles (75 ticks × 33 ms) en vez de 750 ms.
@@ -543,7 +618,9 @@ enum Config {
 #		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
 #		define CUTSCENE_BORDERS_SWITCH
 #		define MULTISAMPLING		// adds MSAA option
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 #		define INVERT_LOOK_FOR_PAD // enable the hidden option
+#endif
 #		define PED_CAR_DENSITY_SLIDERS
 #	endif
 #endif

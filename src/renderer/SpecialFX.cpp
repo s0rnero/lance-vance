@@ -1,7 +1,6 @@
 #include "common.h"
 
 #include "SpecialFX.h"
-#include "ViceExtFeatures.h"
 #include "RenderBuffer.h"
 #include "Timer.h"
 #include "Sprite.h"
@@ -388,11 +387,6 @@ void CBulletTraces::Init(void)
 
 void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint32 lifeTime, uint8 visibility)
 {
-	// features.ini `DisableBulletTraces` (familia 11): la clave del mod viene a 0
-	// (trazas encendidas), asi que sin fichero o sin la clave se sigue igual.
-	if (ViceExtFeatures::On("DisableBulletTraces", false))
-		return;
-
 	int32 enabledCount;
 	uint32 modifiedLifeTime;
 	int32 nextSlot;
@@ -446,10 +440,10 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, float thickness, uint
 
 void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, class CEntity* shooter)
 {
-	// features.ini `DisableBulletTraces` (familia 11): la entrada que usa el
-	// arma. Es la puerta de verdad: con la clave a 1 no se crea ninguna traza.
-	if (ViceExtFeatures::On("DisableBulletTraces", false))
+#ifdef VICEEXT_FEATURES_INI
+	if (bDisableBulletTraces)
 		return;
+#endif
 
 	CPhysical* player;
 	float speed;
@@ -478,8 +472,12 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, cla
 	case WEAPONTYPE_SHOTGUN:
 	case WEAPONTYPE_SPAS12_SHOTGUN:
 	case WEAPONTYPE_STUBBY_SHOTGUN:
-	case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
 	case WEAPONTYPE_SHOTGUN2:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	case WEAPONTYPE_DEAGLE:
+#endif
 		CBulletTraces::AddTrace(start, end, 0.7f, 1000, 200);
 		break;
 	case WEAPONTYPE_M4:
@@ -489,9 +487,15 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, cla
 	case WEAPONTYPE_M60:
 	case WEAPONTYPE_MINIGUN:
 	case WEAPONTYPE_HELICANNON:
-	case WEAPONTYPE_AK47:	// Vice Extended
+#ifdef VICEEXT_WEAPON_AK47
+	case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 	case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 	case WEAPONTYPE_STEYR:
+#endif
 		CBulletTraces::AddTrace(start, end, 1.0f, 2000, 220);
 		break;
 	default:

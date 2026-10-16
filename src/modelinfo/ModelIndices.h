@@ -467,19 +467,38 @@ enum
 
 	NUM_DEFAULT_MODELS,// = 300
 
-	// Vice Extended: modelos de arma del mod (sección `weap` de su
-	// default.ide). Van DESPUÉS de NUM_DEFAULT_MODELS para no desplazar los
-	// IDs 295-300, que sí son consecutivos de verdad.
-	MI_RCGRENADE = 6660,
-	MI_AK47,
-	MI_M16,
-	MI_SHOTGUN2,
-	MI_UZIOLD,
-	MI_DESERT_EAGLE,
-	MI_BERETTA,
-	MI_STEYR,
-	MI_GR_LAUNCH,
-	MI_GR_GRENADE, // grenade2: el proyectil del lanzagranadas
+#ifdef VICEEXT_NEW_WEAPONS
+	MI_FIRST_NEW_WEAPON = 6660,
+#ifdef VICEEXT_WEAPON_RCGRENADE
+	MI_RCGRENADE = MI_FIRST_NEW_WEAPON,
+#endif
+#ifdef VICEEXT_WEAPON_AK47
+	MI_AK47 = MI_FIRST_NEW_WEAPON + 1,
+#endif
+#ifdef VICEEXT_WEAPON_M16
+	MI_M16 = MI_FIRST_NEW_WEAPON + 2,
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+	MI_SHOTGUN2 = MI_FIRST_NEW_WEAPON + 3,
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+	MI_UZIOLD = MI_FIRST_NEW_WEAPON + 4,
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	MI_DEAGLE = MI_FIRST_NEW_WEAPON + 5,
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+	MI_BERETTA = MI_FIRST_NEW_WEAPON + 6,
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+	MI_STEYR = MI_FIRST_NEW_WEAPON + 7,
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	MI_GR_LAUNCH = MI_FIRST_NEW_WEAPON + 8,
+	MI_GR_LAUNCH_GREN = MI_FIRST_NEW_WEAPON + 9,
+#endif
+	NUM_NEW_WEAPONS,
+#endif
 
 	// Vice Extended: vehículos nuevos (sus IDs en newVehicles.ide,
 	// 6500-6507). Tampoco son consecutivos con los vanilla.

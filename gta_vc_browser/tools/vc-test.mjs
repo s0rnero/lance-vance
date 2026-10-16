@@ -55,7 +55,7 @@ function suiteEstatica() {
   } else {
     const m = motorServido();
     motor = m;
-    paso('versión con marca en web/lib/index.js', /\d{4}-\d\d-\d\d-ve\d+/.test(m.version), m.version);
+    paso('versión con marca en web/lib/index.js', /\d{4}-\d\d-\d\d-(ve\d+|13\.0-T\d+)/.test(m.version), m.version);
     paso('todas las marcas de lo implementado', m.ok,
       m.ok ? (m.salida.match(/OK: .*/) || ['todas'])[0].slice(0, 90) : ('faltan: ' + m.faltan.join(', ')));
     paso('dataTag del motor', !!m.dataTag && m.dataTag !== '?', m.dataTag);

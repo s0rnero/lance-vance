@@ -24,6 +24,9 @@
 #include "SaveBuf.h"
 #include "ondemand.h"
 #include "Timer.h"
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#include "Pad.h"
+#endif
 
 float CRadar::m_radarRange;
 sRadarTrace CRadar::ms_RadarTrace[NUMRADARBLIPS];
@@ -72,6 +75,17 @@ CSprite2d CRadar::RadioWaveSprite;
 #ifdef MAP_ENHANCEMENTS
 CSprite2d CRadar::WaypointSprite;
 #endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+CSprite2d CRadar::HouseForSaleSprite;
+CSprite2d CRadar::BombShopSprite;
+CSprite2d CRadar::RaceSprite;
+CSprite2d CRadar::StoreSprite;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+CSprite2d CRadar::PackageSprite;
+CSprite2d CRadar::JumpSprite;
+CSprite2d CRadar::RampageSprite;
+#endif
 
 CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = { 
 	nil,
@@ -117,6 +131,17 @@ CSprite2d *CRadar::RadarSprites[RADAR_SPRITE_COUNT] = {
 #ifdef MAP_ENHANCEMENTS
 	&WaypointSprite,
 #endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	&HouseForSaleSprite,
+	&BombShopSprite,
+	&RaceSprite,
+	&StoreSprite,
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	&PackageSprite,
+	&JumpSprite,
+	&RampageSprite,
+#endif
 };
 
 // Why this doesn't coincide with world coordinates i don't know
@@ -140,6 +165,9 @@ CRGBA CRadar::ArrowBlipColour1;
 CRGBA CRadar::ArrowBlipColour2;
 int16 CRadar::MapLegendCounter;
 int16 CRadar::MapLegendList[NUM_MAP_LEGENDS];
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+int32 CRadar::RadarZoomOutTimer;
+#endif
 #ifdef MAP_ENHANCEMENTS
 int CRadar::TargetMarkerId = -1;
 CVector CRadar::TargetMarkerPos;
@@ -678,6 +706,27 @@ void CRadar::DrawMap()
 {
 	if (!TheCamera.m_WideScreenOn && CHud::m_Wants_To_Draw_Hud) {
 		CalculateCachedSinCos();
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if (CPad::GetPad(0)->GetRadarZoomOut())
+			RadarZoomOutTimer = CTimer::GetTimeInMilliseconds();
+
+		if (CTimer::GetTimeInMilliseconds() < RadarZoomOutTimer + 2000) {
+			float maxRange = FindPlayerVehicle() ? RADAR_MAX_RANGE + 150.0f : RADAR_MAX_RANGE;
+			m_radarRange = InterpFloat(m_radarRange, maxRange, 5.0);
+		} else {
+			if (FindPlayerVehicle()) {
+				float speed = FindPlayerSpeed().Magnitude();
+				if (speed < RADAR_MIN_SPEED)
+					m_radarRange = InterpFloat(m_radarRange, RADAR_MIN_RANGE, 5.0);
+				else if (speed < RADAR_MAX_SPEED) {
+					int newRadarRange = (speed - RADAR_MIN_SPEED)/(RADAR_MAX_SPEED-RADAR_MIN_SPEED) * (RADAR_MAX_RANGE-RADAR_MIN_RANGE) + RADAR_MIN_RANGE;
+					m_radarRange = InterpFloat(m_radarRange, newRadarRange, 5.0f);
+				} else
+					m_radarRange = InterpFloat(m_radarRange, RADAR_MAX_RANGE, 5.0);
+			} else
+				m_radarRange = InterpFloat(m_radarRange, RADAR_MIN_RANGE, 5.0);
+		}
+#else
 		if (FindPlayerVehicle()) {
 			float speed = FindPlayerSpeed().Magnitude();
 			if (speed < RADAR_MIN_SPEED)
@@ -689,6 +738,7 @@ void CRadar::DrawMap()
 		}
 		else
 			m_radarRange = RADAR_MIN_RANGE;
+#endif
 
 		vec2DRadarOrigin = CVector2D(FindPlayerCentreOfWorld_NoSniperShift());
 		if (FrontEndMenuManager.m_PrefsRadarMode != 1)
@@ -1084,7 +1134,11 @@ CRadar::LoadTextures()
 	KCabsSprite.SetTexture("kcabs");
 	LovefistSprite.SetTexture("lovefist");
 	PrintworksSprite.SetTexture("printworks");
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	PropertySprite.SetTexture("business");
+#else
 	PropertySprite.SetTexture("property");
+#endif
 	SunYardSprite.SetTexture("SunYard");
 	SpraySprite.SetTexture("spray");
 	TShirtSprite.SetTexture("tshirt");
@@ -1145,6 +1199,17 @@ CRadar::LoadTextures()
 #endif
 #endif
 	}
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	HouseForSaleSprite.SetTexture("property");
+	BombShopSprite.SetTexture("bomb");
+	RaceSprite.SetTexture("race");
+	StoreSprite.SetTexture("store");
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	PackageSprite.SetTexture("package");
+	JumpSprite.SetTexture("jump");
+	RampageSprite.SetTexture("rampage");
 #endif
 	CTxdStore::PopCurrentTxd();
 }
@@ -1342,6 +1407,17 @@ void CRadar::Shutdown()
 	RadioWaveSprite.Delete();
 #ifdef MAP_ENHANCEMENTS
 	WaypointSprite.Delete();
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	HouseForSaleSprite.Delete();
+	BombShopSprite.Delete();
+	RaceSprite.Delete();
+	StoreSprite.Delete();
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	PackageSprite.Delete();
+	JumpSprite.Delete();
+	RampageSprite.Delete();
 #endif
 	RemoveRadarSections();
 }
@@ -1767,9 +1843,11 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 		case RADAR_SPRITE_PRINTWORKS:
 			text = TheText.Get("LG_20");
 		break;
+#ifndef VICEEXT_IMPROVED_TECH_PART
 		case RADAR_SPRITE_PROPERTY:
 			text = TheText.Get("LG_21");
 		break;
+#endif
 		case RADAR_SPRITE_SUNYARD:
 			text = TheText.Get("LG_36");
 		break;
@@ -1816,6 +1894,32 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
         case RADAR_SPRITE_WAYPOINT:
 			text = TheText.Get("LG_38");
 		break;
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		case RADAR_SPRITE_HOUSE_FOR_SALE:
+		case RADAR_SPRITE_PROPERTY:
+			text = TheText.Get("LG_39");
+		break;
+		case RADAR_SPRITE_BOMB_SHOP:
+			text = TheText.Get("LG_40");
+		break;
+		case RADAR_SPRITE_RACE:
+			text = TheText.Get("LG_41");
+		break;
+		case RADAR_SPRITE_STORE:
+			text = TheText.Get("LG_42");
+		break;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+		case RADAR_SPRITE_PACKAGE:
+			text = TheText.Get("LG_43");
+			break;
+		case RADAR_SPRITE_STUNT:
+			text = TheText.Get("LG_44");
+			break;
+		case RADAR_SPRITE_RAMPAGE:
+			text = TheText.Get("LG_45");
+			break;
 #endif
 		default:
 		break;

@@ -1127,6 +1127,15 @@ ProcessSlowMode(void)
 	int16 L3 = CPad::GetPad(0)->NewState.LeftShock;
 	int16 R3 = CPad::GetPad(0)->NewState.RightShock;
 	int16 networktalk = CPad::GetPad(0)->NewState.NetworkTalk;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	int16 walk = CPad::GetPad(0)->NewState.bWalk;
+	int16 reload = CPad::GetPad(0)->NewState.bReload;
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	int16 leftTurnSignals = CPad::GetPad(0)->NewState.bLeftTurnSignals;
+	int16 rightTurnSignals = CPad::GetPad(0)->NewState.bRightTurnSignals;
+	int16 emergencyLights = CPad::GetPad(0)->NewState.bEmergencyLights;
+#endif
 	int16 stop = true;
 	
 	do
@@ -1190,6 +1199,15 @@ ProcessSlowMode(void)
 	CPad::GetPad(0)->NewState.LeftShock = L3;
 	CPad::GetPad(0)->NewState.RightShock = R3;
 	CPad::GetPad(0)->NewState.NetworkTalk = networktalk;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	CPad::GetPad(0)->NewState.bWalk = walk;
+	CPad::GetPad(0)->NewState.bReload = reload;
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	CPad::GetPad(0)->NewState.bLeftTurnSignals = leftTurnSignals;
+	CPad::GetPad(0)->NewState.bRightTurnSignals = rightTurnSignals;
+	CPad::GetPad(0)->NewState.bEmergencyLights = emergencyLights;
+#endif
 }
 
 

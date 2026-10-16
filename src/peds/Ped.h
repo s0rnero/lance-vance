@@ -328,6 +328,13 @@ enum PedState
 	PED_GETUP,
 	PED_STAGGER,
 	PED_DIVE_AWAY,
+#ifdef VICEEXT_CLIMBING
+	PED_CLIMBING,
+#endif
+
+#ifdef VICEEXT_CROUCH
+	PED_ROLL,
+#endif
 
 	PED_STATES_NO_ST,
 	PED_ENTER_TRAIN,
@@ -650,6 +657,44 @@ public:
 	CVector m_vecSpotToGuard;
 	float m_radiusToGuard;
 
+#ifdef VICEEXT_CLIMBING
+	static bool bClimbingInInteriors;
+	static bool bClimbingOnVehicles;
+	static bool bClimbingPeds;
+	static float maxPossibleClimbingHeight;
+	static float maxPossibleCheckHeightForPeds;
+	static float maxHighClimbingHeight;
+	static float highClimbingOffsetSpeed;
+	static float playerVerticalVelocityAtWhichStartsToFall;
+
+	bool bIsReadyToClimbing;
+
+	bool bIsClimbing;
+
+	float currentClimbingHeight;
+	CVector newClimbingPosition;
+
+	CVector correctedClimbingStandPosition;
+	CAnimBlendAssociation* currentClimbingStandAnim;
+
+	bool bIsStartHighClimbing;
+	bool bIsClimbingHighJump;
+	bool bIsClimbingIdle;
+	bool bIsClimbingPull;
+	CVector newClimbingIdlePosition;
+	CVector newStartClimbingIdlePosition;
+	CAnimBlendAssociation* currentClimbingIdleAnim;
+
+	bool bIsClimbingJumpB;
+	CVector newStartClimbingJumpBPosition;
+	CVector newClimbingJumpBPosition;
+	CAnimBlendAssociation* currentClimbingJumpBAnim;
+
+	CAnimBlendAssociation* currentJumpGlideAnim;
+
+	float m_tJumpAllowedTimer;
+#endif
+
 	static void *operator new(size_t) throw();
 	static void *operator new(size_t, int) throw();
 	static void operator delete(void*, size_t) throw();
@@ -657,6 +702,25 @@ public:
 
 	CPed(uint32 pedType);
 	~CPed(void);
+
+#ifdef VICEEXT_CLIMBING
+	bool CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint);
+	bool CheckObjectFrontPlayer(CColPoint& hitForwardPoint);
+	bool CheckObjectAbovePlayer(CColPoint& hitForwardPoint);
+	bool CheckPotentialClimbingPlaceFind(CColPoint hitForwardPoint, CColPoint& hitBackwardPoint);
+	bool CheckClimbingPlaceFree(CColPoint hitBackwardPoint);
+
+	bool CheckClimbingTheFence(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint);
+	bool IsNeedFixFenceSideNormal(CColPoint hitForwardPoint);
+	bool CheckPotentialClimbingTheFencePlaceFind(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint);
+
+	bool IsClimbingHeightHigherThanPossible(float currentHeight, float startHeight) const { return currentHeight - startHeight > maxPossibleClimbingHeight; }
+	bool IsClimbingHeightHigherThanHigh(float currentHeight, float startHeight) const { return currentHeight - startHeight > maxHighClimbingHeight; }
+
+	void StartClimbing(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint);
+
+	void EndClimbing(bool bIsCancel);
+#endif
 
 	void DeleteRwObject();
 	void SetModelIndex(uint32 mi);
@@ -890,6 +954,12 @@ public:
 	static void FinishedWaitCB(CAnimBlendAssociation *assoc, void *arg);
 	static void FinishLaunchCB(CAnimBlendAssociation *assoc, void *arg);
 	static void FinishHitHeadCB(CAnimBlendAssociation *assoc, void *arg);
+#ifdef VICEEXT_CLIMBING
+	static void FinishHighClimbingCB(CAnimBlendAssociation *assoc, void *arg);
+	static void FinishClimbingPullCB(CAnimBlendAssociation* assoc, void* arg);
+	static void FinishClimbingCB(CAnimBlendAssociation *assoc, void *arg);
+	static void FinishFinallyStandClimbingCB(CAnimBlendAssociation *assoc, void *arg);
+#endif
 	static void PedAnimGetInCB(CAnimBlendAssociation *assoc, void *arg);
 	static void PedAnimDoorOpenCB(CAnimBlendAssociation *assoc, void *arg);
 	static void PedAnimPullPedOutCB(CAnimBlendAssociation *assoc, void *arg);
@@ -1002,20 +1072,6 @@ public:
 
 	void ReplaceWeaponWhenExitingVehicle(void);
 	void RemoveWeaponWhenEnteringVehicle(void);
-
-	// Sección 2 (P2) — drive-by ampliado. `CanDoDriveByWithCurrentWeapon` es la
-	// puerta que usan los tres DoDriveByShootings (CAutomobile/CBike/CBoat) y sin
-	// VICEEXT_DRIVEBY_WIDE equivale EXACTAMENTE al chequeo vanilla de slot 5;
-	// `KeepsWeaponInHandWhileDriving` dice si el arma se queda visible en la mano
-	// al entrar al vehículo (falso sin el define -> vanilla).
-	bool CanDoDriveByWithCurrentWeapon(void);
-	bool KeepsWeaponInHandWhileDriving(void);
-
-	// Traza de la sonda de drive-by (tools/driveby-smoke-test.mjs): estado 1 vez
-	// por segundo, una línea por disparo y una por entrada/salida de vehículo.
-	void DriveByTraceState(const char *vehClass, bool fireHeld, bool lookLeft, bool lookRight);
-	void DriveByTraceShot(const char *vehClass, const char *anim, uint32 shotDelayMs);
-	void DriveByTraceVehicleWeapon(const char *phase, const char *outcome);
 	bool IsNotInWreckedVehicle()
 	{
 		return m_pMyVehicle != nil && ((CEntity*)m_pMyVehicle)->GetStatus() != STATUS_WRECKED;
@@ -1067,17 +1123,6 @@ public:
 		else
 			return (AnimationId)0;
 	}
-
-	// R28 (26/09): ¿este ped lleva puesta la pose de disparo AGACHADO? En VC el
-	// motor lo decide con dos banderas (`bIsDucking` + `bCrouchWhenShooting`), pero
-	// el agachado del port no las usa: R6 limpia `bIsDucking` al agacharse (es la
-	// que clava al jugador en el sitio), asi que el motor no veia nada y seguia
-	// eligiendo los clips DE PIE (`colt45_fire` en vez de `colt45_crouchfire`).
-	// Con este predicado el motor elige los de agachado en los sitios donde los
-	// decide (PedFight: SetPointGunAt, SetAttack, Attack, FinishedAttackCB,
-	// FinishedReloadCB) sin tocar `bIsDucking`. Implementado en `PlayerPed.cpp`
-	// (necesita `CPlayerPed`, que este header no puede incluir).
-	bool ViceExtCrouchShooting(void) const;
 
 	static AnimationId GetReloadAnim(CWeaponInfo* weapon) {
 		if (weapon->IsFlagSet(WEAPONFLAG_RELOAD))

@@ -572,6 +572,9 @@ public:
 	bool8 IsMissionAudioSamplePlaying(uint8 slot);
 	bool8 IsMissionAudioSampleFinished(uint8 slot);
 	void ClearMissionAudio(uint8 slot); // inlined in vc
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	void FinishMissionAudioPhoneDialogue(uint8 slot);
+#endif
 	void ProcessMissionAudioSlot(uint8 slot);
 	void ProcessMissionAudio();
 

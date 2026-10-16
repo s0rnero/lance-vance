@@ -21,7 +21,7 @@
 #if defined(MISSION_REPLAY) || defined(VICEEXT_AUTOSAVE)
 #include "GenericGameStorage.h"
 #endif
-#if defined(__EMSCRIPTEN__) && (defined(VICEEXT_AUTOSAVE) || defined(VICEEXT_SKIP_PHONE_CALL))
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_AUTOSAVE)
 #include "ondemand.h" // web: ODTRACES -> odtrace.log (sección 3, C2)
 #endif
 #include "HandlingMgr.h"
@@ -893,28 +893,6 @@ void CTheScripts::Process()
 	DrawScriptSpheres();
 	if (FailCurrentMission)
 		--FailCurrentMission;
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	if (FailCurrentMission == 0 && IsPlayerOnAMission() &&
-		(AudioManager.m_bIsMissionAudioPhoneCall[0] || AudioManager.m_bIsMissionAudioPhoneCall[1])) {
-		if (ControlsManager.ViceExtActionKeyJustDown(SKIP_PHONE_CALL, rsENTER)) {
-			FailCurrentMission = 2;
-			MissionSkipLevel = 0;
-			DMAudio.ClearMissionAudio(0);
-			DMAudio.ClearMissionAudio(1);
-#ifdef __EMSCRIPTEN__
-			{
-				char t[192];
-				snprintf(t, sizeof t, "CALL skip tecla=%d slot0=%d slot1=%d fail=%d",
-					(int)ControlsManager.GetControllerKeyAssociatedWithAction(SKIP_PHONE_CALL, KEYBOARD),
-					(int)AudioManager.m_bIsMissionAudioPhoneCall[0],
-					(int)AudioManager.m_bIsMissionAudioPhoneCall[1],
-					(int)FailCurrentMission);
-				ODTRACES(t);
-			}
-#endif
-		}
-	}
-#endif
 	if (UseTextCommands){
 		for (int i = 0; i < MAX_NUM_INTRO_TEXT_LINES; i++)
 			IntroTextLines[i].Reset();
@@ -1092,10 +1070,8 @@ int8 CRunningScript::ProcessOneCommand()
 		retval = ProcessCommands1300To1399(command);
 	else if (command < 1500)
 		retval = ProcessCommands1400To1499(command);
-#ifdef VICEEXT_MOD_SCRIPT
-	// Vice Extended (familia 13): su `main.scm` usa 7 opcodes propios en el rango
-	// 4000-4009, que en el juego de serie no existe.
-	else if (command >= 4000 && command < 4100)
+#ifdef VICEEXT_OPCODES
+	else if (command < 4100)
 		retval = ProcessCommands4000To4099(command);
 #endif
 #ifdef USE_MISSION_REPLAY_OVERRIDE_FOR_NON_MOBILE_SCRIPT

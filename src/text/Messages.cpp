@@ -10,10 +10,6 @@
 #include "ControllerConfig.h"
 
 #include "Font.h"
-#ifdef VICEEXT_HINT_KEYS
-#include "ondemand.h" // D7: traza de verificación (HINTKEY)
-#include <stdio.h>   // D7: snprintf del código de tecla
-#endif
 #ifdef __EMSCRIPTEN__
 #include "ondemand.h" // R3: la traza de textos va por el mismo canal (SCRTXT)
 #include "Script.h"   // R3: "¿hay misión activa?" (CTheScripts)
@@ -513,101 +509,25 @@ CMessages::InsertPlayerControlKeysInString(wchar *str)
 			for (int32 cont = 0; cont < MAX_CONTROLLERACTIONS && !done; cont++) {
 				uint16 contSize = GetWideStringLength(ControlsManager.m_aActionNames[cont]);
 				if (contSize != 0) {
-				if (WideStringCompare(&str[i], ControlsManager.m_aActionNames[cont], contSize)) {
-					done = true;
-#ifdef VICEEXT_HINT_KEYS
-					// D7 (sección 1): v3.0 del mod, "PC key icons in game hints". Si su
-					// `pcbtns.txd` trae icono para la tecla de esa acción, el aviso lleva
-					// la marca `~K<vk>~` (la pinta `CFont`) en vez del nombre de la
-					// tecla; si no lo trae (rueda del ratón, mando, tecla rara), se
-					// sigue escribiendo el nombre, que es lo que hacía antes.
-					{
-						int32 vkShift = 0;
-						int32 vkKey = 0;
-						bool combo = ControlsManager.GetShiftKeyIconCodesForAction(cont, &vkShift, &vkKey);
-						int32 vk = combo ? vkKey : ControlsManager.GetKeyIconCodeForAction(cont);
-						bool hay = vk > 0 && CFont::HasKeyIcon(vk);
-						bool hayShift = combo && vkShift > 0 && CFont::HasKeyIcon(vkShift);
-						bool doble = combo && hay && hayShift;
-						int32 icono = doble ? 1 : (!combo && hay ? 1 : 0);
-						int32 shift = combo ? 1 : 0;
-						static uint32 odHint = 0;
-						static int32 odUltimaAccion = -1;
-						static int32 odUltimoVK = -1;
-						static int32 odUltimoShift = -1;
-						if ((int32)cont != odUltimaAccion || vk != odUltimoVK || shift != odUltimoShift) {
-							odUltimaAccion = cont;
-							odUltimoVK = vk;
-							odUltimoShift = shift;
-							if (odHint++ < 200) {
-								char tt[192];
-								char nombre[40];
-								int j;
-								for (j = 0; j < 39 && ControlsManager.m_aActionNames[cont][j]; j++)
-									nombre[j] = (char)ControlsManager.m_aActionNames[cont][j];
-									nombre[j] = '\0';
-									snprintf(tt, sizeof tt, "HINTKEY accion=%s vk=%d icono=%d shift=%d", nombre, vk, icono, shift);
-								ODTRACES(tt);
-								{
-									char th[220];
-									int rh = snprintf(th, sizeof th, "P4 kind=hint2 schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 accion=%s vk=%d icono=%d shift=%d doble=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, nombre, vk, icono, shift, doble ? 1 : 0);
-									if (rh < 0 || rh >= (int)sizeof(th)) {
-										char tho[160];
-										snprintf(tho, sizeof tho, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(th), rh);
-										ODTRACES(tho);
-									} else {
-										ODTRACES(th);
-									}
-									if (doble) {
-										char odSh[220];
-										int odSr = snprintf(odSh, sizeof odSh, "P4 kind=shift schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 accion=%s vk=%d shift=%d icono=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, nombre, vk, shift, icono);
-										if (odSr < 0 || odSr >= (int)sizeof(odSh)) {
-											snprintf(odSh, sizeof odSh, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odSh), odSr);
-										}
-										ODTRACES(odSh);
-									}
-								}
+					if (WideStringCompare(&str[i], ControlsManager.m_aActionNames[cont], contSize)) {
+						done = true;
+#ifdef VICEEXT_PC_KEY_ICONS
+						for (int j = 0; j < 4; j++) {
+							if (ControlsManager.m_curActionsInMessage[j] == -1) {
+								ControlsManager.m_curActionsInMessage[j] = cont;
+
+								break;
 							}
 						}
-						if (doble) {
-							char num[8];
-							snprintf(num, sizeof num, "%d", vkShift);
-							*(_outstr++) = '~';
-							*(_outstr++) = 'K';
-							for (char *q = num; *q; q++)
-								*(_outstr++) = *q;
-							*(_outstr++) = '~';
-							char numB[8];
-							snprintf(numB, sizeof numB, "%d", vk);
-							*(_outstr++) = '~';
-							*(_outstr++) = 'K';
-							for (char *qB = numB; *qB; qB++)
-								*(_outstr++) = *qB;
-							*(_outstr++) = '~';
-							i += contSize + 1;
-							continue;
-						}
-						if (!combo && hay) {
-							char num2[8];
-							snprintf(num2, sizeof num2, "%d", vk);
-							*(_outstr++) = '~';
-							*(_outstr++) = 'K';
-							for (char *q = num2; *q; q++)
-								*(_outstr++) = *q;
-							*(_outstr++) = '~';
-							i += contSize + 1;
-							continue;
-						}
-					}
 #endif
-					ControlsManager.GetWideStringOfCommandKeys(cont, keybuf, 256);
-					uint16 keybuf_size = GetWideStringLength(keybuf);
-					for (uint16 j = 0; j < keybuf_size; j++) {
-						*(_outstr++) = keybuf[j];
-						keybuf[j] = '\0';
+						ControlsManager.GetWideStringOfCommandKeys(cont, keybuf, 256);
+						uint16 keybuf_size = GetWideStringLength(keybuf);
+						for (uint16 j = 0; j < keybuf_size; j++) {
+							*(_outstr++) = keybuf[j];
+							keybuf[j] = '\0';
+						}
+						i += contSize + 1;
 					}
-					i += contSize + 1;
-				}
 				}
 			}
 		} else {

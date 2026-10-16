@@ -95,6 +95,9 @@ CPlayerInfo::Clear(void)
 	m_fMediaAttention = 0.0f;
 	m_nCurrentBustedAudio = 1;
 	m_nBustedAudioStatus = BUSTEDAUDIO_NONE;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_nTimeVehicleEngineOff = 0;
+#endif
 }
 
 void
@@ -525,6 +528,15 @@ CPlayerInfo::Process(void)
 	CStats::HighestChaseValue = Max(m_fMediaAttention, CStats::HighestChaseValue);
 	m_nMoney = Min(999999999, m_nMoney);
 	m_nVisibleMoney = Min(999999999, m_nVisibleMoney);
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_pPed->InVehicle()) {
+		if (CPad::GetPad(0)->GetExitVehicle() && m_nTimeVehicleEngineOff < CTimer::GetTimeInMilliseconds())
+			m_nTimeVehicleEngineOff = CTimer::GetTimeInMilliseconds() + 500;
+		else if (!CPad::GetPad(0)->GetExitVehicle())
+			m_nTimeVehicleEngineOff = 0;
+	}
+#endif
 }
 
 bool

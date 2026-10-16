@@ -105,6 +105,22 @@ int32 nPedSlotSfx    [MAX_PEDSFX];
 int32 nPedSlotSfxAddr[MAX_PEDSFX];
 uint8 nCurrentPedSlot;
 
+#if defined VICEEXT_SECOND_SAMPLE_BANK && !defined __EMSCRIPTEN__
+#define MAIN_BANK_AUDIO_SAMPLES NEW_SAMPLEBANK_START
+#else
+#define MAIN_BANK_AUDIO_SAMPLES TOTAL_AUDIO_SAMPLES
+#endif
+
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+char SecondSampleBankDescFilename[] = "ViceExtended/audio/ViceEx.SDT";
+char SecondSampleBankDataFilename[] = "ViceExtended/audio/ViceEx.RAW";
+
+FILE *fpSecondSampleDataHandle;
+int32 nSecondSampleBankDiscStartOffset;
+int32 nSecondSampleBankSize;
+uintptr nSecondSampleBankMemoryStartAddress;
+#endif
+
 #ifdef FIX_BUGS
 uint32 gPlayerTalkSfx = UINT32_MAX;
 void *gPlayerTalkData = 0;
@@ -121,21 +137,6 @@ static uint8 *odSfxData[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxBytes[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxRate[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxTick[TOTAL_AUDIO_SAMPLES];
-// R14 (12ª partida, 22/09): muestras RESERVADAS. Los sonidos de disparo de las
-// armas del mod son one-shot: no se pueden perder ni llegar tarde. La reserva
-// hace dos cosas (ver OdSfxDecode/OdSfxEvict): se decodifican AL INSTANTE aunque
-// el frame haya agotado su presupuesto, y no se tiran nunca al reciclar la
-// caché. Las pide `AudioLogic.cpp` la primera vez que un arma del mod dispara.
-//
-// Motivo (sonido reportado por el jugador: "los sonidos de las armas nuevas
-// solo el de la uzi suena bien, el resto o suenan despacio o no suenan o suenan
-// como corrompidos"): el reparto de decodificaciones es de 2 por frame con una
-// cola de 1 por frame; un ráfaga de disparos + ecos + impactos llena la cola y
-// las peticiones de canal devuelven FALSE (el sonido arranca frames después, o
-// se queda por el camino). La muestra más corta (la del Micro-UZI, 0,32 s) es
-// justo la que casi siempre está ya decodificada, y por eso "solo la uzi suena
-// bien".
-static bool odSfxProtected[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxClock = 0;
 static size_t odSfxCached = 0;
 static bool odMpg123Init = false;
@@ -210,9 +211,6 @@ OdSfxEvict(void)
 				if (SampleManager.GetSampleLoopStartOffset(i) != 0 ||
 				    (le != 0 && le != -1))
 					continue;
-				// R14: y las reservadas tampoco (sonidos de disparo del mod).
-				if (odSfxProtected[i])
-					continue;
 				oldestTick = odSfxTick[i];
 				oldest = i;
 				found = true;
@@ -230,17 +228,6 @@ OdSfxEvict(void)
 }
 
 static bool OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq);
-
-// R14: reserva una muestra (la llama el disparo de las armas del mod).
-// Devuelve true la primera vez que se reserva, para poder trazar sólo el cambio.
-bool
-OdSfxReserve(uint32 nSample)
-{
-	if (nSample >= TOTAL_AUDIO_SAMPLES || odSfxProtected[nSample])
-		return false;
-	odSfxProtected[nSample] = true;
-	return true;
-}
 
 static int
 OdSfxPendFind(uint32 nSample)
@@ -326,11 +313,6 @@ OdSfxDecode(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	fr = CTimer::GetFrameCounter();
 	if (fr != odSfxFr)
 		OdSfxBudgetReset(fr);
-	// R14: reservada = ahora. Ni cola ni presupuesto: es un disparo, tiene que
-	// sonar en el frame en que se pide (y una sola vez, así que tampoco cuesta
-	// nada: se decodifica la primera vez y se queda residente).
-	if (odSfxProtected[nSample])
-		return OdSfxDecodeRaw(nSample, wantBytes, wantFreq);
 	p = OdSfxPendFind(nSample);
 	if (p >= 0) {
 		// Ya estaba en cola y lo vuelven a pedir: urgente. Se promociona.
@@ -1213,6 +1195,12 @@ cSampleManager::Initialise(void)
 			nSampleBankSize[i]               = 0;
 			nSampleBankMemoryStartAddress[i] = 0;
 		}
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+		fpSecondSampleDataHandle = NULL;
+		nSecondSampleBankDiscStartOffset = 0;
+		nSecondSampleBankSize = 0;
+		nSecondSampleBankMemoryStartAddress = 0;
+#endif
 	}
 	
 	{
@@ -1366,6 +1354,11 @@ cSampleManager::Initialise(void)
 		// libera aquí mismo para no retenerlo.
 		free((void*)nSampleBankMemoryStartAddress[SFX_BANK_0]);
 		nSampleBankMemoryStartAddress[SFX_BANK_0] = 0;
+#endif
+
+#if defined VICEEXT_SECOND_SAMPLE_BANK && !defined __EMSCRIPTEN__
+		if ( fpSecondSampleDataHandle && nSecondSampleBankSize > 0 )
+			nSecondSampleBankMemoryStartAddress = (uintptr)malloc(nSecondSampleBankSize);
 #endif
 
 		nSampleBankMemoryStartAddress[SFX_BANK_PED_COMMENTS] = (uintptr)malloc(PED_BLOCKSIZE*MAX_PEDSFX);
@@ -1544,6 +1537,20 @@ cSampleManager::Terminate(void)
 		nSampleBankMemoryStartAddress[SFX_BANK_PED_COMMENTS] = 0;
 	}
 
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+	if ( nSecondSampleBankMemoryStartAddress != 0 )
+	{
+		free((void *)nSecondSampleBankMemoryStartAddress);
+		nSecondSampleBankMemoryStartAddress = 0;
+	}
+
+	if ( fpSecondSampleDataHandle )
+	{
+		fclose(fpSecondSampleDataHandle);
+		fpSecondSampleDataHandle = NULL;
+	}
+#endif
+
 #ifdef __EMSCRIPTEN__
 	for (uint32 odi = 0; odi < TOTAL_AUDIO_SAMPLES; odi++) {
 		free(odSfxData[odi]);
@@ -1669,6 +1676,16 @@ cSampleManager::LoadSampleBank(uint8 nBank)
 	if ( fread((void *)nSampleBankMemoryStartAddress[nBank], 1, nSampleBankSize[nBank], fpSampleDataHandle) != nSampleBankSize[nBank] )
 		return FALSE;
 #endif
+#endif
+#if defined VICEEXT_SECOND_SAMPLE_BANK && !defined __EMSCRIPTEN__
+	if ( nBank == SFX_BANK_0 && fpSecondSampleDataHandle && nSecondSampleBankMemoryStartAddress )
+	{
+		if ( fseek(fpSecondSampleDataHandle, nSecondSampleBankDiscStartOffset, SEEK_SET) != 0 )
+			return FALSE;
+
+		if ( fread((void *)nSecondSampleBankMemoryStartAddress, 1, nSecondSampleBankSize, fpSecondSampleDataHandle) != nSecondSampleBankSize )
+			return FALSE;
+	}
 #endif
 	gBankLoaded[nBank] = LOADING_STATUS_LOADED;
 	
@@ -1845,22 +1862,6 @@ cSampleManager::GetSampleBaseFrequency(uint32 nSample)
 	return m_aSamples[nSample].nFrequency;
 }
 
-// R14 (12ª partida, 22/09): ver OdSfxReserve (sampman_oal.cpp). Fuera de web no
-// hay decodificación on-demand, así que no hay nada que reservar.
-void
-cSampleManager::ReserveSample(uint32 nSample)
-{
-#ifdef __EMSCRIPTEN__
-	if (OdSfxReserve(nSample)) {
-		char t[120];
-		snprintf(t, sizeof t, "ODSFXPROT sfx=%u", nSample);
-		ODTRACES(t);
-	}
-#else
-	(void)nSample;
-#endif
-}
-
 uint32
 cSampleManager::GetSampleLoopStartOffset(uint32 nSample)
 {
@@ -1977,28 +1978,14 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 	
 	uintptr addr;
 
-#ifdef __EMSCRIPTEN__
-	// D8b (sección 1, 21/09): las 13 muestras del banco propio del mod
-	// (`SFX_VICEEX_00..12`) están POR ENCIMA de `SAMPLEBANK_MAX`, que es el fin de
-	// la tabla SDT ORIGINAL (no se movió para no tocar los rangos de ped).
-	// Sin esto `InitialiseChannel` las mandaba a la rama de comentarios de ped,
-	// no las encontraba en los slots y devolvía FALSE: el arma disparaba MUDA y
-	// sin una sola traza. Medido en la partida del 21/09: 40 líneas
-	// `VICEEX sfx arma=51 sample=9943` y NI UN `ODSFXMISS sfx=9943`.
-	// En el port web el PCM de cualquier muestra llega por mp3 on-demand, así que
-	// estas se sirven por el mismo camino que las de `SFX_BANK_0`.
-	bool8 odViceExSample = (nSfx >= SFX_VICEEX_00 && nSfx < TOTAL_AUDIO_SAMPLES);
-	if ( nSfx < SAMPLEBANK_MAX || odViceExSample )
-#else
 	if ( nSfx < SAMPLEBANK_MAX )
-#endif
 	{
 		if ( !IsSampleBankLoaded(nBank) )
 			return FALSE;
 
 #ifdef __EMSCRIPTEN__
 		// Web on-demand: PCM por muestra (sin banco monolítico).
-		if (nBank == SFX_BANK_0 || odViceExSample) {
+		if (nBank == SFX_BANK_0) {
 			if (!OdSfxDecode(nSfx, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency))
 				return FALSE;
 			odSfxTick[nSfx] = ++odSfxClock;
@@ -2007,6 +1994,25 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 #endif
 		addr = nSampleBankMemoryStartAddress[nBank] + m_aSamples[nSfx].nOffset - m_aSamples[BankStartOffset[nBank]].nOffset;
 	}
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+	else if ( nSfx >= NEW_SAMPLEBANK_START && nSfx < TOTAL_AUDIO_SAMPLES )
+	{
+		if ( !IsSampleBankLoaded(nBank) )
+			return FALSE;
+
+#ifdef __EMSCRIPTEN__
+		if (!OdSfxDecode(nSfx, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency))
+			return FALSE;
+		odSfxTick[nSfx] = ++odSfxClock;
+		addr = (uintptr)odSfxData[nSfx];
+#else
+		if ( nSecondSampleBankMemoryStartAddress == 0 )
+			return FALSE;
+
+		addr = nSecondSampleBankMemoryStartAddress + m_aSamples[nSfx].nOffset - nSecondSampleBankDiscStartOffset;
+#endif
+	}
+#endif
 #ifdef FIX_BUGS
 	else if ( nSfx >= PLAYER_COMMENTS_START && nSfx <= PLAYER_COMMENTS_END )
 	{
@@ -2604,7 +2610,7 @@ cSampleManager::InitialiseSampleBanks(void)
 #ifdef __EMSCRIPTEN__
 	// Web on-demand: tabla SDT por fd; sfx.RAW no existe (muestras en audio/sfx/*.mp3).
 	{
-		size_t odWant = sizeof(tSample) * TOTAL_AUDIO_SAMPLES;
+		size_t odWant = sizeof(tSample) * MAIN_BANK_AUDIO_SAMPLES;
 		size_t odGot = 0;
 		int odFd = fileno(fpSampleDescHandle);
 		if (odFd >= 0) {
@@ -2635,7 +2641,7 @@ cSampleManager::InitialiseSampleBanks(void)
 		if (odGot != odWant)
 			return FALSE;
 	}
-	int32 _nSampleDataEndOffset = m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nOffset + m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nSize;
+	int32 _nSampleDataEndOffset = m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nOffset + m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nSize;
 #else
 #ifndef OPUS_SFX
 	fpSampleDataHandle = fcaseopen(SampleBankDataFilename, "rb");
@@ -2663,7 +2669,7 @@ cSampleManager::InitialiseSampleBanks(void)
 #ifdef __EMSCRIPTEN__
 	else {
 		// Sin sfx.RAW (muestras sueltas): tamaño derivado de la tabla.
-		_nSampleDataEndOffset = m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nOffset + m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nSize;
+		_nSampleDataEndOffset = m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nOffset + m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nSize;
 	}
 #endif
 #else
@@ -2674,7 +2680,7 @@ cSampleManager::InitialiseSampleBanks(void)
 	// Web: leer por read() directo (se vio "null function" dentro de fread
 	// bajo Asyncify en este punto concreto).
 	{
-		size_t odWant = sizeof(tSample) * TOTAL_AUDIO_SAMPLES;
+		size_t odWant = sizeof(tSample) * MAIN_BANK_AUDIO_SAMPLES;
 		size_t odGot = 0;
 		int odFd = fileno(fpSampleDescHandle);
 		while (odGot < odWant) {
@@ -2684,10 +2690,10 @@ cSampleManager::InitialiseSampleBanks(void)
 		}
 	}
 #else
-	fread(m_aSamples, sizeof(tSample), TOTAL_AUDIO_SAMPLES, fpSampleDescHandle);
+	fread(m_aSamples, sizeof(tSample), MAIN_BANK_AUDIO_SAMPLES, fpSampleDescHandle);
 #endif
 #ifdef OPUS_SFX
-	int32 _nSampleDataEndOffset = m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nOffset + m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nSize;
+	int32 _nSampleDataEndOffset = m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nOffset + m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nSize;
 #endif
 	fclose(fpSampleDescHandle);
 	fpSampleDescHandle = NULL;
@@ -2707,6 +2713,34 @@ cSampleManager::InitialiseSampleBanks(void)
 
 	nSampleBankSize[SFX_BANK_0] = nSampleBankDiscStartOffset[SFX_BANK_PED_COMMENTS] - nSampleBankDiscStartOffset[SFX_BANK_0];
 	nSampleBankSize[SFX_BANK_PED_COMMENTS]  = _nSampleDataEndOffset                      - nSampleBankDiscStartOffset[SFX_BANK_PED_COMMENTS];
+
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+#ifdef __EMSCRIPTEN__
+	nSecondSampleBankDiscStartOffset = m_aSamples[NEW_SAMPLEBANK_START].nOffset;
+	nSecondSampleBankSize = m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nOffset + m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nSize - nSecondSampleBankDiscStartOffset;
+	{
+		char t[96];
+		snprintf(t, sizeof t, "VEX armas banco2=%d muestras=%d bytes=%d", m_aSamples[NEW_SAMPLEBANK_START].nSize > 0 ? 1 : 0, (int)TOTAL_NEW_AUDIO_SAMPLES, (int)nSecondSampleBankSize);
+		ODTRACES(t);
+	}
+#else
+	FILE *fpSecondSampleDescHandle = fcaseopen(SecondSampleBankDescFilename, "rb");
+	if ( fpSecondSampleDescHandle )
+	{
+		bool8 bSecondBankRead = fread(&m_aSamples[NEW_SAMPLEBANK_START], sizeof(tSample), TOTAL_NEW_AUDIO_SAMPLES, fpSecondSampleDescHandle) == TOTAL_NEW_AUDIO_SAMPLES;
+		fclose(fpSecondSampleDescHandle);
+
+		if ( bSecondBankRead )
+		{
+			nSecondSampleBankDiscStartOffset = m_aSamples[NEW_SAMPLEBANK_START].nOffset;
+			nSecondSampleBankSize = m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nOffset + m_aSamples[TOTAL_AUDIO_SAMPLES - 1].nSize - nSecondSampleBankDiscStartOffset;
+			fpSecondSampleDataHandle = fcaseopen(SecondSampleBankDataFilename, "rb");
+		}
+		else
+			memset(&m_aSamples[NEW_SAMPLEBANK_START], 0, sizeof(tSample) * TOTAL_NEW_AUDIO_SAMPLES);
+	}
+#endif
+#endif
 
 	return TRUE;
 }

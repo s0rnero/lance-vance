@@ -598,7 +598,18 @@ enum
 	PED_ONE_SHOT_WEAPON_UZI_VOLUME = 70,
 	PED_ONE_SHOT_WEAPON_SHOTGUN_VOLUME = 100,
 	PED_ONE_SHOT_WEAPON_M4_VOLUME = 90,
+#ifdef VICEEXT_WEAPON_M16
+	PED_ONE_SHOT_WEAPON_M16_VOLUME = 80,
+	PED_ONE_SHOT_WEAPON_M60_VOLUME = MAX_VOLUME,
+#else
 	PED_ONE_SHOT_WEAPON_M16_VOLUME = MAX_VOLUME,
+#endif
+#ifdef VICEEXT_WEAPON_AK47
+	PED_ONE_SHOT_WEAPON_AK47_VOLUME = 70,
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+	PED_ONE_SHOT_WEAPON_STEYR_VOLUME = 95,
+#endif
 	PED_ONE_SHOT_WEAPON_SNIPERRIFLE_VOLUME = 110,
 	PED_ONE_SHOT_WEAPON_ROCKETLAUNCHER_VOLUME = 80,
 
@@ -4562,28 +4573,38 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 		case SOUND_WEAPON_AK47_BULLET_ECHO:
 		{
 			uint32 weaponType = m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_afVolume[i];
-			switch (weaponType) {				case WEAPONTYPE_SPAS12_SHOTGUN:
-				case WEAPONTYPE_SHOTGUN2:	// Vice Extended
-					m_sQueueSample.m_nSampleIndex = SFX_SPAS12_TAIL_LEFT;
+			switch (weaponType) {
+			case WEAPONTYPE_SPAS12_SHOTGUN:
+				m_sQueueSample.m_nSampleIndex = SFX_SPAS12_TAIL_LEFT;
 				break;
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_HELICANNON:
-				m_sQueueSample.m_nSampleIndex = SFX_M60_TAIL_LEFT;				case WEAPONTYPE_UZI:
-				case WEAPONTYPE_MP5:
-				case WEAPONTYPE_UZIOLD:	// Vice Extended
-					m_sQueueSample.m_nSampleIndex = SFX_UZI_END_LEFT;
+				m_sQueueSample.m_nSampleIndex = SFX_M60_TAIL_LEFT;
+			case WEAPONTYPE_UZI:
+			case WEAPONTYPE_MP5:
+				m_sQueueSample.m_nSampleIndex = SFX_UZI_END_LEFT;
 				break;
 			case WEAPONTYPE_TEC9:
 			case WEAPONTYPE_SILENCED_INGRAM:
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_TEC_TAIL;
-				break;				case WEAPONTYPE_M4:
-				case WEAPONTYPE_RUGER:
-				case WEAPONTYPE_SNIPERRIFLE:
-				case WEAPONTYPE_LASERSCOPE:
-				case WEAPONTYPE_AK47:	// Vice Extended
-				case WEAPONTYPE_M16:
-				case WEAPONTYPE_STEYR:
-					m_sQueueSample.m_nSampleIndex = SFX_RUGER_TAIL;
+				break;
+			case WEAPONTYPE_M4:
+			case WEAPONTYPE_RUGER:
+			case WEAPONTYPE_SNIPERRIFLE:
+			case WEAPONTYPE_LASERSCOPE:
+#ifdef VICEEXT_WEAPON_AK47
+			case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
+			case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+			case WEAPONTYPE_STEYR:
+#endif
+				m_sQueueSample.m_nSampleIndex = SFX_RUGER_TAIL;
 				break;
 				break;
 			default:
@@ -4648,63 +4669,6 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			if (!weapon)
 				continue;
 			switch (weapon->m_eWeaponType) {
-			// Tanda 2, audio ViceEx: tabla FINAL de oido del jugador (24/09, viceex-map.tsv).
-			// Solo 4 armas tienen muestra propia identificada: shotgun2->03/04, desert eagle->05/06,
-			// steyr->09/10 (fusil de precision) y lanzagranadas->11 (LANZAMIENTO del proyectil).
-			// 0/1 ROTAS de fabrica (ruido): vacias, manda la serie. 2 (recarga), 7/8 (disparo sin
-			// identificar) y 12 (nadar) no son disparo de estas armas: sin enganchar (ver plan).
-			// Beretta/Uziold/AK47/M16 suenan con su equivalente de serie (casos COLT45/UZI/M4).
-			case WEAPONTYPE_DESERT_EAGLE:
-			case WEAPONTYPE_SHOTGUN2:
-			case WEAPONTYPE_STEYR:
-			case WEAPONTYPE_GRENADE_LAUNCHER:
-			{
-				int32 odSfx;
-				switch (weapon->m_eWeaponType) {
-				case WEAPONTYPE_DESERT_EAGLE:	odSfx = SFX_VICEEX_05; break;
-				case WEAPONTYPE_SHOTGUN2:		odSfx = SFX_VICEEX_03; break;
-				case WEAPONTYPE_STEYR:			odSfx = SFX_VICEEX_09; break;
-				case WEAPONTYPE_GRENADE_LAUNCHER:	odSfx = SFX_VICEEX_11; break;
-				default:						odSfx = SFX_VICEEX_05; break;
-				}
-				// R14 (12ª partida, 22/09): RESERVAR la muestra. Es un one-shot de
-				// arma: si el reparto de decodes del frame la deja en la cola, el
-				// disparo suena tarde (o no suena). Con la reserva se decodifica al
-				// instante y ya no se recicla. Se reserva también la pareja L/R
-				// (`+1`), que es la que arranca el motor para las muestras estéreo.
-				SampleManager.ReserveSample(odSfx);
-				SampleManager.ReserveSample(odSfx + 1);
-				m_sQueueSample.m_nSampleIndex = odSfx;
-				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
-				m_sQueueSample.m_nCounter = iSound++;
-				narrowSoundRange = TRUE;
-				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(odSfx);
-				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
-				m_sQueueSample.m_nPriority = 3;
-				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
-				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
-				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
-				m_sQueueSample.m_nLoopCount = 1;
-				RESET_LOOP_OFFSETS
-				Vol = m_anRandomTable[3] % 15 + PED_ONE_SHOT_WEAPON_M4_VOLUME;
-				SET_EMITTING_VOLUME(Vol);
-				m_sQueueSample.m_bIs2D = FALSE;
-				m_sQueueSample.m_bStatic = TRUE;
-				stereo = TRUE;
-#ifdef __EMSCRIPTEN__
-				{
-					static int odSfxTraza = 0;
-					if (odSfxTraza < 40) {
-						char odT[96];
-						odSfxTraza++;
-						snprintf(odT, sizeof odT, "VICEEX sfx arma=%d sample=%d",
-						         (int)weapon->m_eWeaponType, odSfx);
-						ODTRACES(odT);
-					}
-				}
-#endif
-				break;
-			}
 			case WEAPONTYPE_PYTHON:
 				m_sQueueSample.m_nSampleIndex = SFX_PYTHON_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
@@ -4725,8 +4689,29 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				SET_SOUND_REFLECTION(TRUE);
 				stereo = TRUE;
 				break;
+#ifdef VICEEXT_WEAPON_DEAGLE
+			case WEAPONTYPE_DEAGLE:
+				m_sQueueSample.m_nSampleIndex = SFX_DEAGLE_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_DEAGLE_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = 75;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				SET_SOUND_REFLECTION(TRUE);
+				stereo = TRUE;
+				break;
+#endif
 			case WEAPONTYPE_COLT45:
-			case WEAPONTYPE_BERETTA:	// Vice Extended (tabla de oido: sin muestra propia)
 				m_sQueueSample.m_nSampleIndex = SFX_COLT45_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4746,6 +4731,28 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				SET_SOUND_REFLECTION(TRUE);
 				stereo = TRUE;
 				break;
+#ifdef VICEEXT_WEAPON_BERETTA
+			case WEAPONTYPE_BERETTA:
+				m_sQueueSample.m_nSampleIndex = SFX_BERETTA_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_BERETTA_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = m_anRandomTable[1] % 10 + PED_ONE_SHOT_WEAPON_COLT45_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				SET_SOUND_REFLECTION(TRUE);
+				stereo = TRUE;
+				break;
+#endif
 			case WEAPONTYPE_ROCKET:
 			case WEAPONTYPE_ROCKETLAUNCHER:
 				m_sQueueSample.m_nSampleIndex = SFX_ROCKET_LEFT;
@@ -4799,8 +4806,13 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
 				m_sQueueSample.m_nLoopCount = 1;
 				RESET_LOOP_OFFSETS
+#ifdef VICEEXT_WEAPON_M16
+				Vol = PED_ONE_SHOT_WEAPON_M60_VOLUME;
+				SET_EMITTING_VOLUME(PED_ONE_SHOT_WEAPON_M60_VOLUME);
+#else
 				Vol = PED_ONE_SHOT_WEAPON_M16_VOLUME;
 				SET_EMITTING_VOLUME(PED_ONE_SHOT_WEAPON_M16_VOLUME);
+#endif
 				m_sQueueSample.m_bIs2D = FALSE;
 				m_sQueueSample.m_bStatic = TRUE;
 				stereo = TRUE;
@@ -4880,8 +4892,6 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				stereo = TRUE;
 				break;
 			case WEAPONTYPE_M4:
-			case WEAPONTYPE_AK47:	// Vice Extended (tabla de oido: sin muestra propia)
-			case WEAPONTYPE_M16:	// Vice Extended (idem)
 				m_sQueueSample.m_nSampleIndex = SFX_RUGER_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4900,8 +4910,10 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				stereo = TRUE;
 				break;
 			case WEAPONTYPE_UZI:
-			case WEAPONTYPE_UZIOLD:	// Vice Extended (tabla de oido: sin muestra propia)
 			case WEAPONTYPE_MINIGUN:
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_UZI_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4944,6 +4956,90 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				SET_SOUND_REFLECTION(TRUE);
 				stereo = TRUE;
 				break;
+#ifdef VICEEXT_WEAPON_AK47
+			case WEAPONTYPE_AK47:
+				m_sQueueSample.m_nSampleIndex = SFX_AK47_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_AK47_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = m_anRandomTable[1] % 15 + PED_ONE_SHOT_WEAPON_AK47_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				stereo = TRUE;
+				break;
+#endif
+#ifdef VICEEXT_WEAPON_M16
+			case WEAPONTYPE_M16:
+				m_sQueueSample.m_nSampleIndex = SFX_M16_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_M16_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = m_anRandomTable[4] % 15 + PED_ONE_SHOT_WEAPON_AK47_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				stereo = TRUE;
+				break;
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+			case WEAPONTYPE_STEYR:
+				m_sQueueSample.m_nSampleIndex = SFX_STEYR_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_STEYR_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = PED_ONE_SHOT_WEAPON_STEYR_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				stereo = TRUE;
+				break;
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+			case WEAPONTYPE_GRENADE_LAUNCHER:
+				m_sQueueSample.m_nSampleIndex = SFX_GRLAUNCH_LEFT;
+				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+				m_sQueueSample.m_nCounter = iSound++;
+				narrowSoundRange = TRUE;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_GRLAUNCH_LEFT);
+				m_sQueueSample.m_nFrequency += RandomDisplacement(m_sQueueSample.m_nFrequency >> 5);
+				m_sQueueSample.m_nPriority = 3;
+				m_sQueueSample.m_fSpeedMultiplier = 0.0f;
+				m_sQueueSample.m_MaxDistance = PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST;
+				maxDist = SQR(PED_ONE_SHOT_WEAPON_BULLET_ECHO_MAX_DIST);
+				m_sQueueSample.m_nLoopCount = 1;
+				RESET_LOOP_OFFSETS
+				Vol = PED_ONE_SHOT_WEAPON_SHOTGUN_VOLUME;
+				SET_EMITTING_VOLUME(Vol);
+				m_sQueueSample.m_bIs2D = FALSE;
+				m_sQueueSample.m_bStatic = TRUE;
+				stereo = TRUE;
+				break;
+#endif
 			case WEAPONTYPE_SPAS12_SHOTGUN:
 				m_sQueueSample.m_nSampleIndex = SFX_SPAS12_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
@@ -4966,6 +5062,9 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 				break;
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_STUBBY_SHOTGUN:
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+			case WEAPONTYPE_SHOTGUN2:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_SHOTGUN_LEFT;
 				m_sQueueSample.m_nBankIndex = SFX_BANK_0;
 				m_sQueueSample.m_nCounter = iSound++;
@@ -4993,8 +5092,12 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			switch ((int32)m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_afVolume[i]) {
 			case WEAPONTYPE_COLT45:
 			case WEAPONTYPE_PYTHON:
-			case WEAPONTYPE_BERETTA:	// Vice Extended
-			case WEAPONTYPE_DESERT_EAGLE:
+#ifdef VICEEXT_WEAPON_DEAGLE
+			case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+			case WEAPONTYPE_BERETTA:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_PISTOL_RELOAD;
 				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_PISTOL_RELOAD) + RandomDisplacement(300);
 				break;
@@ -5005,24 +5108,42 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			case WEAPONTYPE_M4:
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_HELICANNON:
-			case WEAPONTYPE_UZIOLD:	// Vice Extended
+#ifdef VICEEXT_WEAPON_AK47
 			case WEAPONTYPE_AK47:
-			case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 			case WEAPONTYPE_STEYR:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_AK47_RELOAD;
 				m_sQueueSample.m_nFrequency = 39243;
 				break;
+#ifdef VICEEXT_WEAPON_M16
+			case WEAPONTYPE_M16:
+				m_sQueueSample.m_nSampleIndex = SFX_M16_RELOAD;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_M16_RELOAD);
+				break;
+#endif
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_SPAS12_SHOTGUN:
 			case WEAPONTYPE_STUBBY_SHOTGUN:
 			case WEAPONTYPE_RUGER:
-			case WEAPONTYPE_SHOTGUN2:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+			case WEAPONTYPE_SHOTGUN2:
+#endif
 				m_sQueueSample.m_nSampleIndex = SFX_AK47_RELOAD;
 				m_sQueueSample.m_nFrequency = 30290;
 				break;
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+			case WEAPONTYPE_GRENADE_LAUNCHER:
+				m_sQueueSample.m_nSampleIndex = SFX_GRLAUNCH_RELOAD;
+				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_GRLAUNCH_RELOAD) + RandomDisplacement(300);
+				break;
+#endif
 			case WEAPONTYPE_ROCKET:
 			case WEAPONTYPE_ROCKETLAUNCHER:
-			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
 				m_sQueueSample.m_nSampleIndex = SFX_ROCKET_RELOAD;
 				m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_ROCKET_RELOAD);
 				break;
@@ -10258,6 +10379,23 @@ cAudioManager::ClearMissionAudio(uint8 slot)
 		SampleManager.StopStreamedFile(slot + 1);
 	}
 }
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+void cAudioManager::FinishMissionAudioPhoneDialogue(uint8 slot)
+{
+	if (!m_bIsMissionAudioPhoneCall[slot])
+		return;
+
+	if (!SampleManager.IsStreamPlaying(slot + 1))
+		return;
+
+	m_nMissionAudioPlayStatus[slot] = PLAY_STATUS_FINISHED;
+	m_bIsMissionAudioPhoneCall[slot] = FALSE;
+	m_nMissionAudioSampleIndex[slot] = NO_SAMPLE;
+	SampleManager.StopStreamedFile(slot + 1);
+	m_nMissionAudioFramesToPlay[slot] = 0;
+}
+#endif
 
 void
 cAudioManager::ProcessMissionAudioSlot(uint8 slot)

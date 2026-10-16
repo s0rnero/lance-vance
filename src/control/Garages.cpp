@@ -284,6 +284,9 @@ int16 CGarages::AddOne(float X1, float Y1, float Z1, float X2, float Y2, float X
 	case GARAGE_BOMBSHOP2:
 	case GARAGE_BOMBSHOP3:
 	case GARAGE_RESPRAY:
+#ifdef VICEEXT_VICE_EXTENDED
+	case GARAGE_MOD:
+#endif
 		pGarage->m_eGarageState = GS_OPENED;
 		pGarage->m_fDoorPos = pGarage->m_fDoorHeight;
 		break;

@@ -24,6 +24,9 @@ enum
 	CAM_ZOOM_3,
 	CAM_ZOOM_TOPDOWN,
 	CAM_ZOOM_CINEMATIC,
+#ifdef VICEEXT_FIRST_PERSON
+	CAM_ZOOM_REAL_1ST_PERSON,
+#endif
 };
 
 const float DefaultFOV = 70.0f; // beta: 80.0f
@@ -80,6 +83,9 @@ public:
 		MODE_EDITOR,
 		MODE_HELICANNON_1STPERSON,
 		MODE_CAMERA,
+#ifdef VICEEXT_FIRST_PERSON
+		MODE_REAL_1ST_PERSON,
+#endif
 	};
 
 	bool    bBelowMinDist; //used for follow ped mode
@@ -94,6 +100,9 @@ public:
 	bool    LookingRight;
 	bool    ResetStatics; //for interpolation type stuff to work
 	bool    Rotating;
+#ifdef VICEEXT_FIRST_PERSON
+	bool	m_bFixed1stPersonCamInVeh;
+#endif
 
 	int16   Mode;                   // CameraMode
 	uint32  m_uiFinishTime;
@@ -149,6 +158,16 @@ public:
 	float   CA_MIN_DISTANCE;
 	float   CA_MAX_DISTANCE;
 	float   SpeedVar;
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	float AimingFOV;
+	bool m_bAimingWhileLookBehind;
+#endif
+
+#ifdef VICEEXT_CROUCH
+	float m_fCurrentCameraOffsetZ;
+	float m_fTargetCameraPosZ;
+#endif
 
 	float m_fTargetZoomGroundOne;
 	float m_fTargetZoomGroundTwo;
@@ -224,25 +243,6 @@ public:
 	void Process_1stPerson(const CVector &CameraTarget, float, float, float);
 	void Process_1rstPersonPedOnPC(const CVector &CameraTarget, float TargetOrientation, float, float);
 	void Process_Sniper(const CVector &CameraTarget, float, float, float);
-	// PORTADO — ClassicAXIS (sin LICENSE, gennariarmando/DK22Pac) — CamNew.cpp:233
-	//   «void CCamNew::Process_AimWeapon(const CVector&, float, float, float)»
-	// Qué se toma: la ley de apuntado DEL MOD (CamNew.cpp:233-388): maxDist 2.7 fijo,
-	//   heightOffset 0.25, hombro en el espacio de objeto del ped, LOS sobre el punto
-	//   de hombro con repliegue a target.x/y, z += m_fSyphonModeTargetZOffSet + 0.05,
-	//   rama de lock-on con horShift/verShift, lockMovement, clamp +-50, doFovChanges.
-	// Adaptación: el motor ya tenía el modo en el enum (MODE_AIMING = 5, Camera.h:41)
-	//   pero su `case` estuvo comentado siempre; el mod se crea el suyo y se lo queda
-	//   mientras se apunta (Main.cpp:1237-1238). NO se parchea Process_Syphon: el mod
-	//   no lo toca, y parchearlo es justo lo que la regla 12-handoff §14 prohibe.
-	// Medible: PASS = §8.1 (AIMCAM m=5 dist=2.70 alt=) y §8.5 (AIMCAM amax= <= 50).
-	void Process_AimWeapon(const CVector &CameraTarget, float TargetOrientation, float, float);
-	void Process_AimWeaponFovLerp(void);        // CamNew.cpp:477-498
-	void Process_AimWeaponCrouchOffset(float&); // CamNew.cpp:447-459
-	// Colisiones de la ley ClassicAXIS (CamNew.cpp:390-445): LOS + 5 esferas. Es el
-	// bloque que la ley de coche ya tenía escrito dentro de Process_Cam_On_A_String
-	// (validado por el jugador en ve65-ve75), EXTRAÍDO para que las dos leyes no sean
-	// dos copias del mismo código (RULES 0.6). Comportamiento idéntico.
-	void Process_AvoidCollisions(const CVector &targetCoors, float length, bool hideClosePeds);
 	void Process_Syphon(const CVector &CameraTarget, float, float, float);
 	void Process_Syphon_Crim_In_Front(const CVector &CameraTarget, float, float, float);
 	void Process_BehindBoat(const CVector &CameraTarget, float TargetOrientation, float, float);
@@ -259,6 +259,10 @@ public:
 	bool GetLookAlongGroundPos(CEntity *Target, CPed *Cop, CVector &TargetCoors, CVector &SourceOut);
 	bool GetLookFromLampPostPos(CEntity *Target, CPed *Cop, CVector &TargetCoors, CVector &SourceOut);
 	bool GetLookOverShoulderPos(CEntity *Target, CPed *Cop, CVector &TargetCoors, CVector &SourceOut);
+#ifdef VICEEXT_FIRST_PERSON
+	void Process_Real_1st_Person(const CVector& CameraTarget, float, float, float);
+	void LimitAngleBetaRelativelyTwoAngles(CVector normalizedRelativeVector, float leftLimitingAngle, float rightLimitingAngle);
+#endif
 
 	// custom stuff
 	void Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrientation, float, float);
@@ -339,42 +343,6 @@ enum
 	CAMCONTROL_GAME,
 	CAMCONTROL_SCRIPT,
 	CAMCONTROL_OBBE
-};
-
-// ClassicAXIS · ajustes de la sección [ClassicAxis] del INI de 2022 del mod
-// (`mods/Classic AXIS/ClassicAxisVC.ini`): los 9 escalares que se implementan. Los
-// defaults son VERBATIM del INI del mod salvo `zoomForAssaultRifles`, que es
-// decisión del jugador del 27/09 (§5.3a — el INI no la trae y su default está en el
-// `Settings.h` que no se bajó, así que NO se inventa). Se leen y se guardan en
-// `re3.cpp` con sección INI `ClassicAxis`, para que el jugador pueda pegar su fichero.
-struct CAimClassicAxisSettings {
-	bool  forceAutoAim;         // ForceAutoAim                 = false  (ratón+teclado: sin auto-aim)
-	int32 lockOnTargetType;     // LockOnTargetType             = 1      (0 = ninguna, 1 = SA, 2 = LCS/VCS)
-	bool  showTriangle;         // ShowTriangleForMouseRecruit  = true
-	float crosshairMultX;       // CameraCrosshairMultX         = 0.53f
-	float crosshairMultY;       // CameraCrosshairMultY         = 0.4f
-	bool  storiesPointingArm;   // StoriesPointingArm           = false
-	float stickSensX;           // RightAnalogStickSensitivityX = 1.0f
-	float stickSensY;           // RightAnalogStickSensitivityY = 1.0f
-	bool  zoomForAssaultRifles; // decisión 5.3(a)             = true
-};
-
-// 2506 «Aim sensitivity fix» (ViceEx.exe `FUN_0049b290`, medido por REA el 14/10).
-// El mod usa sensibilidades SEPARADAS para mirar y para apuntar, por dispositivo,
-// y elige el par segun el estado de apuntado del jugador. Las globales donde
-// aterrizan (medidas): PadLookSensX 0x93760c, PadAimSensX 0x937610, PadLookSensY
-// 0x937614, PadAimSensY 0x937618, MouseLookSensX 0x937628, MouseAimSensX 0x93762c,
-// MouseLookSensY 0x937630, MouseAimSensY 0x937634; el raton se escala por 0.5
-// (constante 0x6d7778 = 0x3f000000). Los defaults de aqui son los valores REALES de
-// su `ViceEx.ini` (instalacion del jugador, leida el 14/10): raton 0.002500 ->
-// 0.001667 (2/3) y pad 0.001250 -> 0.000625 (1/2). Se leen y se guardan en
-// `re3.cpp` con seccion INI `Controller` y los nombres VERBATIM del mod, para que
-// el jugador pueda pegar su seccion tal cual.
-struct CAimSensSettings {
-	float mouseLookX, mouseAimX;	// [Controller] MouseLookSensX / MouseAimSensX = 0.002500 / 0.001667
-	float mouseLookY, mouseAimY;	// [Controller] MouseLookSensY / MouseAimSensY = 0.002500 / 0.001667
-	float padLookX, padAimX;		// [Controller] PadLookSensX / PadAimSensX     = 0.001250 / 0.000625
-	float padLookY, padAimY;		// [Controller] PadLookSensY / PadAimSensY     = 0.001250 / 0.000625
 };
 
 class CCamera : public CPlaceable
@@ -591,47 +559,6 @@ public:
 	uint32 m_uiFadeTimeStartedMusic;
 
 	static bool m_bUseMouse3rdPerson;
-
-	// ClassicAXIS · estado de la ley de apuntado. Prefijo `s_viceExtAim` y NO `s_odAim*`:
-	// `s_odAim*` ya significa "lo midió el carril B4 antiguo" (p. ej. el
-	// `s_odAimStoriesShoulder` de Cam.cpp) y reutilizarlo haría ambigua la
-	// trazabilidad. Equivale a los `static inline` del ClassicAxis del mod
-	// (`classicaxis_Main.cpp:27-39`) y al `CCamNew` de `CamNew.cpp:20-22,37-46`:
-	// `PlayerPed.cpp` lo escribe, `Cam.cpp` y `Hud.cpp` lo leen. Vive en `CCamera`
-	// porque es el único sitio visible desde los tres ficheros SIN añadir un include
-	// nuevo (`Hud.cpp` no incluye `PlayerPed.h`). Estado de UN solo jugador
-	// (`PlayerInFocus`), igual que el mod.
-	static CAimClassicAxisSettings s_viceExtAim;
-	static bool    s_viceExtAimLawActive;    // ClassicAxis::isAiming
-	// 2506 «Aim sensitivity fix»: los cuatro factores que se aplican al mover la
-	// camara. Devuelven aim/look (1.0 si el jugador NO apunta, si la bandera esta
-	// apagada o si el look del INI es 0), y multiplicar por 1.0f es exacto, asi que
-	// con la bandera apagada el motor queda vanilla bit a bit.
-	static CAimSensSettings s_viceExtSens;
-	static float ViceExtAimSensMouseX(void);
-	static float ViceExtAimSensMouseY(void);
-	static float ViceExtAimSensPadX(void);
-	static float ViceExtAimSensPadY(void);
-	static bool    s_viceExtAimSwitchSpeed;  // switchTransitionSpeed
-	static int16   s_viceExtAimPrevCamMode;  // previousCamMode
-	static float   s_viceExtAimPrevHor;      // previousHorAngle
-	static float   s_viceExtAimPrevVer;      // previousVerAngle
-	static CEntity *s_viceExtAimMouseTarget; // thirdPersonMouseTarget
-	static uint32  s_viceExtAimLockOnUntil;  // timeLockOn (250 ms)
-	static CVector s_viceExtAimLastLockPos;  // lastLockOnPos
-	static CRGBA   s_viceExtAimLastLockCol;  // lastLockOnColor
-	// Main.cpp:31 `forceRealMoveAnim`: quieto del todo = un frame de locomocion real
-	// (su equivalente a `TYPE_WALKAROUND`). Lo consume C1 (Main.cpp:121-127).
-	static float   s_viceExt1PNearClipOnFoot;   // FirstPerson.cfg "Near Clip on foot"
-	static float   s_viceExt1PNearClipInCar;    // FirstPerson.cfg "Near Clip in vehicle"
-	static float   s_viceExt1PMouseSens;        // FirstPerson.cfg "Mouse Sensitive"
-	static CVector s_viceExt1PVehicleOffset;    // FirstPerson.cfg "Vehicle Offsets"
-	static bool    m_bViceExt1stPersonView;   // 1a persona: la tecla V conmuta, el menu tambien
-	static bool    s_viceExtAimForceRealMoveAnim;
-	static CVector s_viceExtAimViewDir;
-	static bool    s_viceExtAimViewPending;
-	static int16   s_viceExtAimViewMode;
-	static float   ViceExtAimBetaFromFollowBeta(float followBeta);
 #ifdef FREE_CAM
 	static bool bFreeCam;
 #endif

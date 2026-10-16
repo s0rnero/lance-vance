@@ -27,6 +27,10 @@ public:
 	static bool RemoveIfThisIsAProjectile(CObject *pObject);
 	static void RemoveAllProjectiles();
 	static void RemoveDetonatorProjectiles();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	static void RemoveDetonatorProjectile(int projectileID);
+	static void BlowUpIfThisIsAProjectile(CObject *pObject);
+#endif
 	static void Update();
 	static bool IsProjectileInRange(float x1, float x2, float y1, float y2, float z1, float z2, bool remove);
 };

@@ -563,7 +563,11 @@ cMusicManager::ServiceGameMode()
 		gRetuneCounter = 0;
 		m_bSetNextStation = FALSE;
 	} else if (ped) {
+#ifdef VICEEXT_FIRING_AND_AIMING
+		if(!ped->DyingOrDead() && vehicle && !FindPlayerPed()->bIsPlayerAiming) {
+#else
 		if(!ped->DyingOrDead() && vehicle) {
+#endif
 #ifdef GTA_PC
 			if (SampleManager.IsMP3RadioChannelAvailable()
 				&& vehicle->m_nRadioStation < USERTRACK

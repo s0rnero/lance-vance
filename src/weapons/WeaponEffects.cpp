@@ -68,9 +68,7 @@ CWeaponEffects::ClearCrossHair(void)
 void
 CWeaponEffects::Render(void)
 {
-	// WEAPONTYPE_TOTALALLTYPES: las armas nuevas del mod también se indexan
-	// aquí con FindPlayerPed()->GetWeapon()->m_eWeaponType.
-	static float aCrossHairSize[WEAPONTYPE_TOTALALLTYPES] =
+	static float aCrossHairSize[WEAPONTYPE_TOTALWEAPONS] =
 	{
 		1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
 		0.4f, 0.4f,
@@ -83,10 +81,31 @@ CWeaponEffects::Render(void)
 		0.6f,
 		0.7f,
 		0.0f, 0.0f,
-		// 37..47: tipos de daño (nunca dibujan mira)
-		1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-		// Vice Extended (48..56)
-		0.4f, 0.4f, 0.5f, 0.9f, 0.5f, 0.5f, 0.5f, 0.1f, 0.0f
+#ifdef VICEEXT_WEAPON_AK47
+		0.5f,
+#endif
+#ifdef VICEEXT_WEAPON_M16
+		0.5f,
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+		0.9f,
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+		0.5f,
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+		0.3f,
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+		0.5f,
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+		0.5f,
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+		0.5f,
+		0.0f,
+#endif
 	};
 
 
@@ -112,17 +131,23 @@ CWeaponEffects::Render(void)
 		{
 			PUSH_RENDERGROUP("CWeaponEffects::Render");
 
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 			float recipz = 1.0f / pos.z;
 			CSprite::RenderOneXLUSprite_Rotate_Aspect(pos.x, pos.y, pos.z,
 				w, h,
 				255, 88, 100, 158,
 				recipz, gCrossHair.m_fRotation, gCrossHair.m_nAlpha);
+#endif
 				
 			float recipz2 = 1.0f / pos.z;
 			
 			CSprite::RenderOneXLUSprite_Rotate_Aspect(pos.x, pos.y, pos.z,
 				size*w, size*h,
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				255, 88, 100, 255,
+#else
 				107, 134, 247, 158,
+#endif
 				recipz2, TWOPI - gCrossHair.m_fRotation, gCrossHair.m_nAlpha);
 						
 			gCrossHair.m_fRotation += 0.02f;

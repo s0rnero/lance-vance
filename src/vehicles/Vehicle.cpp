@@ -1173,14 +1173,27 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 	case WEAPONTYPE_MINIGUN:
 	case WEAPONTYPE_HELICANNON:
 	case WEAPONTYPE_UZI_DRIVEBY:
-	// Vice Extended (balas como su arma de serie equivalente)
-	case WEAPONTYPE_BERETTA:
-	case WEAPONTYPE_DESERT_EAGLE:
-	case WEAPONTYPE_SHOTGUN2:
-	case WEAPONTYPE_UZIOLD:
+#ifdef VICEEXT_WEAPON_AK47
 	case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 	case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+	case WEAPONTYPE_SHOTGUN2:
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+	case WEAPONTYPE_UZIOLD:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+	case WEAPONTYPE_BERETTA:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 	case WEAPONTYPE_STEYR:
+#endif
 		if (bBulletProof)
 			return;
 		bFrightensDriver = true;
@@ -1188,6 +1201,9 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 	case WEAPONTYPE_GRENADE:
 	case WEAPONTYPE_MOLOTOV:
 	case WEAPONTYPE_ROCKET:
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+	case WEAPONTYPE_GRENADE_LAUNCHER:
+#endif
 	case WEAPONTYPE_EXPLOSION:
 		if (bExplosionProof)
 			return;
@@ -1213,11 +1229,15 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		int accuracy = 0;
 		switch(weaponType){
 		case WEAPONTYPE_COLT45:
-		case WEAPONTYPE_BERETTA:	// Vice Extended
+#ifdef VICEEXT_WEAPON_BERETTA
+		case WEAPONTYPE_BERETTA:
+#endif
 			accuracy = 10;
 			break;
 		case WEAPONTYPE_PYTHON:
-		case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+#ifdef VICEEXT_WEAPON_DEAGLE
+		case WEAPONTYPE_DEAGLE:
+#endif
 			if(!((CPed*)damagedBy)->IsPlayer())
 				accuracy = 64;
 			break;
@@ -1225,7 +1245,9 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		case WEAPONTYPE_STUBBY_SHOTGUN:
 		case WEAPONTYPE_M60:
 		case WEAPONTYPE_HELICANNON:
-		case WEAPONTYPE_SHOTGUN2:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+		case WEAPONTYPE_SHOTGUN2:
+#endif
 			accuracy = 25;
 			break;
 		case WEAPONTYPE_TEC9:
@@ -1233,14 +1255,22 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		case WEAPONTYPE_SILENCED_INGRAM:
 		case WEAPONTYPE_MP5:
 		case WEAPONTYPE_UZI_DRIVEBY:
-		case WEAPONTYPE_UZIOLD:	// Vice Extended
+#ifdef VICEEXT_WEAPON_UZIOLD
+		case WEAPONTYPE_UZIOLD:
+#endif
 			accuracy = 15;
 			break;
 		case WEAPONTYPE_M4:
 		case WEAPONTYPE_RUGER:
-		case WEAPONTYPE_AK47:	// Vice Extended
+#ifdef VICEEXT_WEAPON_AK47
+		case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 		case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 		case WEAPONTYPE_STEYR:
+#endif
 			if(!((CPed*)damagedBy)->IsPlayer())
 				accuracy = 15;
 			break;
@@ -2397,6 +2427,19 @@ CVehicle::KillPedsInVehicle(void)
 	}
 }
 
+#ifdef VICEEXT_FIRST_PERSON
+bool CVehicle::IsOpenTopVehicle(void)
+{
+	if (IsBike())
+		return true;
+	else if (IsBoat())
+		return !(GetModelIndex() == MI_PREDATOR || GetModelIndex() == MI_TROPIC || GetModelIndex() == MI_REEFER);
+	else if (IsCar())
+		return IsOpenTopCar();
+	else
+		return false;
+}
+#endif
 void
 DestroyVehicleAndDriverAndPassengers(CVehicle* pVehicle)
 {

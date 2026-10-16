@@ -88,6 +88,9 @@ public:
 	char m_aSkinName[32];
 	RwTexture *m_pSkinTexture;
 #endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	uint32 m_nTimeVehicleEngineOff;
+#endif
 
 	void MakePlayerSafe(bool);
 	const CVector &GetPos();

@@ -199,6 +199,43 @@ enum AnimationId
 	ANIM_STD_ATM,
 	ANIM_STD_ABSEIL,
 
+#ifdef VICEEXT_CLIMBING
+	ANIM_STD_CLIMBING_IDLE,
+	ANIM_STD_CLIMBING_JUMP,
+	ANIM_STD_CLIMBING_JUMP_B,
+	ANIM_STD_CLIMBING_PULL,
+	ANIM_STD_CLIMBING_STAND,
+	ANIM_STD_CLIMBING_STAND_FINISH,
+#endif
+
+#ifdef VICEEXT_CROUCH
+	ANIM_STD_CROUCH_IDLE,
+	ANIM_STD_CROUCH_FORWARD,
+	ANIM_STD_CROUCH_BACKWARD,
+	ANIM_STD_CROUCH_ROLL_L,
+	ANIM_STD_CROUCH_ROLL_R,
+#endif
+
+#ifdef VICEEXT_FIRING_AND_AIMING
+	ANIM_STD_GUNMOVE_BWD,
+	ANIM_STD_GUNMOVE_FWD,
+	ANIM_STD_GUNMOVE_L,
+	ANIM_STD_GUNMOVE_R,
+	ANIM_STD_GUN_STAND,
+
+	ANIM_STD_CAR_SIT_DB,
+	ANIM_STD_CAR_SIT_LO_DB,
+	ANIM_STD_CAR_SIT_P_DB,
+	ANIM_STD_CAR_SIT_P_LO_DB,
+	ANIM_STD_CAR_DRIVE_LEFT_DB,
+	ANIM_STD_CAR_DRIVE_RIGHT_DB,
+	ANIM_STD_CAR_DRIVE_LEFT_LO_DB,
+	ANIM_STD_CAR_DRIVE_RIGHT_LO_DB,
+	ANIM_STD_BOAT_DRIVE_DB,
+	ANIM_STD_BOAT_DRIVE_LEFT_DB,
+	ANIM_STD_BOAT_DRIVE_RIGHT_DB,
+#endif
+
 	ANIM_STD_NUM,
 
 	ANIM_STD_VAN_OPEN_DOOR_REAR_LHS,
@@ -234,6 +271,14 @@ enum AnimationId
 	ANIM_BIKE_DRIVEBY_RHS,
 	ANIM_BIKE_DRIVEBY_FORWARD,
 	ANIM_BIKE_RIDE_P,
+#ifdef VICEEXT_FIRING_AND_AIMING
+	ANIM_BIKE_RIDE_DB,
+	ANIM_BIKE_READY_DB,
+	ANIM_BIKE_LEFT_DB,
+	ANIM_BIKE_RIGHT_DB,
+	ANIM_BIKE_WALKBACK_DB,
+	ANIM_BIKE_RIDE_P_DB,
+#endif
 
 	ANIM_ATTACK_1,
 	ANIM_ATTACK_2,
@@ -293,38 +338,4 @@ enum AnimationId
 	ANIM_STD_SWIM_CRAWL,        // swim_crawl      (C4: nadar esprintando)
 	ANIM_STD_SWIM_BREAST,       // swim_breast     (C4: nadar avanzando)
 	ANIM_STD_SWIM_JUMPOUT,      // swim_jumpout    (C4: salir a la orilla)
-	// Sección 2 (21/09): clips de ESCALADA del mismo `ped.ifp` (bloque opcional
-	// E1 del plan). Se comprobó leyendo el binario servido: los nombres son
-	// `CLIMB_idle`, `CLIMB_jump`, `CLIMB_jump_B`, `CLIMB_jump2fall`, `CLIMB_Pull`,
-	// `CLIMB_Stand` y `CLIMB_Stand_finish`.
-	ANIM_STD_CLIMB_IDLE,        // CLIMB_idle
-	ANIM_STD_CLIMB_JUMP,        // CLIMB_jump
-	ANIM_STD_CLIMB_JUMP_B,      // CLIMB_jump_B
-	ANIM_STD_CLIMB_JUMP2FALL,   // CLIMB_jump2fall
-	ANIM_STD_CLIMB_PULL,        // CLIMB_Pull   (el tirón que sube al jugador)
-	ANIM_STD_CLIMB_STAND,       // CLIMB_Stand
-	ANIM_STD_CLIMB_STAND_FINISH,// CLIMB_Stand_finish
-	// R20 (22/09): ¿por qué el bloque de AGACHADO va EL ÚLTIMO, detrás de la
-	// escalada? Porque `CAnimBlendAssocGroup` calcula el índice dentro del grupo
-	// con `id - firstAnimId`, y `firstAnimId` es el `animId` del PRIMER desc
-	// (`CAnimManager::CreateAnimAssocGroups`: `group->firstAnimId =
-	// def->animDescs[0].animId`). O sea: los IDs de un grupo tienen que ser
-	// CONSECUTIVOS desde el suyo. Con la escalada en medio, meter aquí
-	// `Crouch_Roll_L` (el cuarto clip de SA) habría hecho que el índice 3 del
-	// grupo de agachado apuntara a un clip de escalada. Movido el bloque entero
-	// al final, los seis del mod quedan consecutivos y el orden es el de SA.
-	ANIM_STD_CROUCH_IDLE,       // Crouch_Idle     (C5: agachado quieto)
-	ANIM_STD_CROUCH_FORWARD,    // GunCrouchFwd    (C5/R27: andar agachado; clip del sa-crouch)
-	ANIM_STD_CROUCH_BACKWARD,   // GunCrouchBwd    (C5/R27: andar agachado atrás)
-	ANIM_STD_CROUCH_LEFT,       // Crouch_Roll_L   (R20: desplazarse de lado, izq.)
-	ANIM_STD_CROUCH_RIGHT,      // Crouch_Roll_R   (R20: desplazarse de lado, der.)
-	// R29 (27/09, plan agachado-correcciones-axis E3.9): los cuatro `GunMove_*`
-	// del mod ("moverse apuntando"). Ya venian servidos en el `ped.ifp` sin
-	// usar; se mapean por nombre como R27 hizo con `GunCrouchFwd/Bwd`. AL FINAL
-	// del enum para no romper la consecutividad del grupo (ver la nota de R20:
-	// el indice del grupo es `id - firstAnimId`).
-	ANIM_STD_CROUCH_AIMFWD,     // GunMove_FWD  (apuntando, adelante)
-	ANIM_STD_CROUCH_AIMBWD,     // GunMove_BWD  (apuntando, atras)
-	ANIM_STD_CROUCH_AIMLEFT,    // GunMove_L    (apuntando, izquierda)
-	ANIM_STD_CROUCH_AIMRIGHT,   // GunMove_R    (apuntando, derecha)
 };

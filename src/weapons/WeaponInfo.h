@@ -31,12 +31,10 @@ enum
 };
 
 class CWeaponInfo {
-	// WEAPONTYPE_TOTALALLTYPES (no TOTALWEAPONS): las armas nuevas del mod
-	// (48+) también indexan estas tablas.
-	static char ms_aWeaponNames[WEAPONTYPE_TOTALALLTYPES][32];
+	static char ms_aWeaponNames[WEAPONTYPE_TOTALWEAPONS][32];
 public:
-	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALALLTYPES];
-	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALALLTYPES];
+	static uint16 ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS];
+	static int32 ms_aMaxAmmoForWeapon[WEAPONTYPE_TOTALWEAPONS];
 
 	eWeaponFire m_eWeaponFire;
 	float m_fRange;
@@ -62,10 +60,8 @@ public:
 	uint32 m_Flags;
 
 	uint32 m_nWeaponSlot;
-#ifdef VICEEXT_WEAPON_SIGHTS
-	// columna 27 de su `weapon.dat`: 0 = cruz de serie, 1 dot, 2 pistol, 3 SMG,
-	// 4 shotgun, 5 rifle, 6 heavy, 7 rocket (su `weaponSights.txd`).
-	int32 m_nSight;
+#ifdef VICEEXT_WEAPON_SIGHT
+	uint8 m_nWeaponSight;
 #endif
 
 	static void Initialise(void);

@@ -25,6 +25,13 @@ public:
 	int16 Square, Triangle, Cross, Circle;
 	int16 LeftShock, RightShock;
 	int16 NetworkTalk;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	int16 bWalk;
+	int16 bReload;
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	int16 bLeftTurnSignals, bRightTurnSignals, bEmergencyLights;
+#endif
 	float GetLeftStickX(void) { return LeftStickX/32767.0f; };
 	float GetLeftStickY(void) { return LeftStickY/32767.0f; };
 	float GetRightStickX(void) { return RightStickX/32767.0f; };
@@ -152,10 +159,16 @@ public:
 	CControllerState PCTempMouseState;
 	// straight out of my IDB
 	int16 Phase;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	int16 Mode = 1;
+	uint8 ShakeLowFreq;
+	uint8 ShakeHighFreq;
+#else
 	int16 Mode;
+	uint8 ShakeFreq;
+#endif
 	int16 ShakeDur;
 	uint16 DisablePlayerControls;
-	uint8 ShakeFreq;
 	bool bHornHistory[HORNHISTORY_SIZE];
 	uint8 iCurrHornHistory;
 	int8 JustOutOfFrontend;
@@ -196,8 +209,13 @@ public:
 	void ClearKeyBoardHistory();
 	void UpdateMouse();
 	CControllerState ReconcileTwoControllersInput(CControllerState const &State1, CControllerState const &State2);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	void StartShake(int16 nDur, uint8 nLowFreq, uint8 nHighFreq);
+	void StartShake_Distance(int16 nDur, uint8 nLowFreq, uint8 nHighFreq, float fX, float fY, float fz);
+#else
 	void StartShake(int16 nDur, uint8 nFreq);
 	void StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, float fz);
+#endif
 	void StartShake_Train(float fX, float fY);
 #ifdef GTA_PS2_STUFF
 	void AddToCheatString(char c);
@@ -222,9 +240,6 @@ public:
 	int16 GetCarGunLeftRight(void);
 	int16 GetPedWalkLeftRight(void);
 	int16 GetPedWalkUpDown(void);
-#ifdef VICEEXT_ALT_SIT
-	bool GetPedWalk(void);
-#endif
 	int16 GetAnalogueUpDown(void);
 	int16 GetAnalogueLeftRight(void);
 	bool GetLookLeft(void);
@@ -245,7 +260,19 @@ public:
 	bool CycleCameraModeJustDown(void);
 	bool CycleCameraModeUpJustDown(void);
 	bool CycleCameraModeDownJustDown(void);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool GetRadarZoomOut(void);
+	bool GetPedWalk();
+	bool WeaponReloadJustDown();
+	bool GetMeleeWeapon();
+	bool MeleeWeaponJustDown();
+#endif
 	bool ChangeStationJustDown(void);
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	bool LeftTurnSignalsJustDown();
+	bool RightTurnSignalsJustDown();
+	bool EmergencyLightsJustDown();
+#endif
 	bool CycleWeaponLeftJustDown(void);
 	bool CycleWeaponRightJustDown(void);
 	bool GetTarget(void);
@@ -282,6 +309,9 @@ public:
 	static int XInputJoy1;
 	static int XInputJoy2;
 	void AffectFromXinput(uint32 pad);
+#endif
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined __EMSCRIPTEN__
+	void AffectFromGamepadApi(uint32 pad);
 #endif
 
 	// mouse
