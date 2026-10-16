@@ -472,8 +472,12 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, cla
 	case WEAPONTYPE_SHOTGUN:
 	case WEAPONTYPE_SPAS12_SHOTGUN:
 	case WEAPONTYPE_STUBBY_SHOTGUN:
-	case WEAPONTYPE_DEAGLE:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
 	case WEAPONTYPE_SHOTGUN2:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+	case WEAPONTYPE_DEAGLE:
+#endif
 		CBulletTraces::AddTrace(start, end, 0.7f, 1000, 200);
 		break;
 	case WEAPONTYPE_M4:
@@ -483,9 +487,15 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, cla
 	case WEAPONTYPE_M60:
 	case WEAPONTYPE_MINIGUN:
 	case WEAPONTYPE_HELICANNON:
-	case WEAPONTYPE_AK47:	// Vice Extended
+#ifdef VICEEXT_WEAPON_AK47
+	case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 	case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 	case WEAPONTYPE_STEYR:
+#endif
 		CBulletTraces::AddTrace(start, end, 1.0f, 2000, 220);
 		break;
 	default:

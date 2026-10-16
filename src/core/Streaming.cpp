@@ -1770,10 +1770,9 @@ CStreaming::LoadInitialWeapons(void)
 {
 	CStreaming::RequestModel(MI_NIGHTSTICK, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_MISSILE, STREAMFLAGS_DONT_REMOVE);
-	// Vice Extended: el proyectil del lanzagranadas tampoco es el arma en
-	// mano, así que va residente como el misil (ProjectileInfo lo instancia
-	// de golpe al disparar).
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
 	CStreaming::RequestModel(MI_GR_LAUNCH_GREN, STREAMFLAGS_DONT_REMOVE);
+#endif
 }
 
 void

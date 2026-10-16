@@ -365,7 +365,11 @@ bool
 CPedIK::PointGunAtPosition(CVector const& position)
 {
 	CVector startPoint;
-	if (m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_SPAS12_SHOTGUN || m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_STUBBY_SHOTGUN)
+	if (m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_SPAS12_SHOTGUN || m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_STUBBY_SHOTGUN
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+		|| m_ped->GetWeapon()->m_eWeaponType == WEAPONTYPE_SHOTGUN2
+#endif
+		)
 		startPoint = m_ped->GetPosition();
 	else {
 		RwV3d armPos;

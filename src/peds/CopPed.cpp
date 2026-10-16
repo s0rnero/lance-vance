@@ -28,7 +28,14 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 	case COP_STREET:
 		SetModelIndex(MI_COP);
 		GiveWeapon(WEAPONTYPE_NIGHTSTICK, 1000, true);
+#ifdef VICEEXT_WEAPON_BERETTA
+		if (CGeneral::GetRandomTrueFalse())
+			GiveDelayedWeapon(WEAPONTYPE_BERETTA, 1000);
+		else
+			GiveDelayedWeapon(WEAPONTYPE_COLT45, 1000);
+#else
 		GiveDelayedWeapon(WEAPONTYPE_COLT45, 1000);
+#endif
 		m_currentWeapon = WEAPONTYPE_UNARMED;
 		m_fArmour = 0.0f;
 		m_wepSkills = 208; /* TODO: what is this? seems unused */
@@ -40,8 +47,18 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		break;
 	case COP_FBI:
 		SetModelIndex(MI_FBI);
+#ifdef VICEEXT_WEAPON_AK47
+		if (CGeneral::GetRandomTrueFalse()) {
+			GiveDelayedWeapon(WEAPONTYPE_AK47, 1000);
+			SetCurrentWeapon(WEAPONTYPE_AK47);
+		} else {
+			GiveDelayedWeapon(WEAPONTYPE_MP5, 1000);
+			SetCurrentWeapon(WEAPONTYPE_MP5);
+		}
+#else
 		GiveDelayedWeapon(WEAPONTYPE_MP5, 1000);
 		SetCurrentWeapon(WEAPONTYPE_MP5);
+#endif
 		m_fArmour = 100.0f;
 		m_wepSkills = 176; /* TODO: what is this? seems unused */
 #ifdef VICEEXT_GANG_AIM
@@ -65,8 +82,29 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		break;
 	case COP_ARMY:
 		SetModelIndex(MI_ARMY);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#if defined VICEEXT_WEAPON_M16 && defined VICEEXT_WEAPON_STEYR
+		if (CGeneral::GetRandomTrueFalse()) {
+			GiveDelayedWeapon(WEAPONTYPE_M16, 1000);
+			SetCurrentWeapon(WEAPONTYPE_M16);
+		} else {
+			GiveDelayedWeapon(WEAPONTYPE_STEYR, 1000);
+			SetCurrentWeapon(WEAPONTYPE_STEYR);
+		}
+#elif defined VICEEXT_WEAPON_M16
+		GiveDelayedWeapon(WEAPONTYPE_M16, 1000);
+		SetCurrentWeapon(WEAPONTYPE_M16);
+#elif defined VICEEXT_WEAPON_STEYR
+		GiveDelayedWeapon(WEAPONTYPE_STEYR, 1000);
+		SetCurrentWeapon(WEAPONTYPE_STEYR);
+#else
+		GiveDelayedWeapon(WEAPONTYPE_M4, 1000);
+		SetCurrentWeapon(WEAPONTYPE_M4);
+#endif
+#else
 		GiveDelayedWeapon(WEAPONTYPE_MP5, 1000);
 		SetCurrentWeapon(WEAPONTYPE_MP5);
+#endif
 		m_fArmour = 100.0f;
 		m_wepSkills = 32; /* TODO: what is this? seems unused */
 		m_wepAccuracy = 84;
@@ -83,8 +121,18 @@ CCopPed::CCopPed(eCopType copType, int32 modifier) : CPed(PEDTYPE_COP)
 		case 7: SetModelIndex(MI_VICE8); break;
 		default: assert(0); break;
 		}
+#ifdef VICEEXT_WEAPON_UZIOLD
+		if (CGeneral::GetRandomTrueFalse()) {
+			GiveDelayedWeapon(WEAPONTYPE_UZIOLD, 1000);
+			SetCurrentWeapon(WEAPONTYPE_UZIOLD);
+		} else {
+			GiveDelayedWeapon(WEAPONTYPE_UZI, 1000);
+			SetCurrentWeapon(WEAPONTYPE_UZI);
+		}
+#else
 		GiveDelayedWeapon(WEAPONTYPE_UZI, 1000);
 		SetCurrentWeapon(WEAPONTYPE_UZI);
+#endif
 		m_fArmour = 100.0f;
 		m_wepSkills = 176;
 #ifdef VICEEXT_GANG_AIM

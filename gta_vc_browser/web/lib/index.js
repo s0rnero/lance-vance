@@ -168,7 +168,7 @@ import { CSS, STYLE_ID } from './styles.js';
 // nuevo. Un build enlazado con el mismo tag se sigue sirviendo de la caché (pasó
 // el 23/09: dos corridas del arnés midieron el binario anterior y salían "sin
 // pesomira en CROUCH2" con el build bueno en disco). Subir el tag en CADA build.
-export const VERSION = '2026-10-15-13.0-T4';
+export const VERSION = '2026-10-15-13.0-T5';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.

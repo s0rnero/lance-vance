@@ -16,7 +16,6 @@
 
 #include "Pad.h"
 #include "ondemand.h"
-#include "TxdStore.h" // WLOAD: el diccionario de cada arma del mod
 #include "ControllerConfig.h"
 #include "Timer.h"
 #include "Frontend.h"
@@ -48,7 +47,6 @@
 #include "TrafficLights.h"
 #include "Automobile.h"
 #include "ModelInfo.h"
-#include "PlayerPed.h" // ve37: `ViceExtWeaponInfoOf` (la prueba de armas pide la ficha de las 8)
 
 #ifdef GTA_PS2
 #include "eetypes.h"
@@ -210,12 +208,24 @@ void WeaponCheat2()
 	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
 
 	CStreaming::RequestModel(MI_KATANA, STREAMFLAGS_DONT_REMOVE);
+#ifdef VICEEXT_WEAPON_RCGRENADE
+	CStreaming::RequestModel(MI_RCGRENADE, STREAMFLAGS_DONT_REMOVE);
+#else
 	CStreaming::RequestModel(MI_GRENADE, STREAMFLAGS_DONT_REMOVE);
+#endif
 	CStreaming::RequestModel(MI_BOMB, STREAMFLAGS_DONT_REMOVE);
+#ifdef VICEEXT_WEAPON_BERETTA
+	CStreaming::RequestModel(MI_BERETTA, STREAMFLAGS_DONT_REMOVE);
+#else
 	CStreaming::RequestModel(MI_PYTHON, STREAMFLAGS_DONT_REMOVE);
+#endif
 	CStreaming::RequestModel(MI_STUBBY_SHOTGUN, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_SILENCEDINGRAM, STREAMFLAGS_DONT_REMOVE);
+#ifdef VICEEXT_WEAPON_AK47
+	CStreaming::RequestModel(MI_AK47, STREAMFLAGS_DONT_REMOVE);
+#else
 	CStreaming::RequestModel(MI_M4, STREAMFLAGS_DONT_REMOVE);
+#endif
 	CStreaming::RequestModel(MI_LASERSCOPE, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_ROCKETLAUNCHER, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::LoadAllRequestedModels(false);
@@ -226,20 +236,40 @@ void WeaponCheat2()
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_KATANA, 0);
 #endif
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_DETONATOR_GRENADE, 10);
+#ifdef VICEEXT_WEAPON_BERETTA
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_BERETTA, 100);
+#else
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_PYTHON, 40);
+#endif
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_STUBBY_SHOTGUN, 25);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_SILENCED_INGRAM, 100);
+#ifdef VICEEXT_WEAPON_AK47
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_AK47, 150);
+#else
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_M4, 150);
+#endif
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_LASERSCOPE, 21);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_ROCKETLAUNCHER, 5);
 
 	CStreaming::SetModelIsDeletable(MI_KATANA);
+#ifdef VICEEXT_WEAPON_RCGRENADE
+	CStreaming::SetModelIsDeletable(MI_RCGRENADE);
+#else
 	CStreaming::SetModelIsDeletable(MI_GRENADE);
+#endif
 	CStreaming::SetModelIsDeletable(MI_BOMB);
+#ifdef VICEEXT_WEAPON_BERETTA
+	CStreaming::SetModelIsDeletable(MI_BERETTA);
+#else
 	CStreaming::SetModelIsDeletable(MI_PYTHON);
+#endif
 	CStreaming::SetModelIsDeletable(MI_STUBBY_SHOTGUN);
 	CStreaming::SetModelIsDeletable(MI_SILENCEDINGRAM);
+#ifdef VICEEXT_WEAPON_AK47
+	CStreaming::SetModelIsDeletable(MI_AK47);
+#else
 	CStreaming::SetModelIsDeletable(MI_M4);
+#endif
 	CStreaming::SetModelIsDeletable(MI_LASERSCOPE);
 	CStreaming::SetModelIsDeletable(MI_ROCKETLAUNCHER);
 #ifdef MOBILE_IMPROVEMENTS
@@ -319,36 +349,6 @@ void WeaponCheat4()
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_M16, 150);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_STEYR, 150);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_GRENADE_LAUNCHER, 30);
-
-#ifdef __EMSCRIPTEN__
-	// Prueba automática web (ve37): la medida DIRECTA de «el truco de armas del
-	// mod carga sus datos». Antes esto se deducía de las líneas `TXDIN`, cuya
-	// instrumentación está acotada a las primeras 60 del proceso (diagnóstico
-	// F3a): en una sesión larga ya se habían gastado y la prueba salía en rojo
-	// con el truco funcionando. Aquí no hay tope: una línea por arma pedida, con
-	// su modelo y su diccionario, y el estado real del streaming. Y de paso la
-	// ficha `WINFO` de cada arma (`ViceExtWeaponInfoOf`): así la prueba mide los
-	// clips que resuelve cada una de las 8 SIN depender de que la sonda sepa
-	// cambiarlas de mano.
-	{
-		static const eWeaponType kArmasMod[8] = { WEAPONTYPE_BERETTA, WEAPONTYPE_DEAGLE,
-			WEAPONTYPE_SHOTGUN2, WEAPONTYPE_UZIOLD, WEAPONTYPE_AK47, WEAPONTYPE_M16,
-			WEAPONTYPE_STEYR, WEAPONTYPE_GRENADE_LAUNCHER };
-		static const int kModelosMod[8] = { MI_BERETTA, MI_DEAGLE, MI_SHOTGUN2, MI_UZIOLD,
-			MI_AK47, MI_M16, MI_STEYR, MI_GR_LAUNCH };
-		for (int i = 0; i < 8; i++) {
-			CBaseModelInfo *mi = CModelInfo::GetModelInfo(kModelosMod[i]);
-			int slot = mi->GetTxdSlot();
-			char t[192];
-			snprintf(t, sizeof t, "WLOAD arma=%s cargado=%d txd=%s txdCargado=%d",
-				mi->GetModelName(), CStreaming::HasModelLoaded(kModelosMod[i]) ? 1 : 0,
-				CTxdStore::GetTxdName(slot), CStreaming::HasTxdLoaded(slot) ? 1 : 0);
-			ODTRACES(t);
-			printf("[wload] %s\n", t);
-			FindPlayerPed()->ViceExtWeaponInfoOf(kArmasMod[i]);
-		}
-	}
-#endif
 
 	CStreaming::SetModelIsDeletable(MI_BERETTA);
 	CStreaming::SetModelIsDeletable(MI_DEAGLE);

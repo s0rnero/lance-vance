@@ -546,7 +546,6 @@ enum Config {
 #define VICEEXT_CAR_WHEEL_KEEP	// v2.0 "The front wheels of the car retain their current rotation after exiting the car"
 #define VICEEXT_CAR_FOUR_COLORS	// v2.5 "Support for four colors for added vehicles"
 #define VICEEXT_GAS_STATION_BLOW	// v2.6 "A gas station will explode if a vehicle crashes into it"
-#define VICEEXT_PROJECTILE_BLOW	// v2.6 "A projectile will explode if you shoot it"
 #define VICEEXT_DISTANT_LIGHTS	// v2.6 "Distant lights. Can be disabled in features.ini": portado de
 							// su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): los dos
 							// pools enteros, coronas hasta 530 m / el far clip

@@ -323,6 +323,9 @@ void CHud::Draw()
 #ifdef VICEEXT_WEAPON_STEYR
 						|| WeaponType == WEAPONTYPE_STEYR
 #endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+						|| WeaponType == WEAPONTYPE_GRENADE_LAUNCHER
+#endif
 #ifdef VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
 						|| WeaponType == WEAPONTYPE_FLAMETHROWER || WeaponType == WEAPONTYPE_ROCKETLAUNCHER && bRocketLauncherThirdPersonAiming) {
 #else

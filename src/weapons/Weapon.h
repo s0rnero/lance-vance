@@ -74,7 +74,11 @@ public:
 	static void BlowUpExplosiveThings(CEntity *thing);
 	bool HasWeaponAmmoToBeUsed(void);
 	
-	static bool IsShotgun(int weapon) { return weapon == WEAPONTYPE_SHOTGUN || weapon == WEAPONTYPE_SPAS12_SHOTGUN || weapon == WEAPONTYPE_STUBBY_SHOTGUN || weapon == WEAPONTYPE_SHOTGUN2; } // SHOTGUN2: Vice Extended
+	static bool IsShotgun(int weapon) { return weapon == WEAPONTYPE_SHOTGUN || weapon == WEAPONTYPE_SPAS12_SHOTGUN || weapon == WEAPONTYPE_STUBBY_SHOTGUN
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+										|| weapon == WEAPONTYPE_SHOTGUN2
+#endif
+										; }
 
 	static bool ProcessLineOfSight(CVector const &point1, CVector const &point2, CColPoint &point, CEntity *&entity, eWeaponType type, CEntity *shooter, bool checkBuildings, bool checkVehicles, bool checkPeds, bool checkObjects, bool checkDummies, bool ignoreSeeThrough, bool ignoreSomeObjects);
 
@@ -88,3 +92,6 @@ public:
 VALIDATE_SIZE(CWeapon, 0x18);
 
 void FireOneInstantHitRound(CVector *source, CVector *target, int32 damage);
+#if defined FREE_CAM && defined VICEEXT_WEAPON_GRENADE_LAUNCHER
+bool Find3rdPersonCamTargetVectorFromCachedVectors(float dist, CVector pos, CVector& source, CVector& target, CVector camSource, CVector camFront, CVector camUp);
+#endif

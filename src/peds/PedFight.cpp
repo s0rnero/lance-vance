@@ -3027,14 +3027,27 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_MINIGUN:
 			case WEAPONTYPE_UZI_DRIVEBY:
-			// Vice Extended (mueren como con su arma de serie equivalente)
-			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DEAGLE:
-			case WEAPONTYPE_SHOTGUN2:
-			case WEAPONTYPE_UZIOLD:
+#ifdef VICEEXT_WEAPON_AK47
 			case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 			case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+			case WEAPONTYPE_SHOTGUN2:
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+			case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+			case WEAPONTYPE_BERETTA:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 			case WEAPONTYPE_STEYR:
+#endif
 
 				if (bBulletProof)
 					return false;
@@ -3043,6 +3056,15 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 				if (IsPlayer() || bNoCriticalHits)
 					dontRemoveLimb = true;
 				else if (method != WEAPONTYPE_M4 && method != WEAPONTYPE_RUGER && method != WEAPONTYPE_SNIPERRIFLE &&
+#ifdef VICEEXT_WEAPON_AK47
+						method != WEAPONTYPE_AK47 &&
+#endif
+#ifdef VICEEXT_WEAPON_M16
+						method != WEAPONTYPE_M16 &&
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+						method != WEAPONTYPE_STEYR &&
+#endif
 						method != WEAPONTYPE_LASERSCOPE) {
 					if (method == WEAPONTYPE_SHOTGUN)
 						dontRemoveLimb = CGeneral::GetRandomNumber() & 7;
@@ -3125,6 +3147,9 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 				break;
 			case WEAPONTYPE_GRENADE:
 			case WEAPONTYPE_ROCKETLAUNCHER:
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+			case WEAPONTYPE_GRENADE_LAUNCHER:
+#endif
 			case WEAPONTYPE_EXPLOSION:
 				if (bExplosionProof)
 					return false;

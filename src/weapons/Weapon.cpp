@@ -54,7 +54,10 @@ int32 sniperPirateCheck = 0x00797743; // 'Cwy\0' ???
 #endif
 
 #ifdef FREE_CAM
-static bool
+#ifndef VICEEXT_WEAPON_GRENADE_LAUNCHER
+static
+#endif
+bool
 Find3rdPersonCamTargetVectorFromCachedVectors(float dist, CVector pos, CVector& source, CVector& target, CVector camSource, CVector camFront, CVector camUp)
 {
 	if (CPad::GetPad(0)->GetLookBehindForPed()) {
@@ -165,14 +168,6 @@ bool
 CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 {
 	ASSERT(shooter!=nil);
-#ifdef __EMSCRIPTEN__
-	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
-		char odUzi[160];
-		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=enter estado=%d clip=%d total=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal);
-		ODTRACES(odUzi);
-	}
-#endif
-
 	CVector fireOffset(0.0f, 0.0f, 0.6f);
 	CVector *source = fireSource;
 #ifdef FIX_BUGS
@@ -215,7 +210,9 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_SPAS12_SHOTGUN:
 			case WEAPONTYPE_STUBBY_SHOTGUN:
-			case WEAPONTYPE_SHOTGUN2:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+			case WEAPONTYPE_SHOTGUN2:
+#endif
 			{
 				addFireRateAsDelay = true;
 				fired = FireShotgun(shooter, source);
@@ -245,13 +242,24 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_MINIGUN:
 			case WEAPONTYPE_HELICANNON:
-			// Vice Extended (gun hitscan como sus equivalente de serie)
-			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DEAGLE:
-			case WEAPONTYPE_UZIOLD:
+#ifdef VICEEXT_WEAPON_AK47
 			case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 			case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+			case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+			case WEAPONTYPE_BERETTA:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 			case WEAPONTYPE_STEYR:
+#endif
 			{
 				if ((TheCamera.PlayerWeaponMode.Mode == CCam::MODE_HELICANNON_1STPERSON || TheCamera.PlayerWeaponMode.Mode == CCam::MODE_M16_1STPERSON)
 					&& shooter == FindPlayerPed()) {
@@ -265,7 +273,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			}
 
 			case WEAPONTYPE_ROCKETLAUNCHER:
-			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
 			{
 				if ( shooter->IsPed() && ((CPed*)shooter)->m_pSeekTarget != nil )
 				{
@@ -282,11 +289,29 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				break;
 			}
 
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+			case WEAPONTYPE_GRENADE_LAUNCHER:
+			{
+				if ( shooter->IsPed() && ((CPed*)shooter)->m_pSeekTarget != nil )
+				{
+					float distToTarget = (shooter->GetPosition() - ((CPed*)shooter)->m_pSeekTarget->GetPosition()).Magnitude();
+
+					if ( distToTarget > 8.0f || ((CPed*)shooter)->IsPlayer() )
+						fired = FireProjectile(shooter, source, 1.0f);
+					else
+						fired = false;
+				}
+				else
+					fired = FireProjectile(shooter, source, 1.0f);
+
+				break;
+			}
+#endif
+
 			case WEAPONTYPE_MOLOTOV:
 			case WEAPONTYPE_GRENADE:
 			case WEAPONTYPE_DETONATOR_GRENADE:
 			case WEAPONTYPE_TEARGAS:
-			case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended (en mano se lanza)
 			{
 				if ( shooter == FindPlayerPed() )
 				{
@@ -387,14 +412,27 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_LASERSCOPE:
 				case WEAPONTYPE_M60:
 				case WEAPONTYPE_MINIGUN:
-				// Vice Extended
-				case WEAPONTYPE_BERETTA:
-				case WEAPONTYPE_DEAGLE:
-				case WEAPONTYPE_SHOTGUN2:
-				case WEAPONTYPE_UZIOLD:
+#ifdef VICEEXT_WEAPON_AK47
 				case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 				case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+				case WEAPONTYPE_SHOTGUN2:
+#endif
+#ifdef VICEEXT_WEAPON_UZIOLD
+				case WEAPONTYPE_UZIOLD:
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+				case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+				case WEAPONTYPE_BERETTA:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 				case WEAPONTYPE_STEYR:
+#endif
 					CStats::RoundsFiredByPlayer++;
 					break;
 					
@@ -405,8 +443,9 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_ROCKETLAUNCHER:
 				case WEAPONTYPE_DETONATOR:
 				case WEAPONTYPE_HELICANNON:
-				case WEAPONTYPE_GRENADE_LAUNCHER:			// Vice Extended
-				case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+				case WEAPONTYPE_GRENADE_LAUNCHER:
+#endif
 					CStats::KgsOfExplosivesUsed++;
 					break;
 			}
@@ -465,14 +504,6 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 
 		fired = FireMelee(shooter, *source);
 	}
-
-#ifdef __EMSCRIPTEN__
-	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
-		char odUzi[160];
-		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=exit estado=%d clip=%d total=%d ok=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal, (int)fired);
-		ODTRACES(odUzi);
-	}
-#endif
 
 	if ( m_eWeaponType == WEAPONTYPE_UNARMED || m_eWeaponType == WEAPONTYPE_BASEBALLBAT )
 		return true;
@@ -1105,14 +1136,6 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	ASSERT(shooter!=nil);
 	ASSERT(fireSource!=nil);
 
-#ifdef __EMSCRIPTEN__
-	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
-		char odUzi[160];
-		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=ih_enter estado=%d clip=%d total=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal);
-		ODTRACES(odUzi);
-	}
-#endif
-
 	CWeaponInfo *info = GetInfo();
 
 	CVector source, target;
@@ -1301,7 +1324,17 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			CheckForShootingVehicleOccupant(&victim, &point, m_eWeaponType, source, target);
 
 		int32 rotSpeed = 1;
-		if ( m_eWeaponType == WEAPONTYPE_M4 )
+		if ( m_eWeaponType == WEAPONTYPE_M4
+#ifdef VICEEXT_WEAPON_AK47
+			|| m_eWeaponType == WEAPONTYPE_AK47
+#endif
+#ifdef VICEEXT_WEAPON_M16
+			|| m_eWeaponType == WEAPONTYPE_M16
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+			|| m_eWeaponType == WEAPONTYPE_STEYR
+#endif
+			)
 			rotSpeed = 4;
 
 		CVector bulletPos;
@@ -1342,7 +1375,17 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			CWorld::pIgnoreEntity = nil;
 
 			int32 rotSpeed = 1;
-			if (m_eWeaponType == WEAPONTYPE_M4)
+			if (m_eWeaponType == WEAPONTYPE_M4
+#ifdef VICEEXT_WEAPON_AK47
+				|| m_eWeaponType == WEAPONTYPE_AK47
+#endif
+#ifdef VICEEXT_WEAPON_M16
+				|| m_eWeaponType == WEAPONTYPE_M16
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+				|| m_eWeaponType == WEAPONTYPE_STEYR
+#endif
+				)
 				rotSpeed = 4;
 
 			CVector bulletPos;
@@ -1375,7 +1418,17 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			CWorld::bIncludeBikers = false;
 
 			int32 rotSpeed = 1;
-			if (m_eWeaponType == WEAPONTYPE_M4)
+			if (m_eWeaponType == WEAPONTYPE_M4
+#ifdef VICEEXT_WEAPON_AK47
+				|| m_eWeaponType == WEAPONTYPE_AK47
+#endif
+#ifdef VICEEXT_WEAPON_M16
+				|| m_eWeaponType == WEAPONTYPE_M16
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+				|| m_eWeaponType == WEAPONTYPE_STEYR
+#endif
+				)
 				rotSpeed = 4;
 
 			CVector bulletPos;
@@ -1414,10 +1467,15 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		case WEAPONTYPE_M60:
 		case WEAPONTYPE_MINIGUN:
 		case WEAPONTYPE_HELICANNON:
-		// Vice Extended (rifles con fogonazo grande)
+#ifdef VICEEXT_WEAPON_AK47
 		case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 		case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 		case WEAPONTYPE_STEYR:
+#endif
 		{
 			static uint8 counter = 0;
 
@@ -1443,6 +1501,9 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		case WEAPONTYPE_TEC9:
 		case WEAPONTYPE_SILENCED_INGRAM:
 		case WEAPONTYPE_MP5:
+#ifdef VICEEXT_WEAPON_UZIOLD
+		case WEAPONTYPE_UZIOLD:
+#endif
 		{
 			CPointLights::AddLight(CPointLights::LIGHT_POINT,
 					*fireSource, CVector(0.0f, 0.0f, 0.0f), 5.0f,
@@ -1484,6 +1545,12 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		case WEAPONTYPE_PYTHON:
 		case WEAPONTYPE_SNIPERRIFLE:
 		case WEAPONTYPE_LASERSCOPE:
+#ifdef VICEEXT_WEAPON_DEAGLE
+		case WEAPONTYPE_DEAGLE:
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+		case WEAPONTYPE_BERETTA:
+#endif
 		{
 			CPointLights::AddLight(CPointLights::LIGHT_POINT,
 					*fireSource, CVector(0.0f, 0.0f, 0.0f), 5.0f,
@@ -1526,14 +1593,6 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	}
 
 	DoBulletImpact(shooter, victim, fireSource, &target, &point, ahead);
-
-#ifdef __EMSCRIPTEN__
-	if (m_eWeaponType == WEAPONTYPE_UZIOLD && shooter == FindPlayerPed()) {
-		char odUzi[160];
-		snprintf(odUzi, sizeof odUzi, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=ih_exit estado=%d clip=%d total=%d ok=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)m_eWeaponState, (int)m_nAmmoInClip, (int)m_nAmmoTotal, 1);
-		ODTRACES(odUzi);
-	}
-#endif
 
 	return true;
 }
@@ -1723,7 +1782,11 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 				else
 				{
 					if ( victimPed->bCanBeShotInVehicle && (IsShotgun(m_eWeaponType) ||
-						(!victimPed->IsPlayer() && (m_eWeaponType == WEAPONTYPE_HELICANNON || m_eWeaponType == WEAPONTYPE_M60 || m_eWeaponType == WEAPONTYPE_PYTHON))))
+						(!victimPed->IsPlayer() && (m_eWeaponType == WEAPONTYPE_HELICANNON || m_eWeaponType == WEAPONTYPE_M60 || m_eWeaponType == WEAPONTYPE_PYTHON
+#ifdef VICEEXT_WEAPON_DEAGLE
+						|| m_eWeaponType == WEAPONTYPE_DEAGLE
+#endif
+						))))
 					{
 						posOffset.Normalise();
 						victimPed->bIsStanding = false;
@@ -1753,7 +1816,17 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 								asoc->blendAmount = 0.0f;
 								asoc->blendDelta  = 8.0f;
 
-								if ( m_eWeaponType == WEAPONTYPE_M4 )
+								if ( m_eWeaponType == WEAPONTYPE_M4
+#ifdef VICEEXT_WEAPON_AK47
+									|| m_eWeaponType == WEAPONTYPE_AK47
+#endif
+#ifdef VICEEXT_WEAPON_M16
+									|| m_eWeaponType == WEAPONTYPE_M16
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+									|| m_eWeaponType == WEAPONTYPE_STEYR
+#endif
+									)
 									victimPlayer->m_nHitAnimDelayTimer = CTimer::GetTimeInMilliseconds() + 2500;
 								else
 									victimPlayer->m_nHitAnimDelayTimer = CTimer::GetTimeInMilliseconds() + 1000;
@@ -1927,6 +2000,9 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 							CVector moveForce = point->normal * -4.0f;
 							victimObject->ApplyMoveForce(moveForce.x, moveForce.y, moveForce.z);
 						}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+						CProjectileInfo::BlowUpIfThisIsAProjectile(victimObject);
+#endif
 					} else if (victimObject->m_nCollisionDamageEffect >= DAMAGE_EFFECT_SMASH_COMPLETELY) {
 						victimObject->ObjectDamage(50.f);
 					}
@@ -2049,6 +2125,13 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 			checkObstacleOnShootNo = 2;
 			shootsAtOnce = 5;
 			break;
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+		case WEAPONTYPE_SHOTGUN2:
+			angleRange = DEGTORAD(18.0f);
+			checkObstacleOnShootNo = 2;
+			shootsAtOnce = 5;
+			break;
+#endif
 		default:
 			break;
 	}
@@ -2346,6 +2429,9 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 									CVector moveForce = point.normal*-5.0f;
 									victimObject->ApplyMoveForce(moveForce.x, moveForce.y, moveForce.z);
 								}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+								CProjectileInfo::BlowUpIfThisIsAProjectile(victimObject);
+#endif
 							}
 						}
 
@@ -2432,32 +2518,31 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 	CVector source, target;
 	eWeaponType projectileType = m_eWeaponType;
 
-	// Vice Extended: el lanzagranadas dispara una granada propia (modelo
-	// grenade2), no el misil del lanzacohetes.
-	if ( m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER )
-		projectileType = WEAPONTYPE_GRENADE_LAUNCHER_GRENADE;
-
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
 	if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER || m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER )
+#else
+	if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER )
+#endif
 	{
 		source = *fireSource;
-
-		if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER )
-			projectileType = WEAPONTYPE_ROCKET;
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+		projectileType = m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER ? WEAPONTYPE_GRENADE_LAUNCHER_GRENADE : WEAPONTYPE_ROCKET;
+#else
+		projectileType = WEAPONTYPE_ROCKET;
+#endif
 
 		if ( shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
 		{
 #ifndef VICEEXT_FIRING_AND_AIMING
-			if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER ) {
-				int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
-				if (!( mode == CCam::MODE_M16_1STPERSON
-					|| mode == CCam::MODE_SNIPER
-					|| mode == CCam::MODE_ROCKETLAUNCHER
-					|| mode == CCam::MODE_M16_1STPERSON_RUNABOUT
-					|| mode == CCam::MODE_SNIPER_RUNABOUT
-					|| mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT) )
-				{
-					return false;
-				}
+			int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
+			if (!( mode == CCam::MODE_M16_1STPERSON
+				|| mode == CCam::MODE_SNIPER
+				|| mode == CCam::MODE_ROCKETLAUNCHER
+				|| mode == CCam::MODE_M16_1STPERSON_RUNABOUT
+				|| mode == CCam::MODE_SNIPER_RUNABOUT
+				|| mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT) )
+			{
+				return false;
 			}
 #endif
 
@@ -3390,23 +3475,22 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 							break;
 						case ASSOCGRP_COLT:
 						case ASSOCGRP_TEC:
+#ifdef VICEEXT_WEAPON_DEAGLE
+						case ASSOCGRP_DEAGLE:
+#endif
 							soundStart = fReloadAnimSampleFraction[1];
 							break;
 						case ASSOCGRP_UZI:
 							soundStart = fReloadAnimSampleFraction[2];
 							break;
 						case ASSOCGRP_RIFLE:
+#ifdef VICEEXT_WEAPON_STEYR
+						case ASSOCGRP_STEYR:
+#endif
 							soundStart = fReloadAnimSampleFraction[3];
 							break;
 						case ASSOCGRP_M60:
 							soundStart = fReloadAnimSampleFraction[4];
-							break;
-						// Vice Extended (misma fracción que su arma de serie equivalente)
-						case ASSOCGRP_DEAGLE:
-							soundStart = fReloadAnimSampleFraction[1];
-							break;
-						case ASSOCGRP_STEYR:
-							soundStart = fReloadAnimSampleFraction[3];
 							break;
 						default:
 							break;
@@ -3566,9 +3650,19 @@ CWeapon::IsType2Handed(void)
 {
 	return m_eWeaponType == WEAPONTYPE_FLAMETHROWER || m_eWeaponType == WEAPONTYPE_HELICANNON || m_eWeaponType == WEAPONTYPE_M60 ||
 		m_eWeaponType == WEAPONTYPE_M4 || IsShotgun(m_eWeaponType) ||
-		m_eWeaponType == WEAPONTYPE_RUGER || m_eWeaponType == WEAPONTYPE_SNIPERRIFLE || m_eWeaponType == WEAPONTYPE_LASERSCOPE ||
-		// Vice Extended
-		m_eWeaponType == WEAPONTYPE_AK47 || m_eWeaponType == WEAPONTYPE_M16 || m_eWeaponType == WEAPONTYPE_STEYR;
+#ifdef VICEEXT_WEAPON_AK47
+		m_eWeaponType == WEAPONTYPE_AK47 ||
+#endif
+#ifdef VICEEXT_WEAPON_M16
+		m_eWeaponType == WEAPONTYPE_M16 ||
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
+		m_eWeaponType == WEAPONTYPE_STEYR ||
+#endif
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+		m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER ||
+#endif
+		m_eWeaponType == WEAPONTYPE_RUGER || m_eWeaponType == WEAPONTYPE_SNIPERRIFLE || m_eWeaponType == WEAPONTYPE_LASERSCOPE;
 }
 
 void
@@ -3653,28 +3747,6 @@ CWeapon::BlowUpExplosiveThings(CEntity *thing)
 	{
 		CObject *object = (CObject*)thing;
 		int32 mi = object->GetModelIndex();
-#ifdef VICEEXT_PROJECTILE_BLOW
-		if ( !object->bHasBeenDamaged && object->IsObject() && (mi == MI_MISSILE || mi == MI_GRENADE || mi == MI_GR_LAUNCH_GREN || mi == MI_MOLOTOV || mi == MI_TEARGAS) )
-		{
-			object->bHasBeenDamaged = true;
-
-			CExplosion::AddExplosion(nil, FindPlayerPed(), mi == MI_MISSILE ? EXPLOSION_ROCKET : (mi == MI_MOLOTOV ? EXPLOSION_MOLOTOV : EXPLOSION_GRENADE), object->GetPosition(), 0);
-
-			if ( object->GetIsStatic() )
-			{
-				object->SetIsStatic(false);
-				object->AddToMovingList();
-			}
-
-			{
-				char odProyBlow[208];
-				snprintf(odProyBlow, sizeof odProyBlow, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=14 id=0 model=%d proy=1", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)mi);
-				ODTRACES(odProyBlow);
-			}
-
-			return;
-		}
-#endif
 		if ( IsExplosiveThingModel(mi) && !object->bHasBeenDamaged && object->IsObject() )
 		{
 			object->bHasBeenDamaged = true;

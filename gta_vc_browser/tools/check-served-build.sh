@@ -22,8 +22,6 @@ PRE=$BUILD/reVC.js
 
 # marca|bloque|dónde (wasm = motor, pre = capa web/ondemand)
 MARCAS=(
-  "VICEEX sfx arma|D8  sonidos: qué muestra pide cada arma|wasm"
-  "odViceExSample|D8b sonidos del mod admitidos por el motor|wasm"
   "SWIM2 move|R7  nado: avance real medido|wasm"
   "SVLIGHTS|R11 luces de servicio por dummies|wasm"
   "extras=|R11 luces de servicio: variante y extras elegidos|wasm"
@@ -33,10 +31,7 @@ MARCAS=(
   "camz=|H1/H2 cámara medida agachado y nadando|wasm"
   "servicelightson|§6  nombres de luces de servicio del mod|wasm"
   "pedido=|R12 autocentrado de coche: retorno pedido vs pasivo|wasm"
-  "WINFO arma=|R13 ficha por arma: flags, canaim/witharm, reload y nombres de clip|wasm"
-  "clips=|R13 los NOMBRES de clip que resuelve el grupo del arma|wasm"
   "SWIMCAM|R14 nado: objetivo de cámara en la superficie|wasm"
-  "ODSFXPROT|R14 sonidos de arma del mod reservados (sin cola ni reciclado)|wasm"
   "swim move spd=|R17 nado: velocidad y cadencia dictadas por el clip del mod|wasm"
   "SWIMCAM no-fallen-water|R17 cámara: el jugador vivo en el agua no usa la cámara de ahogado|wasm"
   "ViceExtSwimClipSpeed|R17 nado: m/s natural del clip (braza/crol) desde hierarchy->totalLength|wasm"
@@ -57,9 +52,6 @@ MARCAS=(
   "aim=%d law=|R30 nado Serega: axis-compat (ley de apuntado apagada nadando)|wasm"
   "PEDAT x=%.1f y=%.1f z=%.1f|R19 posición, velocidad real y camz del ped (sondas y navegación)|wasm"
   "dist=%.0f|R19c la sonda mide la distancia al agua (navegación hasta el mar)|wasm"
-  "WLOAD arma=|ve37 arnés: qué modelo y diccionario del mod deja cargado el truco de armas|wasm"
-  "ViceExtWeaponInfoOf|ve37 arnés: la ficha WINFO de un arma concreta (medir las 8 sin teclado)|wasm"
-  "txdCargado=|ve37 arnés: el diccionario del arma está en memoria, no sólo mapeado|wasm"
   "Crouch_Roll_L|R20 agachado: los clips de costado del mod, registrados|wasm"
   "ODSTA|R2  capa on-demand: emisora y precargas|pre"
   "serega=|nado Serega: curva deriva/crucero/sprint+timeout en SWIM2|wasm"
@@ -70,7 +62,6 @@ MARCAS=(
   "P4 kind=polbike schema=1|P4  plan41: moto policial con un solo ocupante (occ/passengers)|wasm"
   "P4 kind=radio2 schema=1|P4  plan9.1(1)+10.0-C: icono de emisora al cambiar (emisora/icono)|wasm"
   "P4 kind=cheat2 schema=1|P4  plan9.1(4)+10.0-C: trucos nuevos del mod (cheat/efecto)|wasm"
-  "P4 kind=uzi schema=1|P9.1(5): flanco de disparo Micro-UZI (medida previa al fix)|wasm"
   "P4 kind=cardet schema=1|P4  plan10.0-B: rueda reventada/desprendida (paso/rueda/impulso)|wasm"
   "P4 kind=cardead schema=1|P4  plan10.0-B: muerte NPC en choque duro (muertos/impulso)|wasm"
   "P4 kind=carluz schema=1|P4  plan10.0-B: faro roto por impacto (luz/impulso)|wasm"
@@ -90,6 +81,7 @@ MARCAS=(
   "VEX input|13.0 T2: dispositivo activo (teclado/raton o mando) y mando de la Gamepad API|wasm"
   "VEX mov|13.0 T3: agachado, rueda y escalada del mod (cambio de estado del jugador)|wasm"
   "VEX apunta|13.0 T4: apuntado del mod (bIsPlayerAiming), modo de camara y coche|wasm"
+  "VEX armas|13.0 T5: segundo banco de sonido del mod (ViceEx) cargado en el motor|wasm"
 )
 
 # Datos del mod que tienen que estar SERVIDOS (no basta con que el motor sepa
@@ -108,6 +100,9 @@ DATOS=(
   "models/frontend_ds5.txd|327976|c28ac979a57a|13.0 T2 diagrama de mando DualSense (menu)"
   "anim/ped.ifp|2486356|59929c978b4a|13.0 T3 ped.ifp del mod tal cual (rueda original, sin los clips del sa-crouch)"
   "models/weaponsights.txd|164776|cc5c55188368|13.0 T4 miras por arma del mod (EX_WEAPON_SIGHT)"
+  "Audio/sfx.SDT|199080|8a52e71aa0af|13.0 T5 tabla de efectos con el banco ViceEx detras (ids 9941..9953, frecuencia real del mp3)"
+  "Audio/sfx/9941.mp3|2205|4a248e981d25|13.0 T5 primera muestra del banco ViceEx (ViceEx.RAW recortado a mp3)"
+  "Audio/sfx/9953.mp3|8195|c19feea75474|13.0 T5 ultima muestra del banco ViceEx"
   "data/object.dat|26779|22b718c7796c|7  mundo del mod servido (familia 7)"
   "data/occlu.ipl|21945|e46192296f2e|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ide|111|b82b774a8958|7  mundo del mod servido (familia 7)"

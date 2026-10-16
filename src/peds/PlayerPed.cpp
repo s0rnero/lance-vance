@@ -15,7 +15,6 @@
 #include "World.h"
 #include "RpAnimBlend.h"
 #include "AnimBlendAssociation.h"
-#include "AnimBlendAssocGroup.h"   // R23: la traza WINFO necesita `firstAnimId`/`numAssociations` del grupo
 #include "General.h"
 #include "Pools.h"
 #include "Darkel.h"
@@ -47,99 +46,6 @@
 
 #ifdef VICEEXT_SWIMMING
 static int32 s_odSwimSlot = 0;
-#endif
-
-#ifdef __EMSCRIPTEN__
-//
-// WINFO/WCLIP (10ª partida, 21/09 noche). Motivo: el jugador reporta "las armas
-// se apuntan mal, las pesadas no tienen animación de apuntado, no hay animación
-// de recarga" y en el log no había NADA que dijera qué pose/QUÉ CLIP resuelve
-// cada arma nueva. `AIMDIR ... peso=1.00` sólo dice que la asociación existe,
-// no cuál es. Aquí se imprime, UNA vez por arma que el jugador saca:
-//
-//   - `flags` (hex, tal cual lo lee el motor de `weapon.dat`),
-//   - `canaim` / `witharm`: las dos puertas que eligen la pose de apuntado
-//     (`witharm` es la que levanta los brazos; sin ella el motor sólo gira el
-//     cuerpo — la queja "sin animación de apuntado"),
-//   - `reload` / `crouch`: si el arma trae el flag RELOAD (sin él no hay
-//     animación de recarga posible en el motor de serie),
-//   - `clips`: los NOMBRES de clip que el grupo del arma resuelve para
-//     disparo/agachado/recarga. Si sale `-` o `?`, el clip no está en el `.ifp`
-//     que sirve el juego y ése es el fallo, no la lógica.
-//
-// R23 (23/09, 19ª partida): ESTA FUNCIÓN TUMBABA EL JUEGO.
-//
-// El jugador: "al cargar la escopeta o no sé qué arma del inventario el juego
-// crashea", con `RuntimeError: memory access out of bounds` en
-// `memchr/strnlen/printf_core` llamados desde `ViceExtWeaponInfoTrace`. Es decir:
-// un `%s` de esta función con un puntero BASURA.
-//
-// Causa, leída en el motor: `CAnimBlendAssocGroup::GetAnimation(uint32 id)` es
-// `return &assocList[id - firstAnimId];` **sin comprobar el rango**. El id que se
-// le pasa aquí es un `AnimationId` GLOBAL de otro bloque (p. ej. el clip de
-// disparo agachado de un arma que NO lo tiene en su bloque): el índice se sale
-// del array de asociaciones del grupo, el `&assocList[...]` apunta a memoria
-// cualquiera y su `hierarchy->name` es basura → `snprintf` lee una dirección
-// arbitraria y el wasm aborta. Nada de esto es culpa del arma: es el trazado el
-// que pregunta por un clip que ese grupo no tiene.
-//
-// Arreglo: comprobar el rango contra la propia tabla del grupo
-// (`firstAnimId`/`numAssociations`) ANTES de tocar la asociación, y devolver el
-// nombre copiado y terminado en NUL (`hierarchy->name` es `char[24]` y puede no
-// llevar terminador).
-static const char *
-ViceExtClipName(AssocGroupId group, AnimationId anim)
-{
-	// Cuatro nombres por línea de traza (disparo / agachado / recarga / recarga
-	// agachado): cada llamada necesita SU buffer, así que se rota entre cuatro.
-	static char s_odBuf[4][28];
-	static int s_odNext = 0;
-	if (anim == 0)
-		return "-";
-	if ((int)group < 0 || (int)group >= NUM_ANIM_ASSOC_GROUPS)
-		return "?grupo";
-	CAnimBlendAssocGroup *groups = CAnimManager::GetAnimAssocGroups();
-	if (groups == nil || groups[group].assocList == nil)
-		return "?";
-	int idx = (int)anim - groups[group].firstAnimId;
-	if (idx < 0 || idx >= groups[group].numAssociations)
-		return "fuera";   // ese grupo NO tiene ese clip: no se toca la memoria
-	CAnimBlendAssociation *assoc = &groups[group].assocList[idx];
-	if (assoc->hierarchy == nil || assoc->hierarchy->name == nil)
-		return "?";
-	char *buf = s_odBuf[s_odNext];
-	s_odNext = (s_odNext + 1) & 3;
-	strncpy(buf, assoc->hierarchy->name, sizeof s_odBuf[0] - 1);
-	buf[sizeof s_odBuf[0] - 1] = '\0';
-	return buf;
-}
-
-static void
-ViceExtWeaponInfoTrace(eWeaponType type, CWeaponInfo *info)
-{
-	static int s_odWiLast = -2;
-	if (info == nil || (int)type == s_odWiLast)
-		return;
-	s_odWiLast = (int)type;
-	AssocGroupId g = (AssocGroupId)info->m_AnimToPlay;
-	char t[320];
-	snprintf(t, sizeof t,
-		"WINFO arma=%d grupo=%d flags=0x%x canaim=%d witharm=%d reload=%d crouchr=%d sight=%d clips=%s|%s|%s|%s",
-		(int)type, (int)g, (unsigned)info->m_Flags,
-		info->IsFlagSet(WEAPONFLAG_CANAIM) ? 1 : 0,
-		info->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) ? 1 : 0,
-		CPed::GetReloadAnim(info) ? 1 : 0, CPed::GetCrouchReloadAnim(info) ? 1 : 0,
-#ifdef VICEEXT_WEAPON_SIGHT
-		(int)info->m_nWeaponSight,
-#else
-		-1,
-#endif
-		ViceExtClipName(g, ANIM_WEAPON_FIRE),
-		ViceExtClipName(g, CPed::GetCrouchFireAnim(info)),
-		ViceExtClipName(g, CPed::GetReloadAnim(info)),
-		ViceExtClipName(g, CPed::GetCrouchReloadAnim(info)));
-	ODTRACES(t);
-}
 #endif
 
 bool CPlayerPed::bDontAllowWeaponChange;
@@ -1049,29 +955,40 @@ CPlayerPed::DoWeaponSmoothSpray(void)
 					return PI / 80.f;
 
 			case WEAPONTYPE_PYTHON:
-			case WEAPONTYPE_DEAGLE:	// Vice Extended
+#ifdef VICEEXT_WEAPON_DEAGLE
+			case WEAPONTYPE_DEAGLE:
+#endif
 				return PI / 112.f;
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_SPAS12_SHOTGUN:
 			case WEAPONTYPE_STUBBY_SHOTGUN:
-			case WEAPONTYPE_SHOTGUN2:	// Vice Extended
+#ifdef VICEEXT_WEAPON_SHOTGUN2
+			case WEAPONTYPE_SHOTGUN2:
+#endif
 				return PI / 112.f;
 			case WEAPONTYPE_UZI:
 			case WEAPONTYPE_MP5:
-			case WEAPONTYPE_UZIOLD:	// Vice Extended
+#ifdef VICEEXT_WEAPON_UZIOLD
+			case WEAPONTYPE_UZIOLD:
+#endif
 				return PI / 112.f;
 			case WEAPONTYPE_M4:
 			case WEAPONTYPE_RUGER:
-			case WEAPONTYPE_AK47:	// Vice Extended
+#ifdef VICEEXT_WEAPON_AK47
+			case WEAPONTYPE_AK47:
+#endif
+#ifdef VICEEXT_WEAPON_M16
 			case WEAPONTYPE_M16:
+#endif
+#ifdef VICEEXT_WEAPON_STEYR
 			case WEAPONTYPE_STEYR:
+#endif
 				return PI / 112.f;
 			case WEAPONTYPE_FLAMETHROWER:
 				return PI / 80.f;
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_MINIGUN:
 			case WEAPONTYPE_HELICANNON:
-			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
 				return PI / 176.f;
 			default:
 				return -1.0f;
@@ -1714,6 +1631,15 @@ CPlayerPed::ProcessAnimGroups(void)
 				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_PYTHON && GetWeapon()->m_eWeaponType != WEAPONTYPE_TEC9
 				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_SILENCED_INGRAM && GetWeapon()->m_eWeaponType != WEAPONTYPE_MP5
 				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_GOLFCLUB && GetWeapon()->m_eWeaponType != WEAPONTYPE_KATANA
+#ifdef VICEEXT_WEAPON_UZIOLD
+				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_UZIOLD
+#endif
+#ifdef VICEEXT_WEAPON_DEAGLE
+				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_DEAGLE
+#endif
+#ifdef VICEEXT_WEAPON_BERETTA
+				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_BERETTA
+#endif
 				&& GetWeapon()->m_eWeaponType != WEAPONTYPE_CAMERA) {
 				if (!GetWeapon()->IsType2Handed()) {
 					groupToSet = ASSOCGRP_PLAYER;
@@ -1784,9 +1710,6 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		bCrouchWhenShooting = false;
 	}
 
-#ifdef __EMSCRIPTEN__
-	ViceExtWeaponInfoTrace(GetWeapon()->m_eWeaponType, weaponInfo);
-#endif
 	if(weaponInfo->IsFlagSet(WEAPONFLAG_CANAIM))
 		m_wepAccuracy = 95;
 	else
@@ -1822,7 +1745,11 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		if ((slot == WEAPONSLOT_SHOTGUN || slot == WEAPONSLOT_HANDGUN ||
 			slot == WEAPONSLOT_RIFLE || slot == WEAPONSLOT_SUBMACHINEGUN ||
 			weapon == WEAPONTYPE_M60 || weapon == WEAPONTYPE_MINIGUN ||
-			weapon == WEAPONTYPE_FLAMETHROWER || weapon == WEAPONTYPE_ROCKETLAUNCHER || bSniperCamera) &&
+			weapon == WEAPONTYPE_FLAMETHROWER || weapon == WEAPONTYPE_ROCKETLAUNCHER || bSniperCamera
+#ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
+			|| weapon == WEAPONTYPE_GRENADE_LAUNCHER
+#endif
+			) &&
 			m_nMoveState != PEDMOVE_SPRINT) {
 
 			bool isFrontObstacle = false;
@@ -2973,14 +2900,6 @@ bool
 CPlayerPed::ViceExtIsSwimming(void)
 {
 	return odSwimActive;
-}
-#endif
-
-#ifdef __EMSCRIPTEN__
-void
-CPlayerPed::ViceExtWeaponInfoOf(eWeaponType weaponType)
-{
-	ViceExtWeaponInfoTrace(weaponType, CWeaponInfo::GetWeaponInfo(weaponType));
 }
 #endif
 

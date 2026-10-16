@@ -88,7 +88,6 @@ public:
 #endif
 #ifdef __EMSCRIPTEN__
 	void ViceExtPedAtTrace(void);             // R19: posición y velocidad real (todas las sondas)
-	void ViceExtWeaponInfoOf(eWeaponType);    // R13/ve37: ficha WINFO de un arma concreta (arnés web)
 #endif
 	void ClearAdrenaline(void);
 	void UseSprintEnergy(void);

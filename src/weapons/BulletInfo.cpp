@@ -24,6 +24,9 @@
 #include "World.h"
 #include "SurfaceTable.h"
 #include "Heli.h"
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#include "ProjectileInfo.h"
+#endif
 
 #ifdef SQUEEZE_PERFORMANCE
 uint32 bulletInfoInUse;
@@ -214,6 +217,9 @@ void CBulletInfo::Update(void)
 								CVector moveForce = point.normal * -BULLET_HIT_FORCE;
 								pHitObject->ApplyMoveForce(moveForce.x, moveForce.y, moveForce.z);
 							}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+							CProjectileInfo::BlowUpIfThisIsAProjectile(pHitObject);
+#endif
 						} else if (pHitObject->m_nCollisionDamageEffect >= DAMAGE_EFFECT_SMASH_COMPLETELY) {
 							pHitObject->ObjectDamage(50.f);
 						}

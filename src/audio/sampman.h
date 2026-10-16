@@ -217,9 +217,6 @@ public:
 	int32 _GetPedCommentSlot(uint32 nComment);
 	
 	uint32 GetSampleBaseFrequency  (uint32 nSample);
-	// R14 (12ª partida): reserva una muestra para que nunca se posponga ni se
-	// recicle (sonidos de disparo de las armas del mod). Ver OdSfxReserve.
-	void   ReserveSample           (uint32 nSample);
 	uint32 GetSampleLoopStartOffset(uint32 nSample);
 	int32  GetSampleLoopEndOffset  (uint32 nSample);
 	uint32 GetSampleLength         (uint32 nSample);

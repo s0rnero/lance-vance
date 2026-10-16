@@ -10117,24 +10117,21 @@ enum eSfxSample
 	SFX_PLAYER_ON_FIRE_14,
 	SFX_PLAYER_ON_FIRE_15,
 	LAST_PLAYER_COMMENT(SFX_PLAYER_ON_FIRE_16),
-	// Vice Extended (sección 1, bloque D8): las 13 muestras del banco propio del
-	// mod (`ViceEx.SDT`/`ViceEx.RAW`), metidas en el banco del port en su MISMO
-	// orden por `gta_vc_browser/tools/add_viceex_sfx.py` (ids 9941..9953).
-	// Nombres neutros a propósito: qué muestra es cada arma está en una sola
-	// tabla de `AudioLogic.cpp` (`VICEEXT sfx arma=`) y se corrige sin tocar esto.
-	SFX_VICEEX_00,
-	SFX_VICEEX_01,
-	SFX_VICEEX_02,
-	SFX_VICEEX_03,
-	SFX_VICEEX_04,
-	SFX_VICEEX_05,
-	SFX_VICEEX_06,
-	SFX_VICEEX_07,
-	SFX_VICEEX_08,
-	SFX_VICEEX_09,
-	SFX_VICEEX_10,
-	SFX_VICEEX_11,
-	SFX_VICEEX_12,
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+	SFX_M16_LEFT,
+	SFX_M16_RIGHT,
+	SFX_M16_RELOAD,
+	SFX_DEAGLE_LEFT,
+	SFX_DEAGLE_RIGHT,
+	SFX_BERETTA_LEFT,
+	SFX_BERETTA_RIGHT,
+	SFX_STEYR_LEFT,
+	SFX_STEYR_RIGHT,
+	SFX_GRLAUNCH_LEFT,
+	SFX_GRLAUNCH_RIGHT,
+	SFX_GRLAUNCH_RELOAD,
+	SFX_SWIM_WATER_LOOP,
+#endif
 	TOTAL_AUDIO_SAMPLES,
 	NO_SAMPLE,
 
@@ -10145,4 +10142,9 @@ enum eSfxSample
 	SAMPLEBANK_PED_START = SFX_FOOTSTEP_SAND_4 + 1,
 	SAMPLEBANK_PED_END = SFX_PLAYER_ON_FIRE_16,
 	SAMPLEBANK_PED_MAX = SAMPLEBANK_PED_END + 1,
+
+#ifdef VICEEXT_SECOND_SAMPLE_BANK
+	NEW_SAMPLEBANK_START = SFX_M16_LEFT,
+	TOTAL_NEW_AUDIO_SAMPLES = TOTAL_AUDIO_SAMPLES - NEW_SAMPLEBANK_START,
+#endif
 };
