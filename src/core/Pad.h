@@ -25,6 +25,9 @@ public:
 	int16 Square, Triangle, Cross, Circle;
 	int16 LeftShock, RightShock;
 	int16 NetworkTalk;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	int16 bWalk;
+#endif
 	float GetLeftStickX(void) { return LeftStickX/32767.0f; };
 	float GetLeftStickY(void) { return LeftStickY/32767.0f; };
 	float GetRightStickX(void) { return RightStickX/32767.0f; };
@@ -152,10 +155,18 @@ public:
 	CControllerState PCTempMouseState;
 	// straight out of my IDB
 	int16 Phase;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	int16 Mode = 1;
+#else
 	int16 Mode;
+#endif
 	int16 ShakeDur;
 	uint16 DisablePlayerControls;
 	uint8 ShakeFreq;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	uint8 ShakeLowFreq;
+	uint8 ShakeHighFreq;
+#endif
 	bool bHornHistory[HORNHISTORY_SIZE];
 	uint8 iCurrHornHistory;
 	int8 JustOutOfFrontend;
@@ -198,6 +209,10 @@ public:
 	CControllerState ReconcileTwoControllersInput(CControllerState const &State1, CControllerState const &State2);
 	void StartShake(int16 nDur, uint8 nFreq);
 	void StartShake_Distance(int16 nDur, uint8 nFreq, float fX, float fY, float fz);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	void StartShake(int16 nDur, uint8 nLowFreq, uint8 nHighFreq);
+	void StartShake_Distance(int16 nDur, uint8 nLowFreq, uint8 nHighFreq, float fX, float fY, float fz);
+#endif
 	void StartShake_Train(float fX, float fY);
 #ifdef GTA_PS2_STUFF
 	void AddToCheatString(char c);
@@ -222,8 +237,13 @@ public:
 	int16 GetCarGunLeftRight(void);
 	int16 GetPedWalkLeftRight(void);
 	int16 GetPedWalkUpDown(void);
-#ifdef VICEEXT_ALT_SIT
 	bool GetPedWalk(void);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool GetRadarZoomOut(void);
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool GetMeleeWeapon(void);
+	bool MeleeWeaponJustDown(void);
 #endif
 	int16 GetAnalogueUpDown(void);
 	int16 GetAnalogueLeftRight(void);

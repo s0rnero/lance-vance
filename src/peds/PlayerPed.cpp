@@ -10,6 +10,7 @@
 #include "Timecycle.h"
 #include "Pad.h"
 #include "Camera.h"
+#include "Frontend.h"
 #include "Sprite.h"   // ClassicAXIS: CSprite::CalcScreenCoors (Main.cpp:1269)
 #include "WeaponEffects.h"
 #include "ModelIndices.h"
@@ -120,7 +121,7 @@ ViceExtAimWithArm(eWeaponType type)
 	// ni pose ni retícula: es el caso que el jugador describe como "armas
 	// pesadas sin animación de apuntado". Se le da la pose que sí tienen las
 	// escopetas (mismo grupo `buddy` en su weapon.dat).
-	case WEAPONTYPE_GRENADE_LAUNCHER:
+	case WEAPONTYPE_GR_LAUNCH:
 		return true;
 	default:
 		return false;
@@ -325,6 +326,10 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 #endif
 	SetInitialState();
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	m_bSkipPhoneCall = false;
+	bIsAutoAiming = false;
+#endif
 	m_pWanted = new CWanted();
 	m_pWanted->Initialise();
 	m_pArrestingCop = nil;
@@ -370,6 +375,9 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 void
 CPlayerPed::ClearWeaponTarget()
 {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bIsAutoAiming = false;
+#endif
 	if (m_nPedType == PEDTYPE_PLAYER1) {
 		SetWeaponLockOnTarget(nil);
 		TheCamera.ClearPlayerWeaponMode();
@@ -490,7 +498,9 @@ CPlayerPed::MakeChangesForNewWeapon(eWeaponType weapon)
 	SetCurrentWeapon(weapon);
 	m_nSelectedWepSlot = m_currentWeapon;
 
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 	GetWeapon()->m_nAmmoInClip = Min(GetWeapon()->m_nAmmoTotal, CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nAmountofAmmunition);
+#endif
 
 	if (CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_CANAIM))
 		ClearWeaponTarget();
@@ -941,7 +951,7 @@ CPlayerPed::DoWeaponSmoothSpray(void)
 					return PI / 80.f;
 
 			case WEAPONTYPE_PYTHON:
-			case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+			case WEAPONTYPE_DEAGLE:	// Vice Extended
 				return PI / 112.f;
 			case WEAPONTYPE_SHOTGUN:
 			case WEAPONTYPE_SPAS12_SHOTGUN:
@@ -963,7 +973,7 @@ CPlayerPed::DoWeaponSmoothSpray(void)
 			case WEAPONTYPE_M60:
 			case WEAPONTYPE_MINIGUN:
 			case WEAPONTYPE_HELICANNON:
-			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
+			case WEAPONTYPE_GR_LAUNCH:	// Vice Extended
 				return PI / 176.f;
 			default:
 				return -1.0f;
@@ -2525,6 +2535,9 @@ CPlayerPed::FindWeaponLockOnTarget(void)
 	if (!nextTarget)
 		return false;
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bIsAutoAiming = true;
+#endif
 	SetWeaponLockOnTarget(nextTarget);
 	bDontAllowWeaponChange = true;
 	SetPointGunAt(nextTarget);
@@ -2750,9 +2763,40 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		}
 	}
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (padUsed->GetMeleeWeapon() && weaponInfo->m_nWeaponSlot <= WEAPONSLOT_MELEE && m_nMoveState != PEDMOVE_SPRINT) {
+		if (m_nSelectedWepSlot == m_currentWeapon) {
+			if (m_nPedState == PED_ATTACK) {
+				if (padUsed->MeleeWeaponJustDown()) {
+					m_bHaveTargetSelected = true;
+				} else if (!m_bHaveTargetSelected) {
+					m_fAttackButtonCounter += CTimer::GetTimeStepNonClipped();
+				}
+			} else {
+				m_fAttackButtonCounter = 0.0f;
+				m_bHaveTargetSelected = false;
+			}
+			if (padUsed->MeleeWeaponJustDown()) {
+				if ((GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED || GetWeapon()->m_eWeaponType == WEAPONTYPE_BRASSKNUCKLE || weaponInfo->IsFlagSet(WEAPONFLAG_FIGHTMODE)) &&
+					(m_fMoveSpeed < 1.0f || m_nPedState == PED_FIGHT)) {
+					StartFightAttack(padUsed->GetWeapon());
+				} else {
+					SetAttack(nil);
+				}
+			}
+		}
+	} else
+#endif
 	if (padUsed->GetWeapon() && m_nMoveState != PEDMOVE_SPRINT) {
 		if (m_nSelectedWepSlot == m_currentWeapon) {
-			if (m_pPointGunAt) {
+			if (m_pPointGunAt && FrontEndMenuManager.m_PrefsAutoaim) {
+				if (m_nPedState == PED_ATTACK) {
+					m_fAttackButtonCounter *= Pow(0.94f, CTimer::GetTimeStep());
+				} else {
+					m_fAttackButtonCounter = 0.0f;
+				}
+				SetAttack(m_pPointGunAt);
+			} else if (m_pPointGunAt) {
 				if (m_nPedState == PED_ATTACK) {
 					m_fAttackButtonCounter *= Pow(0.94f, CTimer::GetTimeStep());
 				} else {
@@ -3243,6 +3287,10 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 #endif
 		float maxAcc = 0.07f * CTimer::GetTimeStep();
 		m_fMoveSpeed = Min(padMoveInGameUnit, m_fMoveSpeed + maxAcc);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if (padUsed && padUsed->GetPedWalk() && !padUsed->GetTarget())
+			m_fMoveSpeed /= 2.0f;
+#endif
 #ifdef VICEEXT_AIM_WALK
 		if (odWalkingAim && m_fMoveSpeed > 1.0f)
 			m_fMoveSpeed = 1.0f;
@@ -3413,7 +3461,7 @@ CPlayerPed::FindNewAttackPoints(void)
 	}
 }
 
-#ifdef VICEEXT_MANUAL_RELOAD
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 // Sección 3 (C3.1, corrección de la traza 20/09): distingue la recarga pedida
 // con la tecla de la automática al vaciar el cargador. Las dos pasan por
 // `WEAPONSTATE_RELOADING`, así que sin esta marca la traza "reload done" daba
@@ -4016,14 +4064,14 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 				odLevel, s_odSwimTicks, odSprintBtn ? 1 : 0,
 				(odSwimAssoc ? odSwimAssoc->speed : -1.0f), (int)m_nPedState,
 				m_fRotationCur, TheCamera.Orientation, TheCamera.Cams[TheCamera.ActiveCam].Beta,
-				(int)ViceExtIsAiming(), (int)CCamera::s_viceExtAimLawActive, s_odLastDest,
+				0, 0, s_odLastDest,
 				(odSwimAssoc ? odSwimAssoc->blendAmount : -1.0f),
 				(RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL) ? RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL)->blendAmount : -1.0f),
 				(int)bIsInWater, odAire, m_vecMoveSpeed.z,
 				odLevelW, odDepth, (int)m_nSelectedWepSlot,
-		ViceExtBlendWeight(GetClump(), ANIM_STD_FALL_GLIDE),
+		0.0f,
 		(int)bIsStanding, (int)bHasCollided, (int)bIsDucking,
-		(int)(m_pPointGunAt != nil), odSuelo, (int)odCrouched);
+		(int)(m_pPointGunAt != nil), odSuelo, 0);
 			ODTRACES(t);
 			float odEsperada = odLevel * GAME_SPEED_TO_METERS_PER_SECOND;
 			bool odErrCat = odAvance > 8.0f;
@@ -5680,6 +5728,7 @@ CPlayerPed::ViceExtCrouchLimitSpeed(void)
 	if (m_fMoveSpeed > VICEEXT_CROUCH_SPEED)
 		m_fMoveSpeed = VICEEXT_CROUCH_SPEED;
 }
+#endif // VICEEXT_CROUCH
 
 #ifdef __EMSCRIPTEN__
 // Arnés web (ve37): la ficha `WINFO` de un arma CONCRETA, aunque el jugador no
@@ -5795,7 +5844,6 @@ CPlayerPed::ViceExtPedAtTrace(void)
 	s_odNextTrace = odNow + 1000;
 }
 #endif // __EMSCRIPTEN__
-#endif // VICEEXT_CROUCH
 
 // =====================================================================
 // ClassicAXIS · el "ProcessPlayerPedControl" del mod
@@ -6279,41 +6327,6 @@ CPlayerPed::ViceExtProcessPlayerPedControl(void)
 void
 CPlayerPed::ProcessControl(void)
 {
-	// ClassicAXIS C17 `WalkKey` (classicaxis_Main.cpp:1196-1201 y 1215-1217): con
-	// la tecla de andar pulsada la velocidad es 0, para poder CAMINAR en vez de
-	// correr. Va aqu\u00ed, al principio de `ProcessControl` y antes de cualquier
-	// predicado de apuntado, que es donde lo lee el mod (Main.cpp:1215, justo
-	// antes de su bloque de `isAiming`).
-	// Se lee de laacci\u00f3n REBINDABLE `PED_WALK` (mismo patron que `PED_RELOAD`,
-	// PlayerPed.cpp:2230), as\u00ed que vale con cualquier m\u00e9todo de control y no
-	// ata la tecla. `GetIsKeyboardKeyDown` (tenido) y no `...JustDown` (flanco),
-	// porque el efecto es mientras se mantenga pulsada.
-	// El "NULL para desactivar" del INI del mod es la tecla 0 -> `if (odWalk)`: si
-	// el jugador rebinda la acci\u00f3n a `NULL` en el men\u00fa de controles, el
-	// `GetControllerKeyAssociatedWithAction` devuelve 0 y la tecla deja de hacer
-	// nada, que es justo lo que significa `NULL` en `ClassicAxisVC.ini:8`.
-	// Con `VICEEXT_ALT_SIT` (v2.0 del mod: "Walking on ALT for the keyboard") la
-	// decision la toma su API `CPad::GetPedWalk()`, y sin la bandera no hay bloque.
-#ifdef VICEEXT_ALT_SIT
-	{
-		RsKeyCodes odWalk = (RsKeyCodes)ControlsManager.GetControllerKeyAssociatedWithAction(PED_WALK, KEYBOARD);
-		bool odWalkDown = CPad::GetPad(0)->GetPedWalk();
-		if (odWalkDown)
-			m_fMoveSpeed = 0.0f;
-		// Traza por FLANCO (pulsar y soltar), no por frame: `AIMWALK tecla=%d spd=%.2f`.
-		// El criterio de \u00a78 es `spd=0.00` con la tecla pulsada y la velocidad de
-		// antes al soltar.
-#ifdef __EMSCRIPTEN__
-		static bool s_odWalkWas = false;
-		if (odWalkDown != s_odWalkWas) {
-			s_odWalkWas = odWalkDown;
-			char t[80];
-			snprintf(t, sizeof t, "AIMWALK tecla=%d spd=%.2f", (int)odWalk, m_fMoveSpeed);
-			ODTRACES(t);
-		}
-#endif
-	}
-#endif
 
 	// ClassicAXIS: la ley de apuntado DEL MOD entra a sustituir el control de
 	// apuntado del motor. Va antes de `CPed::ProcessControl()` y antes que la
@@ -6464,7 +6477,7 @@ CPlayerPed::ProcessControl(void)
 			SetDead();
 		return;
 	}
-#ifdef VICEEXT_MANUAL_RELOAD
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 	// Sección 3 (Vice Extended v2.5, "Reloading a weapon on the key"): recarga a
 	// mano con PED_RELOAD (R por defecto, rebindable). A pie y con el control del
 	// jugador: en vehículo la munición del drive-by tiene su propio camino y con
@@ -6561,6 +6574,14 @@ CPlayerPed::ProcessControl(void)
 	bool odSwimming = ViceExtSwimControl(padUsed);
 	if (odSwimming && (m_nPedState == PED_FALL || m_nPedState == PED_JUMP))
 		SetPedState(PED_IDLE);
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (m_nPedState == PED_ANSWER_MOBILE && m_bSkipPhoneCall) {
+		for (int slot = 0; slot < MISSION_AUDIO_SLOTS; slot++)
+			DMAudio.FinishMissionAudioPhoneDialogue(slot);
+	} else if (m_nPedState == PED_ANSWER_MOBILE && !m_bSkipPhoneCall && CPad::GetPad(0)->ExitVehicleJustDown()) {
+		m_bSkipPhoneCall = true;
+	}
 #endif
 #ifdef VICEEXT_CROUCH
 	// R6: el agachado ya NO se lleva el movimiento (sólo clip + tope). El

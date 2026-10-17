@@ -1030,13 +1030,6 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 				}
 			}
 		}
-		{
-			char tt[128];
-			snprintf(tt, sizeof tt, "TGTGUN base=%d heur=%d aimcam=%d nado=%d melee=%d",
-				(int)bTargetting, nCounter, (int)bAimCam, (int)bSwimAim,
-				(int)pPed->GetWeapon()->IsTypeMelee());
-			ODTRACES(tt);
-		}
 		UpdateCompareFlag(bTargetting);
 		return 0;
 	}

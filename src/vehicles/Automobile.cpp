@@ -1702,10 +1702,18 @@ CAutomobile::ProcessControl(void)
 			speed = Sqrt(speed);
 			if(suspShake > 0.0f){
 				uint8 freq = Min(200.0f*suspShake*speed*2000.0f/m_fMass + 100.0f, 250.0f);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(20000.0f*CTimer::GetTimeStep()/freq, 0, freq);
+#else
 				CPad::GetPad(0)->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
+#endif
 			}else{
 				uint8 freq = Min(200.0f*surfShake*speed*2000.0f/m_fMass + 40.0f, 150.0f);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, 0, freq);
+#else
 				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
+#endif
 			}
 		}
 	}
@@ -2835,7 +2843,11 @@ CAutomobile::PreRender(void)
 		m_randomSeed/50000.0f < CWeather::WetRoads;
 	bool forceLightsOff = false;
 	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if(GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_PLAYER_DISABLED){
+#else
 		if(GetStatus() == STATUS_ABANDONED){
+#endif
 			// Turn off lights on abandoned vehicles only when we they're far away
 			if(bLightsOn &&
 			   Abs(TheCamera.GetPosition().x - GetPosition().x) + Abs(TheCamera.GetPosition().y - GetPosition().y) > 100.0f)
@@ -4814,7 +4826,11 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 
 		if(GetStatus() == STATUS_PLAYER && impulse > 50.0f){
 			uint8 freq = Min(0.4f*impulse*2000.0f/m_fMass + 100.0f, 250.0f);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			CPad::GetPad(0)->StartShake(40000/freq, freq, freq);
+#else
 			CPad::GetPad(0)->StartShake(40000/freq, freq);
+#endif
 		}
 
 		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer){
@@ -5997,7 +6013,11 @@ CPed::MakeTyresMuddySectorList(CPtrList &list)
 											CVector vehAndWheelDist = wheelPos - car->GetPosition();
 											car->ApplyTurnForce(CVector(0.0f, 0.0f, 50.0f * Min(1.0f, m_fTurnMass * 0.0005f)), vehAndWheelDist);
 											if (car == FindPlayerVehicle()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+												CPad::GetPad(0)->StartShake(300, 0, 70);
+#else
 												CPad::GetPad(0)->StartShake(300, 70);
+#endif
 											}
 										}
 									}
@@ -6036,7 +6056,11 @@ CPed::MakeTyresMuddySectorList(CPtrList &list)
 											bike->ApplyTurnForce(CVector(0.0f, 0.0f, 10.0f), vehAndWheelDist);
 
 											if (bike == FindPlayerVehicle()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+												CPad::GetPad(0)->StartShake(300, 0, 70);
+#else
 												CPad::GetPad(0)->StartShake(300, 70);
+#endif
 											}
 										}
 									}

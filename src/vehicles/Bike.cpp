@@ -1234,10 +1234,18 @@ CBike::ProcessControl(void)
 			speed = Sqrt(speed);
 			if(suspShake > 0.0f){
 				uint8 freq = Min(200.0f*suspShake*speed*2000.0f/m_fMass + 100.0f, 250.0f);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(20000.0f*CTimer::GetTimeStep()/freq, 0, freq);
+#else
 				CPad::GetPad(0)->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
+#endif
 			}else{
 				uint8 freq = Min(200.0f*surfShake*speed*2000.0f/m_fMass + 40.0f, 150.0f);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, 0, freq);
+#else
 				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
+#endif
 			}
 		}
 	}
@@ -1455,7 +1463,11 @@ CBike::PreRender(void)
 		m_randomSeed/50000.0f < CWeather::WetRoads;
 	bool forceLightsOff = false;
 	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if(GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_PLAYER_DISABLED){
+#else
 		if(GetStatus() == STATUS_ABANDONED){
+#endif
 			// Turn off lights on abandoned vehicles only when we they're far away
 			if(bLightsOn &&
 			   Abs(TheCamera.GetPosition().x - GetPosition().x) + Abs(TheCamera.GetPosition().y - GetPosition().y) > 100.0f)

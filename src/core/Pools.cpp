@@ -60,6 +60,7 @@ CPools::Initialise(void)
 	CHECKMEM("after cAudioScriptObjectPool");
 	ms_pColModelPool = new CColModelPool(NUMCOLMODELS, "ColModel");
 	CHECKMEM("after pools");
+	ViceExtLimitsTrace();
 	POP_MEMID();
 }
 

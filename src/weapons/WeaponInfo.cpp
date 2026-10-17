@@ -52,14 +52,14 @@ uint16 CWeaponInfo::ms_aReloadSampleTime[WEAPONTYPE_TOTALALLTYPES] =
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	// Vice Extended
 	250,		// BERETTA
-	250,		// DESERT_EAGLE
+	250,		// DEAGLE
 	650,		// SHOTGUN2
 	400,		// UZIOLD
 	300,		// AK47
 	300,		// M16
 	300,		// STEYR
-	400,		// GRENADE_LAUNCHER
-	0			// GRENADE_LAUNCHER_GRENADE
+	400,		// GR_LAUNCH
+	0			// GR_LAUNCH_GRENADE
 };
 
 // Yeah...

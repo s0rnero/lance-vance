@@ -74,6 +74,9 @@ public:
 	uint32 m_nExplosionsSinceLastReward;
 	uint32 m_nHavocLevel;
 	float m_fMediaAttention;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	uint32 m_nTimeVehicleEngineOff;
+#endif
 	bool m_bInfiniteSprint;
 	bool m_bFastReload;
 	bool m_bFireproof;

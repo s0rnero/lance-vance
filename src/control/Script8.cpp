@@ -638,7 +638,9 @@ static uint8 s_odModScriptFlagSaved = 0;   // su 0xD19CAA
 static uint8 s_odModScriptFlags = 0;       // su `[script + 0x79]`
 static uint16 s_odModScriptFlagTicks = 0;  // su `[script + 0x80]` (contador)
 static uint8 s_odModScriptFlagMode = 0;    // su `[script + 0x82]` (0 = identidad; hoy nadie lo pone)
-static int32 s_odModScriptValue4008 = 0;
+static int32 s_odModScriptNewsReq = -1;
+static uint32 s_odModScriptNewsExp = 0;
+static int32 s_odModScriptNewsAct = -1;
 
 #define VICEEXT_MODSCRIPT_P4_EMIT(odBuf, ...) do { int odR = snprintf(odBuf, sizeof(odBuf), __VA_ARGS__); if (odR < 0 || odR >= (int)sizeof(odBuf)) { char odOf[220]; snprintf(odOf, sizeof odOf, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)sizeof(odBuf), odR); ODTRACES(odOf); } else { ODTRACES(odBuf); } } while (0)
 
@@ -742,12 +744,10 @@ int8 CRunningScript::ProcessCommands4000To4099(int32 command)
 		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA7 cmd=%d guardado=%d flags=%d ticks=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptFlagSaved, (int)s_odModScriptFlags, (int)s_odModScriptFlagTicks);
 		return 0;
 	case COMMAND_VICEEXT_SCRIPT_VALUE:
-		// Su `sub_5E1070(param)`: escribe dos globales suyos (0xCF8474/0xCF8478)
-		// con una formula de tiempo/aleatorio que todavia no esta identificada. Se
-		// guarda el parametro y se traza; no se inventa destino.
 		CollectParameters(&m_nIp, 1);
-		s_odModScriptValue4008 = ScriptParams[0];
-		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA8 cmd=%d val=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptValue4008);
+		s_odModScriptNewsReq = ScriptParams[0];
+		s_odModScriptNewsExp = CTimer::GetTimeInMilliseconds() + (uint32)((float)rand() * 1.52587890625e-05f * 10000.0f + 50000.0f);
+		VICEEXT_MODSCRIPT_P4_EMIT(odt, "P4 kind=modscript schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 op=0x0FA8 cmd=%d req=%d exp=%u act=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)command, (int)s_odModScriptNewsReq, (unsigned)s_odModScriptNewsExp, (int)s_odModScriptNewsAct);
 		return 0;
 	case COMMAND_VICEEXT_VEHICLE_HEADING_DEG:
 	{

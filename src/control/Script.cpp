@@ -21,7 +21,7 @@
 #if defined(MISSION_REPLAY) || defined(VICEEXT_AUTOSAVE)
 #include "GenericGameStorage.h"
 #endif
-#if defined(__EMSCRIPTEN__) && (defined(VICEEXT_AUTOSAVE) || defined(VICEEXT_SKIP_PHONE_CALL))
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_AUTOSAVE)
 #include "ondemand.h" // web: ODTRACES -> odtrace.log (sección 3, C2)
 #endif
 #include "HandlingMgr.h"
@@ -893,28 +893,6 @@ void CTheScripts::Process()
 	DrawScriptSpheres();
 	if (FailCurrentMission)
 		--FailCurrentMission;
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	if (FailCurrentMission == 0 && IsPlayerOnAMission() &&
-		(AudioManager.m_bIsMissionAudioPhoneCall[0] || AudioManager.m_bIsMissionAudioPhoneCall[1])) {
-		if (ControlsManager.ViceExtActionKeyJustDown(SKIP_PHONE_CALL, rsENTER)) {
-			FailCurrentMission = 2;
-			MissionSkipLevel = 0;
-			DMAudio.ClearMissionAudio(0);
-			DMAudio.ClearMissionAudio(1);
-#ifdef __EMSCRIPTEN__
-			{
-				char t[192];
-				snprintf(t, sizeof t, "CALL skip tecla=%d slot0=%d slot1=%d fail=%d",
-					(int)ControlsManager.GetControllerKeyAssociatedWithAction(SKIP_PHONE_CALL, KEYBOARD),
-					(int)AudioManager.m_bIsMissionAudioPhoneCall[0],
-					(int)AudioManager.m_bIsMissionAudioPhoneCall[1],
-					(int)FailCurrentMission);
-				ODTRACES(t);
-			}
-#endif
-		}
-	}
-#endif
 	if (UseTextCommands){
 		for (int i = 0; i < MAX_NUM_INTRO_TEXT_LINES; i++)
 			IntroTextLines[i].Reset();

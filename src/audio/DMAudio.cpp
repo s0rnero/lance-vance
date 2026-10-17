@@ -341,6 +341,14 @@ cDMAudio::ClearMissionAudio(uint8 slot)
 	AudioManager.ClearMissionAudio(slot);
 }
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+void
+cDMAudio::FinishMissionAudioPhoneDialogue(uint8 slot)
+{
+	AudioManager.FinishMissionAudioPhoneDialogue(slot);
+}
+#endif
+
 const char *
 cDMAudio::GetMissionAudioLoadedLabel(uint8 slot)
 {

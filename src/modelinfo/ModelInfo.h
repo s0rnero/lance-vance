@@ -39,6 +39,7 @@ public:
 		return ms_modelInfoPtrs[id];
 	}
 	static CBaseModelInfo *GetModelInfo(const char *name, int minIndex, int maxIndex);
+	static int GetFreeModelID();
 	static CColModel *GetColModel(int id){
 		return ms_modelInfoPtrs[id]->GetColModel();
 	}

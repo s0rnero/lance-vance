@@ -1,6 +1,7 @@
 #include <csignal>
 #define WITHWINDOWS
 #include "common.h"
+#include "ondemand.h"
 #if defined DETECT_JOYSTICK_MENU && defined XINPUT
 #include <xinput.h>
 #if !defined(PSAPI_VERSION) || (PSAPI_VERSION > 1)
@@ -205,6 +206,77 @@ mINI::INIFile ini(
 );
 mINI::INIStructure cfg;
 
+mINI::INIFile limitsIni("ViceExtended/limits.ini");
+mINI::INIStructure limitsCfg;
+uint8 bInitLimitsIni = limitsIni.read(limitsCfg);
+
+uint16 ReadAndGetGameLimit(const char *key, uint16 dflt)
+{
+	mINI::INIMap<std::string> section = limitsCfg.get("Limits");
+	if (section.has(key)) {
+		char *endPtr;
+		return (uint16)strtol(section.get(key).c_str(), &endPtr, 0);
+	}
+	return dflt;
+}
+
+uint16 NUMPTRNODES = ReadAndGetGameLimit("NUMPTRNODES", 50000);
+uint16 NUMENTRYINFOS = ReadAndGetGameLimit("NUMENTRYINFOS", 3200);
+uint16 NUMPEDS = ReadAndGetGameLimit("NUMPEDS", 140);
+uint16 NUMVEHICLES = ReadAndGetGameLimit("NUMVEHICLES", 130);
+uint16 NUMBUILDINGS = ReadAndGetGameLimit("NUMBUILDINGS", 7000);
+uint16 NUMTREADABLES = ReadAndGetGameLimit("NUMTREADABLES", 1);
+uint16 NUMOBJECTS = ReadAndGetGameLimit("NUMOBJECTS", 460);
+uint16 NUMDUMMIES = ReadAndGetGameLimit("NUMDUMMIES", 2340);
+uint16 NUMAUDIOSCRIPTOBJECTS = ReadAndGetGameLimit("NUMAUDIOSCRIPTOBJECTS", 192);
+uint16 NUMCOLMODELS = ReadAndGetGameLimit("NUMCOLMODELS", 4400);
+uint16 MAXWHEELMODELS = ReadAndGetGameLimit("MAXWHEELMODELS", 12);
+
+mINI::INIFile featuresIni("ViceExtended/features.ini");
+mINI::INIStructure featuresCfg;
+uint8 bInitFeaturesIni = featuresIni.read(featuresCfg);
+
+uint16 ReadAndGetFeature(const char *key)
+{
+	mINI::INIMap<std::string> section = featuresCfg.get("Features");
+	if (section.has(key)) {
+		char *endPtr;
+		return (uint16)strtol(section.get(key).c_str(), &endPtr, 0);
+	}
+	return 0;
+}
+
+CRGBA ReadAndGetWaypointColor(const char *key)
+{
+	CRGBA color = CRGBA(180, 24, 24, 255);
+	mINI::INIMap<std::string> section = featuresCfg.get("Features");
+	if (section.has(key)) {
+		uint32 red, green, blue;
+		sscanf(section.get(key).c_str(), "%i, %i, %i", &red, &green, &blue);
+		color = CRGBA(red, green, blue, 255);
+		return color;
+	}
+	return color;
+}
+
+bool bVehiclesDontCatchFireWhenTurningOver = ReadAndGetFeature("VehiclesDontCatchFireWhenTurningOver") != 0;
+bool bHealthRegenerationUpToHalf = ReadAndGetFeature("HealthRegenerationUpToHalf") != 0;
+bool bWantedStarsHideOnScreenWhenThereIsNoSearch = ReadAndGetFeature("WantedStarsHideOnScreenWhenThereIsNoSearch") != 0;
+bool bRemoveMoneyZerosInTheHud = ReadAndGetFeature("RemoveMoneyZerosInTheHud") != 0;
+bool bPlayerDoesntBounceAwayFromMovingCar = ReadAndGetFeature("PlayerDoesntBounceAwayFromMovingCar") != 0;
+bool bStandardCarsUseTurnSignals = ReadAndGetFeature("StandardCarsUseTurnSignals") != 0;
+bool bCameraShakeInVehicleAtHighSpeed = ReadAndGetFeature("CameraShakeInVehicleAtHighSpeed") != 0;
+bool bMilitaryFiringFromTankAtPlayer = ReadAndGetFeature("MilitaryFiringFromTankAtPlayer") != 0;
+bool bDisableBulletTraces = ReadAndGetFeature("DisableBulletTraces") != 0;
+bool bEnableDistantLights = ReadAndGetFeature("EnableDistantLights") != 0;
+bool bRecoilWhenFiring = ReadAndGetFeature("RecoilWhenFiring") != 0;
+bool bEnableClimbing = ReadAndGetFeature("EnableClimbing") != 0;
+bool bEnableSwimming = ReadAndGetFeature("EnableSwimming") != 0;
+bool bRocketLauncherThirdPersonAiming = ReadAndGetFeature("RocketLauncherThirdPersonAiming") != 0;
+bool bRandomVehicleModsInTraffic = ReadAndGetFeature("RandomVehicleModsInTraffic") != 0;
+bool bMirrorModeByDefault = ReadAndGetFeature("MirrorModeByDefault") != 0;
+CRGBA WaypointColor = ReadAndGetWaypointColor("WaypointColorRGB");
+
 bool ReadIniIfExists(const char *cat, const char *key, uint32 *out)
 {
 	mINI::INIMap<std::string> section = cfg.get(cat);
@@ -331,10 +403,7 @@ const char *iniControllerActions[] = { "PED_FIREWEAPON", "PED_CYCLE_WEAPON_RIGHT
 	"PED_1RST_PERSON_LOOK_RIGHT", "VEHICLE_LOOKLEFT", "VEHICLE_LOOKRIGHT", "VEHICLE_LOOKBEHIND", "VEHICLE_TURRETLEFT", "VEHICLE_TURRETRIGHT", "VEHICLE_TURRETUP", "VEHICLE_TURRETDOWN",
 	"PED_CYCLE_TARGET_LEFT", "PED_CYCLE_TARGET_RIGHT", "PED_CENTER_CAMERA_BEHIND_PLAYER", "PED_LOCK_TARGET", "NETWORK_TALK", "PED_1RST_PERSON_LOOK_UP", "PED_1RST_PERSON_LOOK_DOWN",
 	"_CONTROLLERACTION_36", "TOGGLE_DPAD", "SWITCH_DEBUG_CAM_ON", "TAKE_SCREEN_SHOT", "SHOW_MOUSE_POINTER_TOGGLE", "UNKNOWN_ACTION",
-	"PED_WALK"
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	,"SKIP_PHONE_CALL"
-#endif
+	"PED_WALK", "RADAR_ZOOM_OUT"
  }; // ClassicAXIS C17 `WalkKey`: al final para no desalinear el array con el enum
 
 const char *iniControllerTypes[] = { "kbd:", "2ndKbd:", "mouse:", "joy:" };
@@ -524,7 +593,7 @@ bool LoadINISettings()
 	ReadIniIfExists("ClassicAxis", "RightAnalogStickSensitivityY", &CCamera::s_viceExtAim.stickSensY);
 	ReadIniIfExists("ClassicAxis", "ZoomForAssaultRifles", &CCamera::s_viceExtAim.zoomForAssaultRifles);
 #endif
-#ifdef VICEEXT_AIM_SENSITIVITY
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 	// 2506 «Aim sensitivity fix» · seccion [Controller] con los nombres VERBATIM de
 	// su `ViceEx.ini` (medido: `FUN_0051cab0` lee esas ocho claves y `FUN_0049b290`
 	// elige el par segun el apuntado; el raton se escala por 0.5, constante
@@ -532,14 +601,20 @@ bool LoadINISettings()
 	// movimiento por `aim/look`, que es el mismo cociente. Si el INI no trae la
 	// seccion se quedan los defaults del literal de `Camera.cpp`, que son los valores
 	// reales de su fichero (raton 0.002500 -> 0.001667, pad 0.001250 -> 0.000625).
-	ReadIniIfExists("Controller", "MouseLookSensX", &CCamera::s_viceExtSens.mouseLookX);
-	ReadIniIfExists("Controller", "MouseAimSensX", &CCamera::s_viceExtSens.mouseAimX);
-	ReadIniIfExists("Controller", "MouseLookSensY", &CCamera::s_viceExtSens.mouseLookY);
-	ReadIniIfExists("Controller", "MouseAimSensY", &CCamera::s_viceExtSens.mouseAimY);
-	ReadIniIfExists("Controller", "PadLookSensX", &CCamera::s_viceExtSens.padLookX);
-	ReadIniIfExists("Controller", "PadAimSensX", &CCamera::s_viceExtSens.padAimX);
-	ReadIniIfExists("Controller", "PadLookSensY", &CCamera::s_viceExtSens.padLookY);
-	ReadIniIfExists("Controller", "PadAimSensY", &CCamera::s_viceExtSens.padAimY);
+	ReadIniIfExists("Controller", "InvertVertically", &FrontEndMenuManager.m_PrefsInvertVertically);
+	ReadIniIfExists("Controller", "Autoaim", &FrontEndMenuManager.m_PrefsAutoaim);
+	ReadIniIfExists("Controller", "LeftStickDeadzone", &FrontEndMenuManager.m_PrefsLeftStickDeadzone);
+	ReadIniIfExists("Controller", "RightStickDeadzone", &FrontEndMenuManager.m_PrefsRightStickDeadzone);
+	ReadIniIfExists("Controller", "VibrationForce", &FrontEndMenuManager.m_PrefsVibrationForce);
+	ReadIniIfExists("Controller", "PadLookSensX", &FrontEndMenuManager.m_PrefsPadLookSensX);
+	ReadIniIfExists("Controller", "PadAimSensX", &FrontEndMenuManager.m_PrefsPadAimSensX);
+	ReadIniIfExists("Controller", "PadLookSensY", &FrontEndMenuManager.m_PrefsPadLookSensY);
+	ReadIniIfExists("Controller", "PadAimSensY", &FrontEndMenuManager.m_PrefsPadAimSensY);
+	ReadIniIfExists("Controller", "MouseLookSensX", &FrontEndMenuManager.m_PrefsMouseLookSensX);
+	ReadIniIfExists("Controller", "MouseAimSensX", &FrontEndMenuManager.m_PrefsMouseAimSensX);
+	ReadIniIfExists("Controller", "MouseLookSensY", &FrontEndMenuManager.m_PrefsMouseLookSensY);
+	ReadIniIfExists("Controller", "MouseAimSensY", &FrontEndMenuManager.m_PrefsMouseAimSensY);
+	ReadIniIfExists("Display", "GPS", &FrontEndMenuManager.m_PrefsGPS);
 #endif
 #ifdef VICEEXT_FIRST_PERSON
 	ReadIniIfExists("FirstPerson", "Near Clip on foot", &CCamera::s_viceExt1PNearClipOnFoot);
@@ -655,17 +730,23 @@ void SaveINISettings()
 #endif
 	StoreIni("Controller", "HeadBob1stPerson", TheCamera.m_bHeadBob);
 	StoreIni("Controller", "HorizantalMouseSens", TheCamera.m_fMouseAccelHorzntl);
-#ifdef VICEEXT_AIM_SENSITIVITY
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 	// 2506 «Aim sensitivity fix» · se guardan las ocho claves con los nombres del mod
 	// para que su propia seccion [Controller] se pueda pegar tal cual en el INI.
-	StoreIni("Controller", "MouseLookSensX", CCamera::s_viceExtSens.mouseLookX);
-	StoreIni("Controller", "MouseAimSensX", CCamera::s_viceExtSens.mouseAimX);
-	StoreIni("Controller", "MouseLookSensY", CCamera::s_viceExtSens.mouseLookY);
-	StoreIni("Controller", "MouseAimSensY", CCamera::s_viceExtSens.mouseAimY);
-	StoreIni("Controller", "PadLookSensX", CCamera::s_viceExtSens.padLookX);
-	StoreIni("Controller", "PadAimSensX", CCamera::s_viceExtSens.padAimX);
-	StoreIni("Controller", "PadLookSensY", CCamera::s_viceExtSens.padLookY);
-	StoreIni("Controller", "PadAimSensY", CCamera::s_viceExtSens.padAimY);
+	StoreIni("Controller", "InvertVertically", FrontEndMenuManager.m_PrefsInvertVertically);
+	StoreIni("Controller", "Autoaim", FrontEndMenuManager.m_PrefsAutoaim);
+	StoreIni("Controller", "LeftStickDeadzone", FrontEndMenuManager.m_PrefsLeftStickDeadzone);
+	StoreIni("Controller", "RightStickDeadzone", FrontEndMenuManager.m_PrefsRightStickDeadzone);
+	StoreIni("Controller", "VibrationForce", FrontEndMenuManager.m_PrefsVibrationForce);
+	StoreIni("Controller", "MouseLookSensX", FrontEndMenuManager.m_PrefsMouseLookSensX);
+	StoreIni("Controller", "MouseAimSensX", FrontEndMenuManager.m_PrefsMouseAimSensX);
+	StoreIni("Controller", "MouseLookSensY", FrontEndMenuManager.m_PrefsMouseLookSensY);
+	StoreIni("Controller", "MouseAimSensY", FrontEndMenuManager.m_PrefsMouseAimSensY);
+	StoreIni("Controller", "PadLookSensX", FrontEndMenuManager.m_PrefsPadLookSensX);
+	StoreIni("Controller", "PadAimSensX", FrontEndMenuManager.m_PrefsPadAimSensX);
+	StoreIni("Controller", "PadLookSensY", FrontEndMenuManager.m_PrefsPadLookSensY);
+	StoreIni("Controller", "PadAimSensY", FrontEndMenuManager.m_PrefsPadAimSensY);
+	StoreIni("Display", "GPS", FrontEndMenuManager.m_PrefsGPS);
 #endif
 #ifdef VICEEXT_AIM_CLASSICAXIS
 	// ClassicAXIS · la misma sección, escritura. Guardar estos valores es lo que
@@ -1401,6 +1482,45 @@ void re3_usererror(const char *format, ...)
 }
 #endif
 #endif
+
+float InterpFloat(float currentValue, float newValue, float interpSpeed)
+{
+	if (currentValue == newValue)
+		return currentValue;
+	float distance = newValue - currentValue;
+	float deltaSeconds = CTimer::GetTimeStepInSeconds();
+	float deltaSpeed = deltaSeconds * interpSpeed;
+	return currentValue + distance * deltaSpeed;
+}
+
+CVector InterpVector(CVector currentValue, CVector newValue, float interpSpeed)
+{
+	if (currentValue == newValue)
+		return currentValue;
+	CVector distance = newValue - currentValue;
+	float distanceMagnitude = distance.Magnitude();
+	float deltaSeconds = CTimer::GetTimeStepInSeconds();
+	float deltaSpeed = deltaSeconds * interpSpeed;
+	CVector deltaNormal = distance / distanceMagnitude;
+	return currentValue + deltaNormal * deltaSpeed;
+}
+
+void ViceExtLimitsTrace(void)
+{
+#ifdef __EMSCRIPTEN__
+	static bool done = false;
+	if (done)
+		return;
+	done = true;
+	char t[256];
+	snprintf(t, sizeof t, "P4 kind=limits schema=1 gen=1 frame=%u sim=%.4f case=7 id=0 numpeds=%d numvehicles=%d mult=%.2f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, NUMPEDS, NUMVEHICLES, VICEEXT_SPAWN_RADIUS_MULT);
+	ODTRACES(t);
+	snprintf(t, sizeof t, "VEX limits numpeds=%d numvehicles=%d", NUMPEDS, NUMVEHICLES);
+	ODTRACES(t);
+	snprintf(t, sizeof t, "VEX ini leido=%d", (int)bInitFeaturesIni);
+	ODTRACES(t);
+#endif
+}
 
 #ifdef VALIDATE_SAVE_SIZE
 int32 _saveBufCount;

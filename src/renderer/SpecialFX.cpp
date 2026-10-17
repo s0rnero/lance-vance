@@ -478,7 +478,7 @@ void CBulletTraces::AddTrace(CVector* start, CVector* end, int32 weaponType, cla
 	case WEAPONTYPE_SHOTGUN:
 	case WEAPONTYPE_SPAS12_SHOTGUN:
 	case WEAPONTYPE_STUBBY_SHOTGUN:
-	case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+	case WEAPONTYPE_DEAGLE:	// Vice Extended
 	case WEAPONTYPE_SHOTGUN2:
 		CBulletTraces::AddTrace(start, end, 0.7f, 1000, 200);
 		break;

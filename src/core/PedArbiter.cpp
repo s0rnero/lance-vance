@@ -38,7 +38,7 @@ ViceExtPedClaim(ePedLane l, ePedCap c)
 	// apaga desde aqui. El arbitro es su unico duenno, asi que negar el carril
 	// deja todas las consultas del nado en falso (el jugador vuelve al
 	// comportamiento vanilla) sin tocar los veinte sitios que preguntan.
-	if (l == PEDLANE_NADO && !ViceExtFeatures::On("EnableSwimming", true))
+	if (l == PEDLANE_NADO && !bEnableSwimming)
 		return false;
 	ePedLane odAntes = ms_aOwner[c];
 	if (odAntes == l)

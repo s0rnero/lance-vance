@@ -415,7 +415,7 @@ void CHud::Draw()
 					if (WeaponType >= WEAPONTYPE_COLT45 && WeaponType <= WEAPONTYPE_ROCKETLAUNCHER
 						|| WeaponType == WEAPONTYPE_M60 || WeaponType == WEAPONTYPE_MINIGUN
 						|| WeaponType == WEAPONTYPE_FLAMETHROWER
-						|| (WeaponType >= WEAPONTYPE_BERETTA && WeaponType <= WEAPONTYPE_GRENADE_LAUNCHER)) {
+						|| (WeaponType >= WEAPONTYPE_BERETTA && WeaponType <= WEAPONTYPE_GR_LAUNCH)) {
 						DrawCrossHairPC = 1;
 					}
 				}
@@ -451,7 +451,7 @@ void CHud::Draw()
 			}
 		}
 #endif
-		if ((DrawCrossHair || DrawCrossHairPC || odAimLaw)
+		if ((DrawCrossHair || DrawCrossHairPC)
 				&& !ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR)) {
 			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
 
@@ -2168,6 +2168,8 @@ void CHud::Initialise()
 	CTxdStore::AddRef(HudTXD);
 	CTxdStore::PopCurrentTxd();
 	CTxdStore::SetCurrentTxd(HudTXD);
+
+	m_pLastZoneName = nil;
 
 	for (int i = 0; i < NUM_HUD_SPRITES; i++) {
 		Sprites[i].SetTexture(WeaponFilenames[i].name, WeaponFilenames[i].mask);

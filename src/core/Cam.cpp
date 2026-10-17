@@ -267,7 +267,7 @@ extern float fRangePlayerRadius;
 extern float fCloseNearClipLimit;
 
 #ifdef FREE_CAM
-bool CCamera::bFreeCam = false;
+bool CCamera::bFreeCam = true;
 int nPreviousMode = -1;
 #endif
 
@@ -329,6 +329,50 @@ CCam::Process(void)
 	CVector CameraTarget;
 	float TargetSpeedVar = 0.0f;
 	float TargetOrientation = 0.0f;
+
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	{
+		CPlayerPed *odPed = FindPlayerPed();
+		if (odPed != nil) {
+			float odSenseX;
+			float odSenseY;
+			bool odAim = odPed->ViceExtIsAiming();
+			if (odAim) {
+				if (CPad::GetPad(0)->IsAffectedByController) {
+					odSenseX = FrontEndMenuManager.m_PrefsPadAimSensX / 2.0f;
+					odSenseY = FrontEndMenuManager.m_PrefsPadAimSensY / 2.0f;
+				} else {
+					odSenseX = FrontEndMenuManager.m_PrefsMouseAimSensX / 6.0f;
+					odSenseY = FrontEndMenuManager.m_PrefsMouseAimSensY / 6.0f;
+				}
+			} else {
+				if (CPad::GetPad(0)->IsAffectedByController) {
+					odSenseX = FrontEndMenuManager.m_PrefsPadLookSensX;
+					odSenseY = FrontEndMenuManager.m_PrefsPadLookSensY;
+				} else {
+					odSenseX = FrontEndMenuManager.m_PrefsMouseLookSensX / 2.0f;
+					odSenseY = FrontEndMenuManager.m_PrefsMouseLookSensY / 2.0f;
+				}
+			}
+			if (FrontEndMenuManager.m_PrefsInvertVertically)
+				odSenseY = -odSenseY;
+			TheCamera.m_fMouseAccelHorzntl = odSenseX;
+			TheCamera.m_fMouseAccelVertical = odSenseY;
+#ifdef __EMSCRIPTEN__
+			{
+				static uint32 s_odAimSensMs = 0;
+				uint32 odNow = CTimer::GetTimeInMilliseconds();
+				if (odNow >= s_odAimSensMs + 1000 || odNow + 60000 < s_odAimSensMs) {
+					s_odAimSensMs = odNow;
+					char odT[240];
+					snprintf(odT, sizeof odT, "P4 kind=aimsens schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 aim=%d sens=%.4f mfac=%.4f pfac=%.4f", (unsigned)CTimer::GetFrameCounter(), odNow * 0.001f, odAim ? 1 : 0, odSenseX, odSenseY, odAim ? FrontEndMenuManager.m_PrefsPadAimSensX / FrontEndMenuManager.m_PrefsPadLookSensX : 1.0f);
+					ODTRACES(odT);
+				}
+			}
+#endif
+		}
+	}
+#endif
 
 	static CVector SmoothedPos(0.0f, 0.0f, 10000.0f);
 	static CVector SmoothedSpeed(0.0f, 0.0f, 0.0f);
@@ -1956,7 +2000,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	TargetCoors.z += odWalkDuckOffset;
 #endif
 	Source = TargetCoors - Front*CamDist;
-#ifdef VICEEXT_AIM_CLASSICAXIS
+#ifdef VICEEXT_SWIMMING
 	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->bTouchingWater) {
 		float odWl = 0.0f;
 		if (CWaterLevel::GetWaterLevelNoWaves(Source.x, Source.y, Source.z, &odWl)

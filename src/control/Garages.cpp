@@ -277,6 +277,7 @@ int16 CGarages::AddOne(float X1, float Y1, float Z1, float X2, float Y2, float X
 	case GARAGE_HIDEOUT_TEN:
 	case GARAGE_HIDEOUT_ELEVEN:
 	case GARAGE_HIDEOUT_TWELVE:
+	case GARAGE_MOD:
 		pGarage->m_eGarageState = GS_FULLYCLOSED;
 		pGarage->m_fDoorPos = 0.0f;
 		break;

@@ -1026,12 +1026,20 @@ CPed::Attack(void)
 
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_MADECONTACT, (float)damagerType);
 			if (IsPlayer()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(240, 180, 0);
+#else
 				CPad::GetPad(0)->StartShake(240, 180);
+#endif
 			}
 		} else {
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_ATTACK, 0.0f);
 			if (IsPlayer()) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				CPad::GetPad(0)->StartShake(240, 90, 0);
+#else
 				CPad::GetPad(0)->StartShake(240, 90);
+#endif
 			}
 		}
 		attackShouldContinue = false;
@@ -2959,7 +2967,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 			case WEAPONTYPE_UZI_DRIVEBY:
 			// Vice Extended (mueren como con su arma de serie equivalente)
 			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 			case WEAPONTYPE_SHOTGUN2:
 			case WEAPONTYPE_UZIOLD:
 			case WEAPONTYPE_AK47:
@@ -3783,7 +3791,11 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 			} else {
 				shakeFreq = 250.0f;
 			}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			CPad::GetPad(0)->StartShake(40000 / shakeFreq, shakeFreq, shakeFreq);
+#else
 			CPad::GetPad(0)->StartShake(40000 / shakeFreq, shakeFreq);
+#endif
 		}
 		bIsStanding = false;
 		damageDir = GetLocalDirection(-m_vecMoveSpeed);

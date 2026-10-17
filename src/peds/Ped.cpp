@@ -7881,6 +7881,10 @@ CPed::SetAnswerMobile(void)
 void
 CPed::ClearAnswerMobile(void)
 {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (IsPlayer())
+		((CPlayerPed*)this)->m_bSkipPhoneCall = false;
+#endif
 	if (m_nLastPedState == PED_ANSWER_MOBILE)
 		m_nLastPedState = PED_NONE;
 

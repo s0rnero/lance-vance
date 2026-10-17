@@ -18,7 +18,7 @@ enum Config {
 	// Vice Extended usa IDs por encima de 6500 (armas 6661-6669, coches
 	// 6500-6599). Sin subirlo, esos IDs caen fuera de ms_modelInfoPtrs y de
 	// ms_aInfoForModel: modelo/colisión nulos o tabla corrupta.
-	MODELINFOSIZE = 6700,	// 6500 vanilla, 4900 on PS2
+	MODELINFOSIZE = 10000,	// 6500 vanilla, 4900 on PS2
 	// Contador de slots de TXD. El gta3.dir del port tiene 1389 entradas .txd
 	// tras importar weapons.img (pack 3) y newVehicles.img (pack 4): con 1385
 	// (que era el número justo antes de estos packs) `CTxdStore::AddTxdSlot`
@@ -48,25 +48,9 @@ enum Config {
 
 	NUMOBJECTINFO = 210,
 
-#define VICEEXT_LIMITS
 #define VICEEXT_SPAWN_RADIUS_MULT 1.5f
 
-	// Pool sizes
-	NUMPTRNODES = 50000,
-	NUMENTRYINFOS = 3200,
-#ifdef VICEEXT_LIMITS
-	NUMPEDS = 140,
-	NUMVEHICLES = 130,
-#else
-	NUMPEDS = 140,
-	NUMVEHICLES = 110,
-#endif
-	NUMBUILDINGS = 7000,
-	NUMTREADABLES = 1,
-	NUMOBJECTS = 460,
-	NUMDUMMIES = 2340,
-	NUMAUDIOSCRIPTOBJECTS = 192,
-	NUMCOLMODELS = 4400,
+	// Pool sizes: variables en re3.cpp (lectura de ViceExtended/limits.ini)
 	NUMCUTSCENEOBJECTS = 50,	// not a pool in VC
 
 	// 29 bloques de serie (28 .ifp de gta3.img + ped.ifp) + 3 del mod
@@ -126,11 +110,11 @@ enum Config {
 
 	NUMONSCREENCLOCKS = 1,
 	NUMONSCREENCOUNTERS = 3,
-	NUMRADARBLIPS = 75,
+	NUMRADARBLIPS = 300,
 	NUMGENERALPICKUPS = 320,
-	NUMSCRIPTEDPICKUPS = 16,
+	NUMSCRIPTEDPICKUPS = 100,
 	NUMPICKUPS = NUMGENERALPICKUPS + NUMSCRIPTEDPICKUPS,
-	NUMCOLLECTEDPICKUPS = 20,
+	NUMCOLLECTEDPICKUPS = 100,
 	NUMPACMANPICKUPS = 256,
 	NUMEVENTS = 64,
 
@@ -311,8 +295,8 @@ enum Config {
 
 #define FIX_BUGS		// fixes bugs that we've came across during reversing. You can undefine this only on release builds.
 #define MORE_LANGUAGES		// Add more translations to the game
-#define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
-#define FIX_INCOMPATIBLE_SAVES // try to fix incompatible saves, requires COMPATIBLE_SAVES
+//#define COMPATIBLE_SAVES // this allows changing structs while keeping saves compatible, and keeps saves compatible between platforms
+//#define FIX_INCOMPATIBLE_SAVES // try to fix incompatible saves, requires COMPATIBLE_SAVES
 #define LOAD_INI_SETTINGS // as the name suggests. fundamental for CUSTOM_FRONTEND_OPTIONS
 
 #define NO_MOVIES	// add option to disable intro videos
@@ -399,7 +383,6 @@ enum Config {
 #define VICEEXT_HINT_KEYS		// v3.0 "PC key icons in game hints": los avisos pintan el icono de la tecla (su pcbtns.txd) en vez de su nombre (sección 1, bloque D7)
 #define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
-#define VICEEXT_MANUAL_RELOAD	// v2.5 "Reloading a weapon on the key": recarga con tecla (R por defecto) (sección 3, bloque C3.1)
 #define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
 #define VICEEXT_SHOTGUN_AIM		// v1.5 "Changed aiming animations" + v1.0 "Changed aiming system": las escopetas también apuntan (su weapon.dat no trae el flag CANAIM) (sección 3, bloque C7)
 #define VICEEXT_CROUCH			// v1.5 "Fixed ... crouching animations": agachado a pie con la tecla de la acción PED_DUCK (C) (sección 3, bloque C5)
@@ -456,7 +439,6 @@ enum Config {
 #define VICEEXT_FIX_FV_ROTOR
 #define VICEEXT_POLICE_BIKE
 #define VICEEXT_NO_WHEEL_PIERCE
-#define VICEEXT_SKIP_PHONE_CALL
 #define VICEEXT_MOD_SCRIPT		// familia 13: los 10 opcodes propios de su `main.scm` (comandos 4000-4009 = `0x0FA0`-`0x0FA9`) en el interprete
 #define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
@@ -474,11 +456,6 @@ enum Config {
 #define VICEEXT_EXTRA_CHEATS
 #define VICEEXT_CAR_DEATH
 #define VICEEXT_CAR_LIGHTS
-#define VICEEXT_ALT_SIT			// v2.0 "Walking on ALT for the keyboard" + v1.0 "Seated movement":
-							// andar con la tecla de la accion `PED_WALK` (LALT), decidido por su
-							// API `CPad::GetPedWalk()` (`#ifdef IMPROVED_MENU_AND_INPUT`); el
-							// sentarse (attractors + clips SEAT_*, con `SEAT_rvrs` del mod) ya
-							// estaba: `PedAttractor.cpp` del port es identico al suyo
 #define VICEEXT_GANG_AIM
 #define VICEEXT_MOON			// v1.5 "Moving Moon. Its position depends on the position of the Sun":
 							// la luna se coloca en `-sunDir*150` (portado de su `Clouds.cpp`,
@@ -512,9 +489,11 @@ enum Config {
 							// pools enteros, coronas hasta 530 m / el far clip
 #define VICEEXT_COP_COVER		// v2.6 "Cops can crouch down first and then go to cover during the wanted"
 #define VICEEXT_HELI_HEALTH		// v2.0 "Reduced health of police helicopter"
-#define VICEEXT_AIM_SENSITIVITY	// 2506 "Aim sensitivity fix"
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
 #define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
+#define VICEEXT_IMPROVED_TECH_PART	// blips nuevos del mod (HOUSE_FOR_SALE/BOMB_SHOP/RACE/STORE)
+#define VICEEXT_DISPLAYED_COLLECTIBLES	// coleccionables en el mapa (PACKAGE/STUNT/RAMPAGE)
+#define VICEEXT_IMPROVED_MENU_AND_INPUT	// paraguas de entrada/menú del mod (T2)
 
 // Hud, frontend and radar
 #define PC_MENU
@@ -529,8 +508,8 @@ enum Config {
 #	if defined(XINPUT) || defined(GTA_HANDHELD)
 #		define GAMEPAD_MENU		// Add gamepad menu
 #	endif
-#	define TRIANGLE_BACK_BUTTON
-//#	define CIRCLE_BACK_BUTTON
+#	define CIRCLE_BACK_BUTTON
+//#	define TRIANGLE_BACK_BUTTON
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
 // PORTADO (SilentPatch :4086, ver CMenuManager::DrawQuitGameScreen): el outro
 // dura ≈2,5 s legibles (75 ticks × 33 ms) en vez de 750 ms.
@@ -543,7 +522,7 @@ enum Config {
 #		define NO_ISLAND_LOADING  // disable loadscreen between islands via loading all island data at once, consumes more memory and CPU
 #		define CUTSCENE_BORDERS_SWITCH
 #		define MULTISAMPLING		// adds MSAA option
-#		define INVERT_LOOK_FOR_PAD // enable the hidden option
+//#		define INVERT_LOOK_FOR_PAD // enable the hidden option
 #		define PED_CAR_DENSITY_SLIDERS
 #	endif
 #endif

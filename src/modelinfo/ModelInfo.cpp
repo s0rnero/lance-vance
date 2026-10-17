@@ -211,6 +211,15 @@ CModelInfo::GetModelInfo(const char *name, int minIndex, int maxIndex)
 	return nil;
 }
 
+int CModelInfo::GetFreeModelID()
+{
+	for (int i = 0; i < MODELINFOSIZE; i++) {
+		if (!CModelInfo::ms_modelInfoPtrs[i])
+			return i;
+	}
+	return -1;
+}
+
 bool
 CModelInfo::IsBoatModel(int32 id)
 {

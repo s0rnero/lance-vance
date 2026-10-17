@@ -1175,7 +1175,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 	case WEAPONTYPE_UZI_DRIVEBY:
 	// Vice Extended (balas como su arma de serie equivalente)
 	case WEAPONTYPE_BERETTA:
-	case WEAPONTYPE_DESERT_EAGLE:
+	case WEAPONTYPE_DEAGLE:
 	case WEAPONTYPE_SHOTGUN2:
 	case WEAPONTYPE_UZIOLD:
 	case WEAPONTYPE_AK47:
@@ -1217,7 +1217,7 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 			accuracy = 10;
 			break;
 		case WEAPONTYPE_PYTHON:
-		case WEAPONTYPE_DESERT_EAGLE:	// Vice Extended
+		case WEAPONTYPE_DEAGLE:	// Vice Extended
 			if(!((CPed*)damagedBy)->IsPlayer())
 				accuracy = 64;
 			break;

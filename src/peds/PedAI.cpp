@@ -1863,8 +1863,14 @@ CPed::ProcessObjective(void)
 #endif
 							if (m_pMyVehicle->IsBoat())
 								SetExitBoat(m_pMyVehicle);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+							else if (!IsPlayer() || FindPlayerPed()->GetPlayerInfoForThisPlayerPed()->m_nTimeVehicleEngineOff < CTimer::GetTimeInMilliseconds()) {
+								SetExitCar(m_pMyVehicle, 0);
+							}
+#else
 							else
 								SetExitCar(m_pMyVehicle, 0);
+#endif
 						}
 					} else {
 						RestorePreviousObjective();
@@ -4528,6 +4534,12 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 			else
 				veh->SetStatus(STATUS_ABANDONED);
 		}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if (veh->pDriver == this && IsPlayer() && FindPlayerPed()->GetPlayerInfoForThisPlayerPed()->m_nTimeVehicleEngineOff != 0) {
+			veh->bEngineOn = false;
+			veh->bLightsOn = false;
+		}
+#endif
 	}
 }
 

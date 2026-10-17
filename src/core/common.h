@@ -337,6 +337,38 @@ void re3_trace(const char *filename, unsigned int lineno, const char *func, cons
 void re3_assert(const char *expr, const char *filename, unsigned int lineno, const char *func);
 void re3_usererror(const char *format, ...);
 
+extern uint16 NUMPTRNODES;
+extern uint16 NUMENTRYINFOS;
+extern uint16 NUMPEDS;
+extern uint16 NUMVEHICLES;
+extern uint16 NUMBUILDINGS;
+extern uint16 NUMTREADABLES;
+extern uint16 NUMOBJECTS;
+extern uint16 NUMDUMMIES;
+extern uint16 NUMAUDIOSCRIPTOBJECTS;
+extern uint16 NUMCOLMODELS;
+extern uint16 MAXWHEELMODELS;
+float InterpFloat(float currentValue, float newValue, float interpSpeed);
+CVector InterpVector(CVector currentValue, CVector newValue, float interpSpeed);
+extern bool bVehiclesDontCatchFireWhenTurningOver;
+extern bool bHealthRegenerationUpToHalf;
+extern bool bWantedStarsHideOnScreenWhenThereIsNoSearch;
+extern bool bRemoveMoneyZerosInTheHud;
+extern bool bPlayerDoesntBounceAwayFromMovingCar;
+extern bool bStandardCarsUseTurnSignals;
+extern bool bCameraShakeInVehicleAtHighSpeed;
+extern bool bMilitaryFiringFromTankAtPlayer;
+extern bool bDisableBulletTraces;
+extern bool bEnableDistantLights;
+extern bool bRecoilWhenFiring;
+extern bool bEnableClimbing;
+extern bool bEnableSwimming;
+extern bool bRocketLauncherThirdPersonAiming;
+extern bool bRandomVehicleModsInTraffic;
+extern bool bMirrorModeByDefault;
+extern CRGBA WaypointColor;
+void ViceExtLimitsTrace(void);
+
 #define DEBUGBREAK() __debugbreak();
 
 // Switch to enable development messages.

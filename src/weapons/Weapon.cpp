@@ -202,7 +202,7 @@ ViceExtRecoilTypeName(eWeaponType type)
 	case WEAPONTYPE_COLT45: return "Colt45";
 	case WEAPONTYPE_PYTHON: return "Python";
 	case WEAPONTYPE_BERETTA: return "Beretta";
-	case WEAPONTYPE_DESERT_EAGLE: return "DesertEagle";
+	case WEAPONTYPE_DEAGLE: return "DesertEagle";
 	case WEAPONTYPE_SHOTGUN: return "Shotgun";
 	case WEAPONTYPE_SPAS12_SHOTGUN: return "Spas12";
 	case WEAPONTYPE_STUBBY_SHOTGUN: return "Stubby";
@@ -253,7 +253,7 @@ ViceExtRecoilProfile(eWeaponType type, CWeaponInfo *info, const char **profile)
 	case WEAPONTYPE_COLT45: *profile = "colt45"; return 0.0080f;
 	case WEAPONTYPE_PYTHON: *profile = "python"; return 0.0150f;
 	case WEAPONTYPE_BERETTA: *profile = "beretta"; return 0.0080f;
-	case WEAPONTYPE_DESERT_EAGLE: *profile = "desert-eagle"; return 0.0160f;
+	case WEAPONTYPE_DEAGLE: *profile = "desert-eagle"; return 0.0160f;
 	case WEAPONTYPE_SHOTGUN: *profile = "shotgun"; return 0.0220f;
 	case WEAPONTYPE_SPAS12_SHOTGUN: *profile = "spas12"; return 0.0220f;
 	case WEAPONTYPE_STUBBY_SHOTGUN: *profile = "stubby"; return 0.0240f;
@@ -689,7 +689,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_HELICANNON:
 			// Vice Extended (gun hitscan como sus equivalente de serie)
 			case WEAPONTYPE_BERETTA:
-			case WEAPONTYPE_DESERT_EAGLE:
+			case WEAPONTYPE_DEAGLE:
 			case WEAPONTYPE_UZIOLD:
 			case WEAPONTYPE_AK47:
 			case WEAPONTYPE_M16:
@@ -707,7 +707,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			}
 
 			case WEAPONTYPE_ROCKETLAUNCHER:
-			case WEAPONTYPE_GRENADE_LAUNCHER:	// Vice Extended
+			case WEAPONTYPE_GR_LAUNCH:	// Vice Extended
 			{
 				if ( shooter->IsPed() && ((CPed*)shooter)->m_pSeekTarget != nil )
 				{
@@ -728,7 +728,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_GRENADE:
 			case WEAPONTYPE_DETONATOR_GRENADE:
 			case WEAPONTYPE_TEARGAS:
-			case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended (en mano se lanza)
+			case WEAPONTYPE_GR_LAUNCH_GRENADE:	// Vice Extended (en mano se lanza)
 			{
 				if ( shooter == FindPlayerPed() )
 				{
@@ -831,7 +831,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_MINIGUN:
 				// Vice Extended
 				case WEAPONTYPE_BERETTA:
-				case WEAPONTYPE_DESERT_EAGLE:
+				case WEAPONTYPE_DEAGLE:
 				case WEAPONTYPE_SHOTGUN2:
 				case WEAPONTYPE_UZIOLD:
 				case WEAPONTYPE_AK47:
@@ -847,8 +847,8 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				case WEAPONTYPE_ROCKETLAUNCHER:
 				case WEAPONTYPE_DETONATOR:
 				case WEAPONTYPE_HELICANNON:
-				case WEAPONTYPE_GRENADE_LAUNCHER:			// Vice Extended
-				case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
+				case WEAPONTYPE_GR_LAUNCH:			// Vice Extended
+				case WEAPONTYPE_GR_LAUNCH_GRENADE:	// Vice Extended
 					CStats::KgsOfExplosivesUsed++;
 					break;
 			}
@@ -2421,7 +2421,11 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 		CBulletTraces::AddTrace(source, target, m_eWeaponType, shooter);
 
 	if ( shooter == FindPlayerPed() )
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->StartShake_Distance(240, 0, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+#else
 		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+#endif
 
 	BlowUpExplosiveThings(victim);
 }
@@ -2845,7 +2849,11 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 	}
 
 	if ( shooter == FindPlayerPed() )
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->StartShake_Distance(240, 0, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+#else
 		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+#endif
 
 	return true;
 }
@@ -2861,10 +2869,10 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 
 	// Vice Extended: el lanzagranadas dispara una granada propia (modelo
 	// grenade2), no el misil del lanzacohetes.
-	if ( m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER )
-		projectileType = WEAPONTYPE_GRENADE_LAUNCHER_GRENADE;
+	if ( m_eWeaponType == WEAPONTYPE_GR_LAUNCH )
+		projectileType = WEAPONTYPE_GR_LAUNCH_GRENADE;
 
-	if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER || m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER )
+	if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER || m_eWeaponType == WEAPONTYPE_GR_LAUNCH )
 	{
 		source = *fireSource;
 
@@ -3109,8 +3117,13 @@ CWeapon::FireSniper(CEntity *shooter)
 
 	if ( shooter == FindPlayerPed() )
 	{
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->StartShake_Distance(240, 0, 128,
+			FindPlayerPed()->GetPosition().x,
+#else
 		CPad::GetPad(0)->StartShake_Distance(240, 128,
 			FindPlayerPed()->GetPosition().x,
+#endif
 			FindPlayerPed()->GetPosition().y,
 			FindPlayerPed()->GetPosition().z);
 			
@@ -3496,7 +3509,11 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	}
 
 	if ( shooter == FindPlayerVehicle() )
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->StartShake_Distance(240, 0, 128, FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y, FindPlayerVehicle()->GetPosition().z);
+#else
 		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y, FindPlayerVehicle()->GetPosition().z);
+#endif
 
 	return true;
 }

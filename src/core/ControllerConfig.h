@@ -68,9 +68,7 @@ enum e_ControllerAction
 	PED_WALK,						// ClassicAXIS C17 `WalkKey` (`ClassicAxisVC.ini:9` = `LALT`, `NULL` = desactivar).
 								// AL FINAL a propósito: `PED_RELOAD` ya ocupó el último hueco y reindexar el
 								// enum rompería las configs de controles guardadas del jugador.
-#ifdef VICEEXT_SKIP_PHONE_CALL
-	SKIP_PHONE_CALL,
-#endif
+	RADAR_ZOOM_OUT,
 	MAX_CONTROLLERACTIONS,
 };
 

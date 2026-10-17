@@ -52,6 +52,9 @@ CPlayerInfo::Clear(void)
 	m_nWBTime = 0;
 	m_nTrafficMultiplier = 0;
 	m_fRoadDensity = 1.0f;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	m_nTimeVehicleEngineOff = 0;
+#endif
 	m_bInRemoteMode = false;
 	field_D5 = false;
 	field_D6 = false;
@@ -522,6 +525,14 @@ CPlayerInfo::Process(void)
 	} else {
 		m_fMediaAttention = 0.0f;
 	}
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	if (m_pPed->InVehicle()) {
+		if (CPad::GetPad(0)->GetExitVehicle() && m_nTimeVehicleEngineOff < CTimer::GetTimeInMilliseconds())
+			m_nTimeVehicleEngineOff = CTimer::GetTimeInMilliseconds() + 500;
+		else if (!CPad::GetPad(0)->GetExitVehicle())
+			m_nTimeVehicleEngineOff = 0;
+	}
+#endif
 	CStats::HighestChaseValue = Max(m_fMediaAttention, CStats::HighestChaseValue);
 	m_nMoney = Min(999999999, m_nMoney);
 	m_nVisibleMoney = Min(999999999, m_nVisibleMoney);

@@ -68,6 +68,12 @@ public:
 	uint32 m_nHitAnimDelayTimer; // m_nShotDelay?
 	float m_fAttackButtonCounter;
 	bool m_bHaveTargetSelected;	// may have better name
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool bIsAutoAiming;
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool m_bSkipPhoneCall;
+#endif
 	CEntity *m_pEvadingFrom;	// is this CPhysical?
 	int32 m_nTargettableObjects[4];
 	uint32 m_nAdrenalineTime;
@@ -117,8 +123,8 @@ public:
 	void MakeChangesForNewWeapon(eWeaponType);
 	void SetInitialState(void);
 	void ProcessControl(void);
-#ifdef VICEEXT_MANUAL_RELOAD
-	bool ViceExtTryManualReload(void); // Sección 3, C3.1: recarga a mano
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	bool ViceExtTryManualReload(void);
 #endif
 #ifdef VICEEXT_SWIMMING
 	bool ViceExtSwimControl(CPad *padUsed); // Sección 3, C4: nadar

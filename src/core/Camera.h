@@ -366,16 +366,6 @@ struct CAimClassicAxisSettings {
 // 0x937614, PadAimSensY 0x937618, MouseLookSensX 0x937628, MouseAimSensX 0x93762c,
 // MouseLookSensY 0x937630, MouseAimSensY 0x937634; el raton se escala por 0.5
 // (constante 0x6d7778 = 0x3f000000). Los defaults de aqui son los valores REALES de
-// su `ViceEx.ini` (instalacion del jugador, leida el 14/10): raton 0.002500 ->
-// 0.001667 (2/3) y pad 0.001250 -> 0.000625 (1/2). Se leen y se guardan en
-// `re3.cpp` con seccion INI `Controller` y los nombres VERBATIM del mod, para que
-// el jugador pueda pegar su seccion tal cual.
-struct CAimSensSettings {
-	float mouseLookX, mouseAimX;	// [Controller] MouseLookSensX / MouseAimSensX = 0.002500 / 0.001667
-	float mouseLookY, mouseAimY;	// [Controller] MouseLookSensY / MouseAimSensY = 0.002500 / 0.001667
-	float padLookX, padAimX;		// [Controller] PadLookSensX / PadAimSensX     = 0.001250 / 0.000625
-	float padLookY, padAimY;		// [Controller] PadLookSensY / PadAimSensY     = 0.001250 / 0.000625
-};
 
 class CCamera : public CPlaceable
 {
@@ -451,7 +441,6 @@ public:
 	int m_iWorkOutSpeedThisNumFrames;
 	int m_iNumFramesSoFar;
 
-
 	int m_iCurrentTrainCamNode;
 	int m_motionBlur;
 	int m_imotionBlurAddAlpha;
@@ -520,7 +509,6 @@ public:
 	static float m_f3rdPersonCHairMultX;
 	static float m_f3rdPersonCHairMultY;
 
-
 	CCam Cams[3];
 	CGarage *pToGarageWeAreIn;
 	CGarage *pToGarageWeAreInForHackAvoidFirstPerson;
@@ -580,7 +568,6 @@ public:
 
 	uint32  m_fScriptTimeForInterPolation;
 
-
 	int16   m_iFadingDirection;
 	int     m_iModeObbeCamIsInForCar;
 	int16   m_iModeToGoTo;
@@ -607,11 +594,6 @@ public:
 	// camara. Devuelven aim/look (1.0 si el jugador NO apunta, si la bandera esta
 	// apagada o si el look del INI es 0), y multiplicar por 1.0f es exacto, asi que
 	// con la bandera apagada el motor queda vanilla bit a bit.
-	static CAimSensSettings s_viceExtSens;
-	static float ViceExtAimSensMouseX(void);
-	static float ViceExtAimSensMouseY(void);
-	static float ViceExtAimSensPadX(void);
-	static float ViceExtAimSensPadY(void);
 	static bool    s_viceExtAimSwitchSpeed;  // switchTransitionSpeed
 	static int16   s_viceExtAimPrevCamMode;  // previousCamMode
 	static float   s_viceExtAimPrevHor;      // previousHorAngle
@@ -631,6 +613,10 @@ public:
 	static CVector s_viceExtAimViewDir;
 	static bool    s_viceExtAimViewPending;
 	static int16   s_viceExtAimViewMode;
+	static float ViceExtAimSensMouseX(void);
+	static float ViceExtAimSensMouseY(void);
+	static float ViceExtAimSensPadX(void);
+	static float ViceExtAimSensPadY(void);
 	static float   ViceExtAimBetaFromFollowBeta(float followBeta);
 #ifdef FREE_CAM
 	static bool bFreeCam;

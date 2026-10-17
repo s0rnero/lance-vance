@@ -96,6 +96,17 @@ enum eRadarSprite
 #ifdef MAP_ENHANCEMENTS
 	RADAR_SPRITE_WAYPOINT,
 #endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	RADAR_SPRITE_HOUSE_FOR_SALE,
+	RADAR_SPRITE_BOMB_SHOP,
+	RADAR_SPRITE_RACE,
+	RADAR_SPRITE_STORE,
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	RADAR_SPRITE_PACKAGE,
+	RADAR_SPRITE_STUNT,
+	RADAR_SPRITE_RAMPAGE,
+#endif
 
 	RADAR_SPRITE_COUNT
 };
@@ -227,6 +238,17 @@ public:
 	static CSprite2d RadioEspantosoSprite;
 	static CSprite2d RadioEmotionSprite;
 	static CSprite2d RadioWaveSprite;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	static CSprite2d HouseForSaleSprite;
+	static CSprite2d BombShopSprite;
+	static CSprite2d RaceSprite;
+	static CSprite2d StoreSprite;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	static CSprite2d PackageSprite;
+	static CSprite2d JumpSprite;
+	static CSprite2d RampageSprite;
+#endif
 	static CSprite2d *RadarSprites[RADAR_SPRITE_COUNT];
 	static float cachedCos;
 	static float cachedSin;
@@ -234,6 +256,9 @@ public:
 	static CRGBA ArrowBlipColour2;
 	static int16 MapLegendList[NUM_MAP_LEGENDS];
 	static int16 MapLegendCounter;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	static int32 RadarZoomOutTimer;
+#endif
 
 #ifdef MAP_ENHANCEMENTS
 	static CSprite2d WaypointSprite;

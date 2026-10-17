@@ -101,7 +101,7 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 			gravity = false;
 			break;
 		}
-		case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE: // Vice Extended
+		case WEAPONTYPE_GR_LAUNCH_GRENADE: // Vice Extended
 		{
 			float vy = 0.5f;
 			time = CTimer::GetTimeInMilliseconds() + 3000;
@@ -203,7 +203,7 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 		case WEAPONTYPE_DETONATOR_GRENADE:
 			ms_apProjectile[i] = new CProjectile(MI_GRENADE);
 			break;
-		case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
+		case WEAPONTYPE_GR_LAUNCH_GRENADE:	// Vice Extended
 			// El modelo va SIEMPRE residente (CStreaming::LoadInitialWeapons),
 			// como el misil del lanzacohetes, porque no es el arma en mano.
 			ms_apProjectile[i] = new CProjectile(MI_GR_GRENADE);
@@ -245,7 +245,7 @@ CProjectileInfo::RemoveProjectile(CProjectileInfo *info, CProjectile *projectile
 	// TODO(Miami): New parameter: 1
 	switch (info->m_eWeaponType) {
 		case WEAPONTYPE_GRENADE:
-		case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
+		case WEAPONTYPE_GR_LAUNCH_GRENADE:	// Vice Extended
 			CExplosion::AddExplosion(nil, info->m_pSource, EXPLOSION_GRENADE, projectile->GetPosition(), 0);
 			break;
 		case WEAPONTYPE_MOLOTOV:
@@ -270,7 +270,7 @@ CProjectileInfo::RemoveNotAdd(CEntity *entity, eWeaponType weaponType, CVector p
 	// TODO(Miami): New parameter: 1
 	switch (weaponType) {
 		case WEAPONTYPE_GRENADE:
-		case WEAPONTYPE_GRENADE_LAUNCHER_GRENADE:	// Vice Extended
+		case WEAPONTYPE_GR_LAUNCH_GRENADE:	// Vice Extended
 			CExplosion::AddExplosion(nil, entity, EXPLOSION_GRENADE, pos, 0);
 			break;
 		case WEAPONTYPE_MOLOTOV:
@@ -336,7 +336,7 @@ CProjectileInfo::Update()
 		}
 
 		if (CTimer::GetTimeInMilliseconds() <= gaProjectileInfo[i].m_nExplosionTime || gaProjectileInfo[i].m_nExplosionTime == 0) {
-			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_ROCKET || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER_GRENADE) {
+			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_ROCKET || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GR_LAUNCH_GRENADE) {
 				CVector pos = ms_apProjectile[i]->GetPosition();
 				CWorld::pIgnoreEntity = ms_apProjectile[i];
 				if (ms_apProjectile[i]->bHasCollided
@@ -387,7 +387,7 @@ CProjectileInfo::IsProjectileInRange(float x1, float x2, float y1, float y2, flo
 	bool result = false;
 	for (int i = 0; i < ARRAY_SIZE(ms_apProjectile); i++) {
 		if (gaProjectileInfo[i].m_bInUse) {
-			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_ROCKET || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_MOLOTOV || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER_GRENADE) {
+			if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_ROCKET || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_MOLOTOV || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE || gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GR_LAUNCH_GRENADE) {
 				const CVector &pos = ms_apProjectile[i]->GetPosition();
 				if (pos.x >= x1 && pos.x <= x2 && pos.y >= y1 && pos.y <= y2 && pos.z >= z1 && pos.z <= z2) {
 					result = true;

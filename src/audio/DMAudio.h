@@ -89,6 +89,9 @@ public:
 	void PlayLoadedMissionAudio(uint8 slot);
 	bool8 IsMissionAudioSamplePlaying(uint8 slot);
 	bool8 IsMissionAudioSampleFinished(uint8 slot);
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	void FinishMissionAudioPhoneDialogue(uint8 slot);
+#endif
 	void ClearMissionAudio(uint8 slot);
 	const char *GetMissionAudioLoadedLabel(uint8 slot);
 

@@ -64,7 +64,14 @@ const CRGBA SCROLLBAR_COLOR = LABEL_COLOR;
 #define SCROLLBAR_MAX_HEIGHT 263.0f // not in end result
 #define SCROLLABLE_PAGES
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#define NUM_PC_FOOT_OPTIONS 20
+#define NUM_PC_VEHICLE_OPTIONS 21
+
+#define hasNativeList(screen) (screen == MENUPAGE_SKIN_SELECT || screen == MENUPAGE_PC_FOOT_CONTROLS || screen == MENUPAGE_PC_VEHICLE_CONTROLS)
+#else
 #define hasNativeList(screen) (screen == MENUPAGE_SKIN_SELECT || screen == MENUPAGE_KEYBOARD_CONTROLS)
+#endif
 
 #ifdef SCROLLABLE_PAGES
 #define MAX_VISIBLE_OPTION 12
@@ -130,6 +137,9 @@ bool CMenuManager::m_PrefsDisableTutorials = false;
 #endif // !MASTER
 
 #ifdef GAMEPAD_MENU
+uint32 TimeToStopPadShaking;
+#endif
+#if !defined(GAMEPAD_MENU) && defined(VICEEXT_IMPROVED_MENU_AND_INPUT)
 uint32 TimeToStopPadShaking;
 #endif
 
@@ -498,6 +508,22 @@ CMenuManager::CMenuManager()
 	m_PrefsUseWideScreen = 0;
 #endif
 	m_PrefsVsync = 0;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	m_PrefsAutoaim = false;
+	m_PrefsPadLookSensX = 1.0f / 800.0f;
+	m_PrefsPadAimSensX = 1.0f / 1600.0f;
+	m_PrefsPadLookSensY = 1.0f / 800.0f;
+	m_PrefsPadAimSensY = 1.0f / 1600.0f;
+	m_PrefsLeftStickDeadzone = 15;
+	m_PrefsRightStickDeadzone = 15;
+	m_PrefsVibrationForce = 0.5f;
+	m_PrefsMouseLookSensX = 1.0f / 400.0f;
+	m_PrefsMouseAimSensX = 1.0f / 600.0f;
+	m_PrefsMouseLookSensY = 1.0f / 400.0f;
+	m_PrefsMouseAimSensY = 1.0f / 600.0f;
+	m_PrefsInvertVertically = false;
+	m_PrefsGPS = true;
+#endif
 	m_PrefsVsyncDisp = 1;
 	m_PrefsFrameLimiter = 1;
 	m_PrefsLanguage = 0;
@@ -779,6 +805,86 @@ CMenuManager::CheckSliderMovement(int value)
 		TheCamera.m_fMouseAccelVertical = TheCamera.m_fMouseAccelHorzntl + 0.0005f;
 #endif
 		break;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	case MENUACTION_LEFTDEADZONE:
+		m_PrefsLeftStickDeadzone += value * (80 / MENUSLIDER_LOGICAL_BARS);
+
+		m_PrefsLeftStickDeadzone = Clamp(m_PrefsLeftStickDeadzone, 0, 80);
+
+		break;
+	case MENUACTION_RIGHTDEADZONE:
+		m_PrefsRightStickDeadzone += value * (80 / MENUSLIDER_LOGICAL_BARS);
+
+		m_PrefsRightStickDeadzone = Clamp(m_PrefsRightStickDeadzone, 0, 80);
+
+		break;
+	case MENUACTION_VIBRATIONFORCE:
+		m_PrefsVibrationForce += value * (1.0f / MENUSLIDER_LOGICAL_BARS);
+
+		m_PrefsVibrationForce = Clamp(m_PrefsVibrationForce, 0.0f, 1.0f);
+
+		CPad::GetPad(0)->StopShaking(0);
+		CPad::GetPad(0)->StartShake(300, 150, 150);
+		TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 300;
+
+		break;
+	case MENUACTION_PADLOOKSENSX:
+		m_PrefsPadLookSensX += value * 1.0f / 600.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsPadLookSensX = Clamp(m_PrefsPadLookSensX, 1.0f / 6400.0f, 1.0f / 600.0f);
+
+		TheCamera.m_fMouseAccelHorzntl = m_PrefsPadLookSensX;
+
+		break;
+	case MENUACTION_PADAIMSENSX:
+		m_PrefsPadAimSensX += value * 1.0f / 600.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsPadAimSensX = Clamp(m_PrefsPadAimSensX, 1.0f / 6400.0f, 1.0f / 600.0f);
+
+		TheCamera.m_fMouseAccelHorzntl = m_PrefsPadAimSensX;
+
+		break;
+	case MENUACTION_PADLOOKSENSY:
+		m_PrefsPadLookSensY += value * 1.0f / 600.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsPadLookSensY = Clamp(m_PrefsPadLookSensY, 1.0f / 6400.0f, 1.0f / 600.0f);
+
+		TheCamera.m_fMouseAccelVertical = m_PrefsPadLookSensY;
+
+		break;
+	case MENUACTION_PADAIMSENSY:
+		m_PrefsPadAimSensY += value * 1.0f / 600.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsPadAimSensY = Clamp(m_PrefsPadAimSensY, 1.0f / 6400.0f, 1.0f / 600.0f);
+
+		TheCamera.m_fMouseAccelVertical = m_PrefsPadAimSensY;
+
+		break;
+	case MENUACTION_MOUSELOOKSENSX:
+		m_PrefsMouseLookSensX += value * 1.0f / 200.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsMouseLookSensX = Clamp(m_PrefsMouseLookSensX, 1.0f / 3200.0f, 1.0f / 200.0f);
+
+		TheCamera.m_fMouseAccelHorzntl = m_PrefsMouseLookSensX;
+
+		break;
+	case MENUACTION_MOUSEAIMSENSX:
+		m_PrefsMouseAimSensX += value * 1.0f / 200.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsMouseAimSensX = Clamp(m_PrefsMouseAimSensX, 1.0f / 3200.0f, 1.0f / 200.0f);
+
+		TheCamera.m_fMouseAccelHorzntl = m_PrefsMouseAimSensX;
+
+		break;
+	case MENUACTION_MOUSELOOKSENSY:
+		m_PrefsMouseLookSensY += value * 1.0f / 200.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsMouseLookSensY = Clamp(m_PrefsMouseLookSensY, 1.0f / 3200.0f, 1.0f / 200.0f);
+
+		TheCamera.m_fMouseAccelVertical = m_PrefsMouseLookSensY;
+
+		break;
+	case MENUACTION_MOUSEAIMSENSY:
+		m_PrefsMouseAimSensY += value * 1.0f / 200.0f / MENUSLIDER_LOGICAL_BARS;
+		m_PrefsMouseAimSensY = Clamp(m_PrefsMouseAimSensY, 1.0f / 3200.0f, 1.0f / 200.0f);
+
+		TheCamera.m_fMouseAccelVertical = m_PrefsMouseAimSensY;
+
+		break;
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 	case MENUACTION_CFO_SLIDER:
 	{
@@ -1051,7 +1157,19 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 		CFont::SetRightJustifyWrap(MENU_X_LEFT_ALIGNED(xMargin));
 	}
 
-	if (m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS) {
+	if ((
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+)) {
 		if (m_bWaitingForNewKeyBind)
 			itemsAreSelectable = false;
 
@@ -1456,6 +1574,14 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					int saveSlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
 						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS ||
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+						action == MENUACTION_LEFTDEADZONE || action == MENUACTION_RIGHTDEADZONE ||
+						action == MENUACTION_VIBRATIONFORCE ||
+						action == MENUACTION_MOUSELOOKSENSX || action == MENUACTION_MOUSEAIMSENSX ||
+						action == MENUACTION_PADLOOKSENSX || action == MENUACTION_PADAIMSENSX ||
+						action == MENUACTION_MOUSELOOKSENSY || action == MENUACTION_MOUSEAIMSENSY ||
+						action == MENUACTION_PADLOOKSENSY || action == MENUACTION_PADAIMSENSY ||
+#endif
 						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
@@ -1612,6 +1738,41 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						case MENUACTION_MOUSESENS:
 							ProcessSlider(TheCamera.m_fMouseAccelHorzntl * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSESENS, HOVEROPTION_DECREASE_MOUSESENS, SCREEN_WIDTH, false);
 							break;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+						case MENUACTION_LEFTDEADZONE:
+							ProcessSlider(m_PrefsLeftStickDeadzone / 80.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_LEFTDEADZONE, HOVEROPTION_DECREASE_LEFTDEADZONE, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_RIGHTDEADZONE:
+							ProcessSlider(m_PrefsRightStickDeadzone / 80.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_RIGHTDEADZONE, HOVEROPTION_DECREASE_RIGHTDEADZONE, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_VIBRATIONFORCE:
+							ProcessSlider(m_PrefsVibrationForce / 1.0f, SLIDER_Y(70.0f), HOVEROPTION_INCREASE_VIBRATIONFORCE, HOVEROPTION_DECREASE_VIBRATIONFORCE, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_PADLOOKSENSX:
+							ProcessSlider(m_PrefsPadLookSensX * 600.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_PADLOOKSENSX, HOVEROPTION_DECREASE_PADLOOKSENSX, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_PADAIMSENSX:
+							ProcessSlider(m_PrefsPadAimSensX * 600.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_PADAIMSENSX, HOVEROPTION_DECREASE_PADAIMSENSX, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_PADLOOKSENSY:
+							ProcessSlider(m_PrefsPadLookSensY * 600.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_PADLOOKSENSY, HOVEROPTION_DECREASE_PADLOOKSENSY, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_PADAIMSENSY:
+							ProcessSlider(m_PrefsPadAimSensY * 600.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_PADAIMSENSY, HOVEROPTION_DECREASE_PADAIMSENSY, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_MOUSELOOKSENSX:
+							ProcessSlider(m_PrefsMouseLookSensX * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSELOOKSENSX, HOVEROPTION_DECREASE_MOUSELOOKSENSX, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_MOUSEAIMSENSX:
+							ProcessSlider(m_PrefsMouseAimSensX * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSEAIMSENSX, HOVEROPTION_DECREASE_MOUSEAIMSENSX, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_MOUSELOOKSENSY:
+							ProcessSlider(m_PrefsMouseLookSensY * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSELOOKSENSY, HOVEROPTION_DECREASE_MOUSELOOKSENSY, SCREEN_WIDTH, false);
+							break;
+						case MENUACTION_MOUSEAIMSENSY:
+							ProcessSlider(m_PrefsMouseAimSensY * 200.0f, SLIDER_Y(170.0f), HOVEROPTION_INCREASE_MOUSEAIMSENSY, HOVEROPTION_DECREASE_MOUSEAIMSENSY, SCREEN_WIDTH, false);
+							break;
+#endif
 						case MENUACTION_MP3VOLUMEBOOST:
 							if(m_nPrefsAudio3DProviderIndex != NO_AUDIO_PROVIDER && DMAudio.IsMP3RadioChannelAvailable())
 								ProcessSlider(m_PrefsMP3BoostVolume / 64.f, SLIDER_Y(128.0f), HOVEROPTION_INCREASE_MP3BOOST, HOVEROPTION_DECREASE_MP3BOOST, SCREEN_WIDTH, true);
@@ -1718,6 +1879,14 @@ CMenuManager::GetNumOptionsCntrlConfigScreens(void)
 			number = 4;
 			break;
 #endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		case MENUPAGE_PC_FOOT_CONTROLS:
+			number = NUM_PC_FOOT_OPTIONS;
+			break;
+		case MENUPAGE_PC_VEHICLE_CONTROLS:
+			number = NUM_PC_VEHICLE_OPTIONS;
+			break;
+#else
 		case MENUPAGE_KEYBOARD_CONTROLS:
 			switch (m_ControlMethod) {
 				case CONTROL_STANDARD:
@@ -1728,6 +1897,7 @@ CMenuManager::GetNumOptionsCntrlConfigScreens(void)
 					break;
 			}
 			break;
+#endif
 	}
 	return number;
 }
@@ -1758,6 +1928,133 @@ CMenuManager::DrawControllerBound(int32 yStart, int32 xStart, int32 unused, int8
 		int contSetOrder = SETORDER_1;
 		CFont::SetColor(CRGBA(255, 255, 255, FadeIn(255)));
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		if (column == CONTSETUP_PED_COLUMN) {
+			switch (optionIdx) {
+				case 0:
+					controllerAction = PED_FIREWEAPON;
+					break;
+				case 1:
+					controllerAction = PED_CYCLE_WEAPON_RIGHT;
+					break;
+				case 2:
+					controllerAction = PED_CYCLE_WEAPON_LEFT;
+					break;
+				case 3:
+					controllerAction = GO_FORWARD;
+					break;
+				case 4:
+					controllerAction = GO_BACK;
+					break;
+				case 5:
+					controllerAction = GO_LEFT;
+					break;
+				case 6:
+					controllerAction = GO_RIGHT;
+					break;
+				case 7:
+					controllerAction = PED_SNIPER_ZOOM_IN;
+					break;
+				case 8:
+					controllerAction = PED_SNIPER_ZOOM_OUT;
+					break;
+				case 9:
+					controllerAction = VEHICLE_ENTER_EXIT;
+					break;
+				case 10:
+					controllerAction = CAMERA_CHANGE_VIEW_ALL_SITUATIONS;
+					break;
+				case 11:
+					controllerAction = PED_JUMPING;
+					break;
+				case 12:
+					controllerAction = PED_SPRINT;
+					break;
+				case 13:
+					controllerAction = PED_LOCK_TARGET;
+					break;
+				case 14:
+					controllerAction = PED_DUCK;
+					break;
+				case 15:
+					controllerAction = PED_ANSWER_PHONE;
+					break;
+				case 16:
+					controllerAction = PED_LOOKBEHIND;
+					break;
+				case 17:
+					controllerAction = PED_WALK;
+					break;
+				case 18:
+					controllerAction = RADAR_ZOOM_OUT;
+					break;
+				case 19:
+					controllerAction = PED_RELOAD;
+					break;
+				default:
+					break;
+			}
+		} else if (column == CONTSETUP_VEHICLE_COLUMN) {
+			switch (optionIdx) {
+				case 0:
+ 					controllerAction = VEHICLE_FIREWEAPON;
+					break;
+				case 1:
+					controllerAction = VEHICLE_ACCELERATE;
+					break;
+				case 2:
+					controllerAction = VEHICLE_BRAKE;
+					break;
+				case 3:
+					controllerAction = GO_LEFT;
+					break;
+				case 4:
+					controllerAction = GO_RIGHT;
+					break;
+				case 5:
+					controllerAction = VEHICLE_ENTER_EXIT;
+					break;
+				case 6:
+					controllerAction = VEHICLE_CHANGE_RADIO_STATION;
+					break;
+				case 7:
+					controllerAction = VEHICLE_HORN;
+					break;
+				case 8:
+					controllerAction = TOGGLE_SUBMISSIONS;
+					break;
+				case 9:
+					controllerAction = CAMERA_CHANGE_VIEW_ALL_SITUATIONS;
+					break;
+				case 10:
+					controllerAction = VEHICLE_HANDBRAKE;
+					break;
+				case 11:
+					controllerAction = VEHICLE_TURRETLEFT;
+					break;
+				case 12:
+					controllerAction = VEHICLE_TURRETRIGHT;
+					break;
+				case 13:
+					controllerAction = VEHICLE_TURRETUP;
+					break;
+				case 14:
+					controllerAction = VEHICLE_TURRETDOWN;
+					break;
+				case 15:
+					controllerAction = VEHICLE_LOOKLEFT;
+					break;
+				case 16:
+					controllerAction = VEHICLE_LOOKRIGHT;
+					break;
+				case 17:
+					controllerAction = RADAR_ZOOM_OUT;
+					break;
+				default:
+					break;
+			}
+		}
+#else
 		if (column == CONTSETUP_PED_COLUMN) {
 			switch (optionIdx) {
 				case 0:
@@ -1931,6 +2228,8 @@ CMenuManager::DrawControllerBound(int32 yStart, int32 xStart, int32 unused, int8
 					break;
 			}
 		}
+
+#endif
 
 		// Highlight selected column(and make its text black)
 		if (m_nSelectedListRow == optionIdx) {
@@ -2418,7 +2717,12 @@ CMenuManager::DrawBackground(bool transitionCall)
 				menuBg.bottomRight_y = 410.0f;
 				break;
 			case MENUPAGE_SKIN_SELECT:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			case MENUPAGE_PC_FOOT_CONTROLS:
+			case MENUPAGE_PC_VEHICLE_CONTROLS:
+#else
 			case MENUPAGE_KEYBOARD_CONTROLS:
+#endif
 				menuBg.topLeft_x = 14.0f;
 				menuBg.topLeft_y = 39.0f;
 				menuBg.topRight_x = 636.0f;
@@ -2523,7 +2827,12 @@ CMenuManager::DrawBackground(bool transitionCall)
 				case MENUPAGE_SKIN_SELECT:
 					DrawPlayerSetupScreen(false);
 					break;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				case MENUPAGE_PC_FOOT_CONTROLS:
+				case MENUPAGE_PC_VEHICLE_CONTROLS:
+#else
 				case MENUPAGE_KEYBOARD_CONTROLS:
+#endif
 					DrawControllerSetupScreen();
 					break;
 				case MENUPAGE_OUTRO:
@@ -2542,7 +2851,12 @@ CMenuManager::DrawBackground(bool transitionCall)
 		case MENUPAGE_SKIN_SELECT:
 			DrawPlayerSetupScreen(true);
 			break;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		case MENUPAGE_PC_FOOT_CONTROLS:
+		case MENUPAGE_PC_VEHICLE_CONTROLS:
+#else
 		case MENUPAGE_KEYBOARD_CONTROLS:
+#endif
 			DrawControllerSetupScreen();
 			break;
 		case MENUPAGE_OUTRO:
@@ -2997,7 +3311,12 @@ CMenuManager::GetStartOptionsCntrlConfigScreens()
 			number = 35;
 			break;
 #endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		case MENUPAGE_PC_FOOT_CONTROLS:
+		case MENUPAGE_PC_VEHICLE_CONTROLS:
+#else
 		case MENUPAGE_KEYBOARD_CONTROLS:
+#endif
 			number = 0;
 			break;
 		default:
@@ -3555,8 +3874,10 @@ CMenuManager::Process(void)
 	ProcessDialogTimer();
 #endif
 
+#ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 	if (TheCamera.GetScreenFadeStatus() != FADE_0)
 		return;
+#endif
 
 	InitialiseChangedLanguageSettings();
 
@@ -4111,7 +4432,19 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 	if (m_nCurrScreen == MENUPAGE_SKIN_SELECT) {
 		m_nTotalListRow = m_nSkinsTotal;
 	}
-	if (m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS) {
+	if ((
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+)) {
 		// GetNumOptionsCntrlConfigScreens would have been a better choice
 		m_nTotalListRow = m_ControlMethod == CONTROL_CLASSIC ? 32 : 27;
 		if (m_nSelectedListRow > m_nTotalListRow)
@@ -4122,7 +4455,19 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		m_bShowMouse = 0;
 		optionSelected = true;
 	}
-	if (CPad::GetPad(0)->GetBackspaceJustDown() && m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS && !field_159) {
+	if (CPad::GetPad(0)->GetBackspaceJustDown() && (
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+) && !field_159) {
 		if (m_nCurrExLayer == HOVEROPTION_LIST) {
 			m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 			m_bWaitingForNewKeyBind = true;
@@ -4162,7 +4507,19 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		if (((m_nCurrScreen == MENUPAGE_SKIN_SELECT) && (m_nCurrExLayer == HOVEROPTION_USESKIN)) && strcmp(m_aSkinName, m_PrefsSkinFile) == 0) {
 			m_nCurrExLayer = HOVEROPTION_BACK;
 		}
-		if ((m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS) && (m_nCurrExLayer == HOVEROPTION_USESKIN)) {
+		if (((
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+)) && (m_nCurrExLayer == HOVEROPTION_USESKIN)) {
 			m_nCurrExLayer = HOVEROPTION_BACK;
 		}
 	}
@@ -4376,6 +4733,14 @@ CMenuManager::UserInput(void)
 			int action = aScreens[m_nCurrScreen].m_aEntries[rowToCheck].m_Action;
 			if (action != MENUACTION_BRIGHTNESS && action != MENUACTION_DRAWDIST && action != MENUACTION_MUSICVOLUME
 				&& action != MENUACTION_SFXVOLUME && action != MENUACTION_MOUSESENS && action != MENUACTION_MP3VOLUMEBOOST
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				&& action != MENUACTION_LEFTDEADZONE && action != MENUACTION_RIGHTDEADZONE
+				&& action != MENUACTION_VIBRATIONFORCE
+				&& action != MENUACTION_MOUSELOOKSENSX && action != MENUACTION_MOUSEAIMSENSX
+				&& action != MENUACTION_PADLOOKSENSX && action != MENUACTION_PADAIMSENSX
+				&& action != MENUACTION_MOUSELOOKSENSY && action != MENUACTION_MOUSEAIMSENSY
+				&& action != MENUACTION_PADLOOKSENSY && action != MENUACTION_PADAIMSENSY
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				&& action != MENUACTION_CFO_SLIDER
 #endif
@@ -4459,6 +4824,19 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_INCREASE_MUSICVOLUME:
 			case HOVEROPTION_INCREASE_SFXVOLUME:
 			case HOVEROPTION_INCREASE_MOUSESENS:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			case HOVEROPTION_INCREASE_LEFTDEADZONE:
+			case HOVEROPTION_INCREASE_RIGHTDEADZONE:
+			case HOVEROPTION_INCREASE_VIBRATIONFORCE:
+			case HOVEROPTION_INCREASE_MOUSELOOKSENSX:
+			case HOVEROPTION_INCREASE_MOUSEAIMSENSX:
+			case HOVEROPTION_INCREASE_MOUSELOOKSENSY:
+			case HOVEROPTION_INCREASE_MOUSEAIMSENSY:
+			case HOVEROPTION_INCREASE_PADLOOKSENSX:
+			case HOVEROPTION_INCREASE_PADAIMSENSX:
+			case HOVEROPTION_INCREASE_PADLOOKSENSY:
+			case HOVEROPTION_INCREASE_PADAIMSENSY:
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 			case HOVEROPTION_INCREASE_CFO_SLIDER:
 #endif
@@ -4470,6 +4848,19 @@ CMenuManager::UserInput(void)
 			case HOVEROPTION_DECREASE_MUSICVOLUME:
 			case HOVEROPTION_DECREASE_SFXVOLUME:
 			case HOVEROPTION_DECREASE_MOUSESENS:
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			case HOVEROPTION_DECREASE_LEFTDEADZONE:
+			case HOVEROPTION_DECREASE_RIGHTDEADZONE:
+			case HOVEROPTION_DECREASE_VIBRATIONFORCE:
+			case HOVEROPTION_DECREASE_MOUSELOOKSENSX:
+			case HOVEROPTION_DECREASE_MOUSEAIMSENSX:
+			case HOVEROPTION_DECREASE_MOUSELOOKSENSY:
+			case HOVEROPTION_DECREASE_MOUSEAIMSENSY:
+			case HOVEROPTION_DECREASE_PADLOOKSENSX:
+			case HOVEROPTION_DECREASE_PADAIMSENSX:
+			case HOVEROPTION_DECREASE_PADLOOKSENSY:
+			case HOVEROPTION_DECREASE_PADAIMSENSY:
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 			case HOVEROPTION_DECREASE_CFO_SLIDER:
 #endif
@@ -4516,7 +4907,13 @@ CMenuManager::UserInput(void)
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 
 		}
-		if (CPad::GetPad(0)->GetBackJustDown() || CPad::GetPad(0)->GetEscapeJustDown()) {
+		if (
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+		CPad::GetPad(0)->GetBackJustUp() ||
+#else
+		CPad::GetPad(0)->GetBackJustDown() ||
+#endif
+		CPad::GetPad(0)->GetEscapeJustDown()) {
 			if (m_nCurrScreen != MENUPAGE_START_MENU && m_nCurrScreen != MENUPAGE_PAUSE_MENU && m_nCurrScreen != MENUPAGE_CHOOSE_SAVE_SLOT
 				&& m_nCurrScreen != MENUPAGE_SAVE_CHEAT_WARNING && m_nCurrScreen != MENUPAGE_SAVING_IN_PROGRESS
 				&& m_nCurrScreen != MENUPAGE_DELETING_IN_PROGRESS && m_nCurrScreen != MENUPAGE_OUTRO
@@ -4544,6 +4941,14 @@ CMenuManager::UserInput(void)
 				curAction == MENUACTION_SFXVOLUME || curAction == MENUACTION_RADIO ||
 				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS ||
 				curAction == MENUACTION_MP3VOLUMEBOOST
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				|| curAction == MENUACTION_LEFTDEADZONE || curAction == MENUACTION_RIGHTDEADZONE
+				|| curAction == MENUACTION_VIBRATIONFORCE
+				|| curAction == MENUACTION_MOUSELOOKSENSX || curAction == MENUACTION_MOUSEAIMSENSX
+				|| curAction == MENUACTION_PADLOOKSENSX || curAction == MENUACTION_PADAIMSENSX
+				|| curAction == MENUACTION_MOUSELOOKSENSY || curAction == MENUACTION_MOUSEAIMSENSY
+				|| curAction == MENUACTION_PADLOOKSENSY || curAction == MENUACTION_PADAIMSENSY
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				|| curAction == MENUACTION_CFO_SLIDER
 #endif
@@ -4559,6 +4964,14 @@ CMenuManager::UserInput(void)
 				curAction == MENUACTION_SFXVOLUME || curAction == MENUACTION_RADIO ||
 				curAction == MENUACTION_DRAWDIST || curAction == MENUACTION_MOUSESENS ||
 				curAction == MENUACTION_MP3VOLUMEBOOST
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+				|| curAction == MENUACTION_LEFTDEADZONE || curAction == MENUACTION_RIGHTDEADZONE
+				|| curAction == MENUACTION_VIBRATIONFORCE
+				|| curAction == MENUACTION_MOUSELOOKSENSX || curAction == MENUACTION_MOUSEAIMSENSX
+				|| curAction == MENUACTION_PADLOOKSENSX || curAction == MENUACTION_PADAIMSENSX
+				|| curAction == MENUACTION_MOUSELOOKSENSY || curAction == MENUACTION_MOUSEAIMSENSY
+				|| curAction == MENUACTION_PADLOOKSENSY || curAction == MENUACTION_PADAIMSENSY
+#endif
 #ifdef CUSTOM_FRONTEND_OPTIONS
 				|| curAction == MENUACTION_CFO_SLIDER
 #endif
@@ -4604,6 +5017,19 @@ CMenuManager::UserInput(void)
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_RESTOREDEF
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_DRAWDIST
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSESENS
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_LEFTDEADZONE
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_RIGHTDEADZONE
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_VIBRATIONFORCE
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSELOOKSENSX
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSEAIMSENSX
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_PADLOOKSENSX
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_PADAIMSENSX
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSELOOKSENSY
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MOUSEAIMSENSY
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_PADLOOKSENSY
+			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_PADAIMSENSY
+#endif
 			&& aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action != MENUACTION_MP3VOLUMEBOOST) {
 			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 		}
@@ -4738,7 +5164,19 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		} else if (hasNativeList(m_nCurrScreen)) {
 			switch (m_nCurrExLayer) {
 			case HOVEROPTION_LIST:
-				if (m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS) {
+				if ((
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+)) {
 					m_bWaitingForNewKeyBind = true;
 					m_bStartWaitingForKeyBind = true;
 					pControlEdit = &m_KeyPressedCode;
@@ -4950,11 +5388,24 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			case MENUACTION_GOBACK:
 				goBack = true;
 				break;
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			case MENUACTION_FOOTCONTROLS:
+				SwitchToNewScreen(MENUPAGE_PC_FOOT_CONTROLS);
+				m_nSelectedListRow = 0;
+				m_nCurrExLayer = HOVEROPTION_LIST;
+				break;
+			case MENUACTION_VEHICLECONTROLS:
+				SwitchToNewScreen(MENUPAGE_PC_VEHICLE_CONTROLS);
+				m_nSelectedListRow = 0;
+				m_nCurrExLayer = HOVEROPTION_LIST;
+				break;
+#else
 			case MENUACTION_KEYBOARDCTRLS:
 				SwitchToNewScreen(MENUPAGE_KEYBOARD_CONTROLS);
 				m_nSelectedListRow = 0;
 				m_nCurrExLayer = HOVEROPTION_LIST;
 				break;
+#endif
 			case MENUACTION_GETKEY:
 				m_CurrCntrlAction = GetStartOptionsCntrlConfigScreens() + m_nCurrOption;
 				m_bKeyIsOK = true;
@@ -5093,6 +5544,22 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					TheCamera.m_bUseMouse3rdPerson = true;
 #else
 					TheCamera.m_bUseMouse3rdPerson = false;
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+					m_PrefsAutoaim = false;
+					m_PrefsPadLookSensX = 1.0f / 800.0f;
+					m_PrefsPadAimSensX = 1.0f / 1600.0f;
+					m_PrefsPadLookSensY = 1.0f / 800.0f;
+					m_PrefsPadAimSensY = 1.0f / 1600.0f;
+					m_PrefsLeftStickDeadzone = 15;
+					m_PrefsRightStickDeadzone = 15;
+					m_PrefsVibrationForce = 0.5f;
+					m_PrefsMouseLookSensX = 1.0f / 400.0f;
+					m_PrefsMouseAimSensX = 1.0f / 600.0f;
+					m_PrefsMouseLookSensY = 1.0f / 400.0f;
+					m_PrefsMouseAimSensY = 1.0f / 600.0f;
+					m_PrefsInvertVertically = false;
+					m_PrefsGPS = true;
 #endif
 					SaveSettings();
 #ifdef LOAD_INI_SETTINGS
@@ -5310,7 +5777,19 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		}
 		CheckSliderMovement(changeAmount);
 		ProcessOnOffMenuOptions();
-		if (m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS) {
+		if ((
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+(
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+m_nCurrScreen == MENUPAGE_PC_FOOT_CONTROLS || m_nCurrScreen == MENUPAGE_PC_VEHICLE_CONTROLS
+#else
+m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS
+#endif
+)
+#endif
+)) {
 			if (changeAmount < 1) {
 				m_nSelectedContSetupColumn = CONTSETUP_PED_COLUMN;
 			} else {
@@ -5325,10 +5804,28 @@ CMenuManager::ProcessOnOffMenuOptions()
 {
 	switch (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action) {
 #ifdef GAMEPAD_MENU
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	case MENUACTION_AUTOAIM:
+		m_PrefsAutoaim = !m_PrefsAutoaim;
+		SaveSettings();
+		break;
+	case MENUACTION_INVERTVERTICALLY:
+		m_PrefsInvertVertically = !m_PrefsInvertVertically;
+		SaveSettings();
+		break;
+	case MENUACTION_GPS:
+		m_PrefsGPS = !m_PrefsGPS;
+		SaveSettings();
+		break;
+#endif
 	case MENUACTION_CTRLVIBRATION:
 		m_PrefsUseVibration = !m_PrefsUseVibration;
 		if (m_PrefsUseVibration) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			CPad::GetPad(0)->StartShake(350, 50, 50);
+#else
 			CPad::GetPad(0)->StartShake(350, 150);
+#endif
 			TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 		}
 		SaveSettings();
@@ -5712,6 +6209,9 @@ CMenuManager::SwitchMenuOnAndOff()
 			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested
 #ifdef REGISTER_START_BUTTON
 			|| CPad::GetPad(0)->GetStartJustDown() && !m_bGameNotLoaded
+#endif
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+			|| CPad::GetPad(0)->GetBackJustUp() && !m_bGameNotLoaded && m_nCurrScreen == MENUPAGE_PAUSE_MENU && m_bMenuActive
 #endif
 			) {
 
