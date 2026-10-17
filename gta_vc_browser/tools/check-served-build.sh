@@ -117,7 +117,6 @@ MARCAS=(
   "OD_RECOIL_SCHEMA_1|RC  recoil nuevo: esquema de telemetría acotada por sesión|wasm"
   "serega=|nado Serega: curva deriva/crucero/sprint+timeout en SWIM2|wasm"
   "AIMCFG forceauto=|AX  ClassicAXIS: los 9 ajustes de la seccion [ClassicAxis] leidos (una vez)|wasm"
-  "AIMWALK tecla=|AX  ClassicAXIS: WalkKey, la tecla de andar (LALT) pone la velocidad a 0|wasm"
   "AIMLAW aim=|AX  ClassicAXIS: flanco de isAiming con el modo de camara y el auto-aim|wasm"
   "AIMCAM m=|AX  ClassicAXIS: la ley de apuntado: modo, dist 2.70, altura y hombro 0.20|wasm"
   "AIMFOV fov=|AX  ClassicAXIS: FOV 50 al apuntar por CLASE de arma (pesada: alcance >= 70 o AK47/M16/STEYR)|wasm"
@@ -183,6 +182,8 @@ MARCAS=(
   "P4 kind=distlights schema=1|P4  plan12.0: luces lejanas (v2.6): edificios y dummies con efectos 2D|wasm"
   "P4 kind=gangaim schema=1|P4  plan12.0: punteria de la IA (v1.0/2506): peds 73 y polis del mod|wasm"
   "P4 kind=partcfg schema=1|3/5 particulas: particle.cfg con el tipo resuelto por NOMBRE|wasm"
+  "VEX limits|T1  limites del mod leidos de ViceExtended/limits.ini|wasm"
+  "VEX ini|T1  features.ini leido por el lector nuevo|wasm"
 )
 
 # Datos del mod que tienen que estar SERVIDOS (no basta con que el motor sepa
@@ -198,6 +199,7 @@ DATOS=(
   "data/occlu.ipl|21945|e46192296f2e|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ide|111|b82b774a8958|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ipl|172|b9b2c1c424f6|7  mundo del mod servido (familia 7)"
+  "ViceExtended/limits.ini|250|20929a1db13b|1  limits.ini del mod: las pools salen de ahi (familia 1)"
 )
 
 # Datos del mod que NO se sirven todavia, con su motivo: no son una regresion,

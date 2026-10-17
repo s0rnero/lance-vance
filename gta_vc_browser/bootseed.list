@@ -1933,3 +1933,4 @@ data/train.dat
 data/surface.dat
 data/pedgrp.dat
 ViceExtended/features.ini
+ViceExtended/limits.ini

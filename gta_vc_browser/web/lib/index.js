@@ -168,7 +168,7 @@ import { CSS, STYLE_ID } from './styles.js';
 // nuevo. Un build enlazado con el mismo tag se sigue sirviendo de la caché (pasó
 // el 23/09: dos corridas del arnés midieron el binario anterior y salían "sin
 // pesomira en CROUCH2" con el build bueno en disco). Subir el tag en CADA build.
-export const VERSION = '2026-10-14-ve85';
+export const VERSION = '2026-10-15-13.0-T0';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
@@ -685,6 +685,22 @@ export function startGame(options = {}) {
     if (await unlockAudio() === true) for (const ev of gestureEvents) window.removeEventListener(ev, onGesture, true);
   };
   if (opts.audio) for (const ev of gestureEvents) window.addEventListener(ev, onGesture, true);
+
+  // ---- vibración del mando (dual-rumble del mod) -----------------------
+  // El motor avisa con `__vcRumble(low, high)` (0-255 por motor) al cambiar.
+  globalThis.__vcRumble = (low, high) => {
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const p of pads) {
+        const act = p && p.vibrationActuator;
+        if (!act || !act.playEffect) continue;
+        act.playEffect('dual-rumble', {
+          duration: (!low && !high) ? 1 : 10000,
+          strongMagnitude: high / 255, weakMagnitude: low / 255,
+        }).catch(() => {});
+      }
+    } catch (e) {}
+  };
 
   // ---- pantalla completa (F11 y método público) --------------------------
   async function enterFullscreen() {

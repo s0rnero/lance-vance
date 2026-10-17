@@ -464,13 +464,8 @@ export const agachado = {
     if (!(await aseguraAgachado(3)))
       inf.aviso('el ped no está agachado al empezar la fase de apuntado', motivoCaida());
     // El arma en mano importa: con los puños `ViceExtCanAim` es falso y no hay
-    // pose que poner (el truco del mod saca el arma y publica su ficha `WINFO`).
-    // `CRAZYTOOLS` deja las armas en el inventario pero NO en la mano (medido en
-    // la primera corrida de R21: `arma=0` = puños y por tanto `cana=0`, sin pose
-    // que poner). `CRAZYPISTOL` (bloque P2 del mod) existe justo para esto: deja
-    // la Beretta COMO ARMA ACTUAL (`SetCurrentWeapon`), y la pistola apunta.
-    await s.cheat('CRAZYHINT');
-    await s.cheat('CRAZYPISTOL');
+    // pose que poner. Los trucos de prueba se retiraron (plan 13.0, T0): se
+    // intenta con la rueda y si no hay arma apuntable se AVISA (abajo).
     await sleep(5000);
     // Si aun así no hay arma apuntable en mano, se intenta con la rueda (cambio
     // de arma a pie en VC) y si no sale se AVISA en vez de tumbar la prueba.
@@ -490,7 +485,7 @@ export const agachado = {
       if (!canaOk)
         inf.aviso('sin arma apuntable en mano: el motor no puede poner la pose de apuntar',
           'cana=0 y arma=' + (c2.map((l) => campo(l, 'arma')).filter((x) => !Number.isNaN(x)).join(',') || '—')
-          + ': el truco CRAZYPISTOL no dejó la pistola en la mano');
+          + ' (sin trucos de prueba desde T0 del plan 13.0)');
     }
     // El apuntado de VC es `PED_LOCK_TARGET`: botón derecho del ratón o `Supr`.
     // Se mantienen los dos (una sonda anterior probó sólo la tecla y salió
@@ -821,18 +816,15 @@ export const armas = {
   async ejecutar(s) {
     const inf = informe('armas', s);
     const o = inf.abre('armas');
-    // Primero el truco de DIAGNÓSTICO del mod (`CRAZYHINT` deja `HINTTEST` en la
-    // traza): así, si algo falla después, se sabe si el problema es el teclado de
-    // trucos o lo que se pruebe con él. La primera corrida de este escenario
-    // salió "sin WINFO" y no se sabía si era el truco, el arma o el teclado.
-    await s.cheat('CRAZYHINT');
-    await sleep(1500);
-    const trucoOk = s.traza.tramo(o, s.traza.marca()).indexOf('HINTTEST mostrado=1') >= 0;
-    inf.check('el teclado de trucos del mod responde', trucoOk,
-      trucoOk ? 'CRAZYHINT -> HINTTEST mostrado=1' : 'sin HINTTEST: el truco no entró (teclado/escritorio)');
-    if (!trucoOk) { await s.foto('armas-sin-truco'); inf.cierra('armas'); return inf; }
-
+    // Primero el truco del mod (`CRAZYTOOLS` deja `WLOAD` en la traza): así, si
+    // algo falla después, se sabe si el problema es el teclado de trucos o lo
+    // que se pruebe con él. (`CRAZYHINT` se retiró en el plan 13.0, T0.)
     await s.cheat('CRAZYTOOLS');               // truco del mod: todas las armas
+    await sleep(1500);
+    const trucoOk = s.traza.tramo(o, s.traza.marca()).indexOf('WLOAD arma=') >= 0;
+    inf.check('el teclado de trucos del mod responde', trucoOk,
+      trucoOk ? 'CRAZYTOOLS -> WLOAD arma=' : 'sin WLOAD: el truco no entró (teclado/escritorio)');
+    if (!trucoOk) { await s.foto('armas-sin-truco'); inf.cierra('armas'); return inf; }
     // Los tiempos son los de la sonda de armas que ya funcionaba (10 s de espera
     // tras el truco: el arma se SACA en mano, y el motor publica `WINFO` cuando
     // cambia; con 2,5 s de espera no salió ni una ficha la primera vez).
@@ -959,10 +951,8 @@ export const agachadoMira = {
       : 'no se consigue agachar (¿atropello? ver `CARPED` en la traza)');
     if (!agachado) { await s.foto('agachado-mira-sin-agachar'); inf.cierra('mira'); return inf; }
 
-    // Pistola EN MANO: `CRAZYPISTOL` (bloque P2 del mod) es el único truco que deja
-    // el arma actual puesta; `CRAZYTOOLS` sólo la mete en el inventario.
-    await s.cheat('CRAZYHINT');
-    await s.cheat('CRAZYPISTOL');
+    // Arma en mano: los trucos de prueba se retiraron (plan 13.0, T0); la fase
+    // mide con lo que el ped lleve y sin arma apuntable sale `cana=0`.
     await sleep(5000);
     for (let i = 0; i < 4 && !estaAgachado(); i++) { await s.pulsa('KeyC', 140); await sleep(1600); }
 
