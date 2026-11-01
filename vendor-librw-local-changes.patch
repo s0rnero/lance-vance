@@ -1,8 +1,54 @@
 diff --git a/src/clump.cpp b/src/clump.cpp
-index f228298..33031e7 100644
+index f228298..27b325c 100644
 --- a/src/clump.cpp
 +++ b/src/clump.cpp
-@@ -621,10 +621,11 @@ Atomic::uninstance(void)
+@@ -49,16 +49,42 @@ Clump::create(void)
+ Clump*
+ Clump::clone(void)
+ {
++	Frame *source = this->getFrame();
++	if(source == nil)
++		return nil;
+ 	Clump *clump = Clump::create();
+-	Frame *root = this->getFrame()->cloneAndLink();
++	if(clump == nil)
++		return nil;
++	Frame *root = source->cloneAndLink();
++	if(root == nil){
++		clump->destroy();
++		return nil;
++	}
+ 	clump->setFrame(root);
+ 	FORLIST(lnk, this->atomics){
+ 		Atomic *a = Atomic::fromClump(lnk);
++		Frame *frame = a->getFrame();
++		Frame *cloneFrame = frame ? frame->root : nil;
+ 		Atomic *atomic = a->clone();
+-		atomic->setFrame(a->getFrame()->root);
++		if(atomic == nil || cloneFrame == nil){
++			if(atomic)
++				atomic->destroy();
++			source->purgeClone();
++			clump->destroy();
++			return nil;
++		}
++#ifdef __EMSCRIPTEN__
++		static int32 odCloneTrace = 0;
++		if(odCloneTrace < 128){
++			odCloneTrace++;
++			printf("[rw] CLONE n=%d atomic=%p frame=%p clone=%p\n",
++			       odCloneTrace, (void*)a, (void*)frame, (void*)cloneFrame);
++		}
++#endif
++		atomic->setFrame(cloneFrame);
+ 		clump->addAtomic(atomic);
+ 	}
+-	this->getFrame()->purgeClone();
++	source->purgeClone();
+ 
+ 	// World extension
+ 	if(this->world)
+@@ -621,10 +647,11 @@ Atomic::uninstance(void)
  	this->geometry->flags &= ~Geometry::NATIVE;
  }
  
@@ -263,11 +309,115 @@ index 671948f..824a6eb 100644
  	return tex;
  }
  
+diff --git a/src/frame.cpp b/src/frame.cpp
+index c8dabd5..c60e43c 100644
+--- a/src/frame.cpp
++++ b/src/frame.cpp
+@@ -58,12 +58,17 @@ Frame::destroy(void)
+ 	FORLIST(lnk, this->objectList)
+ 		ObjectWithFrame::fromFrame(lnk)->setFrame(nil);
+ 	s_plglist.destruct(this);
++	Frame *child = this->child;
++	this->child = nil;
++	for(Frame *c = child; c; c = c->next){
++		c->object.parent = nil;
++		c->setHierarchyRoot(c);
++		c->updateObjects();
++	}
+ 	if(this->getParent())
+ 		this->removeChild();
+ 	if(this->object.privateFlags & Frame::HIERARCHYSYNC)
+ 		this->inDirtyList.remove();
+-	for(Frame *f = this->child; f; f = f->next)
+-		f->object.parent = nil;
+ 	rwFree(this);
+ 	numAllocated--;
+ }
+@@ -104,7 +109,7 @@ Frame::addChild(Frame *child, bool32 append)
+ 	child->object.parent = this;
+ 	child->root = this->root;
+ 	for(c = child->child; c; c = c->next)
+-		c->setHierarchyRoot(this);
++		c->setHierarchyRoot(this->root);
+ 	// If the child was a root, remove from dirty list
+ 	if(child->object.privateFlags & Frame::HIERARCHYSYNC){
+ 		child->inDirtyList.remove();
+@@ -319,6 +324,8 @@ static Frame*
+ cloneRecurse(Frame *old, Frame *newroot)
+ {
+ 	Frame *frame = Frame::create();
++	if(frame == nil)
++		return nil;
+ 	if(newroot == nil)
+ 		newroot = frame;
+ 	frame->object.copy(&old->object);
+@@ -327,6 +334,10 @@ cloneRecurse(Frame *old, Frame *newroot)
+ 	old->root = frame;	// Remember cloned frame
+ 	for(Frame *child = old->child; child; child = child->next){
+ 		Frame *clonedchild = cloneRecurse(child, newroot);
++		if(clonedchild == nil){
++			frame->destroyHierarchy();
++			return nil;
++		}
+ 		clonedchild->next = frame->child;
+ 		frame->child = clonedchild;
+ 		clonedchild->object.parent = frame;
+@@ -340,11 +351,13 @@ Frame*
+ Frame::cloneAndLink(void)
+ {
+ 	Frame *newhier = cloneRecurse(this, nil);
+-	if(newhier){
+-		// frame is not in dirty list so important to get this flag right
+-		newhier->object.privateFlags &= ~HIERARCHYSYNC;
+-		newhier->updateObjects();
++	if(newhier == nil){
++		this->purgeClone();
++		return nil;
+ 	}
++	// frame is not in dirty list so important to get this flag right
++	newhier->object.privateFlags &= ~HIERARCHYSYNC;
++	newhier->updateObjects();
+ 	return newhier;
+ }
+ 
 diff --git a/src/geometry.cpp b/src/geometry.cpp
-index 5d31c34..5e45042 100644
+index 5d31c34..25b6d0d 100644
 --- a/src/geometry.cpp
 +++ b/src/geometry.cpp
-@@ -134,16 +134,52 @@ Geometry*
+@@ -130,26 +130,128 @@ struct GeoStreamData
+ 	int32 numMorphTargets;
+ };
+ 
++// Tamano que puede ocupar el bloque de morph targets dentro del STRUCT: por
++// cada target, 24 bytes (esfera envolvente + hasVertices + hasNormals) y luego
++// 0, 12*nv o 24*nv bytes segun traiga vertices y/o normales. El lector decidia
++// si el STRUCT lleva los 12 bytes de surface properties solo por la version, y
++// el respaldo por tamano no podia funcionar: contaba los 24 bytes de cabecera y
++// se dejaba los arrays, asi que no casaba con ningun DFF real. Ejemplo medido:
++// `admiral` chassis_hi tiene 68416 bytes y el calculo daba 32368; la diferencia
++// son justo 24*1502 de los vertices/normales del morph target. Por eso los DFF
++// reescritos por `indicator_audit.py` (version 0xc02ffff, con props) se leian 12
++// bytes desplazados: UVs y triangulos basura, MESHFALLBACK y, mas tarde, heap
++// corrupto que reventaba en Clump::clone/Frame::updateObjects/syncDirty/malloc.
++// Probando las dos variantes contra esta familia de tamanos la decision es unica
++// en las 7045 geometrias servidas (1460 se leen por fin alineadas).
++static bool
++odMorphPayloadPlausible(uint64 rest, int32 numVertices, int32 numMorphTargets)
++{
++	uint64 min, step;
++	if(numVertices <= 0 || numMorphTargets <= 0)
++		return false;
++	min = 24*(uint64)numMorphTargets;
++	if(rest < min)
++		return false;
++	step = 12*(uint64)numVertices;
++	if(step == 0)
++		return rest == min;
++	return (rest - min) % step == 0 &&
++	       (rest - min)/step <= 2*(uint64)numMorphTargets;
++}
++
+ Geometry*
  Geometry::streamRead(Stream *stream)
  {
  	uint32 version;
@@ -282,6 +432,9 @@ index 5d31c34..5e45042 100644
  		RWERROR((ERR_CHUNK, "STRUCT"));
  		return nil;
  	}
++	// 30/10 (30.0/T67): posicion del cuerpo del STRUCT, para poder decir donde
++	// deberia caer MATLIST si al final no aparece.
++	uint32 bodyPos = stream->tell();
  	stream->read32(&buf, sizeof(buf));
 +	// 24/10 (guardia de cuelgues): el STRUCT tiene que poder contener lo que dice
 +	// su cabecera. Con un DFF corrupto o truncado (`numVertices`/`numTriangles`
@@ -293,13 +446,47 @@ index 5d31c34..5e45042 100644
 +	// motor marca el modelo como fallido (traza `FAIL model <nombre>`) en vez de
 +	// arrastrar el heap roto. Los topes son de cordura, no de rendimiento: el
 +	// DFF mas grande del juego no llega ni a una decima parte.
++	int32 texSets = (buf.flags & 0xFF0000) >> 16;
++	if(texSets == 0)
++		texSets = (buf.flags & Geometry::TEXTURED) ? 1 :
++		          (buf.flags & Geometry::TEXTURED2) ? 2 : 0;
++	uint64 tamSin = sizeof(GeoStreamData);
++	uint64 tamCon = tamSin + 12;
++	if(!(buf.flags & Geometry::NATIVE)){
++		uint64 prelit = (buf.flags & Geometry::PRELIT) ? 4*(uint64)buf.numVertices : 0;
++		uint64 uv = 8*(uint64)texSets*(uint64)buf.numVertices;
++		uint64 tri = 8*(uint64)buf.numTriangles;
++		tamSin += prelit + uv + tri;
++		tamCon += prelit + uv + tri;
++	}
++	// tamSin/tamCon llegan hasta el final de los triangulos; lo que queda del
++	// STRUCT es el bloque de morph targets, que puede medir 24*nm + k*12*nv con
++	// k en [0, 2*nm]. Se prueban las dos variantes (con y sin los 12 bytes de
++	// surface properties) y, si solo una encaja, esa manda sobre la version.
++	bool propsPorVersion = version < 0x34000;
++	bool leerProps = propsPorVersion;
++	if(!(buf.flags & Geometry::NATIVE) && (uint64)structLength >= tamCon){
++		bool sinProps = odMorphPayloadPlausible((uint64)structLength - tamSin,
++		                                        buf.numVertices, buf.numMorphTargets);
++		bool conProps = odMorphPayloadPlausible((uint64)structLength - tamCon,
++		                                        buf.numVertices, buf.numMorphTargets);
++		if(conProps && !sinProps)
++			leerProps = true;
++		else if(sinProps && !conProps)
++			leerProps = false;
++	}
++	if(leerProps != propsPorVersion){
++		static int32 reportedProps = 0;
++		if(reportedProps < 8){
++			reportedProps++;
++			printf("[rw] GEOPROPS struct=%u props=%d version=%08x verts=%d tris=%d\n",
++			       structLength, leerProps ? 1 : 0, version,
++			       buf.numVertices, buf.numTriangles);
++		}
++	}
 +	{
-+		int32 texSets = (buf.flags & 0xFF0000) >> 16;
-+		if(texSets == 0)
-+			texSets = (buf.flags & Geometry::TEXTURED) ? 1 :
-+			          (buf.flags & Geometry::TEXTURED2) ? 2 : 0;
 +		uint64 need = sizeof(GeoStreamData);
-+		if(version < 0x34000)
++		if(leerProps)
 +			need += 12;
 +		if(!(buf.flags & Geometry::NATIVE)){
 +			if(buf.flags & Geometry::PRELIT)
@@ -321,8 +508,44 @@ index 5d31c34..5e45042 100644
  	Geometry *geo = Geometry::create(buf.numVertices,
  	                                 buf.numTriangles, buf.flags);
  	if(geo == nil)
+ 		return nil;
+ 	geo->addMorphTargets(buf.numMorphTargets-1);
+-	if(version < 0x34000)
++	if(leerProps)
+ 		stream->read32(&surfProps, 12);
+ 
+ 	if(!(geo->flags & NATIVE)){
+@@ -179,9 +281,25 @@ Geometry::streamRead(Stream *stream)
+ 			stream->read32(m->normals, 3*geo->numVertices*4);
+ 	}
+ 
+-	if(!findChunk(stream, ID_MATLIST, nil, nil)){
+-		RWERROR((ERR_CHUNK, "MATLIST"));
+-		goto fail;
++	{
++		uint32 matPos = stream->tell();
++		if(!findChunk(stream, ID_MATLIST, nil, nil)){
++			// Diagnostico: los ficheros del juego cuadran con este lector, asi
++			// que si MATLIST no esta donde toca hay que ver que cree que leyo.
++			uint32 at = stream->tell();
++			stream->seek((int32)(matPos - at));
++			uint32 badType = stream->readU32();
++			stream->seek((int32)(at - stream->tell()));
++			static int32 reported = 0;
++			if(reported < 8){
++				reported++;
++				printf("[rw] MATLIST ausente: cuerpo=%u struct=%u fin=%u pos=%u tipo=0x%x ver=0x%x flags=0x%x verts=%d tris=%d morph=%d\n",
++				       bodyPos, structLength, bodyPos + structLength, matPos, badType,
++				       version, buf.flags, buf.numVertices, buf.numTriangles, buf.numMorphTargets);
++			}
++			RWERROR((ERR_CHUNK, "MATLIST"));
++			goto fail;
++		}
+ 	}
+ 	if(version < 0x34000)
+ 		defaultSurfaceProps = surfProps;
 diff --git a/src/geoplg.cpp b/src/geoplg.cpp
-index c1e1356..fdfe965 100644
+index c1e1356..e0f539b 100644
 --- a/src/geoplg.cpp
 +++ b/src/geoplg.cpp
 @@ -38,6 +38,11 @@ Geometry::allocateMeshes(int32 numMeshes, uint32 numIndices, bool32 noIndices)
@@ -337,7 +560,7 @@ index c1e1356..fdfe965 100644
  	sz = sizeof(MeshHeader) + numMeshes*sizeof(Mesh);
  	if(!noIndices)
  		sz += numIndices*sizeof(uint16);
-@@ -117,6 +122,20 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
+@@ -117,20 +122,143 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
  	Geometry *geo = (Geometry*)object;
  
  	stream->read32(&mhs, sizeof(MeshHeaderStream));
@@ -357,12 +580,116 @@ index c1e1356..fdfe965 100644
 +	}
  	// Have to do this dance for War Drum's meshes
  	bool32 hasData = len > int32(sizeof(MeshHeaderStream)+mhs.numMeshes*sizeof(MeshStream));
++	uint32 indiceReal = mhs.totalIndices;
++	bool porMalla = false;
++	bool contiguo = false;
++	bool usable = false;
++	MeshStream *cabeceras = nil;
++	if(!(geo->flags & Geometry::NATIVE) && mhs.numMeshes > 0 && mhs.numMeshes <= 100000){
++		cabeceras = (MeshStream*)rwMalloc(mhs.numMeshes*sizeof(MeshStream), MEMDUR_GLOBAL);
++		if(cabeceras){
++			uint32 inicio = stream->tell();
++			bool ok = true;
++			uint32 sumaC = 0;
++			for(uint32 i = 0; i < mhs.numMeshes; i++){
++				if(stream->read32(&cabeceras[i], sizeof(MeshStream)) != sizeof(MeshStream)){
++					ok = false;
++					break;
++				}
++				if(cabeceras[i].matIndex < 0 || cabeceras[i].matIndex >= geo->matList.numMaterials){
++					ok = false;
++					break;
++				}
++				sumaC += cabeceras[i].numIndices;
++				if(sumaC > 4000000){
++					ok = false;
++					break;
++				}
++			}
++			if(ok && (int64)len == (int64)sizeof(MeshHeaderStream) + (int64)mhs.numMeshes*sizeof(MeshStream) + (int64)sumaC*4){
++				contiguo = true;
++				indiceReal = sumaC;
++				usable = true;
++			}
++			stream->seek((int32)inicio - (int32)stream->tell());
++			if(!contiguo){
++				ok = true;
++				uint32 suma = 0;
++				for(uint32 i = 0; i < mhs.numMeshes; i++){
++					MeshStream t;
++					if(stream->read32(&t, sizeof(MeshStream)) != sizeof(MeshStream)){
++						ok = false;
++						break;
++					}
++					suma += t.numIndices;
++					if(suma > 4000000 || t.numIndices > (uint32)len){
++						ok = false;
++						break;
++					}
++					stream->seek(t.numIndices*4);
++				}
++				stream->seek((int32)inicio - (int32)stream->tell());
++				if(ok && (int64)len == (int64)sizeof(MeshHeaderStream) + (int64)mhs.numMeshes*sizeof(MeshStream) + (int64)suma*4){
++					indiceReal = suma;
++					usable = true;
++				}
++			}
++		}
++	}
++	if(!(geo->flags & Geometry::NATIVE) && !usable){
++		static int32 reportedFallback = 0;
++		if(reportedFallback < 8){
++			reportedFallback++;
++			printf("[rw] MESHFALLBACK meshes=%u total=%u mat=%d\n",
++			       (uint32)mhs.numMeshes, (uint32)mhs.totalIndices, geo->matList.numMaterials);
++		}
++		geo->meshHeader = nil;
++		geo->allocateMeshes(0, 0, false);
++		if(len > (int32)sizeof(MeshHeaderStream))
++			stream->seek(len - sizeof(MeshHeaderStream));
++		if(cabeceras)
++			rwFree(cabeceras);
++		return stream;
++	}
  	assert(geo->meshHeader == nil);
-@@ -130,7 +149,21 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
+ 	geo->meshHeader = nil;
+-	mh = geo->allocateMeshes(mhs.numMeshes, mhs.totalIndices, 
++	mh = geo->allocateMeshes(mhs.numMeshes, indiceReal, 
+ 		geo->flags & Geometry::NATIVE && !hasData);
+ 	mh->flags = mhs.flags;
+ 
+ 	mesh = mh->getMeshes();
+ 	indices = mesh->indices;
++	uint16 *indexBase = indices;
++	if(contiguo)
++		stream->seek(mhs.numMeshes*sizeof(MeshStream));
  	for(uint32 i = 0; i < mh->numMeshes; i++){
- 		stream->read32(&ms, sizeof(MeshStream));
- 		mesh->numIndices = ms.numIndices;
+-		stream->read32(&ms, sizeof(MeshStream));
+-		mesh->numIndices = ms.numIndices;
 -		mesh->material = geo->matList.materials[ms.matIndex];
++		if(contiguo)
++			ms = cabeceras[i];
++		else
++			stream->read32(&ms, sizeof(MeshStream));
++		// 30/10 (30.0/T54): un DFF puede declarar en sus mallas mas indices que
++		// `totalIndices`, y `allocateMeshes` reserva solo totalIndices. Antes
++		// `indices += numIndices` se salia del buffer y corrompia el heap (el
++		// trap salia frames despues, en malloc/CTxdStore). Se recorta la malla a
++		// lo que queda del buffer y se sigue consumiendo del stream lo declarado
++		// para no desalinear los plugins siguientes.
++		int32 room = (int32)mh->totalIndices - (int32)(indices - indexBase);
++		if(room < 0)
++			room = 0;
++		if(!porMalla && ms.numIndices > (uint32)room){
++			static int32 reportedOverrun = 0;
++			if(reportedOverrun < 8){
++				reportedOverrun++;
++				printf("[rw] MESHOVER total=%u malla=%u pide=%u queda=%d\n",
++				       (uint32)mh->totalIndices, (uint32)i,
++				       (uint32)ms.numIndices, room);
++			}
++		}
++		mesh->numIndices = (!porMalla && ms.numIndices > (uint32)room) ? (uint32)room : ms.numIndices;
 +		// 26/10: DFF con `matIndex` fuera de la lista (editado/reconvertido) dejaba
 +		// aqui un puntero basura; se dibujaba y reventaba en setMaterial, matando el
 +		// frame y congelando el juego. Se cae al primer material (o a ninguno) y se
@@ -381,6 +708,41 @@ index c1e1356..fdfe965 100644
  		if(geo->flags & Geometry::NATIVE){
  			// War Drum OpenGL stores uint16 indices here
  			if(hasData){
+@@ -138,22 +266,29 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
+ 				indices += mesh->numIndices;
+ 				stream->read16(mesh->indices,
+ 				            mesh->numIndices*2);
++				if(ms.numIndices > mesh->numIndices)
++					stream->seek((ms.numIndices - mesh->numIndices)*2);
+ 			}
+ 		}else{
+ 			mesh->indices = indices;
+ 			indices += mesh->numIndices;
+ 			uint16 *ind = mesh->indices;
+-			int32 numIndices = mesh->numIndices;
+-			for(; numIndices > 0; numIndices -= 256){
+-				int32 n = numIndices < 256 ? numIndices : 256;
++			int32 roomWrite = mesh->numIndices;
++			int32 declarados = ms.numIndices;
++			for(; declarados > 0; declarados -= 256){
++				int32 n = declarados < 256 ? declarados : 256;
+ 				stream->read32(indbuf, n*4);
+-				for(int32 j = 0; j < n; j++)
++				int32 w = n < roomWrite ? n : roomWrite;
++				for(int32 j = 0; j < w; j++)
+ 					ind[j] = indbuf[j];
+-				ind += n;
++				ind += w;
++				roomWrite -= w;
+ 			}
+ 		}
+ 		mesh++;
+ 	}
++	if(cabeceras)
++		rwFree(cabeceras);
+ 	return stream;
+ }
+ 
 diff --git a/src/gl/gl3device.cpp b/src/gl/gl3device.cpp
 index 9df47ee..025fb03 100644
 --- a/src/gl/gl3device.cpp
@@ -1847,24 +2209,11 @@ index 6471f17..889646e 100644
  	 echo ';') >matfx_gl.inc
  
  skin_gl.inc: skin.vert
-diff --git a/src/gl/shaders/default.vert b/src/gl/shaders/default.vert
-index 8e3fad7..e9a1360 100644
---- a/src/gl/shaders/default.vert
-+++ b/src/gl/shaders/default.vert
-@@ -16,6 +16,8 @@ main(void)
- 	v_color = in_color;
- 	v_color.rgb += u_ambLight.rgb*surfAmbient;
- 	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
-+	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-+	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;
- 	v_color = clamp(v_color, 0.0, 1.0);
- 	v_color *= u_matColor;
- 
 diff --git a/src/gl/shaders/default_vs_gl.inc b/src/gl/shaders/default_vs_gl.inc
-index 6e3d6c4..22ce544 100644
+index 6e3d6c4..a1e9ce2 100644
 --- a/src/gl/shaders/default_vs_gl.inc
 +++ b/src/gl/shaders/default_vs_gl.inc
-@@ -1,25 +1,28 @@
+@@ -1,25 +1,26 @@
  const char *default_vert_src =
  "VSIN(ATTRIB_POS)	vec3 in_pos;\n"
 -
@@ -1888,8 +2237,6 @@ index 6e3d6c4..22ce544 100644
  "	v_color = in_color;\n"
  "	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
  "	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
-+"	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
-+"	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;\n"
  "	v_color = clamp(v_color, 0.0, 1.0);\n"
  "	v_color *= u_matColor;\n"
 -
@@ -1899,7 +2246,7 @@ index 6e3d6c4..22ce544 100644
 +"\n"
  ;
 diff --git a/src/gl/shaders/header.vert b/src/gl/shaders/header.vert
-index bb9881f..a8ab2bc 100644
+index bb9881f..fa9f98c 100644
 --- a/src/gl/shaders/header.vert
 +++ b/src/gl/shaders/header.vert
 @@ -72,6 +72,8 @@ uniform vec4 u_lightColor[MAX_LIGHTS];
@@ -1945,7 +2292,7 @@ index bb9881f..a8ab2bc 100644
 +#endif
 +#ifdef POINTLIGHTS
 +		if(u_lightParams[i].x == 2.0){
-+			vec3 dir = u_lightPosition[i].xyz - V;
++			vec3 dir = u_lightPosition[i].xyz - worldPos;
 +			float dist = length(dir);
 +			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));
 +			L = dir / max(dist, 0.0001);
@@ -1953,7 +2300,7 @@ index bb9881f..a8ab2bc 100644
 +#endif
 +#ifdef SPOTLIGHTS
 +		if(u_lightParams[i].x == 3.0){
-+			vec3 dir = u_lightPosition[i].xyz - V;
++			vec3 dir = u_lightPosition[i].xyz - worldPos;
 +			float dist = length(dir);
 +			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));
 +			L = dir / max(dist, 0.0001);
@@ -1973,7 +2320,7 @@ index bb9881f..a8ab2bc 100644
 +	return color;
 +}
 diff --git a/src/gl/shaders/header_vs.inc b/src/gl/shaders/header_vs.inc
-index ffa4683..bbcc205 100644
+index ffa4683..e39e252 100644
 --- a/src/gl/shaders/header_vs.inc
 +++ b/src/gl/shaders/header_vs.inc
 @@ -1,9 +1,9 @@
@@ -2096,7 +2443,7 @@ index ffa4683..bbcc205 100644
 +"#endif\n"
 +"#ifdef POINTLIGHTS\n"
 +"		if(u_lightParams[i].x == 2.0){\n"
-+"			vec3 dir = u_lightPosition[i].xyz - V;\n"
++"			vec3 dir = u_lightPosition[i].xyz - worldPos;\n"
 +"			float dist = length(dir);\n"
 +"			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));\n"
 +"			L = dir / max(dist, 0.0001);\n"
@@ -2104,7 +2451,7 @@ index ffa4683..bbcc205 100644
 +"#endif\n"
 +"#ifdef SPOTLIGHTS\n"
 +"		if(u_lightParams[i].x == 3.0){\n"
-+"			vec3 dir = u_lightPosition[i].xyz - V;\n"
++"			vec3 dir = u_lightPosition[i].xyz - worldPos;\n"
 +"			float dist = length(dir);\n"
 +"			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));\n"
 +"			L = dir / max(dist, 0.0001);\n"
