@@ -127,7 +127,31 @@ var OD = {
   // (±2,740 -> ±1,500 m/ciclo = 2,05 m/s: pies pegados a 1,13 m/s sin el x1,7
   // de R26c). Sin esta purga el navegador seguiría con el ifp viejo y las
   // pisadas irían a otro ritmo que el cuerpo.
-  dataTag: '2026-10-15-13.0-T3',
+  // ve15 (28/10, plan 23.0/T32): GXT de los menus del mod (Other Settings y
+  // Camara en primera persona) guardados tambien en gamefiles/TEXT para que
+  // un rebuild de datos no los borre; el wasm cambia camara, empujon,
+  // particulas y disparo a ocupantes. Purga la cache IDB anterior.
+  // ve16 (29/10, iteracion 24.3): GXT de los nombres que pedía la IDE y no
+  // estaban en la GXT (`PREMIER` del Premier 6504, `AEROPL` del airtrain y
+  // `RCGOBLI` del RC Goblin). Purga la cache IDB anterior.
+  // ve17 (29/10, ajustes post-26): `FET_AGC`, `LG_39` y `LG_40` en las GXT
+  // servidas (las pedia el menu de mando y la leyenda del mapa). Purga la
+  // cache IDB anterior.
+  // T53 (30/10): las 1708 geometrías del mapa/peds que declaraban más índices
+  // de los que su plugin contiene (aceras, docks, terminal, edificios) quedan
+  // recortadas. Purga la caché IDB para que el motor lea los DFF nuevos.
+  // T65 (30/10, plan 32.0): las versiones de STRUCT de 34 geometrías de 8
+  // vehículos no cuadraban con su cuerpo (12 bytes de surface props) y el motor
+  // no encontraba el MATLIST: el modelo fallaba en bucle y acababa en
+  // "memory access out of bounds". Se repara el campo de versión y se
+  // reempaqueta el .dir (faggio y kaufman encogieron). Purga la caché IDB.
+  // T66 (30/10, plan 34.0): las 30 geometrias de intermitente que escribio el
+  // parcheador guardaban todas las cabeceras de malla primero y luego todos los
+  // indices. librw las lee intercaladas, asi que tomaba indices por materiales
+  // (`MESHBADMAT`), el modelo fallaba y el clump a medias reventaba en
+  // `Frame::updateObjects`. Se reordena la malla (mismo tamano) y se corrige el
+  // generador. Purga la cache IDB.
+  dataTag: '2026-10-30-34.0-T69',
   manifest: null,
   db: null,
   inflight: {},
@@ -154,16 +178,17 @@ var OD = {
   })(),
   sleep(ms) { return new Promise((r) => setTimeout(r, ms)); },
   // Flush IDBFS serializado (F2): solapar syncfs atasca la cola IDB
-  // ("N operations in flight") y nada completa. Si hay uno en vuelo, saltar.
+  // ("N operations in flight") y nada completa. Si hay uno en vuelo, encolar.
   // Con origen (save/settings/quit) deja línea en consola; el resto va
   // silencioso. Los saves son acciones raras del usuario: 2 líneas no es spam.
   _syncFsBusy: false,
+  _syncFsPending: false,
   _ufTimer: null,
   syncUserfiles(src) {
-    if (OD._syncFsBusy) { if (src) console.log('[od] flush ' + src + ': omitido (otro en vuelo)'); return; }
+    if (OD._syncFsBusy) { OD._syncFsPending = true; if (src) console.log('[od] flush ' + src + ': en cola'); return; }
     OD._syncFsBusy = true;
     if (src) console.log('[od] flush ' + src + '...');
-    try { FS.syncfs(false, () => { OD._syncFsBusy = false; if (src) console.log('[od] flush ' + src + ' ok'); }); }
+    try { FS.syncfs(false, () => { OD._syncFsBusy = false; if (src) console.log('[od] flush ' + src + ' ok'); if (OD._syncFsPending) { OD._syncFsPending = false; OD.syncUserfiles('pendiente'); } }); }
     catch (e) { OD._syncFsBusy = false; if (src) console.log('[od] flush ' + src + ' ERROR: ' + e); }
   },
   // Estilo dos.zone: toda escritura bajo /userfiles programa un flush con
@@ -174,19 +199,59 @@ var OD = {
     OD._ufTimer = setTimeout(() => { OD._ufTimer = null; OD.syncUserfiles(); }, 2500);
   },
   // Caché MEMFS con desalojo: solo lo traído por OD es desalojable (el
-  // paquete inicial nunca). Tope ~400 MB; lo desalojado se re-descarga
-  // (IDB lo sirve sin red). Sin esto la sesión crece sin cota y la
-  // pestaña muere (~2.4 GB).
+  // paquete inicial nunca). Lo desalojado se re-descarga (IDB lo sirve sin
+  // red). Sin esto la sesión crece sin cota y la pestaña muere (~2.4 GB).
   live: new Map(),
   liveBytes: 0,
-  // F5c: 250 → 300. El working set real (mundo ~150 MB + emisora ~30 MB) ya
-  // no disputa el pool con las 9 emisoras de la prefetch masiva (270 MB),
-  // que fue el thrash medido en lean1 (1683 ficheros re-traídos).
-  // F6b: 300 → 360 para que el arranque en caliente (hasta 64 MB de ficheros
-  // pequeños adelantados) no empuje el working set contra el tope y provoque
-  // desalojos justo al entrar en partida.
-  CAP: 360 * 1048576,
-  GRACE_MS: 60000,
+  // Tope de descargas SIMULTANEAS (21/10). Al cargar el mundo el motor
+  // pide mas de 1400 ficheros de golpe y cada uno era un fetch en
+  // paralelo: el heap de JS se iba a 900 MB, el GC tardaba 11 s y el
+  // navegador apagaba el WebGL (pantalla negra con el sonido de fondo).
+  // Con el tope, las descargas van a rafagas de 48 y el pico baja mucho.
+  dlMax: 48,
+  dlActive: 0,
+  dlQueue: [],
+  dlSlot() {
+    if (OD.dlActive < OD.dlMax) { OD.dlActive++; return Promise.resolve(); }
+    return new Promise((res) => OD.dlQueue.push(res));
+  },
+  dlRelease() {
+    if (OD.dlActive > 0) OD.dlActive--;
+    const next = OD.dlQueue.shift();
+    if (next) { OD.dlActive++; next(); }
+  },
+  // 24/10 (dieta por los cuelgues): los topes anteriores (CAP 360, blando 180,
+  // HEAP_HI 700) son los que dejaron morir la pestaña tres veces. Medido en las
+  // sesiones de 2026-10-24 con la build 17.0-T9 (tag ODCAP de la traza): MEMFS
+  // 436 MB con heap JS 551 MB, y MEMFS 517 MB con heap JS 624 MB, siempre con
+  // el heap wasm clavado en 512 MB y SIN desalojar nunca (`evict=0/0MB`). La
+  // traza se corta en mitad de un frame a 60 fps sin JSERR, sin ENGERR y sin
+  // pérdida de WebGL: eso es el proceso del renderer muriendo por memoria, no
+  // una excepción del motor. El paquete inicial (~164 MB) no es desalojable, así
+  // que el techo real de MEMFS es 164 + CAP.
+  //
+  // 25/10 (tirones): con CAP 176 y gracia 20 s el working set se desalojaba
+  // mientras se conducía (2.877 ficheros en 2 min) y cada re-petición suspende el
+  // tick por una descarga on-demand: `strm` llegó a 2.159 ms en un solo frame y
+  // `JS ASYNC` a 443 ms en un lote. El heap wasm estaba pidiendo 512 MB y usando
+  // 64, así que ahora arranca en 384 MB (build.sh, crece si hace falta) y esos
+  // 128 MB se le dan al caché: CAP 240 y gracia 45 s. El techo de MEMFS sube a
+  // ~404 MB y el total del renderer se queda donde estaba.
+  // 26/10 (thrash medido): el heap de V8 en partida vive en 420-440 MB de forma
+  // normal (traza, buffers de descarga, el mapa de ficheros). Con HEAP_HI=420 la
+  // vigilancia disparaba cada 8 s: el log lo enseña literal — `ODMEM heap=430MB
+  // desalojo live=166->96MB` y dos veces más — tirando a la basura modelos que
+  // el motor estaba usando, que volvian a pedirse al frame siguiente. Eso es el
+  // "carga de a poco" al salir de un interior y los tirones: un bucle
+  // desalojo -> re-peticion -> descarga. El limite que si mataba la pestaña eran
+  // 551-624 MB de heap CON 436-517 MB de MEMFS; ahora MEMFS vive en ~300 MB, asi
+  // que el aviso sube a 520 MB, exige tres medidas seguidas (24 s) y desaloja
+  // solo hasta el 70% del tope en vez de dejarlo en 96 MB.
+  CAP: 240 * 1048576,
+  GRACE_MS: 45000,
+  HEAP_HI: 520 * 1048576,
+  CAP_SOFT: 96 * 1048576,
+  heapOver: 0,
   evicted: 0,
   evictedBytes: 0,
   fetchedBytes: 0,
@@ -199,16 +264,17 @@ var OD = {
     OD.liveBytes += size;
     OD.evict();
   },
-  evict() {
-    if (OD.liveBytes <= OD.CAP) return;
+  evict(force, target) {
+    const cap = typeof target === 'number' ? target : (force ? OD.CAP_SOFT : OD.CAP);
+    if (OD.liveBytes <= cap) return;
     const now = Date.now();
     // Doble del tope: desalojo duro (sin periodo de gracia). MEMFS mantiene
     // vivos los streams abiertos aunque se deslinkee el nombre; reabrir
     // re-descarga (IDB lo sirve sin red). La alternativa es morir por OOM.
-    const hard = OD.liveBytes > 2 * OD.CAP;
+    const hard = force || OD.liveBytes > 2 * OD.CAP;
     const order = [...OD.live.entries()].sort((a, b) => a[1].t - b[1].t);
     for (const [p, e] of order) {
-      if (OD.liveBytes <= OD.CAP) break;
+      if (OD.liveBytes <= cap) break;
       if (!hard && now - e.t < OD.GRACE_MS) continue;
       try { FS.unlink(p); } catch (err) { OD.live.delete(p); OD.liveBytes -= e.s; continue; }
       OD.live.delete(p);
@@ -299,6 +365,8 @@ var OD = {
     OD._census.fmb = Math.round(OD.fetchedBytes / 1048576);
     OD._census.idb = OD.idbHits;
     OD._census.per = Object.entries(per).map(([k, v]) => k + ':' + Math.round(v / 1048576)).join(' ');
+    OD._census.ufs = Math.round((per['/userfiles'] || 0) / 1048576);
+    OD._census.root = Math.round((per['/'] || 0) / 1048576);
     return OD._census;
   },
 
@@ -441,10 +509,32 @@ var OD = {
         const c = OD.census();
         let js = '';
         if (performance.memory) js = ' js=' + Math.round(performance.memory.usedJSHeapSize / 1048576) + 'MB';
+        const per = c.per ? ' desglose=' + c.per : '';
         OD.trace('ODCAP memfs=' + c.mb + 'MB files=' + c.n + ' live=' + c.live + 'MB' +
-          ' evict=' + c.ev + '/' + c.evmb + 'MB fmb=' + c.fmb + 'MB idb=' + c.idb + js);
+          ' evict=' + c.ev + '/' + c.evmb + 'MB fmb=' + c.fmb + 'MB idb=' + c.idb + js + per);
       } catch (e) {}
     }, 30000);
+    // Vigilancia de memoria: con el heap JS por encima de HEAP_HI el
+    // navegador puede matar la pestana. Se desaloja el pool por debajo
+    // del tope blando (sin periodo de gracia) para bajar el pico. Solo
+    // actua bajo presion; el pool vuelve a crecer solo hasta CAP.
+    setInterval(() => {
+      try {
+        if (!performance.memory) return;
+        const js = performance.memory.usedJSHeapSize;
+        OD.heapOver = js > OD.HEAP_HI ? (OD.heapOver | 0) + 1 : 0;
+        // Tres medidas seguidas (24 s) por encima del aviso: un pico de GC o un
+        // lote de descargas no puede vaciar la cache de modelos.
+        const target = OD.CAP * 0.7;
+        if (OD.heapOver >= 3 && OD.liveBytes > target) {
+          const before = OD.liveBytes;
+          OD.evict(true, target);
+          OD.trace('ODMEM heap=' + Math.round(js / 1048576) + 'MB desalojo live=' +
+            Math.round(before / 1048576) + '->' + Math.round(OD.liveBytes / 1048576) + 'MB');
+          OD.heapOver = 0;
+        }
+      } catch (e) {}
+    }, 8000);
     // Integridad de los ficheros gordos (>20 MB): son los que deciden el peso
     // en memoria y donde una entrada mentirosa se nota (cinemáticas, emisoras,
     // cuts.img). Cada línea ODBIG trae el tamaño y una prueba de lectura real
@@ -638,6 +728,7 @@ var OD = {
     OD.wkStats = { ask: 0, take: 0, wait: 0, fast: 0, idb: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
   },
   wkStart() {
+    if (OD.wkWaiters && Object.keys(OD.wkWaiters).length) OD.wkFlushWaiters('reinicio-worker');
     OD.wkInit();
     if (OD.cfg.worker === false) { OD.wkNote('desactivado por configuracion'); OD.wk = null; return; }
     if (typeof Worker === 'undefined' || typeof Blob === 'undefined') { OD.wkNote('este navegador no tiene Worker'); return; }
@@ -645,7 +736,15 @@ var OD = {
       const url = URL.createObjectURL(new Blob([WORKER_SRC], { type: 'text/javascript' }));
       const w = new Worker(url);
       w.onmessage = (e) => OD.wkOnMsg(e);
-      w.onerror = (e) => { OD.wk = null; OD.wkNote('error del worker: ' + ((e && e.message) || e)); };
+      w.onerror = (e) => {
+        OD.wk = null;
+        // T17: un worker muerto dejaba a `wkWait` esperando para SIEMPRE (el
+        // motor se quedaba suspendido y el juego congelado sin traza). Sus
+        // esperas se cierran en el acto y el motor reintenta por el camino de
+        // siempre en el siguiente frame.
+        OD.wkFlushWaiters('worker-onerror');
+        OD.wkNote('error del worker: ' + ((e && e.message) || e));
+      };
       // OJO: un worker creado desde un Blob no tiene la página como base, así
       // que una ruta relativa NO se puede resolver ahí dentro ('Failed to parse
       // URL'). Se le manda la base ya absoluta.
@@ -697,11 +796,45 @@ var OD = {
       OD.wkReady.delete(it.value);
     }
   },
-  wkWait(canon) {
+  // T17: toda espera por el worker tiene fecha de caducidad. Antes, un mensaje
+  // perdido o un worker muerto sin `onerror` dejaban el await del motor
+  // pendiente para siempre: el juego se congelaba (mainSilentMs creciendo y
+  // mark/ent quietos) sin error y sin forma de salir. Al vencer se contesta
+  // null: el motor sigue y vuelve a pedirlo. `ms` largo solo en carga
+  // bloqueante, donde el motor no puede reintentar en otro frame.
+  wkWait(canon, ms) {
+    const deadline = ms || 2500;
     return new Promise((res) => {
       if (!OD.wkWaiters) OD.wkInit();
-      (OD.wkWaiters[canon] = OD.wkWaiters[canon] || []).push(res);
+      let done = false;
+      const finish = (v) => { if (done) return; done = true; res(v); };
+      const arr = (OD.wkWaiters[canon] = OD.wkWaiters[canon] || []);
+      arr.push(finish);
+      setTimeout(() => {
+        if (done) return;
+        const a = OD.wkWaiters[canon];
+        if (a) {
+          const i = a.indexOf(finish);
+          if (i >= 0) a.splice(i, 1);
+          if (!a.length) { delete OD.wkWaiters[canon]; delete OD.wkPending[canon]; }
+        }
+        OD.wkTimeouts++;
+        if (OD.wkTimeouts <= 8) OD.trace('ODWKTMO ' + canon + ' ms=' + deadline);
+        finish(null);
+      }, deadline);
     });
+  },
+  wkTimeouts: 0,
+  wkFlushWaiters(why) {
+    const w = OD.wkWaiters || {};
+    OD.wkWaiters = {};
+    OD.wkPending = {};
+    let n = 0;
+    for (const k of Object.keys(w)) {
+      const arr = w[k] || [];
+      for (const fn of arr) { n++; try { fn(null); } catch (e) {} }
+    }
+    if (n) OD.trace('ODWKDEAD ' + why + ' esperas=' + n);
   },
   // Solo se aplaza en partida, y nunca encadenando fallos del mismo fichero
   // (tras 8 seguidos se espera: antes esperar que quedarse sin fichero).
@@ -1153,7 +1286,12 @@ var OD = {
       if (OD.manifest && OD.manifest[n]) { hit = OD.manifest[n]; canon = '/' + hit.p; break; }
     }
     if (canon && OD.exists(canon)) return canon;
-    if (!hit) return null;
+    if (!hit) {
+      // 21/10: el motor pide un fichero que el manifest no tiene -> el
+      // motor reintenta en bucle y la carga no acaba. Hay que verlo.
+      try { OD.trace('ODMISS fuera-de-manifest ' + reqPath); } catch (e) {}
+      return null;
+    }
 
     // Camino nuevo (Nivel 1): el worker trae el fichero fuera del hilo del
     // juego. Si ya lo tiene entregado, esto es solo copiarlo a MEMFS. Si no,
@@ -1166,7 +1304,12 @@ var OD = {
       if (ready) return OD.writeFile(canon, ready);
       OD.wkAsk(canon, hit);
       if (OD.wkFastFail(canon)) return null;
-      const delivered = await OD.wkWait(canon);
+      // T18: en partida la espera se acota a 2 s (antes 30 s dentro de una carga
+      // bloqueante, que es donde se quedó congelado el juego al salir un cop del
+      // coche y pedir su .ifp). Cargando (init, escena desde el menú) se mantiene
+      // larga: ahí sí es la ruta crítica.
+      const inGame = (typeof window !== 'undefined' && window.__vcInGame === true);
+      const delivered = await OD.wkWait(canon, inGame ? 2000 : 30000);
       if (delivered) return OD.writeFile(canon, delivered);
       // El worker no pudo traerlo: en partida se reintenta en otro frame (el
       // motor lo vuelve a pedir); durante la carga se sigue por el camino de
@@ -1211,6 +1354,7 @@ var OD = {
       // Red con reintentos (F1): si un intento se cuelga o falla, se reintenta;
       // tras 3 fallos se devuelve null (fallo suave, como un 404).
       OD.pending[canon] = { t0: Date.now(), last: Date.now(), bytes: 0, try: 0 };
+      await OD.dlSlot();
       try {
         let lastErr = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1230,6 +1374,7 @@ var OD = {
         if (lastErr) throw lastErr;
       } finally {
         delete OD.pending[canon];
+        OD.dlRelease();
       }
     })();
     OD.inflight[canon] = job;

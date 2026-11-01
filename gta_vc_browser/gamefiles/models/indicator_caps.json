@@ -1,0 +1,1271 @@
+{
+ "models": {
+  "admiral": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "admiral",
+   "orangeTextures": [
+    "admiral868bit128",
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "ambulan": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "ambulan",
+   "orangeTextures": [
+    "ambulan8bit128",
+    "lightson",
+    "servicelightson"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "angel": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "angel",
+   "orangeTextures": [
+    "lights"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "baggage": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "baggage",
+   "orangeTextures": [
+    "baggage8bit128",
+    "lights"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "banshee": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "banshee",
+   "orangeTextures": [
+    "banshee868bit128",
+    "lights"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "barracks": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "barracks",
+   "orangeTextures": [
+    "barracks868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "benson": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "benson",
+   "orangeTextures": [
+    "benson868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "bfinject": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "bfinject",
+   "orangeTextures": [
+    "bfinject868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "blistac": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "blistac",
+   "orangeTextures": [
+    "blistac868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "bloodra": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "bloodra",
+   "orangeTextures": [
+    "bloodra8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "bloodrb": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "bloodrb",
+   "orangeTextures": [
+    "bloodrb8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "bobcat": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "bobcat",
+   "orangeTextures": [
+    "bobcat868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "boxville": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "boxville",
+   "orangeTextures": [
+    "boxville868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "burrito": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "burrito",
+   "orangeTextures": [
+    "burrito868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "bus": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "bus",
+   "orangeTextures": [
+    "bus8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "cabbie": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "cabbie",
+   "orangeTextures": [
+    "cabbie8bit128",
+    "cabbiebody8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "caddy": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "caddy",
+   "orangeTextures": [
+    "caddy8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "cheetah": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "cheetah",
+   "orangeTextures": [
+    "vicechee868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "chopper": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "chopper",
+   "orangeTextures": [
+    "chopper868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "coach": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "coach",
+   "orangeTextures": [
+    "coach868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "coastg": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "coastg",
+   "orangeTextures": [
+    "coast868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "comet": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "comet",
+   "orangeTextures": [
+    "comet868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "cuban": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "cuban",
+   "orangeTextures": [
+    "cuban8bit128",
+    "cubanbody128a"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "deluxo": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "deluxo",
+   "orangeTextures": [
+    "deluxo868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "enforcer": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "enforcer",
+   "orangeTextures": [
+    "enforcer868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "esperant": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "esperant",
+   "orangeTextures": [
+    "esperanto8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "faggio": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "faggio",
+   "orangeTextures": [
+    "faggio8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "firetruk": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "firetruk",
+   "orangeTextures": [
+    "firetruk8bit128",
+    "lights",
+    "servicelights",
+    "servicelightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "flatbed": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "flatbed",
+   "orangeTextures": [
+    "flatbed868bit128",
+    "flatbed868bit128extra"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "freeway": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "freeway",
+   "orangeTextures": [
+    "freeway8bit128",
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "gangbur": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "gangbur",
+   "orangeTextures": [
+    "gangbur868bit128",
+    "gangbur868bit64graf"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "glendale": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "glendale",
+   "orangeTextures": [
+    "glendale8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "greenwoo": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "greenwoo",
+   "orangeTextures": [
+    "greenwood868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "hellenbach": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "hellenbach",
+   "orangeTextures": [],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "hermes": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "hermes",
+   "orangeTextures": [
+    "hermes8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "hotrina": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "hotrina",
+   "orangeTextures": [
+    "hotrina8bit128",
+    "hotrinadv"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "hotrinb": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "hotrinb",
+   "orangeTextures": [
+    "hotrinb8bit128",
+    "hotrinbadv"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "hotring": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "hotring",
+   "orangeTextures": [
+    "hotring8bit128",
+    "hotringad8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "idaho": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "idaho",
+   "orangeTextures": [
+    "idaho868bit128",
+    "lights"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "infernus": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "infernus",
+   "orangeTextures": [
+    "infernus868bit128",
+    "lights",
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "kaufman": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "kaufman",
+   "orangeTextures": [
+    "cabbie8bit128",
+    "cabbiebody8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "landstal": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "landstal",
+   "orangeTextures": [
+    "landstal868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "linerun": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "linerun",
+   "orangeTextures": [
+    "linerun868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "lovefist": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "lovefist",
+   "orangeTextures": [
+    "lovefist868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "manana": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "manana",
+   "orangeTextures": [
+    "manana868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "manchez": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "manchez",
+   "orangeTextures": [
+    "lights",
+    "lightson"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "lightsOn"
+  },
+  "marquis": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "marquis",
+   "orangeTextures": [
+    "marquis86body8bit128c",
+    "marquis86body8bit128d"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "maverick": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "maverick",
+   "orangeTextures": [
+    "maverick8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "mesa": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "mesa",
+   "orangeTextures": [
+    "mesa868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "moonbeam": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "moonbeam",
+   "orangeTextures": [
+    "moonbm8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "mrwhoop": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "mrwhoop",
+   "orangeTextures": [
+    "mrwhoo868bit128",
+    "mrwhoop86decals128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "mule": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "mule",
+   "orangeTextures": [
+    "mule8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "oceanic": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "oceanic",
+   "orangeTextures": [
+    "oceanic8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "packer": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "packer",
+   "orangeTextures": [
+    "packer8bit128",
+    "packerbody8bit64b"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "patriot": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "patriot",
+   "orangeTextures": [
+    "patriot868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "pcj600": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "pcj600",
+   "orangeTextures": [
+    "lights",
+    "pcj6008bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "peren": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "peren",
+   "orangeTextures": [
+    "peren868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "peren2": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "peren2",
+   "orangeTextures": [
+    "lights",
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "pheonix": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": true,
+   "model": "pheonix",
+   "orangeTextures": [
+    "pheonix868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "pizzaboy": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "pizzaboy",
+   "orangeTextures": [
+    "pizzaboy8bit128",
+    "pizzaboy8bit128b"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "police": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "police",
+   "orangeTextures": [
+    "lightson",
+    "policemiami868bit128",
+    "servicelight",
+    "servicelights",
+    "servicelightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "polmav": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "polmav",
+   "orangeTextures": [
+    "polmav8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "polwintergreen": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "polwintergreen",
+   "orangeTextures": [
+    "policedecals64",
+    "vcpdbadge4bit64"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "pony": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "pony",
+   "orangeTextures": [
+    "pony868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "predator": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "predator",
+   "orangeTextures": [
+    "predator868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "premier": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "premier",
+   "orangeTextures": [],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "rancher": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "rancher",
+   "orangeTextures": [
+    "ranch868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "rcbaron": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "rcbaron",
+   "orangeTextures": [
+    "rcbarnstormer64"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "rcgoblin": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "rcgoblin",
+   "orangeTextures": [
+    "rcgoblin8bit32"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "rcraider": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "rcraider",
+   "orangeTextures": [
+    "rcraider8bit32"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "reefer": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "reefer",
+   "orangeTextures": [
+    "reefer868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "regina": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "regina",
+   "orangeTextures": [
+    "regina868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "rio": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "rio",
+   "orangeTextures": [
+    "rio868bit64"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "romero": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "romero",
+   "orangeTextures": [
+    "romero8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "rumpo": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "rumpo",
+   "orangeTextures": [
+    "rumpo868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "sabre": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "sabre",
+   "orangeTextures": [
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "sabretur": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "sabretur",
+   "orangeTextures": [
+    "lightson"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "sanchez": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "sanchez",
+   "orangeTextures": [
+    "sanchez8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "sandking": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "sandking",
+   "orangeTextures": [
+    "sandking868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "seaspar": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "seaspar",
+   "orangeTextures": [
+    "seasparrow8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "securica": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "securica",
+   "orangeTextures": [
+    "securica868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "sentinel": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "sentinel",
+   "orangeTextures": [
+    "sentinel868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "sentxs": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "sentxs",
+   "orangeTextures": [
+    "sentxs868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "skimmer": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "skimmer",
+   "orangeTextures": [
+    "skimmer8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "spand": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "spand",
+   "orangeTextures": [
+    "spand8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "sparrow": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "sparrow",
+   "orangeTextures": [
+    "sparrow8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "stinger": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "stinger",
+   "orangeTextures": [
+    "stinger868bit128",
+    "stinger86body64"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "streetfi": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "streetfi",
+   "orangeTextures": [],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "stretch": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "stretch",
+   "orangeTextures": [
+    "stretch8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "taxi": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "taxi",
+   "orangeTextures": [],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "topfun": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "topfun",
+   "orangeTextures": [
+    "topfun868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "trash": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "trash",
+   "orangeTextures": [
+    "trash868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "trash2": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "trash2",
+   "orangeTextures": [
+    "lights",
+    "lightson",
+    "trash868bit128",
+    "trash8bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "tropic": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "tropic",
+   "orangeTextures": [
+    "tropic868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "vcnmav": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "vcnmav",
+   "orangeTextures": [
+    "vcnmav8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "vicechee": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "vicechee",
+   "orangeTextures": [
+    "vicechee868bit128"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "virgo": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "virgo",
+   "orangeTextures": [
+    "virgo8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "voodoo": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "voodoo",
+   "orangeTextures": [
+    "voodoo8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "walton": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "walton",
+   "orangeTextures": [
+    "walton8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "washing": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "washing",
+   "orangeTextures": [
+    "washington8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "node"
+  },
+  "wintergreen": {
+   "frontLeft": true,
+   "frontRight": true,
+   "hasNode": true,
+   "model": "wintergreen",
+   "orangeTextures": [
+    "wintergbit"
+   ],
+   "rearLeft": true,
+   "rearRight": true,
+   "source": "node"
+  },
+  "yankee": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "yankee",
+   "orangeTextures": [
+    "yankee868bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  },
+  "zebra": {
+   "frontLeft": false,
+   "frontRight": false,
+   "hasNode": false,
+   "model": "zebra",
+   "orangeTextures": [
+    "cabbie8bit128",
+    "zebrabody8bit128"
+   ],
+   "rearLeft": false,
+   "rearRight": false,
+   "source": "body"
+  }
+ },
+ "note": "Sectores naranjas por modelo; source=node|lightsOn|body|none",
+ "version": 1
+}

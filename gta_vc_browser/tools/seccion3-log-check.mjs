@@ -91,23 +91,23 @@ const bloques = [
   {
     id: 'C1',
     titulo: '1ª persona (conmutador)',
-    prueba: 'pulsa V (conmutador), anda, apunta y vuelve a pulsar V',
-    // C1b: la traza de la tecla es la que distingue "la tecla no llega" de
-    // "llega y el modo no puede aplicarse". Cuenta como visto sólo si además el
-    // modo se encendió; si no, lo dice con la línea de la tecla delante.
-    lineas: () => buscar(/CAM1P /, l => campo(l, 'tog') === 1),
+    prueba: 'pulsa V (ciclado de cámara), anda, apunta y vuelve a pulsar V',
+    // Desde el 13.0 la 1ª persona no es un conmutador propio: se elige ciclando
+    // la cámara (la V de serie). Las trazas son `VICEEXT 1p key vk= dir=` (la
+    // tecla que cicla) y `VICEEXT 1p set tog= modo= zoom= spd=` (el estado).
+    lineas: () => buscar(/VICEEXT 1p set /, l => campo(l, 'tog') === 1),
     extra: () => {
       const tecla = buscar(/VICEEXT 1p key/);
       notasExtra.push(tecla.length
         ? `${tecla.length} pulsaciones de la tecla vistas (VICEEXT 1p key); última -> ${tecla[tecla.length - 1].trim().slice(40, 150)}`
-        : 'NO hay líneas `VICEEXT 1p key`: o la tecla no llega al motor, o el build es anterior a ve13 (en ve12 el conmutador estaba en B y la traza no existía)');
-      const on = buscar(/CAM1P /, l => campo(l, 'tog') === 1);
-      const andando = on.filter(l => /spd=(\d+)/.test(l) && Number(l.match(/spd=(\d+)/)[1]) > 5);
-      const off = buscar(/CAM1P /, l => campo(l, 'tog') === 0);
-      const modos = [...new Set(on.map(l => campo(l, 'mode')))];
+        : 'NO hay líneas `VICEEXT 1p key`: la tecla que cicla la cámara no ha llegado al motor');
+      const on = buscar(/VICEEXT 1p set /, l => campo(l, 'tog') === 1);
+      const andando = on.filter(l => /spd=([\d.]+)/.test(l) && Number(l.match(/spd=([\d.]+)/)[1]) > 0.05);
+      const off = buscar(/VICEEXT 1p set /, l => campo(l, 'tog') === 0);
+      const modos = [...new Set(on.map(l => campo(l, 'modo')))];
       const notas = [];
       notas.push(`líneas con tog=1: ${on.length} (modos vistos: ${modos.join(',') || '—'})`);
-      notas.push(`de ellas andando (spd>5): ${andando.length}`);
+      notas.push(`de ellas andando (spd>0.05): ${andando.length}`);
       if (on.length)
         notas.push(off.length ? 'hay tog=0: el modo se cerró' : 'NO hay tog=0: sólo se encendió');
       else
@@ -121,8 +121,8 @@ const bloques = [
     prueba: 'supera una misión (el guardado se escribe al terminar su script)',
     lineas: () => buscar(/VICEEXT autosave /),
     extra: () => {
-      const ok = buscar(/VICEEXT autosave /, l => campo(l, 'ok') === 1);
-      const ko = buscar(/VICEEXT autosave /, l => campo(l, 'ok') === 0);
+      const ok = buscar(/VICEEXT autosave /, l => campo(l, 'res') === 1);
+      const ko = buscar(/VICEEXT autosave /, l => campo(l, 'res') === 0);
       return [
         `escritos: ${ok.length}${ok.length ? ` -> ${ok[ok.length - 1]}` : ''}`,
         ko.length ? `RECHAZADOS por las guardas: ${ko.length}` : 'ningún rechazo',
@@ -222,9 +222,10 @@ const bloques = [
     id: 'C3.4',
     titulo: 'Intermitentes (define APAGADO por defecto)',
     prueba: 'recompila con VICEEXT_TURN_SIGNALS y gira el volante',
-    lineas: () => buscar(/VICEEXT turners /),
+    lineas: () => buscar(/P4 kind=turners |VICEEXT turners /),
     extra: () => {
-      const t = buscar(/VICEEXT turners /);
+      // Desde el 13.0 los intermitentes salen en el esquema P4 (`kind=turners`).
+      const t = buscar(/P4 kind=turners |VICEEXT turners /);
       const jugador = t.filter(l => /quien=jugador/.test(l)).length;
       const npc = t.filter(l => /quien=npc/.test(l)).length;
       return [

@@ -168,7 +168,9 @@ import { CSS, STYLE_ID } from './styles.js';
 // nuevo. Un build enlazado con el mismo tag se sigue sirviendo de la caché (pasó
 // el 23/09: dos corridas del arnés midieron el binario anterior y salían "sin
 // pesomira en CROUCH2" con el build bueno en disco). Subir el tag en CADA build.
-export const VERSION = '2026-10-15-13.0-T5';
+// T55: barra de carga real por paso del init de partida nueva y FOV de
+// cinemática convertido al aspecto actual (antes salía estirada).
+export const VERSION = '2026-10-31-40.0-T92';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
@@ -522,10 +524,28 @@ export function startGame(options = {}) {
     (window.__odq = window.__odq || []).push(line);
     flush(true);
   }
+  // T17: sonda de cuelgues. Distingue un hilo atrapado en un bucle de CPU (los
+  // timers no corren) de un motor SUSPENDIDO esperando un await (los timers
+  // sí corren). Sólo habla tras 8 s de silencio estando en partida, así que en
+  // juego normal no añade ni una línea.
+  let lastEngineLineAt = Date.now();
+  setInterval(() => {
+    try {
+      if (window.__vcInGame !== true) { lastEngineLineAt = Date.now(); return; }
+      const silent = Date.now() - lastEngineLineAt;
+      if (silent < 3000) return;
+      lastEngineLineAt = Date.now();
+      (window.__odq = window.__odq || []).push('ODJSALIVE silencio=' + Math.round(silent / 1000) +
+        's bloqueando=' + ((window.__vcODBlock | 0)) +
+        ' esperas=' + Object.keys((typeof OD !== 'undefined' && OD.wkWaiters) || {}).length +
+        ' fetch=' + (window.__vcFetchNow || '-'));
+    } catch (e) {}
+  }, 2000);
   function flush(sync) {
     try {
       const q = window.__odq;
       if (!q || !q.length) return;
+      lastEngineLineAt = Date.now();
       if (q.length > 30000) {
         let drop = q.length - 30000;
         for (let i = 0; i < q.length && drop > 0; i++) if (!ODPRI.test(q[i]) && !/^RECOIL\\b/.test(q[i])) { q.splice(i, 1); i--; drop--; }
@@ -561,12 +581,65 @@ export function startGame(options = {}) {
   // (siempre activo con endpoint: sin query param): aunque el hilo se bloquee
   // o se cierre la pestaña, la última línea emitida SÍ llega.
   if (traceUrl) {
-    const beat = () => {
+    // 24/10: antes salía un beacon POR FRAME (60 POST/s al servidor de trazas,
+    // cada uno con su Blob y su entrada en la cola de red). En una partida de
+    // 20-30 minutos eso es presión constante sobre el navegador. Ahora como
+    // mucho 4/s, y al instante si la cola crece (no se pierde nada de un
+    // cuelgue: lo último sale en <=250 ms, y pagehide/handlers fuerzan el envío
+    // sincrono).
+    let lastBeat = 0;
+    // 24/10: perro guardian fuera del hilo del juego. Si el wasm se queda en un
+    // bucle infinito, el hilo principal deja de latir y la traza se corta en
+    // mitad de un frame: hoy eso es indistinguible de que el navegador haya
+    // matado la pestaña (OOM/GPU), porque en los dos casos no hay JSERR ni
+    // PAGEHIDE. El worker vive en su propio hilo, sigue escribiendo en el
+    // endpoint aunque el juego este clavado y deja `WDTALIVE` con los ms que
+    // lleva el hilo principal sin latir, asi que el proximo cuelgue dice cual
+    // de las dos cosas fue. Si el navegador no tiene Worker, no se monta nada.
+    let wd = null;
+    let wdNext = 0;
+    try {
+      if (typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined' && URL.createObjectURL) {
+        // 25/10: el worker se crea desde una URL `blob:`, y una ruta relativa
+        // resuelta contra esa base no llega a la pagina (`fetch('/odtrace')`
+        // desde un blob falla). Ese era el motivo de que no hubiera ni un
+        // WDTALIVE en las trazas: el perro guardian no llegaba a escribir.
+        // Se le pasa la URL absoluta ya resuelta por la pagina.
+        const wdUrl = new URL(traceUrl, location.href).href;
+        const src = 'let url=' + JSON.stringify(wdUrl) + ';' +
+          'let lastMain=Date.now(),started=Date.now(),hidden=false,mark=-1,ent=-1;' +
+          'self.onmessage=function(e){var d=e.data||{};if(d.beat)lastMain=Date.now();if(typeof d.hidden===\'boolean\')hidden=d.hidden;if(typeof d.mark===\'number\')mark=d.mark;if(typeof d.ent===\'number\')ent=d.ent;};' +
+          'setInterval(function(){if(Date.now()-started<8000)return;' +
+          'var silent=Date.now()-lastMain;' +
+          'var stall=(!hidden&&silent>3000)?1:0;' +
+          'var line=new Date().toISOString()+\' WDTALIVE mainSilentMs=\'+Math.round(silent)+\' stall=\'+stall+\' mark=\'+mark+\' ent=\'+ent;' +
+          'try{fetch(url,{method:\'POST\',body:line,keepalive:true});}catch(e){}},5000);';
+        wd = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+        window.__odMark = (v) => { if (wd) { try { wd.postMessage({ mark: v }); } catch (e) {} } };
+        window.__odEnt = (v) => { if (wd) { try { wd.postMessage({ ent: v }); } catch (e) {} } };
+        doc.addEventListener('visibilitychange', () => {
+          if (!wd) return;
+          try { wd.postMessage({ hidden: !!doc.hidden }); } catch (e) {}
+        });
+        log('[lib] perro guardian activo (WDTALIVE cada 5 s)');
+      }
+    } catch (e) { wd = null; }
+    const beat = (now) => {
+      const tnow = typeof now === 'number' ? now : performance.now();
+      window.__odMainBeat = tnow;
+      if (wd && tnow >= wdNext) {
+        wdNext = tnow + 500;
+        try { wd.postMessage({ beat: tnow, hidden: !!doc.hidden }); } catch (e) {}
+      }
       try {
         const q = window.__odq;
         if (q && q.length && typeof navigator !== 'undefined' && navigator.sendBeacon) {
-          const batch = q.splice(0, 400);
-          navigator.sendBeacon(traceUrl, batch.join('\n'));
+          const t = tnow;
+          if (q.length >= 1200 || t - lastBeat >= 250) {
+            lastBeat = t;
+            const batch = q.splice(0, 1200);
+            navigator.sendBeacon(traceUrl, batch.join('\n'));
+          }
         }
       } catch (e) {}
       if (!destroyed) requestAnimationFrame(beat);
@@ -577,6 +650,10 @@ export function startGame(options = {}) {
   // E1: cierre garantizado. El fetch async puede no salir al cerrar la
   // pestaña; el beacon lo entrega el navegador aunque la página muera.
   const onPageHide = () => {
+    // 24/10: separa "la pestaña murió" de "la pagina se recargó o se cerró".
+    // Si el log termina sin esta línea, el proceso desapareció (cuelgue real);
+    // si está, fue una recarga (Vite/HMR, F5, pestaña cerrada).
+    pushFatal('PAGEHIDE', 'la pagina se esta yendo (recarga o cierre, no un cuelgue)');
     endRecoilSession();
     try {
       const q = window.__odq;
@@ -598,10 +675,24 @@ export function startGame(options = {}) {
   // después marca el instante exacto del cuelgue.
   const pushFatal = (tag, what) => {
     try {
-      const txt = String(what == null ? what : what).replace(/\s+/g, ' ').slice(0, 600);
+      // 21/10: 600 caracteres cortaban el stack del crash a la mitad (el frame
+      // que lo peta es el que faltaba). Con 4000 entra el stack entero.
+      const txt = String(what == null ? what : what).replace(/\s+/g, ' ').slice(0, 4000);
       if (txt) (window.__odq = window.__odq || []).push(tag + ' ' + txt);
     } catch (e) {}
     try { flush(true); } catch (e) {}
+  };
+  // 24/10: el stderr del motor no llegaba a la traza. `printErr` estaba cableado
+  // a `log()`, que escribe en la consola y en el DOM pero NO encola en
+  // `window.__odq`: un aborto del motor ("Aborted(...)", "Out of memory",
+  // "Cannot enlarge memory arrays") se perdia justo en el crash. El hook de
+  // `console.error` tampoco lo veia, porque `printErr` nunca pasa por ahi.
+  const traceOut = (tag, what, sync) => {
+    try {
+      const txt = String(what == null ? what : what).replace(/\s+/g, ' ').slice(0, 4000);
+      if (txt) (window.__odq = window.__odq || []).push(tag + ' ' + txt);
+    } catch (e) {}
+    if (sync) { try { flush(true); } catch (e) {} }
   };
   window.addEventListener('pagehide', onPageHide);
   window.addEventListener('error', (e) => {
@@ -610,7 +701,7 @@ export function startGame(options = {}) {
     pushFatal('JSERR', msg);
   });
   window.addEventListener('unhandledrejection', (e) => {
-    const msg = String(e?.reason?.stack || e?.reason || e).slice(0, 500);
+    const msg = String(e?.reason?.stack || e?.reason || e).slice(0, 2000);
     console.log('[REJECT] ' + msg);
     pushFatal('JSERR_REJ', msg);
   });
@@ -626,6 +717,24 @@ export function startGame(options = {}) {
       } catch (e) {}
       if (origErrLog) origErrLog(...args);
     };
+  } catch (e) {}
+  // 24/10: un cuelgue SIN mensaje (ni JSERR ni ENGERR) no es una excepción del
+  // motor: es el proceso de la pestaña muriendo (memoria del renderer o GPU).
+  // Lo único que la página puede distinguir en ese caso es la pérdida del
+  // contexto WebGL, así que queda escrito en la traza con el consumo del
+  // momento antes de que la pestaña desaparezca.
+  const onCtxLost = (e) => {
+    let mem = '';
+    try {
+      const m = performance.memory;
+      if (m) mem = ' heapJS=' + Math.round(m.usedJSHeapSize / 1048576) + 'MB/' +
+                     Math.round(m.jsHeapSizeLimit / 1048576) + 'MB';
+    } catch (err) {}
+    pushFatal('WEBGL_LOST', 'contexto WebGL perdido (' + ((e && e.statusMessage) || 'sin motivo') + ')' + mem);
+  };
+  try {
+    canvas.addEventListener('webglcontextlost', onCtxLost, false);
+    canvas.addEventListener('webglcontextrestored', () => pushFatal('WEBGL_OK', 'contexto WebGL restaurado'), false);
   } catch (e) {}
 
   // ---- contrato con el motor (globals que llama el C++) ------------------
@@ -724,16 +833,57 @@ export function startGame(options = {}) {
   window.addEventListener('keyup', onKeyUp);
 
   // ---- ratón (solo al hacer clic en el juego) ----------------------------
-  const onCanvasClick = async () => {
-    if (opts.audio) await unlockAudio();
+  //
+  // Un solo `click` como disparador no bastaba: si el navegador concede el
+  // bloqueo pero la ventana no tiene el foco (pasa al cargar partida, al volver
+  // de ESC o de otro programa), el cursor se queda oculto y el juego no recibe
+  // clics hasta que el jugador cambia de ventana y vuelve. Ahora el disparador
+  // es `pointerdown` en captura (nadie puede comerse el evento) y el bloqueo se
+  // vuelve a pedir en cada pulsación mientras falte, con la ventana y el canvas
+  // enfocados de forma explícita.
+  let wantLock = false;
+  async function grabPointer() {
     if (!opts.pointerLock) return;
+    try { window.focus(); } catch (e) {}
+    try { canvas.focus({ preventScroll: true }); } catch (e) {}
+    if (doc.pointerLockElement === canvas) return;
     try { await canvas.requestPointerLock(); } catch (e) { log('pointer lock: ' + e); }
+  }
+  const onPointerDownCapture = (e) => {
+    if (e && e.target && e.target !== canvas && !canvas.contains(e.target)) return;
+    wantLock = true;
+    if (opts.audio) unlockAudio();
+    if (doc.pointerLockElement !== canvas) grabPointer();
   };
-  canvas.addEventListener('click', onCanvasClick);
+  window.addEventListener('pointerdown', onPointerDownCapture, true);
+  window.addEventListener('mousedown', onPointerDownCapture, true);
   const onPointerLockChange = () => {
-    canvas.style.cursor = doc.pointerLockElement === canvas ? 'none' : 'default';
+    const locked = doc.pointerLockElement === canvas;
+    canvas.style.cursor = locked ? 'none' : 'default';
   };
   doc.addEventListener('pointerlockchange', onPointerLockChange);
+  doc.addEventListener('pointerlockerror', () => {
+    // Chrome rechaza el bloqueo si se pide demasiado pronto tras un ESC: no se
+    // insiste en bucle, se reintenta en la siguiente pulsación.
+    log('[lib] pointer lock rechazado; se reintenta al hacer clic');
+  });
+  // Al perder el foco, Chrome conserva el pointer lock pero el canvas deja de
+  // recibir eventos: el raton queda oculto y "muerto" hasta soltarlo con Esc.
+  // Se suelta al perder el foco y el siguiente clic lo vuelve a pedir.
+  window.addEventListener('blur', () => {
+    canvas.style.cursor = 'default';
+    if (doc.pointerLockElement === canvas) { try { doc.exitPointerLock(); } catch (e) {} }
+  });
+  // Al recuperar el foco, el canvas tiene que ser el elemento activo o el
+  // navegador entrega los clics al documento y no al juego.
+  window.addEventListener('focus', () => {
+    if (wantLock && doc.pointerLockElement === canvas) { try { canvas.focus({ preventScroll: true }); } catch (e) {} }
+  });
+  doc.addEventListener('visibilitychange', () => {
+    if (!doc.hidden && wantLock && doc.pointerLockElement === canvas) {
+      try { canvas.focus({ preventScroll: true }); } catch (e) {}
+    }
+  });
 
   // ---- protecciones e IDBFS ---------------------------------------------
   const onBeforeUnload = (e) => {
@@ -821,15 +971,17 @@ export function startGame(options = {}) {
       // El build vive en buildUrl, la página en otro sitio: sin esto el .data
       // se pediría a la raíz.
       //
-      // ve19: `?v=<VERSION>` SÓLO en el código (`.js`/`.wasm`), no en el `.data`.
-      // Motivo (9ª partida): el navegador puede quedarse con el `reVC.wasm`
-      // anterior — el nombre de fichero no cambia entre builds — y entonces el
-      // jugador prueba código viejo sin saberlo (le pasó: jugó con el motor de
-      // por la mañana). El `.data` (161 MB) se deja SIN parámetro a propósito:
-      // si no, cada build obligaría a volver a descargarlo entero.
-      locateFile: (path) => buildUrl + path + (/\.(js|wasm)$/.test(path) ? '?v=' + VERSION : ''),
-      print: (t) => log(t),
-      printErr: (t) => log('[err] ' + t),
+      // ve19: `?v=<VERSION>` en el código (`.js`/`.wasm`): el navegador puede
+      // quedarse con el motor anterior — el nombre no cambia entre builds — y
+      // el jugador prueba código viejo sin saberlo.
+      // T57: tambien en el `.data`. El paquete de arranque lleva los modelos
+      // (DFF) dentro, asi que sin parametro el navegador seguia arrancando con
+      // los modelos de la ronda anterior aunque el build fuese nuevo. Se paga
+      // una descarga completa por version; es el precio de que lo servido y lo
+      // jugado coincidan.
+      locateFile: (path) => buildUrl + path + (/\.(js|wasm|data)$/.test(path) ? '?v=' + VERSION : ''),
+      print: (t) => { log(t); traceOut('ENGSTDOUT', t, false); },
+      printErr: (t) => { log('[err] ' + t); traceOut('ENGERR', t, true); },
       // Guardados persistentes: /userfiles vive en IndexedDB (IDBFS). El resto
       // de assets va en MEMFS (lectura síncrona del motor).
       preRun: [() => {

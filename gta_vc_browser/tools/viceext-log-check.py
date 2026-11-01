@@ -9,6 +9,12 @@ juega una vez y luego se pasa esto sobre el log.
 Uso:
     python tools/viceext-log-check.py                     # usa web/odtrace.log
     python tools/viceext-log-check.py <ruta.log> [--desde-marca]
+    python tools/viceext-log-check.py <ruta.log> [--sin-prev]
+
+La rotación de trazas parte UNA sesión en dos ficheros (`odtrace.log` y
+`odtrace.prev.log`). Por eso, si el log empieza con una rotación, se pegan
+los dos: si no, las trazas de la carga de partida (LOADSCR/LBAR) se darían
+por perdidas. Con `--sin-prev` se lee solo el fichero dado.
 
 Trazas que busca (las emite el motor):
 
@@ -49,15 +55,62 @@ Trazas que busca (las emite el motor):
     HINTKEY   accion=<NOMBRE> vk=<código> icono=<0/1> [shift=<0/1>]  un aviso resolvió su tecla: `icono=1` = se pintó el icono (uno o dos con Shift); `0` = siguió el nombre en texto.
               su tecla: `icono=1` = se pintó el icono; `0` = siguió el nombre en
               texto (rueda del ratón, mando, tecla sin icono).
-    VICEEXT 1p key / 1p set puerta= flanco= tog=                       (R5) el
-              conmutador de 1ª persona: `tog=1` en algún `set` = se encendió.
-    AIMDIR    arma=<id> desv=<°> grupo=<id> peso=<0-1>        (R9) apuntado de las
-              armas nuevas: desviación cámara-ped y peso de la pose; `peso=0` = el
-              arma no tiene animación de apuntar, `desv` grande = apunta al costado.
+    VICEEXT 1p key vk= dir= / 1p set tog= modo= zoom= spd=      (R5) la 1ª
+              persona: desde el 13.0 se elige ciclando la cámara (la V), así que
+              `key` es la tecla que cicla y `tog=1` en algún `set` = 1ª persona
+              encendida.
+    VEX apunta apunta= coche= modo= arma= estado= desv= peso=    (R9, AX) el
+              apuntado: `desv` es la desviación entre el rumbo del cuerpo y la
+              dirección de la cámara (en grados) y `peso` el peso real de la
+              pose de apuntado; `peso=0` = el arma no tiene animación de
+              apuntar, `desv` grande = el cuerpo no sigue a la cámara.
+    VEX scm    op=0FAx cmd=40xx desconocido=0/1                 (S13) el script
+              del mod: los opcodes propios (0x0FA0-0x0FA9) que despacha el
+              motor; `desconocido=1` = ese opcode NO esta implementado y el
+              script del mod desincroniza su pila de parametros.
+    SIGHTS     cargadas=<n>/7                                  (D6) cuántas de
+              las 7 miras del mod hay en el TXD servido.
+    SIGHT      arma=<id> mira=<col27> textura=<0/1> por=<0-3>   (D6, R13) la mira
+              que elige el arma (columna 27 de weapon.dat) y si su textura está
+              cargada; `por` dice dónde se pintó (3 apuntando, 2 modo de
+              cámara, 1 conduciendo, 0 a pie).
+    KEYICONS   txd=pcbtns cargado=<0/1>                       (D7) el TXD de
+              iconos de tecla del PC.
+    WINFO      arma= grupo= flags= canaim= witharm= reload=     (R13) la ficha
+              crouchr= sight= clips=a|b|c|d                    de cada arma: los
+              flags reales de weapon.dat, las dos puertas del apuntado y los
+              clips que el grupo de animación resuelve.
+    VICEEXT 1p bind tecla=<código>                             (R13) la tecla que
+              el motor tiene guardada para la 1ª persona.
+    R3P        arma= modo= ped= mira= apunta= spd=              (R16) el
+              lanzacohetes: con qué modo de cámara se apunta y a qué velocidad
+              se puede andar.
+    CROUCH2    h= avance= velo= dt= ... clip= nom= peso= ...    (H, R17, R19,
+              R27) la muestra de 1 s del agachado: altura, avance real, peso
+              del clip y estado.
+    VICEEXT crouch on / off arma= / pose off clips=            (R15) el
+              conmutador del agachado y los clips que se retiran al levantarse.
+    CROUCHPOSE desde= idle= fwd= back=                         (R15) los pesos de
+              los clips de agachado con los ms que llevan puestas desde el
+              desagachado.
+    AIMWALK    tecla= spd=                                     (AS) la tecla de
+              andar: con ella pulsada la velocidad tiene que bajar a 0.
+    VICEEXT recoil via= arma= mult= da= db= modo= agachado=   (RC) el retroceso
+              que el motor aplica de verdad y con qué multiplicador.
+    P4 kind=aimsens aim= sens= mfac= pfac=                    (AW) el par de
+              sensitivities: mirando o apuntando.
+    P4 kind=uzi ev=enter|ih_enter|ih_exit|exit estado= ...   (UZI) el flanco de
+              disparo de la Micro-UZI.
     SVLIGHTS  model=<id> dummies=<n> on=<0/1> var=<n> extras=<a>,<b> radio=<m> (R11)
               luces de servicio: con `police` (=156) `dummies` debe ser >=1. `var`
               es la variante (nombre `servicelights_N`) y `extras` los extras
               elegidos (-1 = esa patrulla no lleva barra, es aleatorio).
+    SERVICIO  model=<id> nodos=<n> sirena=<0/1> tex=<0/1>         (R28) nodo de
+              la barra de servicio en `m_aCarNodes`: `nodos` es cuantos de los
+              cuatro (`servicelights_0..3`) tienen id de jerarquia resuelto; con
+              `nodos=0` el intercambio de textura del mod no llega a hacerse y
+              la barra no se enciende. `tex=0` = el TXD del modelo no trae
+              `servicelights`/`servicelightson`.
     SIRENA    tipo= model= sample= freq= vol= dist2=              (SR) la sirena
               AUDIBLE: si no aparece ni una línea con la policía cerca, el motor
               nunca encoló la muestra.
@@ -68,10 +121,6 @@ Trazas que busca (las emite el motor):
               icono del arma: si `textura=0` el HUD no tiene qué pintar.
     SCRTXT3   x= y= texto="..."                               (R3b) caza-todo de
               los textos dibujados en la mitad inferior de la pantalla.
-    MODSCRIPT op=0x0FAx cmd=40xx ...                          (13) el script del
-              mod: los opcodes propios (0x0FA0-0x0FA9) que despacha el motor;
-              `desconocido=1` = ese opcode NO esta implementado y el script del
-              mod desincroniza su pila de parametros.
     PARTCFG   cargados=<n> nuevos=<5> desconocidos=<0> total=<n>  (3/5) la carga
               de `particle.cfg` con el tipo resuelto por NOMBRE (el mod anade 5
               tipos y el orden posicional los desplazaria todos).
@@ -109,13 +158,28 @@ MIRAS = {1: "dot", 2: "pistol", 3: "SMG", 4: "shotgun", 5: "rifle",
          6: "heavy", 7: "rocket"}
 
 
-def leer(ruta, desde_marca):
-    with open(ruta, "r", encoding="utf-8", errors="replace") as f:
-        texto = f.read()
+def leer(ruta, desde_marca, con_prev=True):
+    try:
+        with open(ruta, "r", encoding="utf-8", errors="replace") as f:
+            texto = f.read()
+    except OSError as e:
+        print("FAIL: no puedo leer el log (%s): %s" % (ruta, e))
+        return []
     if desde_marca:
         i = texto.rfind("rotado: sesion nueva")
         if i >= 0:
             texto = texto[i:]
+        return texto.split("\n")
+    # La rotacion parte UNA sesion en dos ficheros: si la carga de partida
+    # (LOADSCR/LBAR) cae justo en el corte, sus trazas quedan en el log
+    # anterior y el verificador las daria por perdidas. Se pegan los dos.
+    if con_prev and "rotado: sesion nueva" in texto[:400]:
+        prev = re.sub(r"\.log$", ".prev.log", ruta)
+        try:
+            with open(prev, "r", encoding="utf-8", errors="replace") as f:
+                texto = f.read() + "\n" + texto
+        except OSError:
+            pass
     return texto.split("\n")
 
 
@@ -546,7 +610,13 @@ PB_POLICE = 156   # default.ide: el coche `police`
 
 
 def bloque_r5(lineas):
-    """1ª persona (R5/R5b): ¿llegó la tecla Y se aplicó el conmutador?"""
+    """1ª persona: ¿llegó la tecla y se aplicó el modo?
+
+    En el 13.0 la 1ª persona ya no es un conmutador propio: se elige ciclando
+    la cámara (la V de serie). Las trazas son `VICEEXT 1p key vk= dir=` (la
+    tecla que cicla) y `VICEEXT 1p set tog= modo= zoom= spd=` (el estado: con
+    `tog=1` la 1ª persona está encendida).
+    """
     print("\n== R5 · primera persona (conmutador) ==")
     teclas = [l for l in lineas if "VICEEXT 1p key" in l]
     sets = [l for l in lineas if "VICEEXT 1p set" in l]
@@ -554,30 +624,43 @@ def bloque_r5(lineas):
     print("   pulsaciones=%d   resultados=%d   encendido=%d"
           % (len(teclas), len(sets), len(encendidos)))
     for l in sets[:6]:
-        m = re.search(r"puerta=(\d) flanco=(\d) tog=(\d).*incontrol=(\d) target=(\d) replay=(\d) free=(-?\d)", l)
+        m = re.search(r"tog=(\d) modo=(-?\d+) zoom=(-?\d+) spd=(-?[\d.]+)", l)
         if m:
-            print("      puerta=%s flanco=%s tog=%s incontrol=%s target=%s replay=%s free=%s"
-                  % m.groups())
+            print("      tog=%s modo=%s zoom=%s spd=%s" % m.groups())
+    for l in teclas[:4]:
+        m = re.search(r"vk=(-?\d+) dir=(-?\d+)", l)
+        if m:
+            print("      tecla pulsada: vk=%s (86='V') dir=%s" % m.groups())
     if not teclas and not sets:
-        return "SIN DATOS", "no se pulsó la tecla V en esta partida"
+        return "SIN DATOS", "no se pulsó la tecla V (ciclado de cámara) en esta partida"
     if not sets:
         return "FALLO", ("hubo %d pulsaciones y NINGUNA línea de resultado: el arreglo "
                          "del conmutador no está en el motor servido" % len(teclas))
     if encendidos:
         return "OK", "el conmutador se encendió %d vez/veces" % len(encendidos)
-    return "FALLO", "la tecla llega pero la puerta no deja pasar (ver puerta/incontrol/target)"
+    return "FALLO", "la tecla llega pero el modo de 1ª persona no se aplica (ver tog/modo/zoom)"
 
 
 def bloque_r9(lineas):
-    """Apuntado de las armas nuevas: desviación cámara-ped y peso de la pose."""
-    print("\n== R9 · apuntado de las armas del mod (AIMDIR) ==")
+    """Apuntado de las armas nuevas: desviación cámara-ped y peso de la pose.
+
+    La traza es `VEX apunta` (la del motor, 13.0): una línea por cambio de
+    estado y una muestra por segundo mientras se apunta, con la desviación
+    entre el rumbo del cuerpo y la dirección de la cámara (`desv=`) y el peso
+    real de la pose de apuntado (`peso=`). Los criterios son los de siempre:
+    `peso=0` = el arma no tiene animación de apuntar; `desv` media > 5° = el
+    cuerpo no sigue a la cámara.
+    """
+    print("\n== R9 · apuntado de las armas del mod (VEX apunta) ==")
     datos = collections.defaultdict(list)
     for l in lineas:
-        m = re.search(r"AIMDIR arma=(\d+) desv=([\d.]+) grupo=(\d+) clip=(\d+) peso=([\d.]+)", l)
-        if m:
-            datos[int(m.group(1))].append((float(m.group(2)), float(m.group(5))))
+        m = re.search(r"VEX apunta apunta=(\d) .*arma=(-?\d+) estado=(-?\d+) "
+                      r"desv=([\d.]+) peso=([\d.]+)", l)
+        if m and m.group(1) == "1":
+            datos[int(m.group(2))].append((float(m.group(4)), float(m.group(5))))
     if not datos:
-        return "SIN DATOS", "no se apuntó con ninguna arma (falta `AIMDIR`): ¿build viejo?"
+        return "SIN DATOS", ("no se apuntó con ninguna arma (el log no trae `VEX apunta` "
+                             "con `desv=`): ¿build viejo o no se apuntó?")
     malas, sinpose = [], []
     for arma in sorted(datos):
         desv = [x[0] for x in datos[arma]]
@@ -1025,8 +1108,8 @@ def bloque_r12(lineas):
 def bloque_l6(lineas):
     """L6 · pantalla de carga de partida: UNA secuencia y una barra sin reinicios.
 
-    `LOADSCR begin` la abre (fija splash1 + reinicia la barra monótona) y
-    `LOADSCR end` la cierra. `LOADSCR clamp a->b` es el motor intentando
+    `LOADSCR begin` la abre (fija una portada `loadscN` elegida una vez +
+    reinicia la barra monótona) y `LOADSCR end` la cierra. `LOADSCR clamp a->b` es el motor intentando
     retroceder la barra en una frontera de fase: si aparece, el recorte funcionó
     (la barra es un único barrido 0->100).
     """
@@ -1049,8 +1132,15 @@ def bloque_l6(lineas):
     else:
         print("   recortes: 0 (la secuencia fue monótona por sí sola)")
     if len(begins) != len(ends):
+        # Una carga que el motor no llegó a cerrar porque se cuelgue no es un
+        # fallo de la pantalla de carga: lo dictamina el bloque J1.
+        cuelgue = [l for l in lineas if re.search(r"\b(JSERR|JSERR_REJ|ENGERR)\b", l)]
+        if cuelgue:
+            return "AVISO", ("%d secuencias abiertas y %d cerradas: la carga se interrumpió con un "
+                             "cuelgue (lo dice J1), no es un fallo de la pantalla de carga"
+                             % (len(begins), len(ends)))
         return "FALLO", ("%d secuencias abiertas y %d cerradas: una carga no terminó "
-                         "(el splash quedaría fijado a splash1)" % (len(begins), len(ends)))
+                         "(el splash quedaría fijado a la portada de esa carga)" % (len(begins), len(ends)))
     return "OK", ("%d carga(s) con una sola secuencia de pantalla; %d reinicios de "
                   "barra recortados" % (len(begins), len(clamps)))
 
@@ -1080,7 +1170,13 @@ def bloque_r14(lineas):
     swim_moves = sum(1 for l in lineas if "VICEEXT swim move" in l)
     miracheck = [float(m.group(1)) for l in lineas
                  for m in [re.search(r"RECOIL3 miracheck multY=([\d.]+)", l)] if m]
-    pedido = sum(1 for l in lineas if re.search(r"camauto2 auto=1 .*pedido=1", l))
+    # El 13.0 cambio el sentido de `camauto2`: `pedido=1` ya no es el empujon
+    # sino el ESTADO del recentrado, y la traza se repite cada ~2 frames.
+    # Los empujones se cuentan por las TRANSICIONES (0 -> 1), que es lo que
+    # el bloque siempre quiso contar (el tope de 20 no cambia).
+    odSec = [int(m.group(1)) for l in lineas
+             for m in [re.search(r"camauto2 auto=(\d)", l)] if m]
+    pedido = sum(1 for a, b in zip(odSec, odSec[1:]) if a == 0 and b == 1)
     camauto = sum(1 for l in lineas if "camauto2" in l)
     prot = {m.group(1) for l in lineas
             for m in [re.search(r"ODSFXPROT sfx=(\d+)", l)] if m}
@@ -1129,311 +1225,53 @@ MODOS_1P_ROCKET = {8, 40, 16, 34, 42, 45, 46}
 
 
 def bloque_ax(lineas):
-    """AX · ClassicAXIS (mod gennariarmando/DK22Pac, sin LICENSE: reimplementación).
+    """AX · el apuntado de 13.0 (la ley ClassicAXIS la quitó el plan 13.0).
 
-    Bloque del plan `apuntado-classicaxis-100`, que lleva la ley de apuntado del
-    mod (CamNew.cpp `Process_AimWeapon`) al 100% y sus 9 ajustes de la sección
-    [ClassicAxis] del INI de 2022.
+    El plan 13.0 reimplementó el apuntado SIN la ley ClassicAXIS: la sección
+    `[ClassicAxis]` del INI, `Process_AimWeapon` y sus nueve ajustes no están
+    en el motor, así que sus trazas (AIMCFG/AIMCAM/AIMVEC/AIMLAW/AIMCOL/AX7/
+    ODRUMBO) no existen y no se pueden pedir. Lo que SÍ se puede medir es el
+    criterio que el jugador ve y que el bloque AX6 ya juzgaba: el CUERPO tiene
+    que SEGUIR A LA CÁMARA al apuntar (desviación <= 5°). Con la traza nueva
+    (`VEX apunta`, con `desv=` y `peso=`) se mide igual que antes.
 
-    «Un PASS sin medición es mentira»: si el log no trae la traza, `INCONCLUSIVE`,
-    nunca PASS. Los criterios se añaden con los builds que emiten su traza:
-    · AX0  (build aim1) los 9 ajustes y el `WalkKey`.
-    · AX1-AX6 (builds aim2-aim5) la ley, el hombro, el clamp, el FOV 50, el
-      auto-aim sin ratón y la no-regresión del recoil.
-    Los criterios §8.14 (auto-centrado), §8.15 (agachado) y §8.16 (nado) NO se
-    duplican aquí: los cubren los bloques H, R27 y R5 del verificador.
+    Los criterios que medían la ley retirada (los 9 ajustes del INI, la
+    distancia 2,70, el hombro 0,20, el clamp de 50°, el FOV 50 con rifles, el
+    auto-aim sin ratón y los multiplicadores de la cruz) se INFORMAN como
+    retirados: no se juzgan porque el código que los producía ya no está.
     """
-    print("\n== AX · ClassicAXIS: ajuste y tecla de andar (build 1) ==")
+    print("\n== AX · el apuntado de 13.0: el cuerpo sigue a la cámara ==")
 
-    # ---- AX0 · los 9 ajustes de [ClassicAxis] came leídos del INI
-    cfg = [m for l in lineas
-           for m in [re.search(r"AIMCFG forceauto=(-?\d+) lock=(-?\d+) tri=(-?\d+) "
-                               r"mcx=([\d.]+) mcy=([\d.]+) brazo=(-?\d+) "
-                               r"sensx=([\d.]+) sensy=([\d.]+) fov=(-?\d+) ley=(-?\d+)", l)]
-           if m]
-    # ---- AX0b · el WalkKey (tecla de andar) llega a poner la velocidad a 0
-    walk = [m for l in lineas
-            for m in [re.search(r"AIMWALK tecla=(-?\d+) spd=(-?[\d.]+)", l)]
-            if m]
-
-    if not cfg:
-        return "INCONCLUSIVE", ("el log no trae ninguna línea AIMCFG: la build servida no lleva "
-                                "los 9 ajustes de ClassicAXIS (o no se llegó a la línea de cámara)")
-    # Los 9 defaults son VERBATIM del INI del mod (ClassicAxisVC.ini), salvo
-    # `zoomForAssaultRifles` que es decisión del jugador del 27/09 (§5.3a): el INI del
-    # mod no trae esa clave, así que aquí se espera 1, no el 0 del INI.
-    esperado = dict(forceauto=0, lock=1, tri=1, mcx=0.530, mcy=0.400,
-                    brazo=0, sensx=1.00, sensy=1.00, fov=1)
-    c = cfg[0]
-    leido = dict(forceauto=int(c.group(1)), lock=int(c.group(2)), tri=int(c.group(3)),
-                 mcx=float(c.group(4)), mcy=float(c.group(5)), brazo=int(c.group(6)),
-                 sensx=float(c.group(7)), sensy=float(c.group(8)), fov=int(c.group(9)))
-    print("   ajustes leídos: %s" % " ".join("%s=%.3f" % (k, leido[k]) for k in
-                                                 ("forceauto", "lock", "tri", "mcx", "mcy",
-                                                  "brazo", "sensx", "sensy", "fov")))
-    malos = []
-    for k, v in esperado.items():
-        got = leido[k]
-        okk = abs(got - v) < 0.001 if isinstance(v, float) else got == v
-        if not okk:
-            malos.append("%s=%s (se esperaba %s)" % (k, got, v))
-    if malos:
-        return "FALLO", ("los 9 ajustes de [ClassicAxis] no salen como deben: %s" % "; ".join(malos))
-    if not walk:
-        print("   (sin AIMWALK: la tecla de andar no se tocó en la sesión, no se juzga)")
-    else:
-        teclas = sorted(set(int(m.group(1)) for m in walk))
-        spds = [float(m.group(2)) for m in walk]
-        ceros = sum(1 for s in spds if abs(s) < 0.001)
-        print("   WalkKey: teclas vistas=%s, eventos=%d, con spd=0.00: %d (min=%.2f max=%.2f)"
-              % (teclas, len(walk), ceros, min(spds), max(spds)))
-        if ceros == 0:
-            return "FALLO", ("hay líneas AIMWALK pero ninguna con spd=0.00: la tecla de andar "
-                             "(LALT) no está parando la velocidad al pulsar")
-    print("\n== AX1-5 · ClassicAXIS: la ley de apuntado (build 2) ==")
-
-    cam = [m for l in lineas
-           for m in [re.search(r"AIMCAM m=(-?\d+) dist=([\d.]+) alt=([\d.]+) zoff=([\d.]+) "
-                               r"amax=([\d.]+) fight=(-?\d+) hombro=([\d.]+) obj=(-?\d+) "
-                               r"ex=(-?[\d.]+) ey=(-?[\d.]+) ez=(-?[\d.]+) lado=(-?\d+) trans=(\d+)", l)]
-           if m]
-    fov = [m for m in
-           (re.search(r"AIMFOV fov=([\d.]+) arma=(-?\d+) alcance=([\d.]+) taken=(-?\d+)", l)
-            for l in lineas) if m]
-    vec = [m for m in
-           (re.search(r"AIMVEC chx=(-?[\d.]+) chy=(-?[\d.]+) cfov=([\d.]+) dfov=([\d.]+)"
-                     r" ax=(-?[\d.]+) ay=(-?[\d.]+) tv=(-?[\d.]+) ph=(-?[\d.]+) dth=(-?[\d.]+)"
-                     r" scx=([\d.]+) scy=([\d.]+) asp=([\d.]+)", l)
-            for l in lineas) if m]
-    law = [m for m in
-           (re.search(r"AIMLAW aim=(-?\d+) modo=(-?\d+) estado=(-?\d+) arma=(-?\d+) "
-                      r"lock=(-?\d+) aut=(-?\d+) esp=([\d.]+) aim2=(-?\d+)", l)
-            for l in lineas) if m]
-    col = [m for m in
-           (re.search(r"AIMCOL los=(-?\d+) losD=([\d.]+) sph=(-?\d+) sphM=(-?\d+) "
-                      r"sphPed=(-?\d+) dSph=([\d.]+) dRaw=([\d.]+) nc=([\d.]+) app=(-?\d+) pedes=(-?\d+)", l)
-            for l in lineas) if m]
+    muestras = collections.defaultdict(list)
+    for l in lineas:
+        m = re.search(r"VEX apunta apunta=(\d) .*arma=(-?\d+) estado=(-?\d+) "
+                      r"desv=([\d.]+) peso=([\d.]+)", l)
+        if m and m.group(1) == "1":
+            muestras[int(m.group(2))].append((float(m.group(4)), float(m.group(5))))
+    if not muestras:
+        return "INCONCLUSIVE", ("el log no trae ninguna muestra de apuntado (`VEX apunta` con "
+                                 "`desv=`): no se apuntó en la sesión (o el build es anterior)")
 
     fallos = []
-
-    # ---- AX1 · la ley existe y con los números del mod (§8.1) ----
-    if not cam:
-        return "INCONCLUSIVE", ("los 9 ajustes se leen (AX0 pasó) pero el log no trae ninguna "
-                                "línea AIMCAM: la build servida no lleva la ley ClassicAXIS, "
-                                "o no se apuntó en la sesión")
-    modos = sorted(set(int(m.group(1)) for m in cam))
-    dists = [float(m.group(2)) for m in cam]
-    print("   AX1 ley: muestras=%d modos=%s dist min=%.2f max=%.2f (el mod: 2.70 fija)"
-          % (len(cam), modos, min(dists), max(dists)))
-    malos_modo = [x for x in modos if x != 5]
-    if malos_modo:
-        fallos.append("AX1: hay AIMCAM con modo %s y la ley de apuntado es el 5 (MODE_AIMING)"
-                      % malos_modo)
-    fuera = [d for d in dists if abs(d - 2.70) > 0.35]
-    if fuera:
-        fallos.append("AX1: %d de %d muestras con dist fuera de 2.70 +-0.35 (min %.2f max %.2f)"
-                      % (len(fuera), len(dists), min(dists), max(dists)))
-
-    # ---- AX2 · hombro 0.20 en espacio de objeto (§8.2 / §8.3) ----
-    homb = sorted(set(float(m.group(7)) for m in cam))
-    objs = sorted(set(int(m.group(8)) for m in cam))
-    # `ex/ey/ez` es el vector offset REAL aplicado, o sea `GetRight() del ped * 0.20`.
-    # Su componente X depende del rumbo del ped (0.20*cos a), así que lo que se
-    # comprueba es la MAGNITUD, que sí tiene que medir 0.20 para cualquier rumbo.
-    offs = [(float(m.group(9)), float(m.group(10)), float(m.group(11))) for m in cam]
-    mags = [(ex * ex + ey * ey + ez * ez) ** 0.5 for (ex, ey, ez) in offs]
-    print("   AX2 hombro: valores=%s obj=%s |offset real| min=%.3f max=%.3f (debe medir 0.20)"
-          % (homb, objs, min(mags), max(mags)))
-    if any(abs(h - 0.20) > 0.001 for h in homb):
-        fallos.append("AX2: hombro=%s y el mod usa 0.20" % homb)
-    if any(o != 1 for o in objs):
-        fallos.append("AX2: obj=%s y debe ser 1 (el offset va en el espacio de OBJETO del ped)" % objs)
-    if any(abs(mag - 0.20) > 0.02 for mag in mags):
-        fallos.append("AX2: el |offset| REAL aplicado mide %.3f-%.3f y debe medir 0.20; el hombro "
-                      "no va en el espacio de objeto del ped"
-                      % (min(mags), max(mags)))
-
-    # ---- AX8 · el numero crudo del apuntado (AIMVEC, 04/10) ----
-    # Traza anadida porque el jugador reporto "apunto y gira ~180 grados" tres sesiones
-    # seguidas y A no tenia forma de dictaminarlo. Se mide, no se supone.
-    if vec:
-        dths = [m.group(9) for m in vec]
-        cfovs = [m.group(3) for m in vec]
-        dfovs = [m.group(4) for m in vec]
-        chxs = [m.group(1) for m in vec]
-        chys = [m.group(2) for m in vec]
-        asps = [m.group(10) for m in vec]
-        fuera = [d for d in dths if abs(d) > 60.0]
-        print("   AX8 mira: %d muestras | dth min %+.1f max %+.1f | fuera de +-60: %d (%.0f%%)"
-              % (len(vec), min(dths), max(dths), len(fuera), 100.0 * len(fuera) / len(vec)))
-        print("        (dth se calcula contra `ph`, que sale de la POSICIÓN del ped: NO mide "
-              "giro de cámara; el giro se dictamina con yaw/rayo de la matriz renderizada)")
-        print("        chx=%s chy=%s (el mod: 0.53 / 0.4)  asp=%s"
-              % (sorted(set(chxs)), sorted(set(chys)), sorted(set(asps))))
-        desinc = sum(1 for a, b in zip(cfovs, dfovs) if abs(float(a) - float(b)) > 0.5)
-        print("        cfov=%s dfov=%s  desincronizados: %d de %d"
-              % (sorted(set(cfovs)), sorted(set(dfovs)), desinc, len(vec)))
-        if fuera:
-            print("        OJO: %d muestras con el punto de mira a mas de 60 grados del rumbo"
-                  " del ped. Es el giro que reporto el jugador" % len(fuera))
-        for cx in sorted(set(chxs)):
-            if abs(float(cx) - 0.53) > 0.01:
-                fallos.append("AX8: el multiplicador de la cruz en X es %s y el .ini del mod"
-                              " dice 0.53" % cx)
-        for cy in sorted(set(chys)):
-            if abs(float(cy) - 0.4) > 0.01:
-                fallos.append("AX8: el multiplicador de la cruz en Y es %s y el .ini del mod"
-                              " dice 0.4" % cy)
-        if desinc == len(vec) and len(vec) > 3:
-            fallos.append("AX8: el vector de mira se calcula con cfov=%s y se dibuja con"
-                          " dfov=%s en TODAS las muestras: el punto de mira cae donde no es"
-                          % (cfovs[0], dfovs[0]))
-    else:
-        print("   (sin AIMVEC: build anterior a la del 04/10, no se puede medir el apuntado)")
-
-    # ---- AX3 · clamp ±50° del Alpha (§8.5) ----
-    amax = max(float(m.group(5)) for m in cam)
-    print("   AX3 clamp: amax=%.1f° (tope del mod: 50)" % amax)
-    if amax > 50.5:
-        fallos.append("AX3: el Alpha llegó a %.1f° y la ley lo clampa a 50 (CamNew.cpp:350-353)" % amax)
-
-    # ---- AX4 · FOV 50 al rifle de alcance >= 70 (§8.6) ----
-    if fov:
-        TOMADOS = [m for m in fov if int(m.group(4)) == 1]
-        TOMADOS_MAL = [m for m in TOMADOS if float(m.group(3)) < 70.0]
-        MINIGUN = [m for m in TOMADOS if int(m.group(2)) == 33]   # WEAPONTYPE_MINIGUN (WeaponType.h)
-        fv_tom = [float(m.group(1)) for m in TOMADOS]
-        fv_no = [float(m.group(1)) for m in fov if int(m.group(4)) == 0]
-        print("   AX4 FOV: muestras=%d tomadas=%d (fov min %.2f) | no tomadas=%d (fov max %.2f)"
-              % (len(fov), len(TOMADOS), min(fv_tom) if fv_tom else -1.0,
-                 len(fv_no), max(fv_no) if fv_no else -1.0))
-        if TOMADOS_MAL:
-            fallos.append("AX4: el FOV se tomó con armas de alcance < 70 (%s); el umbral del "
-                          "mod es wepMinRange=70" % [int(m.group(2)) for m in TOMADOS_MAL])
-        if MINIGUN:
-            fallos.append("AX4: el Minigun (arma 33) tomó el FOV (CamNew.cpp:484-486 lo EXCLUYE en VC)")
-        if fv_tom and min(fv_tom) > 50.5:
-            fallos.append("AX4: con el rifle apuntado el FOV se quedó en %.2f y debería bajar a 50"
-                          % min(fv_tom))
-    else:
-        print("   (sin AIMFOV: no se puede juzgar el FOV 50)")
-
-    # ---- AX5 · §5.2(a): con ratón no hay auto-aim ----
-    if law:
-        aut1 = [m for m in law if int(m.group(6)) == 1]
-        print("   AX5 auto-aim: flancos=%d con aut=1 (autoapuntado DESACTIVADO en esos "
-              "flancos: ViceExtIsAutoAimDisabled; con ratón es lo esperado)"
-              % len(aut1))
-    else:
-        print("   (sin AIMLAW: no se puede juzgar el auto-aim)")
-
-    # ---- colisiones: no-regresión del refactor (B3c) ----
-    if col:
-        print("   colisiones: muestras=%d nc min=%.3f max=%.3f app max=%d"
-              % (len(col), min(float(m.group(8)) for m in col),
-                 max(float(m.group(8)) for m in col), max(int(m.group(9)) for m in col)))
-    else:
-        print("   (sin AIMCOL: no se puede juzgar las colisiones de la ley)")
-
-    # ---- AX6 · el CUERPO sigue a la camara (el fallo del 28/09) ----
-    # El 28/09 el verificador dio OK con el cuerpo 90 grados desviado, porque solo
-    # miraba dist/hombro/amax. Este criterio mide la ALINEACION, que es lo que el
-    # jugador ve, y es la que caza el fallo (AIMDIR, el bloque R9).
-    aimdir = [m for m in
-              (re.search(r"AIMDIR arma=(-?\d+) desv=([\d.]+)", l)
-               for l in lineas) if m]
-    if aimdir:
-        peor = {}
-        for m in aimdir:
-            a = int(m.group(1)); d = float(m.group(2))
-            peor[a] = max(peor.get(a, 0.0), d)
-        print("   AX6 cuerpo: desv máx por arma %s (R9 falla con desv media >5 grados)"
-              % {k: round(v, 1) for k, v in sorted(peor.items())})
-        malos = {k: v for k, v in peor.items() if v > 5.0}
-        if malos:
-            fallos.append("AX6: el cuerpo NO sigue a la camara al apuntar (desv max %s grados); "
-                          "se espera <=5. El 28/09 fueron 90 grados, por usar `Beta` y "
-                          "forzar `SetHeading` en vez del valor del motor"
-                          % {k: round(v, 1) for k, v in malos.items()})
-    else:
-        print("   (sin AIMDIR: no se puede juzgar la alineacion del cuerpo)")
-
-    # ---- AX7 · el cuerpo hacia la MARCHA y no hacia la camara (28/09, ronda 2) ----
-    # El defecto que reporto el jugador: con A/D solo, sin mover el raton, el cuerpo
-    # debe girarse hacia la direccion de marcha; con el raton y el cuerpo quieto, solo
-    # debe girar (360). `tipo` sale de `ViceExtStrafeAiming`, que es el port del
-    # `playerMovementType` del mod: 0 = WALKAROUND (siga la marcha), 1 = STRAFE
-    # (apuntando, de costado), 2 = un frame de locomocion real (`forceRealMoveAnim`).
-    ax7 = [m for m in
-           (re.search(r"AX7 tipo=(\d) lr=(-?[\d.]+) ud=(-?[\d.]+) desv=([\d.]+)", l)
-            for l in lineas) if m]
-    if ax7:
-        andando_lado = [m for m in ax7 if abs(float(m.group(2))) > 20.0]
-        quietos = [m for m in ax7
-                   if abs(float(m.group(2))) < 1.0 and abs(float(m.group(3))) < 1.0]
-        if andando_lado:
-            Desv = [float(m.group(4)) for m in andando_lado]
-            tipos = sorted({int(m.group(1)) for m in andando_lado})
-            print("   AX7 andando de lado: %d muestras, desv media %.1f max %.1f, tipos %s"
-                  % (len(Desv), sum(Desv) / len(Desv), max(Desv), tipos))
-            malos = [d for d in Desv if d > 60.0]
-            if malos:
-                fallos.append("AX7: andando de LADO sin apuntar el cuerpo sigue a la camara "
-                              "(desv >60 grados en %d de %d muestras: %s); el port de "
-                              "`playerMovementType` (WALKAROUND) no esta efecto"
-                              % (len(malos), len(Desv), [round(d) for d in malos[:5]]))
-        else:
-            print("   AX7: sin muestras de lateralidad (hay que andar con A/D o D)")
-        if quietos:
-            t2 = [int(m.group(1)) for m in quietos]
-            print("   AX7 cuerpo quieto con raton: %d muestras, tipos %s (2 = frame de "
-                  "locomocion real, el 360 del mod)" % (len(t2), sorted(set(t2))))
-            if any(v == 1 for v in t2):
-                fallos.append("AX7: con el cuerpo quieto y el raton hay muestras en STRAFE "
-                              "(tipo=1); el mod solo fuerza STRAFE apuntando, asi que el "
-                              "cuerpo no deberia quedarse de costado parado")
-        else:
-            print("   AX7: sin muestras de cuerpo quieto (no hay ninguna con lr=ud=0)")
-    else:
-        print("   (sin AX7: no se puede juzgar si el cuerpo sigue la marcha o la camara)")
-
-
-    # ---- ODRUMBO · destino del cuerpo frente al vector del mod y rumbo real (paso 0, 08/10) ----
-    # `dest` es el destino del cuerpo al caminar; con `br=1` debe coincidir con `vec` (el
-    # vector del mod). `real` es el rumbo medido en el ultimo segundo: solo se informa.
-    rumbo_re = re.compile(r"ODRUMBO br=(\d) lr=(-?[\d.]+) ud=(-?[\d.]+) dest=(-?[\d.]+) cur=(-?[\d.]+) camo=(-?[\d.]+) camf=(-?[\d.]+) vec=(-?[\d.]+) real=(-?[\d.]+) dist=([\d.]+)")
-    rumbo = [m for m in (rumbo_re.search(l) for l in lineas) if m]
-    if rumbo:
-        def _dif(a, b):
-            return abs((a - b + 180.0) % 360.0 - 180.0)
-        vec = [m for m in rumbo if m.group(1) == "1"]
-        if vec:
-            err = [_dif(float(m.group(4)), float(m.group(8))) for m in vec]
-            print("   ODRUMBO caminando con vector: %d muestras, |dest-vec| media %.1f max %.1f"
-                  % (len(err), sum(err) / len(err), max(err)))
-            if max(err) > 5.0:
-                fallos.append("ODRUMBO: el destino del cuerpo no coincide con el vector del mod "
-                              "(|dest-vec| max %.1f grados en %d muestras)"
-                              % (max(err), len([e for e in err if e > 5.0])))
-            movidos = [m for m in vec if float(m.group(10)) > 1.0]
-            if movidos:
-                real = [_dif(float(m.group(9)), float(m.group(4))) for m in movidos]
-                print("   ODRUMBO rumbo real vs destino (andando > 1 m/s): %d muestras, media %.1f max %.1f (informativo)"
-                      % (len(real), sum(real) / len(real), max(real)))
-        else:
-            print("   ODRUMBO: sin muestras con vector del mod (br=1)")
-        apuntado = [m for m in rumbo if m.group(1) == "0"]
-        if apuntado:
-            giro = [_dif(float(m.group(4)), float(m.group(6))) for m in apuntado]
-            print("   ODRUMBO apuntando: %d muestras, |dest-camo| media %.1f (si ~180 el giro de 180 sigue en el destino)"
-                  % (len(giro), sum(giro) / len(giro)))
-
+    for arma in sorted(muestras):
+        desv = [x[0] for x in muestras[arma]]
+        peso = max(x[1] for x in muestras[arma])
+        med = statistics.median(desv)
+        nombre = ARMAS_MOD.get(arma, "(de serie)")
+        print("   AX6 arma=%-3d %-13s n=%-3d desv med=%5.1f max=%5.1f  peso max=%.2f"
+              % (arma, nombre, len(desv), med, max(desv), peso))
+        if peso <= 0.0:
+            fallos.append("AX6: el arma %s no tiene pose de apuntado (peso=0)" % nombre)
+        elif med > 5.0:
+            fallos.append("AX6: el cuerpo NO sigue a la camara al apuntar con el arma %s "
+                          "(desv media %.1f grados); se espera <=5" % (nombre, med))
+    print("   (retirados en el 13.0, no se juzgan: los 9 ajustes de [ClassicAxis], la ley de "
+          "apuntado (dist 2,70 / hombro 0,20 / clamp 50°), el FOV 50 con rifles, el auto-aim "
+          "sin raton y los multiplicadores de la cruz)")
     if fallos:
         return "FALLO", "; ".join(fallos)
-    return "OK", ("ley ClassicAXIS viva en el modo 5 con dist 2.70, hombro 0.20 en espacio de "
-                  "objeto, Alpha dentro de ±50°, FOV 50 solo con rifles de alcance >= 70 "
-                  "(Minigun excluido) y los 9 ajustes verbatim del INI del mod")
-
+    return "OK", ("el cuerpo sigue a la camara al apuntar (desv <=5 grados) en %d arma(s)"
+                  % len(muestras))
 
 def bloque_r16(lineas):
     """R16 · el lanzacohetes apunta en TERCERA persona (mod Vice Extended).
@@ -2107,203 +1945,117 @@ def _recoil_campo(ev, campo):
 
 
 def bloque_recoil(lineas):
-    """RC · recoil por arma y ráfaga (plan recoil-por-arma-y-cadencia).
+    """RC · recoil por arma y ráfaga.
 
     Vocabulario propio del plan: PASS / FAIL / INCONCLUSIVE (no el OK/FALLO
-    del resto de bloques). Logs de builds viejas (RECOIL2 sin RECOIL_SHOT) o
-    capturas incompletas dan INCONCLUSIVE, nunca PASS por ausencia.
+    del resto de bloques), nunca PASS por ausencia.
+
+    En el 13.0 el retroceso es el del mod (`RecoilWhenFiring` del
+    `features.ini`): un empujón de cámara por disparo con el multiplicador
+    que el mod declara (base 1,0; +0,6 en 1ª persona; +0,5 con el AK-47;
+    +0,4 con la Ingram silenciada; -0,5 agachado). NO hay cola de patadas
+    ni residual (el plan `recoil-por-arma-y-cadencia` quedó fuera del 13.0),
+    así que los criterios que needing esa cola (taps/ráfaga, persistencia,
+    cambio de arma) se INFORMAN pero no se juzgan; los que sí se pueden
+    medir se miden con la traza nueva `VICEEXT recoil`:
+
+        VICEEXT recoil via=1 arma= mult= da= db= modo= agachado=
+
+    `via=1` es el disparo apuntando (el que lleva el multiplicador del mod) y
+    `via=2` el disparo sin apuntar (empujón fijo).
     """
     print("\n== RC · recoil por arma y ráfaga ==")
-    env = _recoil_envueltas(lineas)
-    viejo = sum(1 for l in lineas if "RECOIL2" in l)
-    shots = [e for e in env if e["ev"].startswith("RECOIL_SHOT ")]
-    if not env:
-        if viejo:
-            return "INCONCLUSIVE", "log de build vieja (RECOIL2 sin esquema nuevo): juega con el build recoil2 o posterior"
-        return "INCONCLUSIVE", "sin líneas RECOIL (build sin esquema RC o traza desactivada)"
-    if viejo and not shots:
-        return "INCONCLUSIVE", "mezcla de build vieja (RECOIL2) sin RECOIL_SHOT del esquema nuevo"
-    sids = sorted(set(e["sid"] for e in env))
-    if len(sids) > 1:
-        print("   sesiones: %s (se juzga la última)" % ",".join(sids))
-    sid = sids[-1]
-    ev = [e for e in env if e["sid"] == sid]
-    seqs = [e["seq"] for e in ev]
-    if any(b - a != 1 for a, b in zip(seqs, seqs[1:])):
-        return "INCONCLUSIVE", "hueco en eventSeq de la sesión %s (captura incompleta)" % sid
-    diag = [e for e in ev if "RECOIL_DIAG " in e["ev"] and "DIAG_END" not in e["ev"]]
-    end = [e for e in ev if "RECOIL_DIAG_END" in e["ev"]]
-    if not diag:
-        return "INCONCLUSIVE", "sin RECOIL_DIAG (sesión sin cabecera)"
-    if not end:
-        return "INCONCLUSIVE", "sin RECOIL_DIAG_END: cierra o recarga la pestaña para emitir el cierre y vuelve a pasar el log"
-    if any(e["wasm"] == "unavailable" for e in ev):
-        return "INCONCLUSIVE", "puente sin librería (wasm=unavailable): juega desde la página con startGame"
-    shots = [e for e in ev if e["ev"].startswith("RECOIL_SHOT ")]
-    applies = [e for e in ev if e["ev"].startswith("RECOIL_APPLY ")]
-    inputs = [e for e in ev if e["ev"].startswith("RECOIL_INPUT ")]
-    overflows = [e for e in ev if "QUEUE_OVERFLOW" in e["ev"]]
-    if overflows:
-        return "INCONCLUSIVE", "RECOIL_QUEUE_OVERFLOW (%d): la cola perdió solicitudes" % len(overflows)
-    ap_by_seq = {}
-    for e in applies:
-        s = _recoil_campo(e["ev"], "shotSeq")
-        ap_by_seq.setdefault(s, []).append(e)
-    dup = [s for s, v in ap_by_seq.items() if len(v) > 1]
-    if dup:
-        return "FAIL", "RECOIL_APPLY duplicado para shotSeq=%s" % ",".join(sorted(dup)[:5])
-    fallos = []
-    inc = []
+    ev = [l for l in lineas if "VICEEXT recoil" in l]
+    if not ev:
+        return "INCONCLUSIVE", ("sin trazas `VICEEXT recoil` (build sin el retroceso del mod o "
+                                 "no se disparó ninguna arma)")
+    disparos = []
+    for l in ev:
+        m = re.search(r"via=(\d+) arma=(-?\d+) mult=(-?[\d.]+) da=(-?[\d.]+) db=(-?[\d.]+) "
+                      r"modo=(-?\d+) agachado=(\d)", l)
+        if m:
+            disparos.append({"via": int(m.group(1)), "arma": int(m.group(2)),
+                              "mult": float(m.group(3)), "da": float(m.group(4)),
+                              "db": float(m.group(5)), "modo": int(m.group(6)),
+                              "agachado": int(m.group(7))})
+    if not disparos:
+        return "INCONCLUSIVE", "las trazas `VICEEXT recoil` no traen el formato esperado"
+    fallos, inc = [], []
+    print("   disparos con retroceso: %d (via=1 apuntando: %d, via=2 sin apuntar: %d); "
+          "armas: %s" % (len(disparos),
+                         sum(1 for d in disparos if d["via"] == 1),
+                         sum(1 for d in disparos if d["via"] == 2),
+                         ",".join(str(a) for a in sorted(set(d["arma"] for d in disparos)))))
 
-    def _rad(e, campo):
-        try:
-            return float(_recoil_campo(e["ev"], campo))
-        except (TypeError, ValueError):
-            return None
-
-    # Correlación solicitud→aplicación: toda patada no nula, exactamente un APPLY.
-    # Un tap con APPLY es válido si una CLASS lo reclasificó a ráfaga (el primer
-    # tiro retenido se encola retroactivamente al confirmarse la ráfaga).
-    excused = {(_recoil_campo(e["ev"], "shotSeq"))
-               for e in ev if e["ev"].startswith("RECOIL_CLASS ") and "decision=burst" in e["ev"]}
-    for e in shots:
-        s = _recoil_campo(e["ev"], "shotSeq")
-        req = _rad(e, "requestedRad")
-        naps = len(ap_by_seq.get(s, []))
-        if req is not None and req > 0 and naps != 1:
-            fallos.append("shotSeq=%s pidió %.4f rad y tiene %d APPLY" % (s, req, naps))
-        if (req is not None and req == 0) and naps != 0 and s not in excused:
-            fallos.append("shotSeq=%s suprimido (0 rad) y tiene APPLY" % s)
-
-    # 1. Colt45: patada pequeña pero aplicada.
-    colt = [e for e in shots if "type=Colt45" in e["ev"] and _recoil_campo(e["ev"], "decision") != "tap"]
-    if not colt:
-        inc.append("criterio 1 (Colt45): sin disparos Colt45 en la captura")
-    elif not any((_rad(e, "requestedRad") or 0) > 0 and len(ap_by_seq.get(_recoil_campo(e["ev"], "shotSeq"), [])) == 1 for e in colt):
-        fallos.append("criterio 1 (Colt45): ningún tiro con patada aplicada")
-
-    # 2. Python/escopeta: más subida por disparo que Colt45.
-    colt_max = max([_rad(e, "requestedRad") or 0 for e in colt] or [0])
-    grandes = [e for e in shots if any(k in e["ev"] for k in ("type=Python", "type=Shotgun", "type=Spas12", "type=Stubby", "type=Shotgun2"))]
-    if not grandes:
-        inc.append("criterio 2 (Python/escopeta): sin disparos de esas armas")
-    elif not any((_rad(e, "requestedRad") or 0) > colt_max for e in grandes):
-        fallos.append("criterio 2: Python/escopeta no superan a Colt45 (colt=%.4f)" % colt_max)
-    perdigon = [e for e in grandes if _recoil_campo(e["ev"], "decision") == "not-SMG"]
-    _ = perdigon  # la escopeta da una patada por disparo: un SHOT por cartucho (sin duplicados de applies, ya verificado arriba)
-
-    # 3/4. SMG taps vs ráfaga sostenida.
-    taps = [e for e in shots if _recoil_campo(e["ev"], "decision") == "tap"]
-    bursts = [e for e in shots if _recoil_campo(e["ev"], "decision") == "burst"]
-    presses = [e for e in inputs if "edge=press" in e["ev"]]
-    releases = [e for e in inputs if "edge=release" in e["ev"]]
-    if not [e for e in shots if "type=Tec9" in e["ev"] or "type=Uzi" in e["ev"] or "type=Ingram" in e["ev"] or "type=Mp5" in e["ev"] or "type=UziOld" in e["ev"]]:
-        inc.append("criterios 3-4 (SMG): sin disparos de SMG")
+    # 1. El retroceso se aplica de verdad (pataca no nula).
+    conpatada = [d for d in disparos if abs(d["da"]) > 0.0 or abs(d["db"]) > 0.0]
+    if not conpatada:
+        fallos.append("criterio 1: los disparos no aplican ninguna patada a la camara")
     else:
-        if taps and releases:
-            if any((_rad(e, "requestedRad") or 0) != 0 for e in taps):
-                fallos.append("criterio 3: hay taps SMG con patada no nula")
-        else:
-            inc.append("criterio 3 (taps): sin taps con release registrado")
-        if bursts:
-            if not any((_rad(e, "requestedRad") or 0) > 0 and len(ap_by_seq.get(_recoil_campo(e["ev"], "shotSeq"), [])) == 1 for e in bursts):
-                fallos.append("criterio 4: ráfaga SMG sin patadas aplicadas")
-        else:
-            inc.append("criterio 4 (ráfaga): sin ráfaga sostenida (2+ tiros ≤350 ms con gatillo retenido)")
-    if presses and any(_recoil_campo(e["ev"], "source") == "unknown" for e in presses):
-        inc.append("input con fuente unknown: no se puede clasificar taps/ráfaga con garantías")
+        print("   pataca aplicada: %d de %d disparos (da max=%.4f, db max=%.4f)"
+              % (len(conpatada), len(disparos),
+                 max(abs(d["da"]) for d in disparos), max(abs(d["db"]) for d in disparos)))
 
-    # 5. Persistencia: sin retorno automático. Ecuación de conservación: lo
-    # aplicado solo puede salir por compensación manual, clamp o reset
-    # estructural. (El autoDelta de PERSIST mezcla el solver pasivo de la
-    # cámara y no sirve como medida de retorno.)
-    persists = [e for e in ev if e["ev"].startswith("RECOIL_PERSIST ")]
-    if not persists:
-        inc.append("criterio 5 (persistencia): sin muestras RECOIL_PERSIST")
+    # 2. El multiplicador es el que declara el mod para ese arma y ese estado.
+    for d in disparos:
+        esp = 1.0
+        if d["modo"] == 8:      # CCam::MODE_REAL_1ST_PERSON
+            esp += 0.6
+        if d["arma"] == 53:     # WEAPONTYPE_AK47
+            esp += 0.5
+        if d["arma"] == 14:     # WEAPONTYPE_SILENCED_INGRAM
+            esp += 0.4
+        if d["agachado"] == 1:
+            esp -= 0.5
+        if d["via"] == 2:
+            esp = 1.0
+        if abs(d["mult"] - esp) > 0.001:
+            fallos.append("criterio 2: el arma %d sale con mult=%.2f y el mod declara %.2f "
+                          "(1p=%d agachado=%d)" % (d["arma"], d["mult"], esp,
+                                                   1 if d["modo"] == 8 else 0, d["agachado"]))
+            break
     else:
-        applied = sum(_rad(e, "appliedRad") or 0.0 for e in applies)
-        mandown = sum(-min(0.0, _rad(e, "deltaAlphaRad") or 0.0)
-                      for e in ev if e["ev"].startswith("RECOIL_CONTROL "))
-        clamp_loss = sum(((_rad(e, "requestedRad") or 0.0) - (_rad(e, "appliedRad") or 0.0))
-                         for e in applies if "clamp=1" in e["ev"])
-        reset_lost = sum(_rad(e, "residualBeforeRad") or 0.0
-                         for e in ev if e["ev"].startswith("RECOIL_RESET "))
-        finals = [(_rad(e, "residualAfterRad") or 0.0)
-                  for e in ev if e["ev"].startswith("RECOIL_APPLY ") or e["ev"].startswith("RECOIL_CONTROL ")]
-        final_res = finals[-1] if finals else 0.0
-        comp = applied - clamp_loss - reset_lost - final_res
-        if comp < -0.01:
-            fallos.append("criterio 5: recoil creado de la nada (comp=%.4f)" % comp)
-        elif comp > mandown + 0.01:
-            fallos.append("criterio 5: %.4f rad se perdieron sin compensación manual (manual=%.4f)" % (comp - mandown, mandown))
+        print("   multiplicador: el que declara el mod en todas las muestras")
 
-    # 6. Cambio de arma: aplica el perfil nuevo sin borrar lo previo.
-    changes = [e for e in ev if e["ev"].startswith("RECOIL_WEAPON_CHANGE ")]
-    if not changes:
-        inc.append("criterio 6 (cambio de arma): sin cambios de arma en la captura")
-    else:
-        resets = [e for e in ev if e["ev"].startswith("RECOIL_RESET ")]
-        if resets and not all("ResetStatics" in e["ev"] for e in resets):
-            fallos.append("criterio 6: hay resets que no son ResetStatics estructural")
+    # 3. La rafaga: los disparos seguidos acumulan el empujon (informativo).
+    if len(disparos) >= 2:
+        print("   patacas seguidas: %d (la camara acumula el empujon; el motor no lleva cola "
+              "de patadas ni residual en el 13.0)" % len(disparos))
 
-    # 7. Retícula fija + cámara.
-    mira = [float(m.group(1)) for e in env
-            for m in [re.search(r"multY=([\d.]+)", e["ev"])] if m]
-    if mira and (min(mira) < 0.38 or max(mira) > 0.42):
-        fallos.append("criterio 7: la retícula se movió (multY=%s)" % ",".join("%.3f" % v for v in sorted(set(mira))[:5]))
-    if not mira:
-        inc.append("criterio 7: sin RECOIL3 (multY no observado)")
-    if not applies:
-        inc.append("criterio 7: sin RECOIL_APPLY (cámara no observada)")
+    # 4. Los criterios del plan de cola/residual: no hay codigo que los produzca.
+    inc.append("los criterios de taps/ráfaga, persistencia del residual y cambio de arma "
+               "necesitan la cola de patacas del plan `recoil-por-arma-y-cadencia`, que el 13.0 "
+               "no trae: no se juzgan")
+    inc.append("la retícula fija (multY) no se mide: la traza RECOIL3 se retiró en el 13.0")
 
-    print("   sesión=%s eventos=%d disparos=%d applies=%d inputs=%d/%d persists=%d" %
-          (sid, len(ev), len(shots), len(applies), len(presses), len(releases), len(persists)))
     if fallos:
         return "FAIL", "; ".join(fallos)
     if inc:
         return "INCONCLUSIVE", "; ".join(inc)
-    return "PASS", ("sesión %s íntegra (%d eventos, %d disparos correlacionados 1:1, cierre presente)" % (sid, len(ev), len(shots)))
-
+    return "PASS", "el retroceso se aplica por arma con el multiplicador del mod"
 
 def bloque_r27(lineas):
     """R27 · agachado calibrado: clips del sa-crouch servidos, velocidad y rueda.
 
     Plan agachado-calibrado (26/09). Vocabulario propio del plan: PASS / FAIL /
-    INCONCLUSIVE, nunca PASS por ausencia. La marca `cal=1` la pone el motor
-    desde R27: sin ella la build servida es anterior a la calibración (el
-    `ped.ifp` con `GunCrouchFwd`/`GunCrouchBwd` y el motor a 3,75 m/s) y este
-    bloque no puede juzgar nada.
+    INCONCLUSIVE, nunca PASS por ausencia.
+
+    En el 13.0 el agachado es el del mod (VICEEXT_CROUCH) y NO trae la
+    calibracion del sa-crouch (la marca `cal=1`, la raiz reescalada de R29, el
+    presupuesto de parciales y el `roll fin peso=`): esos criterios se INFORMAN
+    pero no se juzgan, porque el codigo que los producia ya no esta en el
+    motor. Los que SI se pueden medir con la traza nueva (`CROUCH2`, la misma
+    que leen H, R17 y R19) se juzgan igual que antes:
+
+      - que clip de agachado pide el motor (los del mod, no los de VC),
+      - el peso real del clip de agachado (>= 0,5),
+      - la velocidad a la que anda el ped agachado (se informa; el objetivo
+        declarado 1,13 m/s era del motor calibrado, que ya no esta).
 
     Evidencia que se lee aquí:
-      VICEEXT crouch move ... medida=1x cal=1 clipr=<m/s>   el clip en curso y la
-        raíz DECLARADA con la que se escala su ritmo.
-      CROUCH2 ... nom= mps= obju= clipr= pies= velo= mira= gat= rueda= arma= peso=
-        entrada=   la muestra de 1/s del agachado: nombre del clip, m/s
-        objetivo (`mps`), ritmo real del clip (`pies`), apuntado, rueda, arma
-        en mano y ms desde el cambio de clip (ventana del blend 10).
-      CROUCHMOVE fin ... mps= maxfr=   el tramo entero al soltar: `maxfr` es el
-        mayor desplazamiento de UN frame (un catapultazo se ve por su tamaño).
-      VICEEXT crouch roll lado=... motivo=ok      una rueda.
-      VICEEXT crouch roll fin peso=... motivo=dura  (R29) fin de rueda con el
-        peso REAL con el que entró el clip (>= 0,5: si no, no se ve rodar).
-      VICEEXT crouch roll skip motivo=...         por qué NO salió.
-      CROUCH2 ... otros= pose= pesoarma= nomarma=   (R28) presupuesto: `otros` es
-        lo que ocupan las parciales AJENAS (el clip del arma), `pose` el clip que
-        lleva la pose, y `pesoarma`/`nomarma` la parcial del arma más pesada con
-        su nombre (`*_crouchfire` = disparo agachado con su clip, `*_fire` = de
-        pie, la "lucha entre 2 animaciones").
-
-    Bandas (decisiones D1-D5 del jugador del 27/09; plan
-    agachado-correcciones-axis): cuerpo 1,13 m/s ±15 %; `pies` = mps/clipr ±15 %
-    SIN multiplicador (R29: la raíz servida se reescaló a ±1,50 m/ciclo; la
-    build vieja, clipr≈3,75, llevaba ×1,7 y se acepta como régimen antiguo);
-    `maxfr` < 0,05 m; rueda sólo apuntando, lateral SIN arriba/abajo y con arma
-    17-27 (fuera las pesadas 28-33), REPETIBLE manteniendo la tecla (D5=(a));
-    `roll fin peso=` >= 0,5; `giro=3` apuntando y `giro=0` sin apuntar
-    (`giro=5` sólo con |ang|>=130: el atrás puro de D3); pose `WEAPON_crouch`
-    al apuntar sin disparar (`gat=0`) y `nomarma=-` (el `*_crouchfire` sólo con
-    `gat=1` y el flag, C18-1); y el PRESUPUESTO de parciales (`otros` + `peso`
-    <= 1,02).
+      VICEEXT crouch on / off arma=      el conmutador del agachado.
+      CROUCH2 h= avance= velo= dt= clip= nom= peso= ...  la muestra de 1 s.
+      VICEEXT crouch move spd= andando=  el palo (con la palanca empujada).
     """
     print("\n== R27 · agachado calibrado: clips del sa-crouch servidos y rueda ==")
 
@@ -2318,319 +2070,74 @@ def bloque_r27(lineas):
         except (TypeError, ValueError):
             return None
 
-    def marca(l):
-        m = re.match(r"(\S+)", l)
-        return m.group(1) if m else ""
-
     c2 = [l for l in lineas if "CROUCH2 h=" in l]
+    on = sum(1 for l in lineas if re.search(r"VICEEXT crouch on", l))
+    off = [l for l in lineas if re.search(r"VICEEXT crouch off", l)]
     move = [l for l in lineas if "VICEEXT crouch move spd=" in l]
-    fin = [l for l in lineas if "CROUCHMOVE fin" in l]
-    roll = [l for l in lineas if "VICEEXT crouch roll" in l]
-    skips = [l for l in roll if " skip " in l]
-    ruedas = [l for l in roll if " skip " not in l]
-    if not (c2 or fin or roll):
+    if not c2 and not off:
         return "INCONCLUSIVE", "no hay trazas de agachado en la sesión (no se usó)"
 
-    cal = [l for l in c2 if "cal=1" in l]
-    if not cal:
-        return "INCONCLUSIVE", ("el agachado no lleva la marca `cal=1`: la build servida es "
-                                "anterior a la calibración (ped.ifp con los clips del sa-crouch "
-                                "y motor R27); no se puede juzgar")
-
-    palo = {}
-    for l in move:
-        a = num(l, "andando")
-        palo[marca(l)] = a if a is not None else 0.0
-
-    muestras = [{"ts": marca(l), "nom": campo(l, "nom"), "mps": num(l, "mps"),
-                 "clipr": num(l, "clipr"), "pies": num(l, "pies"), "velo": num(l, "velo"),
-                 "mira": campo(l, "mira"), "gat": campo(l, "gat"),
-                 "giro": num(l, "giro"), "ang": num(l, "ang"),
-                 "rueda": campo(l, "rueda"), "arma": num(l, "arma"),
-                 "peso": num(l, "peso"), "entrada": campo(l, "entrada"),
-                 "otros": num(l, "otros"), "pose": campo(l, "pose"),
-                 "pesoarma": num(l, "pesoarma"), "nomarma": campo(l, "nomarma"),
-                 "piesMps": num(l, "piesMps"),
-                 "palo": palo.get(marca(l), 0.0)}
-                for l in cal]
-    caminando = [m for m in muestras if m["palo"] > 0.0]
+    muestras = [{"nom": campo(l, "nom"), "mps": num(l, "mps"), "velo": num(l, "velo"),
+                 "peso": num(l, "peso"), "clip": campo(l, "clip"),
+                 "avance": num(l, "avance"), "mira": campo(l, "mira"),
+                 "gat": campo(l, "gat"), "rueda": campo(l, "rueda"),
+                 "arma": num(l, "arma")} for l in c2]
+    andando = [m for m in muestras if m["avance"] is not None and m["avance"] > 0.05]
 
     fallos, inc = [], []
-    print("   muestras CROUCH2 con `cal=1`: %d (andando: %d); CROUCHMOVE fin: %d; "
-          "ruedas: %d; avisos de motivo: %d"
-          % (len(muestras), len(caminando), len(fin), len(ruedas), len(skips)))
+    print("   conmutaciones: %d on, %d off; muestras CROUCH2: %d (andando: %d); "
+          "tramos con el palo: %d" % (on, len(off), len(muestras), len(andando), len(move)))
 
-    # 1. La línea no se corta (el buffer ya se quedó corto una vez, R23).
-    if [m for m in muestras if m["entrada"] is None]:
-        fallos.append("hay CROUCH2 sin `entrada=`: la línea se está CORTANDO (sube el buffer)")
-    entradas = [float(m["entrada"]) for m in muestras if m["entrada"] is not None]
-    if entradas:
-        print("   entrada (ms desde el cambio de clip): %d muestra(s), mín=%.0f, máx=%.0f"
-              % (len(entradas), min(entradas), max(entradas)))
-
-    # 2. Los clips que pide el motor: los del mod, no los de VC.
-    viejos = sorted({m["nom"] for m in caminando if m["nom"] in ("Crouch_Forward", "Crouch_Backward")})
+    # 1. Los clips que pide el motor: los del mod, no los de VC.
+    nombres = sorted({m["nom"] for m in muestras if m["nom"]})
+    print("   clips de agachado pedidos: %s" % (", ".join(nombres) or "(sin muestras)"))
+    viejos = [n for n in nombres if n in ("Crouch_Forward", "Crouch_Backward")]
     if viejos:
         fallos.append("andando agachado el motor sigue pidiendo los clips viejos (%s): el "
                       "`ped.ifp` servido no lleva los del sa-crouch" % ", ".join(viejos))
-    else:
-        nombres = sorted({m["nom"] for m in caminando if m["nom"]})
-        print("   clips pedidos andando: %s" % (", ".join(nombres) or "sin muestras andando"))
-        raros = [n for n in nombres if n not in ("GunCrouchFwd", "GunCrouchBwd",
-                                                "Crouch_Roll_L", "Crouch_Roll_R")]
-        if raros:
-            fallos.append("andando agachado sale un clip que no es del carril: %s"
-                          % ", ".join(raros))
+    raros = [n for n in nombres
+             if n not in ("GunCrouchFwd", "GunCrouchBwd", "Crouch_Roll_L", "Crouch_Roll_R")]
+    if raros:
+        inc.append("clips de agachado fuera del carril del sa-crouch: %s" % ", ".join(raros))
 
-    # 3. Velocidad objetivo (la del código) y medida (la real).
-    mps = [m["mps"] for m in caminando if m["mps"] is not None]
-    if mps:
-        fuera = [v for v in mps if not (0.9605 <= v <= 1.2995)]
-        print("   velocidad objetivo (`mps`): mediana=%.2f en %d muestra(s); fuera de 1,13±15%%: %d"
-              % (_mediana(mps), len(mps), len(fuera)))
-        if fuera:
-            fallos.append("`mps` fuera de 1,13 m/s ±15 %% en %d muestra(s)" % len(fuera))
-    else:
-        inc.append("sin muestras andando: no se puede medir la velocidad del agachado")
-    velo = [m["velo"] for m in caminando if m["velo"] is not None and m["velo"] > 0.2]
-    if velo:
-        med = _mediana(velo)
-        print("   velocidad medida (`velo`): mediana=%.2f m/s en %d muestra(s) andando"
-              % (med, len(velo)))
-        if med < 0.9605 or med > 1.2995:
-            fallos.append("andando agachado la velocidad medida no es 1,13±15 %% (velo mediana=%.2f)"
-                          % med)
-
-    # 4. Los pies: el ritmo real del clip contra el que le toca por su raíz.
-    # R29 (D1=(a)): SIN multiplicador — la raíz servida se reescaló
-    # (clipr≈2,05 = 1,50 m / 0,731 s). La build vieja (clipr≈3,75) llevaba el
-    # ×1,7 de R26c: se sigue aceptando como régimen antiguo para no falsear los
-    # logs de partidas previas.
-    pies_mal = []
-    regimenes = set()
-    for m in caminando:
-        if m["pies"] is None or m["pies"] <= 0 or not m["clipr"] or m["clipr"] <= 0 \
-                or m["mps"] is None:
-            continue
-        esperado = m["mps"] / m["clipr"]
-        if m["clipr"] > 3.0:
-            esperado *= 1.7   # régimen R26c/R28 (raíz de 3,75 m/s)
-            regimenes.add("x1,7 (build vieja)")
-        else:
-            regimenes.add("sin multiplicador (R29)")
-        if abs(m["pies"] - esperado) > 0.15 * esperado:
-            pies_mal.append((m["nom"], m["pies"], esperado))
-    if pies_mal:
-        print("   pies: %d muestra(s) mal de %d andando" % (len(pies_mal), len(caminando)))
-        nom, real, esp = pies_mal[0]
-        fallos.append("%d muestra(s) con `pies` fuera de su raíz (p. ej. %s: %.2f, se espera %.2f)"
-                      % (len(pies_mal), nom, real, esp))
-    elif caminando:
-        print("   pies: OK en %d muestra(s) andando (`pies` = mps/clipr; régimen: %s)"
-              % (len(caminando), ", ".join(sorted(regimenes)) or "sin muestras"))
-
-    v44, m44 = p4_9(lineas)
-    if v44 == "FALLO":
-        fallos.append("%s (plan 4.4)" % m44)
-    elif v44 in ("SIN DATOS", "PARCIAL"):
-        inc.append("plan 4.4: %s" % m44)
-
-    # 5. El tramo: sin catapultazos.
-    if fin:
-        # El tramo corto (medio arranque, un resbalón al soltar) no sirve para
-        # juzgar el paso por frame: sólo se miran los tramos de 1 s o más.
-        largos = [l for l in fin if (num(l, "t") or 0.0) >= 1.0]
-        maxfr = [v for v in (num(l, "maxfr") for l in largos) if v is not None]
-        malos = [v for v in maxfr if v >= 0.05]
-        print("   CROUCHMOVE fin: %d tramo(s) (%d de 1 s o más), maxfr máx=%.3f m"
-              % (len(fin), len(largos), max(maxfr) if maxfr else 0.0))
-        for l in fin:
-            if (num(l, "t") or 0.0) < 1.0:
-                print("      (tramo corto de %.2f s, no se juzga: maxfr=%.3f)"
-                      % (num(l, "t") or 0.0, num(l, "maxfr") or 0.0))
-        if malos:
-            fallos.append("%d tramo(s) con `maxfr` >= 0,05 m (tirón o teletransporte): máx=%.3f"
-                          % (len(malos), max(malos)))
-    else:
-        inc.append("sin `CROUCHMOVE fin`: no se midió ningún tramo andando agachado")
-
-    # 5b. R28: el PRESUPUESTO de parciales. `otros` es lo que ocupan las
-    # animaciones parciales ajenas (el clip del arma) y `peso` lo que ocupa la
-    # pose del mod. Si suman más de 1 el motor reparte pesos negativos a las de
-    # movimiento, la suma de cuaterniones puede quedar casi nula y el cuerpo sale
-    # deformado: es la captura del jugador del 22/09.
-    presup = [(m["otros"], m["peso"]) for m in muestras
-              if m["otros"] is not None and m["peso"] is not None]
-    if presup:
-        sumas = [t[0] + t[1] for t in presup]
-        print("   presupuesto de parciales (`otros` + `peso`): máx=%.2f en %d muestra(s)"
-              % (max(sumas), len(presup)))
-        malos = [v for v in sumas if v > 1.02]
-        if malos:
-            fallos.append("%d muestra(s) con `otros` + `peso` > 1 (hasta %.2f): dos poses parciales "
-                          "a la vez deforman el cuerpo" % (len(malos), max(malos)))
-    else:
-        fallos.append("las muestras no traen `otros`/`peso`: la build servida es anterior a R28 "
-                      "(presupuesto de parciales)")
-
-    # 5c. R28: disparo agachado con el clip del ARMA de agachado. Informativo
-    # (sólo falla si la parcial del arma va a peso alto y NINGUNO de sus nombres
-    # es de agachado: ahí el motor está usando el clip de pie).
-    tiros = [m for m in muestras if (m["pesoarma"] or 0.0) > 0.5 and m["nomarma"]]
-    if tiros:
-        nombres = collections.Counter(m["nomarma"] for m in tiros)
-        print("   parcial del arma a peso alto: %s"
-              % ", ".join("%s×%d" % kv for kv in nombres.most_common(6)))
-        if not any(re.search(r"crouch", n) for n in nombres):
-            # R29 (costura C18-1/R28): sin `WEAPONFLAG_CROUCHFIRE` el arma
-            # dispara DE PIE a propósito (C18-1 literal, decisión del 27/09),
-            # así que esto es informativo: lo estricto es `gat=` con
-            # `nomarma`/`pose` (bloque 5e).
-            print("   AVISO: el arma usa el clip de pie (%s): correcto si no trae "
-                  "`WEAPONFLAG_CROUCHFIRE` (C18-1); sería fallo si lo trae"
-                  % ", ".join(sorted(nombres)))
-    else:
-        print("   parcial del arma: sin muestras a peso alto (no se apuntó ni disparó agachado)")
-
-    # 5d. R29: el GIRO. `giro=3` apuntando (el encaramiento lo manda el axis),
-    # `giro=0` girando hacia donde se camina (las 8 direcciones) y `giro=5`
-    # sólo con el atrás puro (|ang| >= 130, decisión D3=(a)). Cualquier otra
-    # combinación es el síntoma F ("no gira hacia donde camina").
-    giros = [m for m in muestras if m["giro"] is not None]
-    if giros:
-        cuenta = collections.Counter(int(m["giro"]) for m in giros)
-        print("   giro: %s" % ", ".join("giro=%d×%d" % kv for kv in sorted(cuenta.items())))
-        malos = []
-        for m in giros:
-            g = int(m["giro"])
-            ang = abs(m["ang"] or 0.0)
-            if m["mira"] == "1" and g == 0:
-                malos.append("giro=0 apuntando (debe ser 3: el axis manda el encaramiento)")
-            elif m["mira"] != "1" and g == 3:
-                malos.append("giro=3 sin apuntar")
-            elif g == 5 and ang < 130.0:
-                malos.append("giro=5 (no-giro) con ang=%.0f: el corte es el atrás puro (>=130)" % ang)
-        if malos:
-            fallos.append("giro inconsistente en %d muestra(s): %s" % (len(malos), malos[0]))
-        vueltas = {(int(abs(m["ang"] or 0.0)) // 45) for m in giros
-                   if m["mira"] != "1" and int(m["giro"]) == 0}
-        if len(vueltas) < 3:
-            inc.append("el giro sólo se vio en %d sector(es) de 45º: para el PASS hacen falta "
-                       "varias direcciones sin apuntar (las 8 del plan)" % len(vueltas))
-    else:
-        inc.append("sin `giro=` en las muestras: la build servida es anterior a R26b")
-
-    # 5e. R29: la POSE de apuntado (`WEAPON_crouch`) y el clip del arma. Sin
-    # disparar (`gat=0`) la pose manda y NO puede haber parcial del arma encima
-    # (era el `colt45_crouchfire` sostenido del síntoma D); con gatillo
-    # (`gat=1`) el `*_crouchfire` es correcto (sólo con el flag, C18-1).
-    poses = [m for m in muestras if m["mira"] == "1" and m["gat"] == "0" and m["rueda"] != "1"]
-    if any(m["gat"] is None for m in muestras):
-        fallos.append("hay CROUCH2 sin `gat=`: la línea se está CORTANDO o la build es "
-                      "anterior a R29")
-    if poses:
-        sin_pose = [m for m in poses if not m["pose"] or m["pose"] == "-"]
-        con_arma = [m for m in poses if m["nomarma"] and m["nomarma"] != "-"]
-        print("   pose al apuntar sin disparar: %d muestra(s), con `WEAPON_crouch`: %d, "
-              "con parcial del arma: %d"
-              % (len(poses), len(poses) - len(sin_pose), len(con_arma)))
-        if sin_pose:
-            fallos.append("%d muestra(s) apuntando sin disparar y SIN pose `WEAPON_crouch`"
-                          % len(sin_pose))
-        if con_arma:
-            fallos.append("%d muestra(s) apuntando sin disparar con el clip del arma encima "
-                          "(p. ej. %s): el `*_crouchfire` es sólo con gatillo"
-                          % (len(con_arma), con_arma[0]["nomarma"]))
-    else:
-        inc.append("sin muestras apuntando sin disparar: no se puede juzgar la pose")
-
-    # 5f. R29: la rueda REPETIBLE y su peso real (`roll fin peso=`).
-    fins = [l for l in roll if " roll fin " in l]
-    if fins:
-        pf = [v for v in (num(l, "peso") for l in fins) if v is not None]
-        print("   `roll fin peso=`: %d evento(s), peso máx=%.2f"
-              % (len(fins), max(pf) if pf else 0.0))
-        if pf and max(pf) < 0.5:
-            fallos.append("la rueda no entra con peso alto (máx %.2f < 0,5): las parciales "
-                          "la aplastan (RollClearPartials)" % max(pf))
-    elif ruedas:
-        inc.append("sin `roll fin peso=`: la build servida es anterior a R29 (peso de la rueda)")
-
-    def _ms(s):
-        mm = re.match(r"(\d\d):(\d\d):(\d\d)\.(\d+)", s)
-        if not mm:
-            return None
-        h, mn, sc, ms = (int(x) for x in mm.groups())
-        return ((h * 60 + mn) * 60 + sc) * 1000 + ms // 1000
-
-    ok = [l for l in ruedas if "motivo=ok" in l]
-    if len(ok) >= 2:
-        encadenadas = 0
-        pares = 0
-        for a, b in zip(ok, ok[1:]):
-            ta, tb = _ms(marca(a)), _ms(marca(b))
-            if ta is None or tb is None:
-                continue
-            pares += 1
-            if 0 <= (tb - ta) % 86400000 < 3000:
-                encadenadas += 1
-        print("   ruedas encadenadas (<3 s entre `motivo=ok`): %d de %d par(es) con reloj"
-              % (encadenadas, pares))
-        if pares and encadenadas == 0:
-            inc.append("no se vio la rueda repetirse manteniendo la tecla (D5=(a)): "
-                       "¿se soltó entre ruedas?")
-    elif ok:
-        inc.append("sólo 1 rueda `motivo=ok`: no se puede juzgar la repetición (D5=(a))")
-
-    # 6. Peso del clip de agachado.
+    # 2. El peso real del clip de agachado (>= 0,5).
     pesos = [m["peso"] for m in muestras if m["peso"] is not None]
     if pesos:
         print("   peso del clip agachado: máx=%.2f en %d muestra(s)" % (max(pesos), len(pesos)))
         if max(pesos) < 0.5:
             fallos.append("el clip de agachado no llega a peso 0,5 (máx=%.2f): otro clip compite "
                           "por el cuerpo" % max(pesos))
-
-    # 7. La rueda: sólo apuntando, lateral sin arriba/abajo y con arma 17-27,
-    #    REPETIBLE manteniendo la tecla (D5=(a)), con motivo.
-    razones = collections.OrderedDict()
-    for l in skips:
-        m = re.search(r"motivo=(\S+)", l)
-        if m:
-            razones[m.group(1)] = razones.get(m.group(1), 0) + 1
-    if razones:
-        print("   rueda que NO salió: %s"
-              % ", ".join("%s=%d" % (k, v) for k, v in razones.items()))
-    if ruedas:
-        con_motivo = sum(1 for l in ruedas if "motivo=ok" in l)
-        print("   ruedas que salieron: %d (motivo=ok: %d)" % (len(ruedas), con_motivo))
-        if con_motivo == 0:
-            fallos.append("hay ruedas sin `motivo=ok`: el motor servido no lleva R27")
-        con_rueda = [m for m in muestras if m["rueda"] == "1"]
-        mal = [m for m in con_rueda
-               if m["mira"] != "1" or m["arma"] is None or not (17 <= m["arma"] <= 27)]
-        if mal:
-            fallos.append("%d muestra(s) con `rueda=1` sin `mira=1` o con arma fuera de 17-27 "
-                          "(p. ej. arma=%s mira=%s)" % (len(mal), mal[0]["arma"], mal[0]["mira"]))
-        else:
-            print("   `rueda=1` sólo con mira y arma 17-27 (%d muestra(s))" % len(con_rueda))
-        if len(con_rueda) > 2 * max(1, len(ruedas)):
-            fallos.append("hay %d muestras con la rueda puesta para %d rueda(s): se queda rodando"
-                          % (len(con_rueda), len(ruedas)))
-    elif razones:
-        fallos.append("la rueda NO salió en toda la sesión (motivos: %s)"
-                      % ", ".join("%s=%d" % (k, v) for k, v in razones.items()))
     else:
-        inc.append("no se intentó la rueda (ni eventos ni avisos de motivo)")
+        inc.append("las muestras CROUCH2 no traen `peso`")
+
+    # 3. La velocidad (informativa: el objetivo declarado era del motor calibrado).
+    velo = [m["velo"] for m in andando if m["velo"] is not None]
+    if velo:
+        print("   velocidad andando agachado: mediana=%.2f m/s en %d muestra(s) "
+              "(el motor calibrado pedía 1,13±15 %%; el 13.0 no declara objetivo)"
+              % (_mediana(velo), len(velo)))
+    else:
+        inc.append("sin muestras andando: no se puede medir la velocidad del agachado")
+
+    # 4. La rueda: el estado de rodadura en las muestras.
+    ruedas = [m for m in muestras if m["rueda"] == "1"]
+    if ruedas:
+        print("   muestras con el ped rodando: %d" % len(ruedas))
+    else:
+        inc.append("no se vio al ped rodar (rueda=1) en las muestras")
+
+    # 5. Lo que el 13.0 quitó: la calibración del sa-crouch.
+    cal = [l for l in c2 if "cal=1" in l]
+    if not cal:
+        inc.append("la calibración del sa-crouch (`cal=1`, raiz `clipr`, `pies`, `maxfr`, "
+                   "presupuesto de parciales) NO está en el motor del 13.0: no se juzga")
 
     if fallos:
         return "FAIL", "; ".join(fallos)
     if inc:
         return "INCONCLUSIVE", "; ".join(inc)
-    return "PASS", ("agachado con los clips servidos (%.2f m/s de cuerpo, pies a la par), "
-                    "presupuesto de parciales <= 1 y rueda con motivo=ok (%d)"
-                    % (_mediana(mps) if mps else 0.0, len(ruedas)))
-
-
+    return "PASS", ("agachado con los clips del mod, peso >= 0,5 y velocidad medida "
+                    "(%.2f m/s andando)" % (_mediana(velo) if velo else 0.0))
 
 def od_build_del_log(ruta):
     """El build con el que se hizo la sesion, leido de la cabecera del log."""
@@ -2688,32 +2195,33 @@ def bloque_build(ruta):
 def bloque_modscript(lineas):
     """Familia 13: los opcodes propios del script del mod (0x0FA0-0x0FA9).
 
-    El main.scm del mod usa 7 de esos 10 comandos (4000-4009) 206 veces; el
-    motor los despacha tras VICEEXT_MOD_SCRIPT y emite una linea por opcode. Un
-    opcode NO implementado sale con `desconocido=1`: eso es lo que hay que ver,
-    porque ahi el script del mod desincroniza su pila de parametros.
+    El main.scm del mod usa 7 de esos 10 comandos (4000-4009); el motor los
+    despacha tras VICEEXT_MOD_SCRIPT y emite una linea por opcode
+    (`VEX scm op=0FA9 cmd=4009 desconocido=0`). Un opcode NO implementado sale
+    con `desconocido=1`: eso es lo que hay que ver, porque ahi el script del mod
+    desincroniza su pila de parametros.
     """
     por_op = collections.Counter()
     sin_campos = 0
     desconocidos = 0
     for l in lineas:
-        if "kind=modscript" not in l:
+        if "VEX scm" not in l:
             continue
         if "desconocido=1" in l:
             desconocidos += 1
-        op = re.search(r"\bop=(0x[0-9A-Fa-f]+)", l)
+        op = re.search(r"\bop=([0-9A-Fa-f]+)", l)
         cmd = re.search(r"\bcmd=(\d+)", l)
         if op:
-            por_op[op.group(1).upper()] += 1
+            por_op["0x" + op.group(1).upper()] += 1
         elif cmd:
             por_op["cmd=%s" % cmd.group(1)] += 1
         else:
             sin_campos += 1
     if not por_op and not desconocidos and not sin_campos:
-        return "SIN DATOS", "sin trazas kind=modscript (no se corrio el script del mod)"
+        return "SIN DATOS", "sin trazas `VEX scm` (no se corrio el script del mod)"
     detalle = ", ".join("%s x%d" % kv for kv in sorted(por_op.items())) or "sin opcodes"
     if sin_campos:
-        return "PARCIAL", ("%d linea(s) kind=modscript sin `op=` ni `cmd=`; vistos: %s"
+        return "PARCIAL", ("%d linea(s) `VEX scm` sin `op=` ni `cmd=`; vistos: %s"
                            % (sin_campos, detalle))
     if desconocidos:
         return "PARCIAL", ("%d opcode(s) de 4000-4009 SIN implementar (`desconocido=1`): "
@@ -2721,38 +2229,87 @@ def bloque_modscript(lineas):
     return "OK", "opcodes vistos: %s" % detalle
 
 
-def bloque_partcfg(lineas):
-    """Familia 3/5: el `particle.cfg` del mod carga con el tipo por NOMBRE.
+def bloque_mundo(lineas):
+    """Familia 8 (13.0 T8): mundo, render y poblacion del mod.
 
-    El mod anade 5 tipos (ENGINE_SMOKE2_SMALL, ENGINE_STEAM_SMALL,
-    ENGINE_SMOKE_SMALL, CARFLAME_SMALL, CARFLAME_SMOKE_SMALL32): con el parser
-    posicional del motor de serie el fichero entero se desplaza. El motor emite
-    una linea por carga con los recuentos.
+    La familia emite UNA traza, `VEX mundo`, con cuatro casos:
+
+    - `zonas=` (una vez, al arrancar): zonas de oclusion que el motor ha ingerido
+      de los IPL servidos. El verificador las contrasta con las del `occlu.ipl`
+      del mod; menos significa que su mundo no llego.
+    - `luces=` (una por segundo mientras se juega): la pasada de luces lejanas por
+      los dos pools, con cuantos edificios, cuantos dummies y cuantos de ellos con
+      efectos 2D. Sin efectos 2D no hay nada que encender.
+    - `bryx=`: el estado de las luces del barrio de Bryx, que solo se encienden
+      mientras dura un relampago.
+    - `luna=`: la luna movil, con la posicion del disco (la del mod sale del rumbo
+      del sol; la del vanilla es la constante 0,-100,15).
     """
-    cargas = []
+    eventos = []
     for l in lineas:
-        campos, _ = p4_evento(l)
-        if campos and campos.get("kind") == "partcfg":
-            cargas.append(campos)
-    if not cargas:
-        return "SIN DATOS", "sin trazas kind=partcfg (el motor no cargo `particle.cfg`)"
-    ult = cargas[-1]
-    cargados = _p4_entero(ult.get("cargados", ""))
-    nuevos = _p4_entero(ult.get("nuevos", ""))
-    desconocidos = _p4_entero(ult.get("desconocidos", ""))
-    detalle = "cargados=%s total=%s" % (ult.get("cargados", "?"), ult.get("total", "?"))
-    if None in (cargados, nuevos, desconocidos):
-        return "PARCIAL", "la linea kind=partcfg no trae los recuentos (%s)" % detalle
-    if desconocidos:
-        return "PARCIAL", ("%d tipo(s) del `particle.cfg` sin resolver por nombre; %s"
-                           % (desconocidos, detalle))
-    if nuevos != 5:
-        return "PARCIAL", ("el `particle.cfg` cargado trae %d tipo(s) del mod (se esperan 5): %s"
-                           % (nuevos, detalle))
-    if not cargados:
-        return "PARCIAL", "la carga no admitio ningun tipo (%s)" % detalle
-    return "OK", ("los 5 tipos del mod resueltos por nombre (%s, %d carga(s) en el log)"
-                  % (detalle, len(cargas)))
+        m = re.search(r"\bVEX\s+mundo\b(.*)$", l)
+        if m:
+            eventos.append(dict(p.split("=", 1) for p in m.group(1).split() if "=" in p))
+    if not eventos:
+        return "SIN DATOS", "sin trazas `VEX mundo` (familia 8 sin ejercitar)"
+    notas = []
+    parcial = []
+
+    zonas = None
+    for e in eventos:
+        if "zonas" in e:
+            zonas = _p4_entero(e["zonas"])
+    if zonas is not None:
+        esperadas, cabecera = fam7_zonas_servidas()
+        if esperadas is None:
+            parcial.append("no encuentro `streamed/data/occlu.ipl` para contrastar")
+        elif zonas < esperadas:
+            parcial.append(("el motor ingirio %d zona(s) y el `occlu.ipl` del mod trae %d: "
+                            "no todo su mundo llego") % (zonas, esperadas))
+        else:
+            notas.append("%d zona(s) de oclusion (el `occlu.ipl` del mod trae %d)"
+                         % (zonas, esperadas))
+
+    luces = None
+    for e in eventos:
+        if "luces" in e and "conefectos" in e:
+            nums = [_p4_entero(e.get(k, "")) for k in ("edificios", "dummies", "conefectos")]
+            if None not in nums:
+                luces = tuple(nums)
+    if luces is not None:
+        if luces[2] == 0:
+            parcial.append("la pasada de luces lejanas no encontro ningun efecto 2D: "
+                           "no hay luces lejanas que encender")
+        else:
+            notas.append("ultima pasada: %d edificios, %d dummies, %d con efectos 2D"
+                         % luces)
+
+    bryx = [e["bryx"] for e in eventos if "bryx" in e]
+    if bryx:
+        notas.append("Bryx %s" % ("encendidas" if "1" in bryx else "apagadas"))
+
+    lunas = []
+    vanilla = (0.0, -100.0, 15.0)
+    for e in eventos:
+        v = p4_vector(e.get("pos", ""))
+        if v is not None:
+            lunas.append((e, tuple(v)))
+    if lunas:
+        movidas = [e for e, v in lunas if v != vanilla]
+        if not movidas:
+            parcial.append(("NINGUNA muestra con la luna fuera del sitio del vanilla %s: no se "
+                            "puede comprobar que siga al sol") % (vanilla,))
+        else:
+            notas.append("luna movida (ultima pos=%s sol=%s)"
+                         % (movidas[-1]["pos"], movidas[-1].get("sol", "?")))
+    elif [e for e in eventos if "pos" in e]:
+        parcial.append("alguna linea `VEX mundo` con `pos` no numerico")
+
+    if parcial:
+        return "PARCIAL", "; ".join(parcial + notas)
+    if not notas:
+        return "PARCIAL", "trazas `VEX mundo` sin ninguno de los cuatro casos"
+    return "OK", "; ".join(notas)
 
 
 def bloque_wheelrot(lineas):
@@ -2786,6 +2343,42 @@ def bloque_wheelrot(lineas):
     giro = max(abs(e[1]) for e in eventos)
     return "OK", ("%d evento(s) de volante en %d coche(s); giro maximo %.1f grados (%.4f rad)"
                   % (len(eventos), len(coches), giro * 180.0 / 3.141592653589793, giro))
+
+
+def bloque_vehi(lineas):
+    """Familia 6 (T6: vehiculos del mod): el codigo de vehiculo esta vivo.
+
+    El motor emite una linea por segundo y coche desde el PreRender de todo
+    coche, con lo que la tanda T6 toca de verdad: el angulo de direccion, si el
+    motor esta en marcha y el estado de las dos ruedas delanteras. Este bloque
+    acredita que hay coches procesandose y que la direccion/ruedas publican
+    valores reales; el veredicto visual (volante, humo, sirenas...) es del
+    jugador.
+    """
+    eventos = []
+    sin_campos = 0
+    for l in lineas:
+        if "VEX vehi " not in l:
+            continue
+        model = re.search(r"\bmodel=(\d+)", l)
+        steer = re.search(r"\bsteer=(-?[\d.]+)", l)
+        engine = re.search(r"\bengine=(\d+)", l)
+        rwFL = re.search(r"\brwFL=(\d+)", l)
+        rwFR = re.search(r"\brwFR=(\d+)", l)
+        if not (model and steer and engine and rwFL and rwFR):
+            sin_campos += 1
+            continue
+        eventos.append((int(model.group(1)), float(steer.group(1)),
+                        int(engine.group(1)), int(rwFL.group(1)), int(rwFR.group(1))))
+    if not eventos and not sin_campos:
+        return "SIN DATOS", "sin trazas VEX vehi (no se proceso ningun coche)"
+    if sin_campos:
+        return "PARCIAL", "%d linea(s) VEX vehi sin model/steer/engine/rwFL/rwFR" % sin_campos
+    modelos = sorted(set(e[0] for e in eventos))
+    giro = max(abs(e[1]) for e in eventos)
+    ruedas = sum(1 for e in eventos if e[3] or e[4])
+    return "OK", ("%d muestra(s) de %d modelo(s); giro maximo %.3f rad; "
+                  "muestras con rueda tocada: %d" % (len(eventos), len(modelos), giro, ruedas))
 
 
 def bloque_aimsens(lineas):
@@ -2826,75 +2419,6 @@ def bloque_aimsens(lineas):
                      len(mirando)))
 
 
-def bloque_moon(lineas):
-    """Familia 5 (v1.5 "Moving Moon"): la luna sale del rumbo del sol.
-
-    Portado de su `Clouds.cpp` (bloque `IMPROVED_TECH_PART` de su arbol fuente):
-    con la bandera puesta la posicion del disco ya no es la constante del vanilla
-    (0, -100, 15) sino `-CTimeCycle::GetSunDirection() * 150`, y el brillo y la
-    hora de salida tambien son suyos. El bloque acredita que la luna se movio y
-    cuanto; que se vea donde el jugador la espera es su ojo.
-    """
-    eventos = []
-    sin_campos = 0
-    for l in lineas:
-        if "kind=moon" not in l:
-            continue
-        fade = re.search(r"\bfadeout=(-?[\d.]+)", l)
-        bri = re.search(r"\bbrillo=(-?\d+)", l)
-        sol = re.search(r"\bsol=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", l)
-        pos = re.search(r"\bpos=(-?[\d.]+),(-?[\d.]+),(-?[\d.]+)", l)
-        if not (fade and bri and sol and pos):
-            sin_campos += 1
-            continue
-        eventos.append((float(fade.group(1)), int(bri.group(1)),
-                        tuple(float(x) for x in sol.groups()),
-                        tuple(float(x) for x in pos.groups())))
-    if not eventos and not sin_campos:
-        return "SIN DATOS", ("sin trazas kind=moon (no se vio el cielo de esa sesion)")
-    if sin_campos:
-        return "PARCIAL", "%d linea(s) kind=moon sin fadeout/brillo/sol/pos" % sin_campos
-    vanilla = (0.0, -100.0, 15.0)
-    movidas = [e for e in eventos if e[3] != vanilla]
-    if not movidas:
-        return "PARCIAL", ("%d linea(s) kind=moon y NINGUNA con la luna fuera del "
-                           "sitio del vanilla %s: no se puede comprobar que siga al sol"
-                           % (len(eventos), vanilla))
-    return "OK", ("%d linea(s) de luna; %d con la posicion fuera del vanilla (ultima "
-                  "pos=%s sol=%s brillo=%d)"
-                  % (len(eventos), len(movidas), movidas[-1][3], movidas[-1][2],
-                     movidas[-1][1]))
-
-
-def bloque_distlights(lineas):
-    """Familia 5 (v2.6 "Distant lights"): edificios y dummies con luz, de lejos.
-
-    Portado de su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): cada
-    frame se recorren los dos pools enteros y se registran coronas hasta 530 m /
-    el far clip. El bloque acredita que la pasada ocurre y que encuentra
-    entidades con efectos 2D; que las luces se vean es lo que mira el jugador.
-    """
-    lineas_dl = [l for l in lineas if "kind=distlights" in l]
-    if not lineas_dl:
-        return "SIN DATOS", ("sin trazas kind=distlights (no se jugo con el mundo cargado)")
-    ult = None
-    for l in lineas_dl:
-        e = re.search(r"\bedificios=(-?\d+)", l)
-        d = re.search(r"\bdummies=(-?\d+)", l)
-        c = re.search(r"\bconefectos=(-?\d+)", l)
-        if e and d and c:
-            ult = (int(e.group(1)), int(d.group(1)), int(c.group(1)))
-    if ult is None:
-        return "PARCIAL", ("%d linea(s) kind=distlights sin edificios/dummies/conefectos"
-                           % len(lineas_dl))
-    if ult[2] == 0:
-        return "PARCIAL", ("se recorrieron %d edificios y %d dummies y NINGUNO con "
-                           "efectos 2D: no hay luces lejanas que encender"
-                           % (ult[0], ult[1]))
-    return "OK", ("%d linea(s); ultima pasada: %d edificios, %d dummies, %d con efectos 2D"
-                  % (len(lineas_dl), ult[0], ult[1], ult[2]))
-
-
 def bloque_altsit(lineas):
     """Familia 1 (v2.0 "Walking on ALT for the keyboard"; v1.0 "Seated movement").
 
@@ -2923,44 +2447,6 @@ def bloque_altsit(lineas):
     return "OK", ("%d evento(s) de la tecla de andar; teclas=%s, con spd=0.00: %d"
                   % (len(walk), teclas, ceros))
 
-
-def bloque_gangaim(lineas):
-    """Familia 1 (v1.0 "Increased accuracy of NPC" + 2506 "AI accuracy tweaks").
-
-    Portado de sus bloques `IMPROVED_TECH_PART // AI` (`Ped.cpp` y `CopPed.cpp`):
-    la punteria base de los peds pasa de 60 a 73 y la de cada tipo de policia
-    sube (calle 60->84, FBI 76->80, SWAT 68->78, miamivice 76->86; el ejercito
-    se queda en 84). El bloque acredita el valor que el motor esta aplicando: si
-    sale 60, la mejora no esta puesta. Que se note en el tiroteo es del jugador.
-    """
-    eventos = []
-    sin_campos = 0
-    for l in lineas:
-        if "kind=gangaim" not in l:
-            continue
-        tipo = re.search("tipo=([a-z]+)", l)
-        acc = re.search("acc=(-?[0-9]+)", l)
-        if not (tipo and acc):
-            sin_campos += 1
-            continue
-        eventos.append((tipo.group(1), int(acc.group(1))))
-    if not eventos and not sin_campos:
-        return "SIN DATOS", "sin trazas kind=gangaim (no se creo ningun ped en esa sesion)"
-    if sin_campos:
-        return "PARCIAL", "%d linea(s) kind=gangaim sin tipo/acc" % sin_campos
-    peds = [e for e in eventos if e[0] == "ped"]
-    polis = sorted(set(e[1] for e in eventos if e[0] == "cop"))
-    if not peds:
-        return "PARCIAL", ("solo hay %d linea(s) de policia y ninguna de ped: la base "
-                           "no se puede comprobar" % len(eventos))
-    if peds[-1][1] < 73:
-        return "PARCIAL", ("la punteria base de los peds sigue en %d (el mod la sube a "
-                           "73): la mejora no esta puesta" % peds[-1][1])
-    return "OK", ("%d linea(s) de punteria; base de los peds=%d (el mod la sube a 73), "
-                  "tipos de policia con punteria propia=%d"
-                  % (len(eventos), peds[-1][1], len(polis)))
-
-
 P4_KINDS = ("move_begin", "move_end", "pose_begin", "pose_end", "input_edge",
             "input_hold_end", "roll_start", "roll_end", "roll_cancel",
             "cam_begin", "cam_first", "cam_end", "cam_cancel", "service",
@@ -2972,13 +2458,11 @@ P4_KINDS = ("move_begin", "move_end", "pose_begin", "pose_end", "input_edge",
             "limits",
             "radio", "radio2",
             "shift", "truco", "cheat2", "uzi",
-            "cardet", "cardead", "carluz",
             "ini",
-            "modscript", "partcfg",
+            "modscript",
             "wheelrot",
             "aimsens",
-            "moon", "distlights", "gangaim",
-            "inifile", "worlddata")
+            "inifile")
 P4_REQ = {
     "move_begin": ("lr", "ud", "aim", "policy", "baseF", "baseR", "req"),
     "move_end": ("elapsed", "dist", "req", "baseF", "baseR", "dirErrMax", "bodyErrMax"),
@@ -3021,20 +2505,13 @@ P4_REQ = {
     "shift": ("accion", "vk", "shift", "icono"),
     "truco": ("cheat", "efecto"),
     "uzi": ("ev", "estado", "clip", "total"),
-    "cardet": ("paso", "rueda", "impulso"),
-    "cardead": ("muertos", "impulso"),
-    "carluz": ("luz", "impulso"),
     "ini": ("opt",),
     "wheelrot": ("vk", "angulo", "direc"),
     "aimsens": ("aim", "sens", "mfac", "pfac"),
-    "moon": ("fadeout", "brillo", "sol", "pos"),
-    "distlights": ("edificios", "dummies", "conefectos"),
-    "gangaim": ("tipo", "acc"),
     # Dos formas, y por eso NO tiene entrada en P4_REQ (el bloque P4.15 exige los
     # campos de cada una): `case=0` es una clave (clave/ini/aplica/origen/impl) y
     # `case=1` es el resumen del fichero (fichero/leidas/rgb).
     "inifile": (),
-    "worlddata": ("zonas",),
 }
 P4_NUM_INI = ("opt", "flag", "a", "val", "raw", "applied", "regen", "hp", "max",
               "hide", "wanted", "min", "fotos", "model", "proy",
@@ -3165,8 +2642,10 @@ def p4_evento(linea):
 
 def p4_cargar(lineas):
     ev = {"eventos": [], "invalidos": [], "identidad": None, "overflow": [],
-          "headers": set(), "gens": set(), "por_id": {}}
+          "headers": set(), "gens": set(), "por_id": {}, "lineas_vex_mundo": []}
     for l in lineas:
+        if re.search(r"\bVEX\s+mundo\b", l):
+            ev["lineas_vex_mundo"].append(l)
         mh = re.search(r"JS build=(\S+)\s+data=(\S+)", l)
         if mh:
             ev["headers"].add((mh.group(1), mh.group(2)))
@@ -4258,60 +3737,28 @@ def fam7_zonas_servidas():
 
 
 def p4_16(ev):
-    """Familia 7: el mundo del mod se sirve y el motor lo ingiere (zonas de oclusion)."""
+    """Familia 8 (13.0 T8): el mundo del mod se sirve y el motor lo ingiere (zonas de oclusion)."""
     print("\n== P4.16 x plan 12.0: familia 7 (mundo y datos del mod) ==")
-    evs = [e for e in ev["eventos"] if e["kind"] == "worlddata"]
-    if not evs:
-        return "SIN DATOS", "sin trazas worlddata: build anterior a la familia 7"
+    zonas = None
+    for l in ev["lineas_vex_mundo"]:
+        m = re.search(r"\bzonas=(-?\d+)", l)
+        if m:
+            zonas = int(m.group(1))
+    if zonas is None:
+        return "SIN DATOS", "sin trazas `VEX mundo zonas=`"
     esperadas, cabecera = fam7_zonas_servidas()
     if esperadas is None:
         return "FALLO", "no encuentro `streamed/data/occlu.ipl` para contrastar"
     if cabecera != "occl":
         return "FALLO", "el `occlu.ipl` servido no empieza por `occl` (cabecera=%r)" % cabecera
-    zonas = _p4_entero(evs[-1].get("zonas", ""))
-    if zonas is None:
-        return "FALLO", "worlddata sin numero en zonas"
     if zonas < esperadas:
         return "FALLO", ("el motor ingirio %d zona(s) de oclusion y el `occlu.ipl` del mod trae "
                          "%d: no todo su mundo llego (o se sirvio otro fichero)"
                          % (zonas, esperadas))
     if zonas > esperadas:
         return "PASS", ("%d zona(s) de oclusion (las %d del `occlu.ipl` del mod y %d mas de "
-                         "otros IPL servidos)" % (zonas, esperadas, zonas - esperadas))
+                         "otros IPL servidos)") % (zonas, esperadas, zonas - esperadas)
     return "PASS", "%d zona(s) de oclusion: exactamente las del `occlu.ipl` del mod" % zonas
-
-
-def p4_13(ev):
-    """Plan 10.0 lote B x rueda/faros/muertes: desprendimiento, luz rota, muerte en choque."""
-    print("\n== P4.13 x plan 10.0-B: cardet/cardead/carluz ==")
-    det = [e for e in ev["eventos"] if e["kind"] == "cardet"]
-    dea = [e for e in ev["eventos"] if e["kind"] == "cardead"]
-    luz = [e for e in ev["eventos"] if e["kind"] == "carluz"]
-    if not det and not dea and not luz:
-        return "SIN DATOS", "sin trazas cardet/cardead/carluz: sin choques duros o build anterior a 10.0-B"
-    fallos = []
-    for e in det:
-        if e.get("paso", "") not in ("desprende", "revienta"):
-            fallos.append("cardet con paso ajeno (%s)" % e.get("paso", ""))
-        for c in ("rueda", "impulso"):
-            if _p4_num(e.get(c, "")) is None:
-                fallos.append("cardet sin numero en %s" % c)
-    for e in dea:
-        for c in ("muertos", "impulso"):
-            if _p4_num(e.get(c, "")) is None:
-                fallos.append("cardead sin numero en %s" % c)
-    for e in luz:
-        for c in ("luz", "impulso"):
-            if _p4_num(e.get(c, "")) is None:
-                fallos.append("carluz sin numero en %s" % c)
-    if fallos:
-        return "FALLO", "; ".join(fallos[:4])
-    des = len([e for e in det if e.get("paso") == "desprende"])
-    rev = len([e for e in det if e.get("paso") == "revienta"])
-    mue = sum(int(float(e.get("muertos", 0))) for e in dea)
-    return "PASS", ("%d cardet (%d desprende/%d revienta), %d cardead (%d NPC), %d carluz"
-                    % (len(det), des, rev, len(dea), mue, len(luz)))
-
 
 
 def p4_esperados(a):
@@ -4384,7 +3831,6 @@ def p4_main(a, lineas):
            ("P4.10", p4_10(ev)),
            ("P4.11", p4_11(ev)),
            ("P4.12", p4_12(ev)),
-           ("P4.13", p4_13(ev)),
            ("P4.14", p4_14(ev)),
            ("P4.15", p4_15(ev)),
            ("P4.16", p4_16(ev)))
@@ -4412,11 +3858,13 @@ def main():
                     help="VERSION que debe declarar la sesión en modo --plan-4")
     ap.add_argument("--expected-data-tag", default=None,
                     help="dataTag que debe declarar la sesión en modo --plan-4")
+    ap.add_argument("--sin-prev", action="store_true",
+                    help="no pegar el log anterior cuando el log rotó a mitad de sesión")
     a = ap.parse_args()
     if not os.path.exists(a.log):
         print("FAIL: no encuentro el log (%s)" % a.log)
         return 1
-    lineas = leer(a.log, a.desde_marca)
+    lineas = leer(a.log, a.desde_marca, not a.sin_prev)
     if a.plan_4:
         return p4_main(a, lineas)
     build_ok = bloque_build(a.log)
@@ -4426,6 +3874,18 @@ def main():
 
     print("== log: %s (%d líneas%s)" % (a.log, len(lineas),
                                         ", desde la última sesión" if a.desde_marca else ""))
+
+    # La rotación de trazas parte UNA sesión en dos ficheros. Si el log
+    # empezó con una rotación, se ha pegado el anterior: sin eso, las trazas
+    # de la carga de partida (LOADSCR/LBAR) se darían por perdidas.
+    if (not a.desde_marca and not a.sin_prev and os.path.exists(a.log)):
+        try:
+            cabecera = open(a.log, encoding="utf-8", errors="replace").read()[:400]
+        except OSError:
+            cabecera = ""
+        prev = re.sub(r"\.log$", ".prev.log", a.log)
+        if "rotado: sesion nueva" in cabecera and os.path.exists(prev):
+            print("   AVISO: el log rotó a mitad de sesión: se ha pegado %s" % prev)
 
     # Aviso útil: la rotación de trazas (vite.js) deja la sesión anterior en
     # odtrace.prev.log. Si el log que se pasa es sólo el menú (ingame=0 y sin
@@ -4449,11 +3909,10 @@ def main():
                         ("R17", bloque_r17), ("R19", bloque_r19), ("R27", bloque_r27),
                         ("RC", bloque_recoil), ("AX", bloque_ax),
                         ("UZI", bloque_uzi),
-                        ("S13", bloque_modscript), ("P35", bloque_partcfg),
+                        ("S13", bloque_modscript), ("MUNDO", bloque_mundo),
                         ("VW", bloque_wheelrot), ("AW", bloque_aimsens),
-                        ("LM", bloque_moon), ("LL", bloque_distlights),
-                        ("GA", bloque_gangaim),
-                        ("AS", bloque_altsit)):
+                        ("AS", bloque_altsit),
+                        ("VEHI", bloque_vehi)):
         res[nombre] = fn(lineas)
 
     print("\n== resumen ==")
@@ -4461,8 +3920,8 @@ def main():
         print("   B   FALLO    build de la sesion distinta de la servida (ver arriba)")
     for nombre in ("D2", "D4", "D5", "D6", "D7", "D8", "R2", "R3", "J1",
                    "R5", "R9", "R11", "L2", "R3b", "L6", "H", "R12", "R13", "R14", "R15", "R16",
-                   "R17", "R19", "R27", "SR", "LB", "AX", "UZI", "S13", "P35", "VW",
-                   "AW", "LM", "LL", "GA", "AS"):
+                   "R17", "R19", "R27", "SR", "LB", "AX", "UZI", "S13", "MUNDO", "VW",
+                   "AW", "AS", "VEHI"):
         estado, motivo = res[nombre]
         print("   %-3s %-9s %s" % (nombre, estado, motivo))
     print("   RC  %-9s %s" % res["RC"])

@@ -13,10 +13,6 @@ node_modules/
 assets/
 !assets/README.md
 
-# Partida guardada que usa el test de regresión del slot 0 (dato del jugador:
-# la saca del navegador tools/extract-save-from-profile.mjs; nunca se commitea)
-tools/testdata/
-
 # Derivados de la copia legal (se generan con tools/, ver README.md)
 radio_light/
 streamed/
