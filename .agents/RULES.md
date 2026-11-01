@@ -209,10 +209,25 @@ There is no automatic history phase. Do not create history records unless explic
 
 ## Local additions (preserved on update)
 
+- **Never use the browser to verify gameplay.** Driving the game through an agent-controlled
+  browser (preview, Playwright, screenshots, DOM probes) is forbidden: only the player
+  perceives FPS, sound, feel and timing in this project, and an agent's browser session is
+  not the player's machine. Verification of gameplay comes from the player's session logs
+  (`gta_vc_browser/web/odtrace*.log`) and from code/data inspection. An agent may read logs
+  and build the engine; it must never claim it tested, measured or reproduced a gameplay
+  behaviour, nor close a change on the strength of its own browser run.
+
 - **No comments in code.** Nothing we write or modify carries comments. The rule,
   its scope and where the documentation lives are in
   `.agents/CODING_STANDARDS.md` §1; it is checked at closure by the DoD in
   `.agents/WORKFLOW.md`.
+- **Transplant equivalence gate (ADR-021).** Antes de dar por trasplantada una función se
+  compara bloque a bloque contra el fuente del mod o contra el recibo REA: condiciones,
+  retornos tempranos, constantes, clips, ids y llamadas. Cada fila es `present`,
+  `translated`, `excluded` (con su motivo) o `gap` (con su tanda de cierre). Ningún `gap`
+  llega a un cierre sin cerrarse o re-declararse, y un valor inventado por el port es una
+  fila `excluded`, nunca un resto. Un trasplante a medias no es un trasplante: su DoD
+  queda abierto.
 
 <!-- USER-END -->
 

@@ -1,6 +1,6 @@
 ---
 name: 04-opcional-escalar
-status: ENRICHED
+status: EXECUTED
 type: feature
 domain: gameplay-climb
 owner_rules: .agents
@@ -41,4 +41,15 @@ NPCs)" — SA-style.
    capturas).
 
 **PASS:** subir una valla concreta del save de prueba (posición fija, medida) con
-captura antes/después, y `slot0-load-test.mjs` en PASS.
+captura antes/después, y el veredicto del jugador en su partida.
+
+## Closure (memoria persistente)
+
+> Cierre por limpieza del proyecto (2026-10-23), a petición del jugador. Era el
+> anexo opcional de escalada y no se ejecutó; se conserva como referencia
+> histórica (los planes no se borran).
+
+- Qué cambió: nada; no se ejecutó.
+- Verificación: no ejecutada.
+- Resultado: cerrado sin ejecutar.
+- Pendientes: ninguno; queda como referencia histórica.

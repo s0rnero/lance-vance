@@ -35,9 +35,9 @@ owner_rules: .agents
 
 - **Migración al harness 1.4 (07/10/2026).** Todos los planes heredados del harness viejo
   llevan ya frontmatter (`name`, `status`, `type`, `domain`, `owner_rules`, `created`).
-  Regla del jugador: **todos `EXECUTED`** salvo la escalada
-  (`escalada-climbing-completo.md` y `mecanicas/04-opcional-escalar.md`, que quedan
-  `ENRICHED` esperando su gate de ejecución).
+  Regla del jugador: **todos `EXECUTED`**. La escalada
+  (`escalada-climbing-completo.md` y `mecanicas/04-opcional-escalar.md`) se cerró
+  sin ejecutar en la limpieza del 2026-10-23.
 - Los planes heredados **conservan su nombre original** (sin `YYYY-MM-DD-<fam>.<iter>-<slug>`)
   y su campo `name` repite su propio slug: no se renumeran, para no romper las referencias
   cruzadas que otros planes y ADR hacen a esos nombres.

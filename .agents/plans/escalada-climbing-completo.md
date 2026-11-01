@@ -1,6 +1,6 @@
 ---
 name: escalada-climbing-completo
-status: ENRICHED
+status: EXECUTED
 type: feature
 domain: gameplay-climb
 owner_rules: .agents
@@ -788,5 +788,12 @@ asociaciones (300-306) → `GetAnimation(id)` indexa 0..6 **con** nuestros ids.
 
 ## Closure (persistent memory)
 
-> Se rellena al cerrar el plan. Sin esta entrada el plan no se da por
-> terminado (DoD).
+> Cierre por limpieza del proyecto (2026-10-23), a petición del jugador. El plan
+> no llegó a ejecutarse: quedó esperando el gate de ejecución y se cierra para no
+> dejarlo abierto. Se conserva como memoria permanente (los planes no se borran).
+
+- Qué cambió: nada; el plan quedó en `ENRICHED` y no se ejecutó.
+- Verificación: no ejecutada.
+- Resultado: cerrado sin ejecutar.
+- Pendientes: la mecánica de escalada completa; si se retoma, vuelve a pasar por
+  el flujo como plan nuevo.

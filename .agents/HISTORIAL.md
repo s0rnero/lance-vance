@@ -5213,3 +5213,410 @@ no trae deja el sprite sin textura y el frame revienta. Es la fila «Blips/icono
 **Consecuencia para las medidas.** El escenario `agachado` no llego a correr (la sesion no
 alcanza el estado 9 en 240 s: se queda en 8, el video de intro), asi que sus bloques salen
 `SIN DATOS`. No faltan trazas de codigo: falta partida que medir.
+
+## 19/10/2026 — El agachado que no se apagaba y el autoguardado que escribia dos veces (build `T10-T13b`)
+
+**Raiz del ped deformado/agachado.** `CPed::ClearDuck` empezaba con
+`if (RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE)) return;`; como casi todo ped
+tiene `ANIM_STD_IDLE`, la funcion era un no-op: `bIsDucking` nunca volvia a false y los clips
+`CROUCH_IDLE/FORWARD/BACKWARD` se quedaban a peso 1. Se quito esa guarda, se anaden los rolls
+`CROUCH_ROLL_L/R` al fundido y se fuerza `m_nStoredMoveState = PEDMOVE_NONE` para que
+`SetMoveAnim` elija el clip de pie al salir del agachado. En `Ped.cpp:SetMoveAnim` se funde el
+clip contrario antes de entrar el nuevo (nunca dos clips de cuerpo entero a peso 1) y se sella
+`m_nStoredMoveState`. `SetDuck` ya no descarta la orden cuando el ped sigue agachado: alarga
+`m_duckTimer`, y `Duck` llama a `ClearDuck` cuando ya no queda ningun clip de agachado (camara
+y estado incluidos).
+
+**Autoguardado.** El opcode 0FA3 del script y el respaldo de `REGISTER_MISSION_PASSED` podian
+escribir la ranura 9 en el mismo frame. `DoAutoSave` lleva ahora un guardia de reentrada
+(`bAutoSave`) y un reloj de 1 s, y traza siempre `VICEEXT autosave slot=8 res=0|N`, que es lo
+que permitira verlo en `odtrace.log` despues de una mision.
+
+**Verificado ejecutando:** `bash gta_vc_browser/build.sh` -> `EXIT=0` (196 warnings, ninguno
+nuevo de estos ficheros); `tools/check-served-build.sh` -> `OK: ... TODAS las marcas`, con
+`VERSION = 2026-10-19-13.0-T10-T13b` servida; `vc-test.mjs --estatico` -> exit 0;
+`test_controls_axis.py` -> 85 tests OK. El log de juego que habia era de la build anterior
+(`T10-T13`), asi que hay que recargar fuerte para que el navegador baje el wasm nuevo.
+**Pendiente:** partida del jugador para confirmar el agachado/desagachado y el autoguardado.
+
+## 19/10/2026 (noche) — Paneles blancos, AEZAKMI y el aro del volante (build `T14`)
+
+**Lo que reporto el jugador.** (1) intermitentes que "siguen sin estar pegados" al coche,
+(2) taxi y otros coches con una puerta gris/blanca sin motivo, (3) al girar, las manos
+quedaban detras del volante, (4) con AEZAKMI la poli no reaccionaba pero seguian llegando
+coches y subian las estrellas.
+
+**1. Paneles blancos (la causa real de la "puerta gris").** `CVehicleModelInfo` tenia los
+arrays de serie (`NUM_FIRST_MATERIALS = 24`, `NUM_SECOND_MATERIALS = 20`) mientras que los DFF
+adaptados del mod llevan mas marcadores. El `taxi` servido tiene **27** materiales con el
+marcador de color primario (`60,255,0`): `GetEditableMaterialListCB` escribia 3 punteros fuera
+de `m_materials1` (dentro de `m_materials2`) y el terminador `nil` caia en la lista secundaria.
+Resultado: los materiales secundarios (`255,0,175`, los pasos de rueda y paneles del
+`chassis_hi`) se quedaban con el blanco que el propio callback les pone y nunca recibian el
+color del coche. `tools/dff_dump.py` sobre el `taxi` del mod lo confirma (27 marcadores, 2
+secundarios). Se copian los tamanos del mod (`IMPROVED_VEHICLES // More materials and colors`:
+50/50) y se anade tope en el callback para que ningun modelo pueda volver a desbordar.
+
+**2. AEZAKMI.** El reset de `CWanted::Update` llegaba tarde: los delitos del mismo fotograma
+seguian sumando caos y `ReportCrimeNow -> UpdateWantedLevel` volvia a poner nivel 1 (HUD con
+estrella y despacho leyendo `m_MaxCops`). Ahora, con `bNoWantedCheat`, `RegisterCrime`,
+`RegisterCrime_Immediately` y `ReportCrimeNow` salen sin encolar ni cotizar, y `Update` limpia
+cualquier nivel/caos residual (scripts). Al encender el truco se llama a `ResetPolicePursuit()`
+para soltar a los que ya venian persiguiendo.
+
+**3. Volante.** Se mantiene el eje Y del dummy y el pivote, pero el giro se limita a 20 grados
+(`VICEEXT_VOLANTE_MAX`). Con 1x el aro daba ~29 grados a tope y las manos de VC (dos clips
+fijos, no siguen el giro) se veian por detras en la segunda mitad del recorrido.
+
+**4. Intermitentes.** No habia codigo cambiable de "pegado": desde la build `T10-T13b` el
+intermitente es la malla del propio coche (`indicator*`) con su material, no una corona. Las
+capturas del jugador son de las 18:36, anteriores a ese cambio (el wasm se relinkeo a las
+19:16). Se comprueba en el diff que `ViceExtProcessTurnSignals` ya no registra ninguna corona.
+
+**Verificado ejecutando:** `bash gta_vc_browser/build.sh` -> link final OK (`reVC.wasm`
+19:59, sin `error:`); `tools/check-served-build.sh` -> `OK: el motor servido lleva TODAS las
+marcas`, `EXIT=0`; `node tools/vc-test.mjs --estatico` -> `estático: OK en 4.3 s`, `EXIT=0`
+(los AVISO son del log viejo `T10-T13b`, no de esta build). `VERSION` servida:
+`2026-10-19-13.0-T14`.
+**Pendiente:** partida del jugador para el veredicto visual de los cuatro puntos. Hay que
+recargar fuerte (Ctrl+F5) para que el navegador baje el wasm `T14`.
+
+## 19/10/2026 (noche, tanda `T2`) — La moto policial: asiento, postura y luces
+
+**Lo que reporto el jugador despues de `T14b`.** (1) en primera persona muchos coches no
+giran el volante y otros si; (2) en la moto de policia, a velocidad, el personaje y las
+luces rojas se ven desfasados (captura: jinete alto y atrasado, dos manchas rojas
+detras del guardabarros).
+
+**1. Volante: limite de datos, no de codigo.** `tools/dff_dump.py` sobre los 4640 DFF del
+`gta3.img` servido: solo **18** traen el dummy `steeringwheel` (admiral, ambulan, baggage,
+banshee, cheetah, firetruk, hellenbach, idaho, infernus, patriot, peren2, police, premier,
+sabre, sabretur, taxi, trash2, vicechee) y todos tienen su malla colgando del dummy. De los
+115 vehiculos de `default.ide`, 73 coches no lo traen: en esos el aro esta **fundido en
+`chassis_hi`** y no hay nodo que girar. Es la misma limitacion que tiene el mod (su
+`AdaptingVehiclesEN.txt` pide anadir el dummy a mano); no se inventa una deteccion de
+vertices. La primera persona de esos 73 se queda con el aro fijo.
+
+**2. Luces de la sirena.** El bloque estaba en `CBike::ProcessControl`, que corre **antes**
+de que la fisica integre la moto: la corona se registraba con la posicion del fotograma
+anterior. A 30 m/s son ~0,5 m por paso, y ahi estaban las manchas rojas rezagadas. Se
+mueve a `CBike::PreRender` (el mod lo llama desde `DoVehicleLights`, tambien PreRender).
+Ademas, antes solo se refrescaban las coordenadas de la fase que tocaba y la otra pareja
+se quedaba clavada; ahora se refrescan las **cinco** cada fotograma (`UpdateCoronaCoors`);
+la luz superior se registra siempre en rojo (antes solo en una fase).
+
+**3. Jinete.** `polwintergreen.dff` pone `ped_frontseat` en `(0, -0.29, 0.51)` y
+`ped_backseat` en `(0, -0.69, 0.62)`, mientras su gemela civil `wintergreen` —mismo
+chasis, horquillas y ruedas a la misma altura— los tiene en `(0, -0.29, 0.12)` y
+`(0, -0.63, 0.38)`. Con 0,51 el origen del ped (los pies) queda ~39 cm por encima del
+sillon: el jinete flota, no llega a los reposapies y la camara de primera persona sube lo
+mismo (`Cam.cpp` usa `GetFrontSeatPosn`). Se corrigen los dos dummies en
+`CVehicleModelInfo::PreprocessHierarchy` solo para ese modelo. Ademas el IDE del mod le
+da el grupo `biked` (moto de campo) cuando es el mismo manillar alto de la civil
+(`bikeh`); se le da `ASSOCGRP_BIKE_HARLEY` para que los brazos lleguen a los puños.
+
+**Verificado ejecutando:** `build.sh` -> link OK sin `error:` (`T2`); `check-served-build.sh`
+-> `OK: ... TODAS las marcas`, `EXIT=0`; `node tools/vc-test.mjs --estatico` -> `OK en 4.8 s`,
+`EXIT=0`. Se actualiza el patron de version del test a la serie `14.0` (el plan
+`14.0-silentpatch` ya habia subido `VERSION`); no cambia lo que exige, solo deja de atarse a
+`13.0`. `VERSION` servida: `2026-10-19-14.0-T2`.
+**Intento de veredicto visual:** la sonda vieja (`siren-smoke-test.mjs`) no llega a partida
+(`FPHASE 0`): la partida de `tools/testdata` se cae en `CRunningScript::Load` (el problema
+conocido de save/`main.scm`). Con `VC_NUEVA_PARTIDA=1` el arnes SI entra a jugar y el truco
+llega a crear la moto (`CARSPAWN model=6507`), y el bloque nuevo emite `BSIREN` desde
+`PreRender`; pero en las capturas la camara estaba mirando a una pared y la moto no salio
+en cuadro, asi que **el asiento/postura sigue pendiente del ojo del jugador**. Hay que
+recargar fuerte (Ctrl+F5) para bajar el wasm de `T2`.
+
+## 29/10/2026 — Autocentro en primera persona, empujon, efectos y moto (build `T35`)
+
+**Lo que reporto el jugador.** El autocentrado de la camara en primera persona dentro del
+coche no se aplico ni una vez (`VICEEXT 1p auto auto=0` en 29 muestras, con 13,7 y 29,8
+grados de error); al soltar el apuntado la camara saltaba atras; el personaje seguia
+moviendo los coches como juguetes corriendo; el agua de la fuente y el fundido del fuego
+iban demasiado rapido; y en la moto policial 6507 las manos no llegaban al manillar.
+
+**1. Autocentro: el defecto estaba en el suelo del divisor.** El bloque del mod divide el
+avance por `Max(GetTimeStep(), 1.0f)`. Ese suelo solo es `dt` por debajo de 50 FPS (a 30
+FPS `dt` vale 1,667), asi que a 60/90/120 FPS dividia por 1 en vez de por `dt` y el avance
+por frame caia con `dt²`. La prueba nueva `tools/fp-autocenter-check.py` lo midio: 2,07 s
+hasta 2 grados a 30 FPS y 5,11 s a 120. Con el suelo en 0,25 (solo actua a partir de 200
+FPS; a 30 y 50 FPS el valor es identico al del mod) queda 2,067 s a 30 FPS y 2,100 s a
+60/90/120, con error final 1,14 grados en los cuatro. El propio bloque apaga `BetaSpeed`
+por debajo de 0,0001, asi que 1 grado no es alcanzable ni a 30 FPS: el criterio de la
+prueba es 2 grados, no 1.
+
+**2. Resto del plan.** `Physical.cpp` escala la correccion posicional ped-coche con
+`GetTimeStepFix()` (a 30 FPS vale 1,0, igual que antes). `Particle.cpp` avanza fundido y
+rotacion con `GetLogicalFramesPassed()`, `ParticleObject.cpp` clampea `m_nSkipFrames` y
+reparte el grupo de la fuente, y `Weather.cpp` limita lluvia y `StreamAfterRainTimer` a 30
+Hz. `Bike.cpp` da DIRT a la 6507 y STANDARD a la Streetfighter; `CarAI.cpp` espera el
+bloque del propio modelo; el override de asiento de la 6507 se conserva (decision 19/10)
+y se traza. `Streaming.cpp` completa la clase 8 por deficit sin quitarle turnos al stock.
+
+**Verificado ejecutando:** `build.sh` -> `EXIT=0`; `check-served-build.sh` -> `OK: ...
+TODAS las marcas`, `EXIT=0`, `VERSION = 2026-10-29-24.0-T35`; `camera-fp-init-check.py`
+-> `dot=1.000000`; `fp-autocenter-check.py` -> OK (1,6 % de dispersion);
+`particle-fade-check.py`, `fps-invariant-check.py` -> 0,0 %; `vehicle-class-check.py` ->
+OK (6/6, stock sin inanicion).
+**Pendiente:** confirmar a ojo en la proxima partida normal la pose del jinete con DIRT y
+el ritmo del fundido; leer `VICEEXT 1p auto auto=1`, `aimrel rel=1 -> 0`, `fountain n`,
+`VICEEXT bike` y `CARPOOL c8=6`/`CARSPAWN model=6505`. Recargar fuerte (Ctrl+F5) para
+bajar el wasm de `T35`.
+
+**Iteracion 24.2 (nombre de la Manchez).** El HUD mostraba `MANCHEZ missing` porque la IDE
+pide la clave `MANCHEZ` y la GXT servida no la tenia; `Text.cpp:421` devuelve `"%s
+missing"` para cualquier clave ausente. Faltaban las cinco claves de los vehiculos nuevos
+(`MANCHEZ`, `STRTFTR`, `HELLENB`, `WINTERG`, `VCPDWTR`). Se anadieron a las seis GXT de
+`bootseed/text/` y `gamefiles/text/` con los nombres del mod, se reempaqueto `reVC.data`
+(borrando los artefactos del enlace, porque Ninja no sigue el contenido de `bootseed`) y se
+subio `VERSION`/`dataTag` a `2026-10-29-24.2-T36`. `check-served-build` OK; las cadenas
+estan en el `.data` servido. Hay que recargar fuerte: el cambio de dataTag purga la cache
+de datos.
+
+**Iteracion 24.1 (tras la partida).** El log dio la causa del autocentro: `auto=0 look=1`
+en las 12 muestras, con `steps=35.00` y `beta` constante. El estado del raton se congelaba
+con un delta viejo cuando el navegador dejaba de mandar `mouseenter/leave` bajo pointer
+lock; `Pad.cpp` ahora trata `GLFW_CURSOR_DISABLED` como cursor dentro y limpia el estado
+cuando no actualiza. `Cam.cpp` exige mas de 2 px para considerar mirada (el ruido de 1 px
+reseteaba la puerta) y traza `mx/my`. El asiento de la 6507 sale del DFF (se retira el
+override 0,12). La capa web suelta el pointer lock al perder el foco. `ApplyCollision`
+resulto identico a re3 y al mod salvo las escalas de T35 y la rama de objetos del mod: el
+empujon a 30 FPS es el de la base, no una regresion del port. La fuente emite 30 grupos/s
+segun `VICEEXT fountain`; lo que quede es velocidad de particula de la base. Build
+`EXIT=0`, `check-served-build` OK y `fp-autocenter-check` OK.
+
+**Iteracion 24.3 (claves GXT que faltaban en la IDE).** Auditoria de las 115 lineas de
+vehiculo del bloque de coches de `bootseed/data/default.ide` contra las seis GXT: faltaban
+tres claves en todas. `PREMIER` es la del Premier 6504 (vehiculo nuevo del mod: el HUD
+mostraba `PREMIER missing`); `AEROPL` es la del airtrain 180 y `RCGOBLI` la del RC Goblin
+231, dos modelos vanilla que tampoco tenian nombre en la GXT americana original (no son
+entrables, pero la clave que pide la IDE no existia). Se anadieron a `bootseed/text/` y
+`gamefiles/TEXT/` en los seis idiomas con los nombres del modelo: `Premier`, `Airtrain` y
+`RC Goblin`. Se reempaqueto `reVC.data` borrando los artefactos de enlace (Ninja no sigue
+el contenido de `bootseed`): `build.sh` -> `EXIT=0`; las claves estan en el `.data` servido;
+`check-served-build.sh` -> `OK`, `EXIT=0`, `VERSION`/`dataTag` `2026-10-29-24.3-T37`.
+Hay que recargar fuerte (Ctrl+F5): el cambio de dataTag purga la cache IDB. Pendiente a ojo:
+entrar al Premier 6504 y leer `Premier` en el HUD.
+
+**Iteracion 24.4 (traza del empujon ped<->coche).** No se toca la fisica: se instrumenta
+para medir. `CPhysical::ApplyCollision` recibe `via` (`simplecar` o `entity`) y emite
+`VICEEXT push` como maximo 2 veces por frame y una cada 100 ms por via. Campos:
+`case=Aped_Bveh|Aveh_Bped`, `frame`, `t`, `dt`, `fix`, modelos, `mass`/`turnmass`/`speed`,
+`mfA/mfB`, masas efectivas `effA/effB`, velocidades `sA/sB/sSum`, impulsos `impA/impB`,
+fuerzas `fA/fB`, cambios inmediatos `dvA/dvB`, `scale`, `contactA/B`, `wallA/B` y
+`statusA/B`. `TestForCollision` emite `VICEEXT pushshift` (una cada 100 ms por coche) con
+`ratio`, `scale`, `depth`, `shift` y `mag` de la correccion posicional que recibe el coche
+cuando el que procesa la colision es el coche. La traza permite distinguir: impulso
+repetido por los dos procesadores en el mismo frame (`via=entity` y `via=simplecar`), masa
+efectiva/`dv` del coche, y desplazamiento posicional aparte. Build `EXIT=0`; cadenas
+`VICEEXT push`/`pushshift` en el wasm servido (`grep -a`); `check-served-build.sh` OK,
+`VERSION` 24.4-T38 y `dataTag` 24.3-T37 (sin cambio de datos). Recargar fuerte (Ctrl+F5)
+para bajar el wasm nuevo. Pendiente: una sesion corta empujando un coche aparcado a 30 y
+120 FPS; leer `web/odtrace.log` con `grep "VICEEXT push"` y `grep "VICEEXT pushshift"`.
+No se declara corregido el empujon: solo medido.
+
+**Iteracion 26.0 (trucos ViceEx, galeria de camara, pantallas de carga y dualPass).**
+Plan `2026-10-29-26.0-cheats-camara-carga.md` pasado a `EXECUTED`. El menu Ctrl+M
+ahora registra `Weapon set 4`, `Invincible`, `AirWays`, `Give teargas`, `No wanted`,
+`Give camera`, `RC Rocket` y `Big heads`; los dos ultimos dejan de ser toggles
+inline y pasan por funciones unicas que comparten menu y teclado. El set 4 es la
+union deliberada del port y el mod: conserva Beretta, Deagle, Shotgun2, Uziold,
+AK47, M16, Steyr y lanzagranadas, y anade Machete, Teargas, M60 y Camara.
+La camara ya no descarga la foto: crea `/userfiles/Gallery` y escribe
+`photo_NNNNN.png` numerado; `web/lib/gallery.js` abre desde
+`Other settings -> Gallery`, lista miniaturas, descarga, borra y persiste por
+`OD.syncUserfiles`. `FET_GAL` esta en los seis GXT de `gamefiles`, `streamed` y
+`bootseed` (el paquete precargado se reempaqueto borrando el enlace viejo). La carga web elige una
+`loadscN` una sola vez, `LoadSplash` recorta a ella y las precargas ya no piden
+`SPLASH1`. SkyGFX `dualPass` se implemento en librw
+(`defaultRenderCBImpl`/`defaultRenderCBDualPass`/`drawInstDualPass`), el mundo con
+`worldPipe=0` lo usa y los vehiculos conservan el arreglo del cristal;
+`g_bSkyDualPass` queda `true` por defecto. `vendor-librw-local-changes.patch`
+regenerado. Verificacion: `build.sh` `EXIT=0`; `check-served-build.sh` `EXIT=0`;
+`FET_GAL` presente en los seis GXT; `node --check` de `gallery.js` e `index.js`
+`EXIT=0`; manifiesto regenerado. Sin medicion de FPS ni partida extra, por
+decision del usuario. Pendiente a ojo en una partida normal: Ctrl+M, set 4,
+foto/galeria, portada `loadscN` y transparencias del mundo con `dual=1`.
+
+**Iteracion 27.0 (ajustes post-26).** Plan `2026-10-29-27.0-ajustes-post-26.md`, `EXECUTED`.
+Se quito `MENUACTION_GALLERY` de `FEO_OTH` (la accion y `gallery.js` esperan el diseno
+que indique el jugador); la partida nueva y la cargada usan la `loadscN` de la sesion
+(no `splash1`); `FET_AGC`, `LG_39` y `LG_40` quedaron en las seis GXT de `bootseed` y
+`streamed` y en el `.data` servido. La muerte en coche usa `CAR_DIE_*` y no sale del
+vehiculo, `PedSetDraggedOutCarCB` conserva el cadaver y `DoBulletImpact` no cambia la
+animacion del asiento por `HIT_FLOOR`. Las motos procesan intermitentes y los coches y
+motos sin nodos `indicator_*` encienden una corona ambar en faro/piloto; los NPC las
+usan aunque el `features.ini` del mod traiga `StandardCarsUseTurnSignals = 0`, con
+umbral 0.2. El humo del averiado emite una vez por tick logico de 30 Hz y baja a 0.45;
+el empujon peatonal corta la fuerza y el desplazamiento del coche solo cuando el peaton
+a pie es el que se mueve; el agua entra a 0.30 m y pasa a `PED_IDLE`. Verificacion:
+`build.sh` `EXIT=0`, `check-served-build.sh` `EXIT=0`, GXT presentes en las 12 copias,
+claves en `reVC.data`, `features.ini` con el hash esperado y `node --check` OK. `VERSION`
+T42, `dataTag` T41. Pendiente la partida visual: policia/Faggio, NPCs, humo, empujon,
+chapuzon, portada y ausencia de galeria.
+
+**Iteracion 28.0 (correcciones de la pasada de juego).** Plan
+`2026-10-29-28.0-correcciones-pasada-juego.md`, `EXECUTED`. `LoadSplash()` adopta el
+primer `loadscN` y la carga web reutiliza esa portada, en vez de recortar a `splash1`.
+Las 15 claves de menu (`FET_WSF` y `FEM_*`) estan en las seis GXT y en `reVC.data`;
+`LG_39`/`LG_40` quedan capitalizados. `lightsAllowed` apaga todos los materiales de
+faro, piloto, freno, marcha atras e intermitentes de un coche `WRECKED`/scorched. El
+humo de danado baja a 0.16 y se elimina la pluma duplicada del tramo de fuego. El agua
+entra al primer contacto si el fondo esta a mas de 1 m, con 4 m/s de ajuste vertical
+durante 20 frames. Los NPCs en coche se recolocan al final de
+`CAutomobile::ProcessControl()` aunque esten parados. Se quitaron las coronas
+inventadas de intermitente: coches con nodo usan color/ambient reales, coches con
+atomic de faro/piloto parpadean `lights`/`lightson` y las coronas de 0.2 quedan solo
+en `CAR_POS_INDICATORS_*` con nodo real; las motos hacen lo mismo con
+`BIKE_HEADLIGHT_L`/`BIKE_TAILLIGHT_L`. Se anadieron las cuatro posiciones de indicador
+al `eCarPositions` y a los descs de coche. Verificacion: `build.sh` `EXIT=0`,
+`check-served-build.sh` `EXIT=0`, GXT y `.data` comprobados, `features.ini` con hash
+`5bb030d48ff5`, `node --check` OK; `VERSION`/`dataTag` `2026-10-29-28.0-T44`. Limitacion:
+los modelos sin nodo ni atomic de luz (Bobcat, Sentinel, Stallion, Faggio y la mayoria
+del `gta3.img`) siguen sin intermitente porque el plan exige separar sus caras naranjas
+del DFF y ese split no se hizo; no se volvio a la corona falsa. Sin pasada visual en
+partida; la portada, el menu, el humo, el agua, el asiento y las intermitentes quedan
+para la prueba del jugador.
+
+**Iteracion 28.0 - cierre (revision final).** Las GXT de menu/mapa estaban en
+`gamefiles/TEXT` pero no se habian propagado a `streamed/TEXT` ni reestageado
+`bootseed`, asi que el build seguia sirviendo las viejas; se copiaron las seis GXT y se
+anadieron los seis valores dinamicos que tambien salian como `missing` (`FEM_169`,
+`FEM_219`, `FEM_4D4`, `FEM_16D`, `FEM_IVR`, `FEM_SL9`) y los cinco textos de leyenda
+que faltaban (`LG_41` carrera, `LG_42` tienda, `LG_43` paquete, `LG_44` acrobacia,
+`LG_45` masacre). Se creo
+`tools/indicator_audit.py` (115 modelos de `default.ide`, nodos y pixeles naranjas) y
+`gamefiles/models/indicator_caps.json`; `--patch faggio` separo las 32 caras naranjas de
+`faggio8bit128` en los nodos reales `indicator_lr`/`indicator_rr` (16 por lado), sin
+coronas. La moto de policia es `polwintergreen` (no `policeb`) y ya trae los cuatro
+nodos `indicator_*`. Verificacion: `build.sh` `EXIT=0`, `check-served-build.sh`
+`EXIT=0` (`VERSION`/`dataTag` T45), `indicator_audit.py --check` `EXIT=0`, GXT presentes en
+`bootseed` y 6 veces en `reVC.data`. El navegador de pruebas sigue en estado 7 sin
+partida: la comprobacion visual de Faggio, humo, agua, asiento y portada queda para el
+jugador.
+
+**Iteracion 28.0 - intermitentes del Moonbeam y similares (29/10, noche).** El jugador
+mostro el Moonbeam con un destello amarillo junto a la lente naranja real. Se quito el
+fallback que parpadeaba el faro/piloto entero cuando no habia nodo `indicator_*` (coches
+y motos): ahora sin nodo no se enciende nada. `indicator_audit.py` se limito a
+`chassis_hi`, elige el material naranja con mas caras reales y solo separa racimos
+compactos y simetricos, dejando pintura/tiras/reflectores en la carroceria. Se parchearon
+Moonbeam, Regina, Comet, Glendale, Burrito, Sentinel, Sentinel XS, Phoenix, Caddy,
+Stinger, Esperant, Washington, Banshee, Oceanic, Greenwood y Blista Compact (Faggio ya
+tenia el split anterior); Mesa se restauro porque movia 53 caras, incluida una tira ancha
+del frontal. Auditoria: 115 modelos, 40 con nodo; JSON en gamefiles, streamed y bootseed.
+Verificacion: `build.sh` `EXIT=0`, `check-served-build.sh` `EXIT=0` con
+`VERSION`/`dataTag` `2026-10-29-28.0-T47`, `node --check` OK y validacion estructural de
+los DFF (los triangulos retirados coinciden exactamente con los nodos nuevos). Tambien se
+quitaron las coronas de 0.2 en `CAR_POS_INDICATORS_*`: queda solo el cambio de color y
+ambient del material del nodo, como el mod. Sin pasada visual en partida. Pendiente:
+lentes en bumper/puerta (Landstalker, Perennial, Bobcat, Pony, Rumpo, Hermes, Cabbie,
+Kaufman) necesitan split con transformacion al espacio del vehiculo.
+
+**Iteracion 29.0 - menu legible, portada de partida nueva y coche calcinado (30/10).** El
+jugador reporto claves `missing` en el menu (`FED_WST`, `FEC_LSX`, `FEC_EML`, `FES_SAV`...),
+una pantalla *Ajustes de pantalla* que el menu original no tenia, la portada retail en
+partida nueva, stops rojos en coches explosionados y demasiado humo tapando el fuego. Se
+anadieron las 16 claves que faltaban a las seis GXT (con acentos en espanol y frances) y se
+copiaron a `gamefiles/TEXT`; `bootseed` regenerado. La fila y la pantalla del WFP quedan
+tras `VICEEXT_WFP_MENU` (apagado), sin tocar la lectura del INI. La partida nueva pide
+`GetLevelSplashScreen(0)` en vez de `loadsc0`, asi que usa la misma coleccion `loadscN` que
+la carga de partida. Las tres ramas de sirena de `CAutomobile::PreRender()` exigen
+`!bRenderScorched && status != STATUS_WRECKED`, y `BlowUpCar()` anula `m_fBrakePedal`. El
+humo baja (`odPlumeSize` 0.16 -> 0.05, `odSmokeSize` 0.22 -> 0.13) y la pluma del fuego se
+acerca al coche. Guardas nuevas en `CPed::SetPedPositionInCar()` y en el repaso de NPCs
+sentados por si el coche ya no existe. Verificacion: `build.sh` `EXIT=0`,
+`check-served-build.sh` `EXIT=0` con `VERSION`/`dataTag` `2026-10-30-29.0-T49`,
+`node --check` OK y las 18 claves presentes en `reVC.data`. El navegador de pruebas sigue
+sin aceptar partida (estado 7, sin entrada real), asi que la pasada visual queda para el
+jugador; el crash de `BART pct=4` no se pudo reproducir.
+
+**Iteracion 31.0 - muerte en coche: sin desmembrado y sin chorro (30/10, tarde).** Plan
+`2026-10-30-31.0-muerte-en-coche-sin-chorro.md`, `EXECUTED`. El jugador volvio a ver el
+chorro de sangre sobre el asiento del taxi. Eran tres cosas sumadas: `InflictDamage`
+desmembraba al ped sentado (deja `m_bodyPartBleeding`), `ProcessControl` emitia
+`PARTICLE_BLOOD_SPURT` durante todo el `CAR_die_*`, y el repaso de asientos del 28.0
+recolocaba tambien a los muertos, fijandolos a la pose de sentado encima de la animacion.
+Guardas: `dontRemoveLimb = true` si `InVehicle()`; `RemoveBodyPart` no toca el libro de
+partes en coche; el surtidor exige `!InVehicle()`; el repaso de asientos salta a
+`DyingOrDead()`. Desvio consciente del mod (su `RemoveBodyPart` no mira el vehiculo): el
+jugador pide el comportamiento sin chorro. `VERSION` a `2026-10-30-31.0-T64`; `dataTag`
+sin cambios (no hay datos nuevos). Verificacion: `build.sh` `EXIT=0`,
+`check-served-build.sh` `EXIT=0` y `VERSION` servida T64. Pendiente la pasada del jugador:
+matar a un conductor y ver el cadaver desplomado con `CAR_die_*`, sin chorro.
+
+**Iteracion 32.0 - crash al cargar trafico: version de STRUCT vs surface props (30/10).**
+Plan `2026-10-30-32.0-crash-matlist-version-struct.md`, `EXECUTED`. El jugador reporto que
+tras la ultima partida el juego se cayo y fue con lag. La traza (`web/odtrace.log`,
+20:19-20:23) da el fallo exacto: 66 `Couldn't find chunk MATLIST` y un
+`memory access out of bounds` en `rw::Geometry::create` via `Geometry::streamRead`,
+`RpGeometryStreamRead`, `GeometryListStreamRead1`, `RpClumpGtaStreamRead1`,
+`CFileLoader::StartLoadClumpFile`. Los modelos con `MATLIST` eran justo los que recibieron
+nodos de intermitente; la sesion anterior acumulo 4057 reintentos (el lag).
+Causa: `patch_model()` construia el nodo nuevo con `build_geometry(0xC02FFFF, ...)` pero
+copiaba el `prefix` del STRUCT origen, que en esos modelos NO lleva los 12 bytes de
+surface props. `libraryIDUnpackVersion` da 0x33002 (< 0x34000) para `0xc02ffff` (con
+props) y 0x34003 (>=) para `0x1003ffff` (sin props): la version declarada no cuadraba con
+el cuerpo, el lector consumia 12 bytes de menos, `findChunk(MATLIST)` arrancaba dentro del
+cuerpo y el modelo entero fallaba; cuando el desfase caia en un contador, el malloc
+reventaba. No era el `.dir`, ni el fade, ni datos del 8 de octubre.
+Arreglo: el nodo nuevo usa la version (y la del MATLIST) de su geometria origen.
+`tools/dff_structver.py` valida (una geometria por variante: mide el cuerpo y comprueba
+que la version declarada corresponda) y repara solo el campo de version (4 bytes, sin
+cambiar tamanos). Reparadas 34 geometrias en 8 modelos (`sentinel`, `banshee`, `comet`,
+`greenwoo`, `pheonix`, `sentxs`, `stinger` y el resto ya correctos) en los tres arboles
+(`streamed`, `gamefiles`, `bootseed`): `0 mal, 0 irreparables` en 10.295 geometrias.
+`repack_dir.py` recalculo el `.dir` (faggio 57->37 sectores, kaufman 146->96). `dataTag` a
+`2026-10-30-32.0-T65` (purga la cache IDB: los DFF viejos ya no se sirven) y `VERSION` a
+`2026-10-30-32.0-T65`; relink forzado borrando `reVC.js/.wasm/.html` porque ninja no ve el
+`--pre-js` como dependencia. Verificacion: `build.sh` `EXIT=0`,
+`check-served-build.sh` `EXIT=0` con `dataTag` T65 dentro del bundle y `VERSION` T65 en
+disco y servida, y simulacion del lector (`Geometry::streamRead`) sobre 11 modelos: 0
+geometrias sin `MATLIST`. Pendiente la pasada del jugador: saltar la primera cinematica y
+comprobar que no hay lag ni crash. **Insuficiente**: ver 34.0.
+
+**Iteracion 34.0 - malla intercalada (30/10, noche).** Plan
+`2026-10-30-34.0-malla-intercalada.md`, `EXECUTED`. El jugador reporto que tras el 32.0
+no cargaba ningun edificio ni pared y que volvio a crashear al omitir la escena. La traza
+nueva da el fallo real: `[rw] MESHBADMAT matIndex=1270 mats=6`, `FAIL model esperant` y
+`memory access out of bounds` en `rw::Frame::updateObjects` via
+`RpAnimBlendClumpUpdateAnimations`. `readMesh` lee cada malla como cabecera
+`{numIndices, matIndex}` + SUS indices (uint32); `build_mesh` escribia todas las cabeceras
+primero y luego todos los indices, asi que el motor tomaba indices por materiales. El
+modelo fallaba, el clump quedaba a medias y reventaba al actualizar frames. Medido: 30
+geometrias en 23 vehiculos (exactamente los nodos de intermitente), frente a 6951 bien.
+No era el `.dir` (cero `ODSHORT`, cero `loose miss`), ni la cache (purga T63->T65 en el
+log); el 32.0 era necesario pero dejo al descubierto este defecto anterior. Arreglo:
+`build_mesh` intercala; `dff_structver.py` valida y repara **los dos contratos** (version
+de STRUCT y disposicion de malla) sin cambiar tamanos. Reparadas 30 en `streamed`, 30 en
+`gamefiles` y 29 en `bootseed`; `0 version mal, 0 malla mal` en 7045/633/2617 geometrias.
+`dataTag`/`VERSION` a `2026-10-30-34.0-T66`, reenlace y `check-served-build.sh` `EXIT=0`.
+Quedan 64 geometrias antiguas en 39 modelos que no encajan en ninguna disposicion: no se
+tocan (el validador las marca `desconocida`). Pendiente la pasada del jugador: saltar la
+cinematica y ver el mundo cargar.
+
+## 2026-10-30 35.0 — IFP: desbordamiento de pila y traza del lector
+
+El crash al saltar la cinematica no era de los vehiculos: `CAnimManager::LoadAnimFile`
+leia `info.size` (dato del fichero) en `char buf[256]` sin comprobarlo. La traza lo
+demostraba: `[od] tabla anims llena (386+1064354174), salto <basura>` y 4 ms despues
+`memory access out of bounds` en `rw::Frame::cloneAndLink` al clonar el clump de un peaton
+(`CPopulation::AddToPopulation`). Ahora cada bloque se acota al buffer y se exige lectura
+completa; un bloque que no cuadra se descarta entero. Ademas el lector de modelos imprime
+una linea util: `[rw] MATLIST ausente: cuerpo/struct/fin/pos/tipo/ver/flags/verts/tris` y
+`[rw] clump fase2: ...` para la carga en dos fases. Verificado que los datos no estaban
+corruptos (6.039 DFF sin desfases; `ht_veg01_nt` identico a su copia y a `reVC.data`) y
+que los topes nuevos no rechazan nada valido (`PED.IFP` + 76 IFP de `cuts.img`;
+maximos seq=49, frames=4771). `build.sh` EXIT=0 y `check-served-build.sh` EXIT=0 con
+`dataTag`/`VERSION` en `2026-10-30-34.0-T67`.
+
+La traza del T67/T68 dio la causa de fondo, que no era geometria: **`bootseed/models/gta3.dir`
+no coincidia con `streamed/models/gta3.dir`** (md5 distinto, 603 entradas solapadas;
+`ht_mainfloor_dy.dff` y `ht_veg01_nt.dff` compartian el sector 115239). El motor resuelve
+cada modelo por `(sector, tamano)` con la tabla precargada y el lector suelto usa la de
+`streamed`, asi que servia un modelo de **suelo** donde iba la vegetacion: de ahi los
+`MATLIST`, los vertices fantasma y los suelos/texturas que no cargaban. Se unificaron las
+dos tablas (`gta3.dir` y `cuts.dir`): md5 identicos, 0 solapes en `bootseed` (antes 603) y
+el `.dir` empaquetado en `reVC.data` con el mismo md5 que el de disco. `build.sh` EXIT=0 y
+`check-served-build.sh` EXIT=0 con `dataTag`/`VERSION` en `2026-10-30-34.0-T69`.

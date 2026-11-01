@@ -244,6 +244,12 @@ User -> Orchestrator -> Context
 
 _Write your local additions below this line. Everything between USER-START and USER-END is kept as-is on every install/update; the rest of this file is overwritten._
 
+A plan that transplants mod code also meets this checklist before finishing:
+
+- [ ] Cada función trasplantada tiene su tabla de equivalencia bloque a bloque frente al
+  fuente del mod o el recibo REA (ADR-021), y no queda ninguna fila `gap` abierta sin
+  cerrar o re-declarar con su motivo.
+
 <!-- USER-END -->
 
 **Last updated:** September 2026

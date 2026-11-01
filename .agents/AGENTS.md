@@ -70,7 +70,6 @@ re3/                          # repo root, git branch `miami`
 | Dev / preview (Vite) | `cd gta_vc_browser/web && npm run dev` (port 2077) |
 | Verify the served build | `bash gta_vc_browser/tools/check-served-build.sh` |
 | Verify a gameplay log | `python gta_vc_browser/tools/viceext-log-check.py <log>` |
-| Headless smoke tests | `node gta_vc_browser/tools/vc-test.mjs ...` (ask the player first) |
 
 ## 2. Agent System Goal
 
