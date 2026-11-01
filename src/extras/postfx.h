@@ -19,6 +19,23 @@ public:
 	static bool MotionBlurOn;	// or use CMblur for that?
 	static float Intensity;
 
+	static bool UseTrailsBlur(void);
+	static bool UseTrailsMotionBlur(void);
+	static int32 BlurAlpha(void);
+	static float BlurOffset(void);
+
+	static bool ColourOverlayEnabled(void);
+
+	static void RenderSeamFix(RwCamera *cam, int32 offX, int32 offY);
+
+	static bool m_bYCbCrFilter;
+	static float m_lumaScale;
+	static float m_lumaOffset;
+	static float m_cbScale;
+	static float m_cbOffset;
+	static float m_crScale;
+	static float m_crOffset;
+
 	// smooth blur color
 	enum { NUMAVERAGE = 20 };
 	static int PrevRed[NUMAVERAGE], AvgRed;
@@ -42,5 +59,17 @@ public:
 	static void GetBackBuffer(RwCamera *cam);
 	static bool UseBlurColours(void) { return EffectSwitch != POSTFX_SIMPLE; }
 };
+
+extern bool g_bSkyDisableColourOverlay;
+
+extern bool g_bSkyTrailsBlur;
+extern bool g_bSkyTrailsMotionBlur;
+
+extern float g_fSkyCurrentBlurAlpha;
+extern float g_fSkyCurrentBlurOffset;
+
+extern int32 g_nSkySeamOffsetX;
+extern bool g_bSkySeamFix;
+extern int32 g_nSkySeamOffsetY;
 
 #endif

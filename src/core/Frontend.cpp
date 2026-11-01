@@ -180,17 +180,99 @@ const char* FrontendFilenames[][2] = {
 #endif
 };
 
+#ifdef VICEEXT_WFP_MENU_CANVAS
+static float s_fMenuCanvasWidth = 0.0f;
+static float s_fMenuCanvasOffset = 0.0f;
+
+static void
+UpdateMenuCanvas(void)
+{
+	s_fMenuCanvasWidth = 0.0f;
+	s_fMenuCanvasOffset = 0.0f;
+
+	float fRatio = 0.0f;
+	if (g_nWSPOptionMenuAspectRatio == 1)
+		fRatio = 16.0f / 9.0f;
+	else if (g_nWSPOptionMenuAspectRatio == 2)
+		fRatio = 21.0f / 9.0f;
+	if (fRatio > 0.0f) {
+		float fWidth = Min(SCREEN_HEIGHT * fRatio, SCREEN_WIDTH);
+		float fMinWidth = Min(SCREEN_HEIGHT * (4.0f / 3.0f), SCREEN_WIDTH);
+		if (fWidth < fMinWidth)
+			fWidth = fMinWidth;
+		s_fMenuCanvasWidth = fWidth;
+		s_fMenuCanvasOffset = (SCREEN_WIDTH - fWidth) * 0.5f;
+	}
+#ifdef __EMSCRIPTEN__
+	{
+		char t[96];
+		snprintf(t, sizeof t, "VEX ws canvas=%.0f off=%.0f screen=%.0fx%.0f", s_fMenuCanvasWidth, s_fMenuCanvasOffset, SCREEN_WIDTH, SCREEN_HEIGHT);
+		ODTRACES(t);
+	}
+#endif
+}
+
+static inline bool
+MenuCanvasActive(void)
+{
+	return s_fMenuCanvasWidth > 0.0f;
+}
+
+static inline float
+MenuCanvasBoxLeft(void)
+{
+	return s_fMenuCanvasOffset + (s_fMenuCanvasWidth - SCREEN_SCALE_X(DEFAULT_SCREEN_WIDTH)) * 0.5f;
+}
+
+static void
+DrawMenuCanvasMargins(void)
+{
+	if (!MenuCanvasActive())
+		return;
+	CSprite2d::DrawRect(CRect(0.0f, 0.0f, s_fMenuCanvasOffset, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+	CSprite2d::DrawRect(CRect(s_fMenuCanvasOffset + s_fMenuCanvasWidth, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+}
+
+#define MENU_CANVAS_LEFT (MenuCanvasActive() ? s_fMenuCanvasOffset : 0.0f)
+#define MENU_CANVAS_RIGHT (MenuCanvasActive() ? (s_fMenuCanvasOffset + s_fMenuCanvasWidth) : SCREEN_WIDTH)
+#define MENU_CANVAS_X(x) (MenuCanvasActive() ? (s_fMenuCanvasOffset + (x) * (s_fMenuCanvasWidth / (float)DEFAULT_SCREEN_WIDTH)) : SCREEN_STRETCH_X(x))
+#define MENU_CANVAS_FROM_RIGHT(a) (MenuCanvasActive() ? (s_fMenuCanvasOffset + s_fMenuCanvasWidth - (a) * (s_fMenuCanvasWidth / (float)DEFAULT_SCREEN_WIDTH)) : SCREEN_STRETCH_FROM_RIGHT(a))
+#else
+#define MENU_CANVAS_LEFT 0.0f
+#define MENU_CANVAS_RIGHT SCREEN_WIDTH
+#define MENU_CANVAS_X(x) SCREEN_STRETCH_X(x)
+#define MENU_CANVAS_FROM_RIGHT(a) SCREEN_STRETCH_FROM_RIGHT(a)
+#endif
+
+#ifdef VICEEXT_WFP_MENU_CANVAS
+#define MENU_X_RIGHT_ALIGNED(x) (MenuCanvasActive() ? (MenuCanvasBoxLeft() + SCREEN_SCALE_X(DEFAULT_SCREEN_WIDTH - (x))) : SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - (x)))
+#else
 #define MENU_X_RIGHT_ALIGNED(x) SCALE_AND_CENTER_X(DEFAULT_SCREEN_WIDTH - (x))
+#endif
 
 #ifdef ASPECT_RATIO_SCALE
 // All of the defines below replace the StretchX function. Otherwise use SCREEN_SCALE_X.
+#ifdef VICEEXT_WFP_MENU_CANVAS
+#define MENU_X_LEFT_ALIGNED(x) (MenuCanvasActive() ? (MenuCanvasBoxLeft() + SCREEN_SCALE_X(x)) : SCALE_AND_CENTER_X(x))
+#else
 #define MENU_X_LEFT_ALIGNED(x) SCALE_AND_CENTER_X(x)
+#endif
 #define MENU_X(x) SCREEN_SCALE_X(x)
 #define MENU_Y(y) SCREEN_SCALE_Y(y)
 #else
+#ifdef VICEEXT_WFP_MENU_CANVAS
+#define MENU_X_LEFT_ALIGNED(x) (MenuCanvasActive() ? (MenuCanvasBoxLeft() + SCREEN_SCALE_X(x)) : StretchX(x))
+#else
 #define MENU_X_LEFT_ALIGNED(x) StretchX(x)
+#endif
 #define MENU_X(x) StretchX(x)
 #define MENU_Y(y) StretchY(y)
+#endif
+
+#ifdef VICEEXT_WFP_MAP_ANCHOR
+static int32 s_nRadioAnchorLeft = 0;
+static int32 s_nRadioAnchorRight = 0;
+static bool s_bRadioAnchorValid = false;
 #endif
 
 #ifdef XBOX_MESSAGE_SCREEN
@@ -478,9 +560,6 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	m_nOptionHighlightTransitionBlend = 0;
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
 
-	// TRAZA (sección 3, bloque C2): cambios de pantalla del front-end. Las
-	// sondas headless no pueden ver el menú, así que dejan aquí su rastro
-	// (`scr` = eMenuScreen, `only` = menú de guardado de zona).
 	{
 		char t[96];
 		snprintf(t, sizeof t, "FEMENU scr=%d opt=%d only=%d", m_nCurrScreen, m_nCurrOption, (int)m_OnlySaveMenu);
@@ -503,6 +582,13 @@ CMenuManager::CMenuManager()
 	m_PrefsMP3BoostVolume = 0;
 	m_PrefsShowSubtitles = 0;
 	m_PrefsShowLegends = 1;
+#ifdef VICEEXT_AUTOSAVE
+	m_PrefsAutosave = true;
+	m_PrefsStoreGalleryPhotos = true;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	m_displayCollectiblesState = 0;
+#endif
 #ifdef ASPECT_RATIO_SCALE
 	m_PrefsUseWideScreen = AR_AUTO;
 #else
@@ -510,7 +596,7 @@ CMenuManager::CMenuManager()
 #endif
 	m_PrefsVsync = 0;
 	m_PrefsVsyncDisp = 1;
-	m_PrefsFrameLimiter = 1;
+	m_PrefsFrameLimiter = 0;
 	m_PrefsLanguage = 0;
 	field_54 = 0;
 	m_PrefsAllowNastyGame = 1;
@@ -631,6 +717,9 @@ CMenuManager::Initialise(void)
 	m_bShowMouse = false;
 #else
 	m_bShowMouse = true;
+#endif
+#ifdef VICEEXT_WFP_MENU_CANVAS
+	UpdateMenuCanvas();
 #endif
 	m_fMapSize = MENU_Y(162.0f); // Y because of HOR+
 	m_fMapCenterX = MENU_X_LEFT_ALIGNED(320.0f);
@@ -1073,7 +1162,11 @@ CMenuManager::DoSettingsBeforeStartingAGame()
 	DMAudio.Service();
 	m_bShutDownFrontEndRequested = true;
 	m_bWantToRestart = true;
+	#ifdef VICEEXT_SP_MOUSE_SENS_RESET
+	#else
 	TheCamera.m_fMouseAccelHorzntl = 0.0025f;
+	TheCamera.m_fMouseAccelVertical = 0.003f;
+	#endif
 	TheCamera.m_fMouseAccelVertical = 0.003f;
 	DMAudio.SetEffectsFadeVol(0);
 	DMAudio.SetMusicFadeVol(0);
@@ -1110,8 +1203,31 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 
 	switch (m_nCurrScreen) {
+#ifdef VICEEXT_AUTOSAVE
 		case MENUPAGE_CHOOSE_LOAD_SLOT:
 		case MENUPAGE_CHOOSE_DELETE_SLOT:
+			CSprite2d::Draw2DPolygon(MENU_X_LEFT_ALIGNED(38.0f), MENU_Y(85.0f),
+				MENU_X_LEFT_ALIGNED(615.0f), MENU_Y(75.0f),
+				MENU_X_LEFT_ALIGNED(30.0f), MENU_Y(320.0f), 
+				MENU_X_LEFT_ALIGNED(605.0f), MENU_Y(320.0f), CRGBA(LIST_BACKGROUND_COLOR.r, LIST_BACKGROUND_COLOR.g, LIST_BACKGROUND_COLOR.b, FadeIn(LIST_BACKGROUND_COLOR.a)));
+			CSprite2d::Draw2DPolygon(MENU_X_LEFT_ALIGNED(30.0f), MENU_Y(320.0f),
+				MENU_X_LEFT_ALIGNED(605.0f), MENU_Y(320.0f),
+				MENU_X_LEFT_ALIGNED(30.0f), MENU_Y(347.0f),
+				MENU_X_LEFT_ALIGNED(605.0f), MENU_Y(347.0f), CRGBA(25, 150, 200, FadeIn(LIST_BACKGROUND_COLOR.a)));
+#ifdef __EMSCRIPTEN__
+			{
+				static bool s_od17Franja = false;
+				if (!s_od17Franja) {
+					s_od17Franja = true;
+					ODTRACES("VEX 17 menu franja autosave");
+				}
+			}
+#endif
+			break;
+#else
+		case MENUPAGE_CHOOSE_LOAD_SLOT:
+		case MENUPAGE_CHOOSE_DELETE_SLOT:
+#endif
 		case MENUPAGE_CHOOSE_SAVE_SLOT:
 			CSprite2d::Draw2DPolygon(MENU_X_LEFT_ALIGNED(38.0f), MENU_Y(85.0f),
 				MENU_X_LEFT_ALIGNED(615.0f), MENU_Y(75.0f),
@@ -1134,10 +1250,10 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 		SET_FONT_FOR_MENU_HEADER
 		CFont::SetColor(CRGBA(30, 30, 30, FadeIn(255)));
-		CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(MENUHEADER_POS_X) - MENU_X(7.f), SCREEN_SCALE_Y(MENUHEADER_POS_Y + 7.f), TheText.Get(aScreens[m_nCurrScreen].m_ScreenName));
+		CFont::PrintString(MENU_CANVAS_FROM_RIGHT(MENUHEADER_POS_X) - MENU_X(7.f), SCREEN_SCALE_Y(MENUHEADER_POS_Y + 7.f), TheText.Get(aScreens[m_nCurrScreen].m_ScreenName));
 
 		CFont::SetColor(CRGBA(HEADER_COLOR.r, HEADER_COLOR.g, HEADER_COLOR.b, FadeIn(255)));
-		CFont::PrintString(SCREEN_STRETCH_FROM_RIGHT(MENUHEADER_POS_X), SCREEN_SCALE_Y(MENUHEADER_POS_Y), TheText.Get(aScreens[m_nCurrScreen].m_ScreenName));
+		CFont::PrintString(MENU_CANVAS_FROM_RIGHT(MENUHEADER_POS_X), SCREEN_SCALE_Y(MENUHEADER_POS_Y), TheText.Get(aScreens[m_nCurrScreen].m_ScreenName));
 	}
 
 	// Label
@@ -1217,7 +1333,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 			wchar* rightText = nil;
 			wchar* leftText;
-			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_9) {
+			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_AUTOSAVE) {
 				CFont::SetColor(CRGBA(0, 0, 0, FadeIn(255)));
 				CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 				CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
@@ -1262,13 +1378,8 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 			if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action != MENUACTION_LABEL && aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName[0] != '\0') {
 
-				// Sección 3, bloque C2b (20/09): el número de RANURA se saca de la
-				// entrada, no de su posición en la lista. Hacía falta para poner la
-				// fila del autoguardado **la primera** (antes coincidía por
-				// casualidad: entrada i = ranura i, así que mover la fila habría
-				// enseñado el nombre y la fecha de otra partida).
 				int odEntrySlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
-				if (odEntrySlot >= SAVESLOT_1 && odEntrySlot <= SAVESLOT_9) {
+				if (odEntrySlot >= SAVESLOT_1 && odEntrySlot <= SAVESLOT_AUTOSAVE) {
 					int odSlot = odEntrySlot - SAVESLOT_1;
 					CFont::SetRightJustifyOff();
 
@@ -1279,21 +1390,16 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					}
 
 					if (!leftText || leftText[0] == '\0') {
-#ifdef VICEEXT_AUTOSAVE
-						if (odEntrySlot == SAVESLOT_9) {
-							// El jugador quiere leer "autoguardado" aquí. El GXT del mod
-							// sólo trae `FEM_SL9` (y en inglés: "Autosave File Not
-							// Present"), así que de momento se pinta el rótulo propio
-							// (el texto del motor es `uint16_t`, de ahí la tabla a mano);
-							// la clave traducida en los 6 idiomas es DATO y va pedida a
-							// la sección 1 (ver el plan de la sección 3, C2b).
-							static wchar odAutosaveLabel[] = {
-								'A','U','T','O','G','U','A','R','D','A','D','O', 0
-							};
-							leftText = odAutosaveLabel;
-						} else
-#endif
 						{
+#ifdef __EMSCRIPTEN__
+							{
+								static bool s_od17Menu = false;
+								if (!s_od17Menu) {
+									s_od17Menu = true;
+									ODTRACES("VEX 17 menu autosave");
+								}
+							}
+#endif
 							sprintf(gString, "FEM_SL%d", odSlot + 1);
 							leftText = TheText.Get(gString);
 						}
@@ -1351,6 +1457,20 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						rightText = TheText.Get("FEM_OFF");
 					break;
 #endif
+#endif
+#ifdef VICEEXT_AUTOSAVE
+				case MENUACTION_AUTOSAVE:
+					if (m_PrefsAutosave)
+						rightText = TheText.Get("FEM_ON");
+					else
+						rightText = TheText.Get("FEM_OFF");
+					break;
+				case MENUACTION_GALLERY:
+					if (m_PrefsStoreGalleryPhotos)
+						rightText = TheText.Get("FEM_ON");
+					else
+						rightText = TheText.Get("FEM_OFF");
+					break;
 #endif
 				case MENUACTION_CTRLVIBRATION:
 					if (m_PrefsUseVibration)
@@ -1650,7 +1770,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #ifdef VICEEXT_FIRST_PERSON
 						action == MENUACTION_FOV_FP ||
 #endif
-						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9
+						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_AUTOSAVE
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
 #endif
@@ -1730,7 +1850,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					if (rightText) {
 						CFont::SetCentreOff();
 						CFont::SetRightJustifyOn();
-						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_9) {
+						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_AUTOSAVE) {
 							CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 							CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
 						} else {
@@ -2902,47 +3022,53 @@ CMenuManager::DrawBackground(bool transitionCall)
 
 			menuBg.Translate(m_nMenuFadeAlpha);
 			SetFrontEndRenderStates();
-			m_aFrontEndSprites[MENUSPRITE_BACKGROUND].Draw(CRect(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(255, 255, 255, FadeIn(255)));
+			m_aFrontEndSprites[MENUSPRITE_BACKGROUND].Draw(CRect(MENU_CANVAS_LEFT, 0.0f, MENU_CANVAS_RIGHT, SCREEN_HEIGHT), CRGBA(255, 255, 255, FadeIn(255)));
+#ifdef VICEEXT_WFP_MENU_CANVAS
+			DrawMenuCanvasMargins();
+#endif
 			if (m_nCurrScreen == MENUPAGE_MAP)
 				PrintMap();
 
 			// Left border
-			CSprite2d::Draw2DPolygon(SCREEN_STRETCH_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), 0.0f, SCREEN_HEIGHT,
-				SCREEN_STRETCH_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), 0.0f, 0.0f, CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), MENU_CANVAS_LEFT, SCREEN_HEIGHT,
+				MENU_CANVAS_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), MENU_CANVAS_LEFT, 0.0f, CRGBA(0, 0, 0, 255));
 
 			// Top border
-			CSprite2d::Draw2DPolygon(SCREEN_STRETCH_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), 
-				SCREEN_STRETCH_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), SCREEN_WIDTH, 0.0f, 0.0f, 0.0f, CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), 
+				MENU_CANVAS_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), MENU_CANVAS_RIGHT, 0.0f, MENU_CANVAS_LEFT, 0.0f, CRGBA(0, 0, 0, 255));
 
 			// Bottom border
-			CSprite2d::Draw2DPolygon(SCREEN_WIDTH, SCREEN_HEIGHT, 0.0f, SCREEN_HEIGHT, SCREEN_STRETCH_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
-				SCREEN_STRETCH_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_RIGHT, SCREEN_HEIGHT, MENU_CANVAS_LEFT, SCREEN_HEIGHT, MENU_CANVAS_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
+				MENU_CANVAS_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), CRGBA(0, 0, 0, 255));
 
 			// Right border
-			CSprite2d::Draw2DPolygon(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_STRETCH_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
-				SCREEN_WIDTH, 0.0f, SCREEN_STRETCH_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_RIGHT, SCREEN_HEIGHT, MENU_CANVAS_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
+				MENU_CANVAS_RIGHT, 0.0f, MENU_CANVAS_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), CRGBA(0, 0, 0, 255));
 		} else {
 			m_nMenuFadeAlpha = 255;
 			m_firstStartCounter = 255;
-			m_aFrontEndSprites[MENUSPRITE_BACKGROUND].Draw(CRect(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(255, 255, 255, FadeIn(255)));
+			m_aFrontEndSprites[MENUSPRITE_BACKGROUND].Draw(CRect(MENU_CANVAS_LEFT, 0.0f, MENU_CANVAS_RIGHT, SCREEN_HEIGHT), CRGBA(255, 255, 255, FadeIn(255)));
+#ifdef VICEEXT_WFP_MENU_CANVAS
+			DrawMenuCanvasMargins();
+#endif
 			if (m_nCurrScreen == MENUPAGE_MAP)
 				PrintMap();
 
 			// Left border
-			CSprite2d::Draw2DPolygon(SCREEN_STRETCH_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), 0.0f, SCREEN_HEIGHT,
-				SCREEN_STRETCH_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), 0.0f, 0.0f, CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), MENU_CANVAS_LEFT, SCREEN_HEIGHT,
+				MENU_CANVAS_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), MENU_CANVAS_LEFT, 0.0f, CRGBA(0, 0, 0, 255));
 
 			// Top border
-			CSprite2d::Draw2DPolygon(SCREEN_STRETCH_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y),
-				SCREEN_STRETCH_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), SCREEN_WIDTH, 0.0f, 0.0f, 0.0f, CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y),
+				MENU_CANVAS_X(menuBg.topLeft_x), SCREEN_STRETCH_Y(menuBg.topLeft_y), MENU_CANVAS_RIGHT, 0.0f, MENU_CANVAS_LEFT, 0.0f, CRGBA(0, 0, 0, 255));
 
 			// Bottom border
-			CSprite2d::Draw2DPolygon(SCREEN_WIDTH, SCREEN_HEIGHT, 0.0f, SCREEN_HEIGHT, SCREEN_STRETCH_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
-				SCREEN_STRETCH_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_RIGHT, SCREEN_HEIGHT, MENU_CANVAS_LEFT, SCREEN_HEIGHT, MENU_CANVAS_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
+				MENU_CANVAS_X(menuBg.bottomLeft_x), SCREEN_STRETCH_Y(menuBg.bottomLeft_y), CRGBA(0, 0, 0, 255));
 
 			// Right border
-			CSprite2d::Draw2DPolygon(SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_STRETCH_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
-				SCREEN_WIDTH, 0.0f, SCREEN_STRETCH_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), CRGBA(0, 0, 0, 255));
+			CSprite2d::Draw2DPolygon(MENU_CANVAS_RIGHT, SCREEN_HEIGHT, MENU_CANVAS_X(menuBg.bottomRight_x), SCREEN_STRETCH_Y(menuBg.bottomRight_y),
+				MENU_CANVAS_RIGHT, 0.0f, MENU_CANVAS_X(menuBg.topRight_x), SCREEN_STRETCH_Y(menuBg.topRight_y), CRGBA(0, 0, 0, 255));
 		}
 	} else {
 		menuBg.SaveCurrentCoors();
@@ -3030,19 +3156,6 @@ CMenuManager::DrawBackground(bool transitionCall)
 			m_nOptionHighlightTransitionBlend = 0;
 	}
 
-	// ---------------------------------------------------------------------------
-	// PORTADO — SilentPatch (MIT, © 2024 Adrian Zdanowicz "Silent")
-	//   https://github.com/CookiePLMonster/SilentPatch
-	//   SilentPatchVC/SilentPatchVC.cpp:2384 («OutroSplashFix» — «Fix the outro
-	//   splash flickering for a frame when fading in»)
-	// Qué se toma: la idea (el alfa del fade nunca debe salir de [0,255]).
-	//   Adaptación: el mod parchea el setter RGBA del binario original
-	//   (mov al → mov eax para no truncar a 8 bits); aquí se clampea el paso
-	//   del fade en origen (Min(..., 255)) — mismo criterio que
-	//   m_firstStartCounter — para que 240+20 no cruce a 260 (frame con alfa
-	//   260: el splash truncado a uint8 sale con alfa 4 y el logo VC con 251).
-	// Medible: criterio PASS = fundido del outro sin frame claro (jugador).
-	// ---------------------------------------------------------------------------
 	static uint32 LastFade = 0;
 
 	if (m_nMenuFadeAlpha < 255) {
@@ -3123,9 +3236,9 @@ CMenuManager::DrawBackground(bool transitionCall)
 
 	if (m_nCurrScreen != MENUPAGE_OUTRO)
 		if (m_firstStartCounter == 255) {
-			m_aFrontEndSprites[MENUSPRITE_VCLOGO].Draw(CRect(SCREEN_STRETCH_X(27.0f), MENU_Y(8.0f), SCREEN_STRETCH_X(27.0f) + MENU_X(130.f), MENU_Y(138.0f)), CRGBA(255, 255, 255, 255));
+			m_aFrontEndSprites[MENUSPRITE_VCLOGO].Draw(CRect(MENU_CANVAS_X(27.0f), MENU_Y(8.0f), MENU_CANVAS_X(27.0f) + MENU_X(130.f), MENU_Y(138.0f)), CRGBA(255, 255, 255, 255));
 		} else {
-			m_aFrontEndSprites[MENUSPRITE_VCLOGO].Draw(CRect(SCREEN_STRETCH_X(27.0f), MENU_Y(8.0f), SCREEN_STRETCH_X(27.0f) + MENU_X(130.f), MENU_Y(138.0f)), CRGBA(255, 255, 255, FadeIn(255)));
+			m_aFrontEndSprites[MENUSPRITE_VCLOGO].Draw(CRect(MENU_CANVAS_X(27.0f), MENU_Y(8.0f), MENU_CANVAS_X(27.0f) + MENU_X(130.f), MENU_Y(138.0f)), CRGBA(255, 255, 255, FadeIn(255)));
 		}
 
 	if (m_ShowEmptyBindingError) {
@@ -3640,8 +3753,26 @@ CMenuManager::LoadAllTextures()
 	if (m_bSpritesLoaded)
 		return;
 
+#ifdef VICEEXT_WFP_MENU_CANVAS
+	UpdateMenuCanvas();
+#endif
 	// First icon is hidden behind arrow
-	m_LeftMostRadioX = MENU_X_LEFT_ALIGNED(MENURADIO_ICON_FIRST_X - MENURADIO_ICON_SIZE);
+	int32 nRadioLeft = MENU_X_LEFT_ALIGNED(MENURADIO_ICON_FIRST_X - MENURADIO_ICON_SIZE);
+	int32 nRadioRight = MENU_X_LEFT_ALIGNED(MENURADIO_ICON_FIRST_X);
+#ifdef VICEEXT_WFP_MAP_ANCHOR
+	if (g_bWSPOptionMapAnchor && s_bRadioAnchorValid && nRadioRight > nRadioLeft) {
+		float fFraction = (float)(m_LeftMostRadioX - s_nRadioAnchorLeft) / (float)(s_nRadioAnchorRight - s_nRadioAnchorLeft);
+		fFraction = Clamp(fFraction, 0.0f, 1.0f);
+		m_LeftMostRadioX = nRadioLeft + (int32)(fFraction * (float)(nRadioRight - nRadioLeft));
+	} else {
+		m_LeftMostRadioX = nRadioLeft;
+	}
+	s_nRadioAnchorLeft = nRadioLeft;
+	s_nRadioAnchorRight = nRadioRight;
+	s_bRadioAnchorValid = true;
+#else
+	m_LeftMostRadioX = nRadioLeft;
+#endif
 	CTimer::Stop();
 
 	CStreaming::MakeSpaceFor(350 * CDSTREAM_SECTOR_SIZE); // twice of it in mobile
@@ -3910,9 +4041,6 @@ CMenuManager::SaveSettings()
 	SaveINISettings();
 #endif
 #ifdef __EMSCRIPTEN__
-	// Web: /userfiles es IDBFS; persistir ajustes al momento (el sync de
-	// beforeunload casi nunca completa). Punto único: todo cambio de
-	// ajustes pasa por SaveSettings().
 	EM_ASM({ try { OD.syncUserfiles('settings'); } catch (e) { console.log('[od] flush settings no disponible'); } });
 #endif
 }
@@ -4206,7 +4334,11 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 #else
 			// Adding marker
 			if (m_nMenuFadeAlpha == 255) {
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT // Fila 9.15: el mando marca con cuadro, no con cruz
+				if (CPad::GetPad(0)->GetRightMouseJustDown() || CPad::GetPad(0)->GetSquareJustDown()) {
+#else
 				if (CPad::GetPad(0)->GetRightMouseJustDown() || CPad::GetPad(0)->GetCrossJustDown()) {
+#endif
 					if (mapCrosshair.y > m_fMapCenterY - m_fMapSize && mapCrosshair.y < m_fMapCenterY + m_fMapSize &&
 						mapCrosshair.x > m_fMapCenterX - m_fMapSize && mapCrosshair.x < m_fMapCenterX + m_fMapSize) {
 
@@ -4226,7 +4358,11 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 				else
 					ZOOM(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, false);
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT // Fila 9.15: L2/R2 alejan y acercan el mapa
+			} else if (CPad::GetPad(0)->GetMouseWheelUp() || CPad::GetPad(0)->GetPageUp() || CPad::GetPad(0)->GetLeftShoulder2()) {
+#else
 			} else if (CPad::GetPad(0)->GetMouseWheelUp() || CPad::GetPad(0)->GetPageUp() || CPad::GetPad(0)->GetRightShoulder1()) {
+#endif
 				if (CPad::GetPad(0)->GetMouseWheelUp())
 					ZOOM(mapCrosshair.x, mapCrosshair.y, true);
 				else
@@ -4320,6 +4456,18 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 
 			static bool pressedL = false;
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT // Fila 9.15: R1 tambien conmuta la leyenda
+			if (!CPad::GetPad(0)->GetChar('L') && !CPad::GetPad(0)->GetChar('l') && !CPad::GetPad(0)->GetRightShoulder1()) {
+				pressedL = false;
+			}
+
+			if (!pressedL) {
+				if (CPad::GetPad(0)->GetChar('L') || CPad::GetPad(0)->GetChar('l') || CPad::GetPad(0)->GetRightShoulder1()) {
+					m_PrefsShowLegends = !m_PrefsShowLegends;
+					pressedL = true;
+				}
+			}
+#else
 			if (!CPad::GetPad(0)->GetChar('L') && !CPad::GetPad(0)->GetChar('l')) {
 				pressedL = false;
 			}
@@ -4330,6 +4478,21 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					pressedL = true;
 				}
 			}
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES // Fila 9.03: TAB/L1 conmutan que coleccionables se ven
+			if (CPad::GetPad(0)->GetTabJustDown() || CPad::GetPad(0)->GetLeftShoulder1JustDown()) {
+				if (m_displayCollectiblesState == 4)
+					m_displayCollectiblesState = 0;
+				else
+					m_displayCollectiblesState++;
+#ifdef __EMSCRIPTEN__
+				char t[128];
+				snprintf(t, sizeof t, "VEX hud coleccionables=%d", (int)m_displayCollectiblesState);
+				ODTRACES(t);
+#endif
+			}
+#endif
+
 			break;
 		}
 		case MENUPAGE_SOUND_SETTINGS:
@@ -5011,6 +5174,12 @@ CMenuManager::UserInput(void)
 
 	if (m_nMousePosX < 0) m_nMousePosX = 0;
 	if (m_nMousePosX > SCREEN_WIDTH) m_nMousePosX = SCREEN_WIDTH;
+#ifdef VICEEXT_WFP_MENU_CANVAS
+	if (MenuCanvasActive()) {
+		if (m_nMousePosX < (int32)MENU_CANVAS_LEFT) m_nMousePosX = (int32)MENU_CANVAS_LEFT;
+		if (m_nMousePosX > (int32)MENU_CANVAS_RIGHT) m_nMousePosX = (int32)MENU_CANVAS_RIGHT;
+	}
+#endif
 	if (m_nMousePosY < 0) m_nMousePosY = 0;
 	if (m_nMousePosY > SCREEN_HEIGHT) m_nMousePosY = SCREEN_HEIGHT;
 
@@ -5506,7 +5675,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
 
-				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9) {
+				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_AUTOSAVE) {
 					m_nCurrSaveSlot = saveSlot - SAVESLOT_1;
 					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
 						if (m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
@@ -5521,8 +5690,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			case MENUACTION_NEWGAME:
 				DoSettingsBeforeStartingAGame();
 #ifdef __EMSCRIPTEN__
-				// TRAZA FUSIONADA: petición de NEW GAME (sin load). Distingue
-				// wipes legítimos (usuario) de espurios en odtrace.log.
 				{
 					char t[160];
 					snprintf(t, sizeof t, "WR newgame-req screen=%d load=%d",
@@ -5539,10 +5706,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #endif
 			case MENUACTION_RESUME_FROM_SAVEZONE:
 #ifdef VICEEXT_SAVE_ANYWHERE
-				// Sección 3: "cancelar"/"aceptar" de las pantallas de guardado.
-				// Desde una zona de guardado se sale al juego (de serie). Si el
-				// menú de guardado se abrió desde el menú de pausa ("Saving
-				// anywhere"), vuelve al menú de pausa.
 				if (!m_OnlySaveMenu) {
 					SwitchToNewScreen(MENUPAGE_PAUSE_MENU);
 					break;
@@ -5573,41 +5736,13 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
 
-#ifdef VICEEXT_AUTOSAVE
-				// Sección 3, C2b (20/09): la ranura del autoguardado NO se puede
-				// pisar con un guardado normal (lo pidió el jugador: "ese slot no
-				// se podrá rescibir por una partida de carga normal, sólo el
-				// autoguardado podría hacerlo"). La pantalla de guardar ya no la
-				// lista; esto es el cinturón de seguridad del camino del opcode.
-				if (saveSlot == SAVESLOT_9 && !ViceExtAutosaveInProgress) {
-#ifdef __EMSCRIPTEN__
-					{
-						char t[120];
-						snprintf(t, sizeof t, "VICEEXT save-anywhere rechazado motivo=ranura-autosave slot=%d", saveSlot);
-						ODTRACES(t);
-					}
-#endif
-					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
-					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
-					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_SAV", 8);
-					break;
-				}
-#endif
 				if (saveSlot >= 2 && saveSlot <= 9) {
 #ifdef VICEEXT_SAVE_ANYWHERE
-					// Sección 3 (Vice Extended, v2.5 "Saving anywhere"): si NO venimos
-					// de una zona de guardado (eso es `m_OnlySaveMenu`), antes de
-					// pisar la ranura se exigen las tres condiciones del mod (sin
-					// misión, sin nivel de búsqueda y parado). Si no se cumplen, se
-					// avisa con FES_SAV ("You cannot save the game at this time").
 					if (!m_OnlySaveMenu && !ViceExtCanSaveAnywhere()) {
 						SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
 						strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
 						strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_SAV", 8);
 #ifdef __EMSCRIPTEN__
-						// TRAZA (C2): guardado en cualquier sitio RECHAZADO. Una línea por
-						// intento del jugador; con ella se distingue "el guardado rechazó"
-						// de "el menú no llegó a abrirse".
 						{
 							char t[128];
 							snprintf(t, sizeof t, "VICEEXT save-anywhere rechazado opt=%d slot=%d", m_nCurrOption, saveSlot);
@@ -5817,6 +5952,10 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					m_PrefsRelativeCamInVeh_DB_FP = false;
 					m_PrefsDoomMode_FP = false;
 #endif
+#ifdef VICEEXT_AUTOSAVE
+					m_PrefsAutosave = true;
+					m_PrefsStoreGalleryPhotos = true;
+#endif
 #ifdef VICEEXT_WEAPON_SIGHT
 					m_PrefsWeaponSight = 2;
 #endif
@@ -5874,10 +6013,10 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		if (!goBack) {
 #ifdef FIX_BUGS
 			int saveSlot = aScreens[currScreen].m_aEntries[currOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9 && Slots[currOption] != SLOT_OK)
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_AUTOSAVE && Slots[currOption] != SLOT_OK)
 #else
 			int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_9 && Slots[m_nCurrOption] != SLOT_OK)
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_AUTOSAVE && Slots[m_nCurrOption] != SLOT_OK)
 #endif
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_FAIL, 0);
 			else
@@ -6105,6 +6244,16 @@ CMenuManager::ProcessOnOffMenuOptions()
 #endif
 			TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 		}
+		SaveSettings();
+		break;
+#endif
+#ifdef VICEEXT_AUTOSAVE
+	case MENUACTION_AUTOSAVE:
+		m_PrefsAutosave = !m_PrefsAutosave;
+		SaveSettings();
+		break;
+	case MENUACTION_GALLERY:
+		m_PrefsStoreGalleryPhotos = !m_PrefsStoreGalleryPhotos;
 		SaveSettings();
 		break;
 #endif
@@ -6373,8 +6522,6 @@ CMenuManager::ProcessFileActions()
 			}
 			if (doingMissionRetry) {
 				RetryMission(MISSION_RETRY_TYPE_BEGIN_RESTARTING);
-				// Sección 3: la ranura del quicksave de misión (fichero 9), que es
-				// la que escribe SaveGameForPause(SAVE_TYPE_QUICKSAVE_FOR_*).
 				m_nCurrSaveSlot = PAUSE_SAVE_SLOT;
 				doingMissionRetry = false;
 			}
@@ -6394,7 +6541,6 @@ CMenuManager::ProcessFileActions()
 			DoSettingsBeforeStartingAGame();
 			m_bWantToLoad = true;
 #ifdef __EMSCRIPTEN__
-			// TRAZA FUSIONADA: petición de LOAD (pantalla + slot). Va a odtrace.
 			{
 				char t[160];
 				snprintf(t, sizeof t, "WR load-req screen=%d slot=%d load=%d",
@@ -6436,6 +6582,10 @@ CMenuManager::ProcessFileActions()
 #ifdef XBOX_MESSAGE_SCREEN
 			if (m_bDialogOpen && DialogTextCmp("FESZ_WR")) {
 				uint32 startTime = CTimer::GetTimeInMillisecondsPauseMode();
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+				bSaveAnywhere = !m_OnlySaveMenu;
+				bAutoSave = false;
+#endif
 				int8 SaveSlot = PcSaveHelper.SaveSlot(m_nCurrSaveSlot);
 				PcSaveHelper.PopulateSlotInfo();
 
@@ -6471,6 +6621,10 @@ CMenuManager::ProcessFileActions()
 			static bool waitedForScreen = false;
 
 			if (waitedForScreen) {
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+				bSaveAnywhere = !m_OnlySaveMenu;
+				bAutoSave = false;
+#endif
 				int8 SaveSlot = PcSaveHelper.SaveSlot(m_nCurrSaveSlot);
 				PcSaveHelper.PopulateSlotInfo();
 				if (SaveSlot) {
@@ -6524,9 +6678,6 @@ CMenuManager::SwitchMenuOnAndOff()
 			else
 				m_bMenuActive = !m_bMenuActive;
 
-			// TRAZA (sección 3, bloque C2): apertura/cierre del menú. Desde una
-			// sonda headless Escape no siempre llega al motor, así que ésta es la
-			// prueba de que el menú de pausa se abrió de verdad.
 			{
 				char t[96];
 				snprintf(t, sizeof t, "FEMENU open=%d esc=%d start=%d", (int)m_bMenuActive,
@@ -6705,22 +6856,8 @@ CMenuManager::DrawQuitGameScreen(void)
 	int alpha = m_nMenuFadeAlpha;
 #endif
 
-	// ---------------------------------------------------------------------------
-	// PORTADO — SilentPatch (MIT, © 2024 Adrian Zdanowicz "Silent")
-	//   https://github.com/CookiePLMonster/SilentPatch
-	//   SilentPatchVC/SilentPatchVC.cpp:4086 («Correct the duration of the outro
-	//   splash to 2.5 seconds»)
-	// Qué se toma: la idea y los números (75 ticks × ~33 ms ≈ 2,5 s a cualquier
-	//   fps). Adaptación: el mod parchea dos constantes del binario original
-	//   (tick 10→32 ms, cuenta 150→75); aquí se cambian las mismas constantes en
-	//   origen y se desactiva MUCH_SHORTER_OUTRO_SCREEN (config.h:454) para que el
-	//   outro dure lo legible en vez de 750 ms.
-	// Medible: criterio PASS = el splash del outro se ve ≈2,5 s y sale solo
-	//   (jugador; el tick usa GetTimeInMillisecondsPauseMode ⇒ sin fps fijos).
-	// ---------------------------------------------------------------------------
 #ifndef MUCH_SHORTER_OUTRO_SCREEN
 	static uint32 lastTickIncrease = 0;
-	// SilentPatch :4086 — el tick original (>10 ms) daba 1,5-5 s según fps
 	if (alpha == 255 && CTimer::GetTimeInMillisecondsPauseMode() - lastTickIncrease > 32) {
 		exitSignalTimer++;
 		lastTickIncrease = CTimer::GetTimeInMillisecondsPauseMode();
@@ -6809,6 +6946,9 @@ CMenuManager::PrintMap(void)
 	}
 
 	CRadar::DrawBlips();
+#ifdef VICEEXT_GPS
+	CRadar::DrawGPS(false);
+#endif
 	if (m_PrefsShowLegends) {
 		CFont::SetWrapx(MENU_X_RIGHT_ALIGNED(40.0f));
 		CFont::SetRightJustifyWrap(MENU_X_LEFT_ALIGNED(84.0f));
@@ -6878,7 +7018,14 @@ CMenuManager::PrintMap(void)
 
 	CFont::SetWrapx(MENU_X_RIGHT_ALIGNED(MENU_X_MARGIN));
 	CFont::SetRightJustifyWrap(MENU_X_LEFT_ALIGNED(MENU_X_MARGIN));
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT // Fila 9.15: pista con los botones del mando
+	if (CPad::GetPad(0)->IsAffectedByController)
+		DisplayHelperText("FEH_MPJ");
+	else
+		DisplayHelperText("FEH_MPH");
+#else
 	DisplayHelperText("FEH_MPH");
+#endif
 }
 
 void

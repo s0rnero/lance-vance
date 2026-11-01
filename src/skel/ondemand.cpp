@@ -1,9 +1,3 @@
-// Capa on-demand (solo web): fopen/open/stat/access consultan primero a JS.
-//
-// Con -sASYNCIFY, od_fetch() suspende el wasm mientras se descarga el
-// fichero y lo escribe en MEMFS; al reanudar, la apertura real lo encuentra.
-// Sin tocar el resto del motor: todo fopen/fread/fseek sigue igual.
-// Nativo: fichero inerte (todo tras __EMSCRIPTEN__).
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <stdio.h>
@@ -16,12 +10,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Pide el fichero a JS (descarga + escribe en MEMFS si falta).
-// Devuelve ruta canónica (malloc) o NULL.
 EM_ASYNC_JS(char*, od_fetch, (const char *cpath), {
   const p = UTF8ToString(cpath);
   try {
+    // T18: si el motor se queda colgado aquí, la sonda del jugador tiene que
+    // decir QUÉ fichero estaba esperando (no adivinarlo).
+    try { window.__vcFetchNow = p; } catch (e) {}
     const r = await OD.ensure(p);
+    try { window.__vcFetchNow = null; } catch (e) {}
     if (!r) return 0;
     const len = lengthBytesUTF8(r) + 1;
     const ptr = _malloc(len);
@@ -30,8 +26,6 @@ EM_ASYNC_JS(char*, od_fetch, (const char *cpath), {
   } catch (e) { return 0; }
 });
 
-// Contador de "carga bloqueante en curso" (ver ondemand.h). Se publica a JS:
-// mientras sea > 0, OD.ensure NO aplaza ficheros, espera a tenerlos.
 static int odBlockingDepth = 0;
 extern "C" void odBlockingPush(void)
 {
@@ -60,14 +54,10 @@ FILE *__wrap_fopen(const char *path, const char *mode)
 			FILE *f = __real_fopen(rp, mode);
 			free(rp);
 			if (f) return f;
-			// canonical falló: intentar original por compatibilidad
 		}
 	}
 	FILE *f = __real_fopen(path, mode);
 #ifdef __EMSCRIPTEN__
-	// Blindaje central (el de AddImage no cubría CFileMgr): un directorio
-	// abierto como fichero "funciona" pero todo read falla. Nunca es lo
-	// que el motor quiere: cerrar y devolver NULL para que pida bien.
 	if (f) {
 		struct stat st;
 		if (fstat(fileno(f), &st) == 0 && S_ISDIR(st.st_mode)) {

@@ -42,6 +42,8 @@ CTxdStore::AddTxdSlot(const char *name)
 	assert(def);
 	def->texDict = nil;
 	def->refCount = 0;
+	def->loadNumTextures = 0;
+	def->loadStreamPos = 0;
 	strcpy(def->name, name);
 	return ms_pTxdPool->GetJustIndex(def);
 }
@@ -126,10 +128,17 @@ CTxdStore::RemoveRefWithoutDelete(int slot)
 bool
 CTxdStore::LoadTxd(int slot, RwStream *stream)
 {
+	if(ms_pTxdPool == nil || slot < 0 || slot >= ms_pTxdPool->GetSize())
+		return false;
+	if(stream == nil)
+		return false;
+
 	TxdDef *def = GetSlot(slot);
 
 	if(RwStreamFindChunk(stream, rwID_TEXDICTIONARY, nil, nil)){
 		def->texDict = RwTexDictionaryGtaStreamRead(stream);
+		def->loadNumTextures = 0;
+		def->loadStreamPos = 0;
 		return def->texDict != nil;
 	}
 	printf("Failed to load TXD\n");
@@ -155,9 +164,14 @@ CTxdStore::LoadTxd(int slot, const char *filename)
 bool
 CTxdStore::StartLoadTxd(int slot, RwStream *stream)
 {
+	if(ms_pTxdPool == nil || slot < 0 || slot >= ms_pTxdPool->GetSize())
+		return false;
+	if(stream == nil)
+		return false;
+
 	TxdDef *def = GetSlot(slot);
 	if(RwStreamFindChunk(stream, rwID_TEXDICTIONARY, nil, nil)){
-		def->texDict = RwTexDictionaryGtaStreamRead1(stream);
+		def->texDict = RwTexDictionaryGtaStreamRead1(stream, &def->loadNumTextures, &def->loadStreamPos);
 		return def->texDict != nil;
 	}else{
 		printf("Failed to load TXD\n");
@@ -168,8 +182,15 @@ CTxdStore::StartLoadTxd(int slot, RwStream *stream)
 bool
 CTxdStore::FinishLoadTxd(int slot, RwStream *stream)
 {
+	if(ms_pTxdPool == nil || slot < 0 || slot >= ms_pTxdPool->GetSize())
+		return false;
+	if(stream == nil)
+		return false;
+
 	TxdDef *def = GetSlot(slot);
-	def->texDict = RwTexDictionaryGtaStreamRead2(stream, def->texDict);
+	if(def->texDict == nil)
+		return false;
+	def->texDict = RwTexDictionaryGtaStreamRead2(stream, def->texDict, def->loadNumTextures, def->loadStreamPos);
 	return def->texDict != nil;
 }
 

@@ -170,7 +170,7 @@ enum eSaveSlot
 	SAVESLOT_6,
 	SAVESLOT_7,
 	SAVESLOT_8,
-	SAVESLOT_9, // autosave (sección 3, VICEEXT_AUTOSAVE): fichero GTAVCsf9.b
+	SAVESLOT_AUTOSAVE,
 	SAVESLOT_LABEL = 36
 };
 
@@ -241,8 +241,14 @@ enum eMenuScreen
 	MENUPAGE_PC_FOOT_CONTROLS,
 	MENUPAGE_PC_VEHICLE_CONTROLS,
 #endif
+#ifdef VICEEXT_AUTOSAVE
+	MENUPAGE_OTHER_SETTINGS,
+#endif
 #ifdef VICEEXT_FIRST_PERSON
 	MENUPAGE_FIRST_PERSON,
+#endif
+#ifdef VICEEXT_WFP_OPTIONS
+	MENUPAGE_WIDEFIX_SETTINGS,
 #endif
 	MENUPAGES
 };
@@ -338,6 +344,10 @@ enum eMenuAction
 #ifdef VICEEXT_GPS
 	MENUACTION_GPS,
 #endif
+#endif
+#ifdef VICEEXT_AUTOSAVE
+	MENUACTION_AUTOSAVE,
+	MENUACTION_GALLERY,
 #endif
 #if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
 	MENUACTION_FOV_FP,
@@ -675,6 +685,13 @@ public:
 	float m_PrefsLOD;
 	int8 m_PrefsShowSubtitles;
 	int8 m_PrefsShowLegends;
+#ifdef VICEEXT_AUTOSAVE
+	bool m_PrefsAutosave;
+	bool m_PrefsStoreGalleryPhotos;
+#endif
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+	uint8 m_displayCollectiblesState; // Fila 9.03: 0 nada, 1 paquetes, 2 saltos, 3 masacres, 4 tiendas
+#endif
 	int8 m_PrefsUseWideScreen;
 	int8 m_PrefsVsync;
 	int8 m_PrefsVsyncDisp;

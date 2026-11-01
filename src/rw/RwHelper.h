@@ -28,8 +28,8 @@ RwBool Im2DRenderQuad(RwReal x1, RwReal y1, RwReal x2, RwReal y2, RwReal z, RwRe
 RpClump *RpClumpGetBoundingSphere(RpClump *clump, RwSphere *sphere, bool useLTM);
 
 RwTexDictionary *RwTexDictionaryGtaStreamRead(RwStream *stream);
-RwTexDictionary *RwTexDictionaryGtaStreamRead1(RwStream *stream);
-RwTexDictionary *RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict);
+RwTexDictionary *RwTexDictionaryGtaStreamRead1(RwStream *stream, int32 *numTexturesOut, uint32 *streamPosOut);
+RwTexDictionary *RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict, int32 numTextures, uint32 streamPos);
 void ReadVideoCardCapsFile(uint32&, uint32&, uint32&, uint32&);
 bool CheckVideoCardCaps(void);
 void WriteVideoCardCapsFile(void);

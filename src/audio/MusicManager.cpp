@@ -25,7 +25,6 @@
 #include "GenericGameStorage.h"
 #ifdef __EMSCRIPTEN__
 #include "ondemand.h"
-// DIAG radio: qué pasa en cada tap y al consumir (preview vs real).
 static void RetuneTrace(const char *kind, int presses, int counter, int veh)
 {
 	static int n = 0;
@@ -45,8 +44,6 @@ cMusicManager MusicManager;
 int32 gNumRetunePresses;
 int32 gRetuneCounter;
 #ifdef __EMSCRIPTEN__
-// Web: inicio de la ventana de retune en ms (ventana acotada en tiempo real,
-// no en frames, para que el lag no acumule vueltas al dial).
 static uint32 gRetuneStartMs = 0;
 #endif
 bool8 g_bAnnouncementReadPosAlready;
@@ -137,7 +134,6 @@ cMusicManager::ResetMusicAfterReload()
 		if (trackPos != -1) {
 			if (trackPos > m_aTracks[i].m_nLength) {
 				debug("Radio Track %d saved position is %d, Length is only %d\n", i, trackPos, m_aTracks[i].m_nLength);
-				// Missing audio files have length 0 (e.g. web build without radio): clamp, never modulo by zero.
 				trackPos = m_aTracks[i].m_nLength == 0 ? 0 : trackPos % m_aTracks[i].m_nLength;
 			}
 			m_aTracks[i].m_nPosition = trackPos;
@@ -194,8 +190,6 @@ cMusicManager::SetStartingTrackPositions(bool8 isNewGameTimer)
 			m_aTracks[i].m_nLastPosCheckTimer = CTimer::GetTimeInMillisecondsPauseMode();
 		}
 #ifdef __EMSCRIPTEN__
-		// Web: una sola línea con las 9 emisoras para verificar la radio
-		// ligera en tests headless (0 = muda/ausente). Sin spam.
 		printf("[web] radio lens ms: %u %u %u %u %u %u %u %u %u\n",
 			m_aTracks[0].m_nLength, m_aTracks[1].m_nLength, m_aTracks[2].m_nLength,
 			m_aTracks[3].m_nLength, m_aTracks[4].m_nLength, m_aTracks[5].m_nLength,
@@ -702,7 +696,6 @@ cMusicManager::ServiceGameMode()
 #ifdef RADIO_SCROLL_TO_PREV_STATION
 			if(gRetuneCounter != 0) {
 #ifdef __EMSCRIPTEN__
-				// Con lag 20 frames son segundos: expirar por tiempo real.
 				if (CTimer::GetTimeInMilliseconds() - gRetuneStartMs > 600)
 					gRetuneCounter = 1;
 #endif
@@ -816,6 +809,11 @@ cMusicManager::ServiceGameMode()
 void
 cMusicManager::SetUpCorrectAmbienceTrack()
 {
+	if (TheCamera.GetPosition().z >= 80000.0f) {
+		m_nFrontendTrack = STREAMED_SOUND_AMBSIL_AMBIENT;
+		return;
+	}
+
 	switch (CGame::currArea)
 	{
 	case AREA_MAIN_MAP:
@@ -905,9 +903,9 @@ cMusicManager::ComputeAmbienceVol(bool8 reset, uint8& outVolume)
 		fVol = 0.0f;
 	else if (fVol < 60.0f) {
 		if ((m_nPlayingTrack >= STREAMED_SOUND_HAVANA_CITY_AMBIENT) && (m_nPlayingTrack <= STREAMED_SOUND_HAVANA_BEACH_AMBIENT))
-			fVol += 20.0f;
+			fVol += 20.0f * CTimer::GetTimeStepFix();
 		else
-			fVol += 1.0f;
+			fVol += 1.0f * CTimer::GetTimeStepFix();
 		fVol = Min(fVol, 60.0f);
 	}
 
@@ -1118,12 +1116,14 @@ cMusicManager::ServiceTrack(CVehicle *veh, CPed *ped)
 		else if (nFramesSinceCutsceneEnded < 20)
 		{
 			volume = Min(m_nCurrentVolume, 25);
-			nFramesSinceCutsceneEnded++;
+			if (CTimer::GetLogicalFramesPassed() != 0)
+				nFramesSinceCutsceneEnded++;
 		}
 		else if (nFramesSinceCutsceneEnded < 40)
 		{
 			volume = Min(m_nCurrentVolume, 3 * (nFramesSinceCutsceneEnded - 20) + 25);
-			nFramesSinceCutsceneEnded++;
+			if (CTimer::GetLogicalFramesPassed() != 0)
+				nFramesSinceCutsceneEnded++;
 		}
 		else
 		{
@@ -1134,9 +1134,10 @@ cMusicManager::ServiceTrack(CVehicle *veh, CPed *ped)
 			volume = 0;
 		SampleManager.SetStreamedVolumeAndPan(volume, 63, FALSE);
 	}
-	if (m_nVolumeLatency > 0)
-		m_nVolumeLatency--;
-	else if (m_nCurrentVolume < m_nMaxVolume)
+	if (m_nVolumeLatency > 0) {
+		if (CTimer::GetLogicalFramesPassed() != 0)
+			m_nVolumeLatency--;
+	} else if (m_nCurrentVolume < m_nMaxVolume && CTimer::GetLogicalFramesPassed() != 0)
 		m_nCurrentVolume = Min(m_nMaxVolume, m_nCurrentVolume + 6);
 }
 
@@ -1151,9 +1152,6 @@ cMusicManager::PreloadCutSceneMusic(uint32 track)
 		SampleManager.SetStreamedVolumeAndPan(MAX_VOLUME, 63, TRUE);
 		m_nPlayingTrack = track;
 #ifdef __EMSCRIPTEN__
-		// Traza del audio de cinemática: si en el log aparece "ok=0" es que el
-		// fichero del track no estaba disponible en ese momento (lo típico: se
-		// pidió mientras el juego se creía en partida y se aplazó).
 		{
 			char at[160];
 			snprintf(at, sizeof at, "CUTMUS track=%d playing=%d mode=%d", (int)track,
@@ -1406,6 +1404,7 @@ cMusicManager::DisplayRadioStationName()
 				RwTexDictionary *odRadioDict = CTxdStore::GetSlot(odSlot)->texDict;
 				for (int i = 0; i < 11; i++) {
 					odRadioSprites[i].SetTexture(odRadioNames[i], odRadioMasks[i]);
+					odRadioSprites[i].SetAddressing(rwTEXTUREADDRESSBORDER);
 					if (odRadioDict != nil && RwTexDictionaryFindNamedTexture(odRadioDict, odRadioMasks[i]) != nil)
 						odRadioMaskOk[i] = true;
 			}
@@ -1470,13 +1469,6 @@ cMusicManager::DisplayRadioStationName()
 				odStation = 10;
 #endif
 #endif
-#ifdef VICEEXT_RADIO_ICONS
-			float odTextY = SCREEN_SCALE_Y(22.0f);
-			if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil)
-				odTextY = SCREEN_SCALE_Y(68.0f);
-#else
-			float odTextY = SCREEN_SCALE_Y(22.0f);
-#endif
 			if (pCurrentStation != string) {
 				pCurrentStation = string;
 				cDisplay = 60;
@@ -1492,6 +1484,13 @@ cMusicManager::DisplayRadioStationName()
 					}
 					snprintf(odRadioP4, sizeof odRadioP4, "P4 kind=radio2 schema=1 gen=1 frame=%u sim=%.4f case=4 id=0 emisora=%d icono=%d mascara=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)track, odRadioIcono, odRadioMascara);
 					ODTRACES(odRadioP4);
+				{
+					static bool odRadioTextoQuitado = false;
+					if (!odRadioTextoQuitado) {
+						odRadioTextoQuitado = true;
+						ODTRACES("RADIOTEXT quitado: la radio dibuja solo el logo (mod EX_RADIO_ICONS), centro Y=37 lado=64");
+					}
+				}
 				}
 #endif
 #endif
@@ -1505,6 +1504,14 @@ cMusicManager::DisplayRadioStationName()
 #endif
 			}
 
+#ifdef VICEEXT_RADIO_ICONS
+			if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil) {
+				float odHalf = SCREEN_STRETCH_Y(32.0f);
+				float odCx = (float)SCREEN_WIDTH * 0.5f;
+				float odCy = SCREEN_SCALE_Y(22.0f) + SCREEN_SCALE_Y(15.0f);
+				odRadioSprites[odStation].Draw(CRect(odCx - odHalf, odCy - odHalf, odCx + odHalf, odCy + odHalf), CRGBA(255, 255, 255, 255));
+			}
+#else
 			CFont::SetJustifyOff();
 			CFont::SetBackgroundOff();
 			CFont::SetScale(SCREEN_SCALE_X(0.8f), SCREEN_SCALE_Y(1.35f));
@@ -1513,24 +1520,16 @@ cMusicManager::DisplayRadioStationName()
 			CFont::SetCentreOn();
 			CFont::SetCentreSize(SCREEN_STRETCH_X(DEFAULT_SCREEN_WIDTH));
 			CFont::SetColor(CRGBA(0, 0, 0, 255));
-			CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(2.0f), odTextY + SCREEN_SCALE_Y(2.0f), pCurrentStation);
+			CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(2.0f), SCREEN_SCALE_Y(22.0f) + SCREEN_SCALE_Y(2.0f), pCurrentStation);
 
 			if (gNumRetunePresses)
 				CFont::SetColor(CRGBA(102, 133, 143, 255));
 			else
 				CFont::SetColor(CRGBA(147, 196, 211, 255));
 
-			CFont::PrintString(SCREEN_WIDTH / 2, odTextY, pCurrentStation);
-#ifdef VICEEXT_RADIO_ICONS
-			if (odStation >= 0 && odStation < 11 && odRadioSprites[odStation].m_pTexture != nil) {
-				float odW = SCREEN_SCALE_X(64.0f);
-				float odH = SCREEN_SCALE_Y(56.0f);
-				float odCx = (float)SCREEN_WIDTH * 0.5f - odW * 0.5f;
-				float odBottom = odTextY - SCREEN_SCALE_Y(8.0f);
-				odRadioSprites[odStation].Draw(CRect(odCx, odBottom - odH, odCx + odW, odBottom), CRGBA(255, 255, 255, 255), 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f);
-			}
-#endif
+			CFont::PrintString(SCREEN_WIDTH / 2, SCREEN_SCALE_Y(22.0f), pCurrentStation);
 			CFont::DrawFonts();
+#endif
 		}
 	}
 	// Always show station text after entering car. Same behaviour as III and SA.

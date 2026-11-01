@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "Stats.h"
+#include "SilentPatchOptions.h"
 #include "Text.h"
 #include "World.h"
 #include "Pad.h"
@@ -9,6 +10,7 @@
 #include "Font.h"
 #include "Frontend.h"
 #include "audio_enums.h"
+#include "SilentPatchOptions.h"
 
 #include <climits>
 
@@ -880,6 +882,9 @@ CStats::BuildStatLine(Const char *text, void *stat, int displayType, void *stat2
 #undef STAT2_F
 }
 
+#ifdef VICEEXT_SP_METRIC_UNITS
+#endif
+
 // rowIdx 99999 returns total numbers of rows. otherwise it returns 0.
 int
 CStats::ConstructStatLine(int rowIdx)
@@ -1063,6 +1068,26 @@ CStats::ConstructStatLine(int rowIdx)
 ;
 	STAT_LINE_1(int, "ACCURA", RoundsFiredByPlayer == 0 ? 0 : (BulletsThatHit * 100.0f / (float)RoundsFiredByPlayer), 2);
 
+#ifdef VICEEXT_SP_METRIC_UNITS
+	const bool metric = IsMetricUnits();
+	const float distanceScale = metric ? 1.0f : MILES_IN_METER;
+	const float jumpScale = metric ? 1.0f : FEET_IN_METER;
+	STAT_LINE_1(float, metric ? "FESTDFM" : "FEST_DF", DistanceTravelledOnFoot * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "FESTDCM" : "FEST_DC", DistanceTravelledByCar * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "DISTBIM" : "DISTBIK", DistanceTravelledByBike * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "DISTBOM" : "DISTBOA", DistanceTravelledByBoat * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "DISTGOM" : "DISTGOL", DistanceTravelledByGolfCart * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "DISTHEM" : "DISTHEL", DistanceTravelledByHelicoptor * distanceScale, 1);
+#ifdef FIX_BUGS
+	STAT_LINE_1(float, metric ? "TOTDISM" : "TOT_DIS", (DistanceTravelledOnFoot + DistanceTravelledByCar + DistanceTravelledByBoat + DistanceTravelledByBike
+		+ DistanceTravelledByGolfCart + DistanceTravelledByHelicoptor + DistanceTravelledByPlane) * distanceScale, 1);
+	STAT_LINE_1(float, metric ? "MXCARDM" : "MXCARD", MaximumJumpDistance * jumpScale, 1);
+	STAT_LINE_1(float, metric ? "MXCARJM" : "MXCARJ", MaximumJumpHeight * jumpScale, 1);
+#else
+	STAT_LINE_1(float, metric ? "TOTDISM" : "TOT_DIS", (DistanceTravelledOnFoot + DistanceTravelledByCar + DistanceTravelledByBoat + DistanceTravelledByBike
+		+ DistanceTravelledByGolfCart + DistanceTravelledByHelicoptor) * distanceScale, 1);
+#endif
+#else
 	switch (FrontEndMenuManager.m_PrefsLanguage) {
 		case CMenuManager::LANGUAGE_AMERICAN:
 #ifndef USE_MEASUREMENTS_IN_METERS
@@ -1111,6 +1136,7 @@ CStats::ConstructStatLine(int rowIdx)
 		default:
 			break;
 	}
+#endif
 
 	// They were selecting the unit according to language in III, but they deleted the feet code in VC. Weird
 #ifndef FIX_BUGS

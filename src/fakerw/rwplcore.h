@@ -250,6 +250,7 @@ void RwMatrixCopy(RwMatrix * dstMatrix, const RwMatrix * srcMatrix);
 void RwMatrixSetIdentity(RwMatrix * matrix);
 RwMatrix *RwMatrixMultiply(RwMatrix * matrixOut, const RwMatrix * MatrixIn1, const RwMatrix * matrixIn2);
 RwMatrix *RwMatrixTransform(RwMatrix * matrix, const RwMatrix * transform, RwOpCombineType combineOp);
+RwMatrix *RwMatrixOptimize(RwMatrix * matrix, const RwMatrixTolerance *tolerance);
 RwMatrix *RwMatrixOrthoNormalize(RwMatrix * matrixOut, const RwMatrix * matrixIn);
 RwMatrix *RwMatrixInvert(RwMatrix * matrixOut, const RwMatrix * matrixIn);
 RwMatrix *RwMatrixScale(RwMatrix * matrix, const RwV3d * scale, RwOpCombineType combineOp);

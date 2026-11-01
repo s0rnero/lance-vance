@@ -27,6 +27,7 @@ private:
 	// similar thing for 3D rendering
 	static float ms_fScaledFOV;
 #endif
+	static float ms_fCutsceneCameraZoom;
 public:
 	static float ms_fLODDistance;	// set but unused?
 
@@ -61,6 +62,14 @@ public:
 	static float CalculateAspectRatio(void);
 #ifdef ASPECT_RATIO_SCALE
 	static float ConvertFOV(float fov);
+#endif
+	static float ConvertFOVInverse(float fov);
+	static float ConvertFOVforCutscene(float fov);
+	static void SetCutsceneCameraZoom(float zoom);
+#ifdef VICEEXT_WFP_FOV_MULTIPLIERS
+	static void SetFOVMultiplier(uint32 key, float value);
+	static void RemoveFOVMultiplier(uint32 key);
+	static float GetCurrentFOV(void);
 #endif
 	static float GetAspectRatio(void) { return ms_fAspectRatio; }
 	static void SetAspectRatio(float ratio) { ms_fAspectRatio = ratio; }

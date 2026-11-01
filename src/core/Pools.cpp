@@ -16,6 +16,13 @@
 #include "World.h"
 #include "MemoryHeap.h"
 #include "SaveBuf.h"
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+#include "GenericGameStorage.h"
+#endif
+#ifdef VICEEXT_PED_VARIATIONS
+#include "PedModelInfo.h"
+#include "TxdStore.h"
+#endif
 
 CCPtrNodePool *CPools::ms_pPtrNodePool;
 CEntryInfoNodePool *CPools::ms_pEntryInfoNodePool;
@@ -617,6 +624,32 @@ INITSAVEBUF
 		pPed->CharCreatedBy = pBufferPlayer->CharCreatedBy;
 		pPed->m_currentWeapon = 0;
 		pPed->m_maxWeaponTypeAllowed = pBufferPlayer->m_maxWeaponTypeAllowed;
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+		pPed->m_fRotationCur = pBufferPlayer->m_fRotationCur;
+		pPed->m_fRotationDest = pBufferPlayer->m_fRotationDest;
+		if (bSaveAnywhere) {
+			pPed->bInVehicle = pBufferPlayer->bInVehicle;
+			pPed->m_pMyVehicle = pBufferPlayer->m_pMyVehicle;
+		}
+#endif
+#ifdef VICEEXT_PED_VARIATIONS
+		pPed->curClothingVariation = pBufferPlayer->curClothingVariation;
+
+		CPedModelInfo* modelInfo = (CPedModelInfo*)CModelInfo::GetModelInfo(pPed->GetModelIndex());
+		RwTexDictionary* playerTxd = CTxdStore::GetSlot(modelInfo->GetTxdSlot())->texDict;
+		if (playerTxd) {
+			char sTemp[16];
+			if (pPed->curClothingVariation == 0)
+				sprintf(sTemp, "%s", modelInfo->GetModelName());
+			else
+				sprintf(sTemp, "%s_%i", modelInfo->GetModelName(), pPed->curClothingVariation);
+
+			pPed->texClothingVariation = RwTexDictionaryFindNamedTexture(playerTxd, sTemp);
+			modelInfo->currentClothingVariation = pPed->curClothingVariation;
+
+			CWorld::Players[0].m_pSkinTexture = pPed->texClothingVariation;
+		}
+#endif
 		for (int i = 0; i < TOTAL_WEAPON_SLOTS; i++) {
 			if (pBufferPlayer->HasWeaponSlot(i)) {
 				int modelId = CWeaponInfo::GetWeaponInfo(pBufferPlayer->GetWeapon(i).m_eWeaponType)->m_nModelId;

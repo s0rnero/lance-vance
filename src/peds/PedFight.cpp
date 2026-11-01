@@ -21,6 +21,7 @@
 #include "Vehicle.h"
 #include "Automobile.h"
 #include "WaterLevel.h"
+#include "Wanted.h"
 #include "World.h"
 #include "Bike.h"
 #include "Glass.h"
@@ -1019,6 +1020,9 @@ CPed::Attack(void)
 					case ASSOCGRP_BASEBALLBAT:
 					case ASSOCGRP_GOLFCLUB:
 					case ASSOCGRP_CHAINSAW:
+					#ifdef VICEEXT_SP_SCREWDRIVER_SOUND
+					case ASSOCGRP_SCREWDRIVER:
+					#endif
 						DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_BAT_ATTACK, (damagerType | (GetWeapon()->m_eWeaponType << 8)));
 						break;
 					default:
@@ -2854,6 +2858,11 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		CPad::GetPad(0)->StartShake(100, 55, 55);
 #endif
 
+#ifdef VICEEXT_FEATURES_INI
+		if (bHealthRegenerationUpToHalf)
+			player->m_nHealthRegenerationTime = CTimer::GetTimeInMilliseconds();
+#endif
+
 		player->AnnoyPlayerPed(false);
 	}
 
@@ -3053,7 +3062,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					return false;
 
 				bool dontRemoveLimb;
-				if (IsPlayer() || bNoCriticalHits)
+				if (IsPlayer() || bNoCriticalHits || InVehicle())
 					dontRemoveLimb = true;
 				else if (method != WEAPONTYPE_M4 && method != WEAPONTYPE_RUGER && method != WEAPONTYPE_SNIPERRIFLE &&
 #ifdef VICEEXT_WEAPON_AK47
@@ -3287,6 +3296,17 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		}
 	}
 
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	if (InVehicle()) {
+		if (m_pMyVehicle->IsPassenger(this))
+			dieAnim = ANIM_STD_CAR_DIE_PS;
+		else
+			dieAnim = CGeneral::GetRandomTrueFalse() ? ANIM_STD_CAR_DIE_HORN_DS : ANIM_STD_CAR_DIE_DS;
+
+		dieSpeed = 1.0f;
+	}
+#endif
+
 	if (m_fArmour != 0.0f && method != WEAPONTYPE_DROWNING) {
 		if (player == this)
 			CWorld::Players[CWorld::PlayerInFocus].m_nTimeLastArmourLoss = CTimer::GetTimeInMilliseconds();
@@ -3344,7 +3364,11 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 							m_pMyVehicle->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 2000;
 						}
 					}
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+					if (m_pMyVehicle->IsBoat() && m_pMyVehicle->CanPedExitCar(true)) {
+#else
 					if (m_pMyVehicle->CanPedExitCar(true)) {
+#endif
 						SetObjective(OBJECTIVE_LEAVE_CAR_AND_DIE, m_pMyVehicle);
 					} else {
 						m_fHealth = 0.0f;
@@ -3455,7 +3479,10 @@ CPed::RemoveBodyPart(PedNode nodeId, int8 direction)
 
 	frame = m_pFrames[nodeId]->frame;
 	if (frame) {
-		if (CGame::nastyGame) {
+		// 31.0/T64: en el coche no se desmiembra. El mod hereda el desmembrado
+		// de la base tambien sentado, y eso dejaba al muerto sin cabeza y con
+		// el surtidor del munon activo encima del asiento durante CAR_die_*.
+		if (CGame::nastyGame && !InVehicle()) {
 			if (CEntity::GetIsOnScreen()) {
 				m_pedIK.GetComponentPosition(pos, nodeId);
 				CParticle::AddParticle(PARTICLE_TEST, pos,
@@ -3842,6 +3869,8 @@ CPed::CollideWithPed(CPed *collideWith)
 		if (IsPlayer()) {
 			SetLookFlag(collideWith, true);
 			SetLookTimer(800);
+			if (collideWith->m_nPedType == PEDTYPE_COP)
+				FindPlayerPed()->m_pWanted->m_nLastTimeSeenPlayer = CTimer::GetTimeInMilliseconds();
 		}
 	} else {
 		bool isRunning = m_nMoveState == PEDMOVE_RUN || m_nMoveState == PEDMOVE_SPRINT;

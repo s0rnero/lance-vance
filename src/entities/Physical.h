@@ -161,7 +161,7 @@ public:
 	void ApplyGravity(void);
 	void ApplyFriction(void);
 	void ApplyAirResistance(void);
-	bool ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, float &impulseB);
+	bool ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, float &impulseB, const char *via = "?");
 	bool ApplyCollision(CColPoint &colpoint, float &impulse);
 	bool ApplyCollisionAlt(CEntity *B, CColPoint &colpoint, float &impulse, CVector &moveSpeed, CVector &turnSpeed);
 	bool ApplyFriction(CPhysical *B, float adhesiveLimit, CColPoint &colpoint);

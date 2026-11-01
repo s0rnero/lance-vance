@@ -1,5 +1,6 @@
 #include "common.h"
 
+#include "Timer.h"
 #include "Vehicle.h"
 #include "Door.h"
 
@@ -55,10 +56,10 @@ CDoor::Process(CVehicle *vehicle)
 	fSpeedDiff = Clamp(fSpeedDiff, -0.2f, 0.2f);
 	if(Abs(fSpeedDiff) > 0.002f)
 		m_fAngVel += fSpeedDiff;
-	m_fAngVel *= 0.945f;
+	m_fAngVel *= Pow(0.945f, CTimer::GetTimeStep());
 	m_fAngVel = Clamp(m_fAngVel, -0.3f, 0.3f);
 
-	m_fAngle += m_fAngVel;
+	m_fAngle += m_fAngVel * CTimer::GetTimeStep();
 	m_nDoorState = DOORST_SWINGING;
 	if(m_fAngle > m_fMaxAngle){
 		m_fAngle = m_fMaxAngle;

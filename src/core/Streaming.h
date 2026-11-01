@@ -210,18 +210,16 @@ public:
 	static void LoadScene(const CVector &pos);
 	static void LoadSceneCollision(const CVector &pos);
 #ifdef __EMSCRIPTEN__
-	// Web: escena de carga troceada por ticks (un tramo por tick del navegador).
-	// Mismo orden y operaciones que LoadScene; 1 = terminado.
 	static int LoadSceneStep(const CVector &pos);
 	static void LoadSceneResetSteps(void);
 	static int CountPendingRequests(void);
-	static int gWebLoadBudget; // tope de ficheros por LoadAll (0 = sin tope)
-	// R1 (fluides-v2): PROHIBIDO un tope por TIEMPO dentro del bucle de
-	// LoadAllRequestedModels. El init y los scripts lo usan como punto de
-	// sincronía ("ya está todo cargado") y un corte los deja leyendo memoria
-	// que no está: crash OOB probado en las builds ram4 y lag2 (ver
-	// .agents/plans/diagnostico-crash-init.md). El tope por CONTEO sí está
-	// validado por semanas (R2).
+	static int gWebLoadBudget;
+	static float gWebLoadTimeCapMs; // ms por LoadAll en partida (0 = sin tope)
+	// Nota (26/10): el tope global NO es una primitiva segura para todo el juego.
+	// LoadScene y LoadSceneCollision anulan el presupuesto mientras duran, porque
+	// sus llamadores esperan la lista vacia al volver (respawn, cambio de interior).
+	// El resto del juego sigue troceando como hasta ahora, que es lo que mantiene
+	// el frame corto y deja que los modelos de policia esten listos al pedirlos.
 #endif
 
 	static void MemoryCardSave(uint8 *buffer, uint32 *length);

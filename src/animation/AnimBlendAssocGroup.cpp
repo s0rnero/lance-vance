@@ -50,6 +50,17 @@ CAnimBlendAssocGroup::GetAnimation(uint32 id)
 }
 
 CAnimBlendAssociation*
+CAnimBlendAssocGroup::FindAnimation(uint32 id)
+{
+	if(assocList == nil || numAssociations <= 0)
+		return nil;
+	for(int32 i = 0; i < numAssociations; i++)
+		if(assocList[i].animId == (int32)id)
+			return &assocList[i];
+	return nil;
+}
+
+CAnimBlendAssociation*
 CAnimBlendAssocGroup::GetAnimation(const char *name)
 {
 	int i;
@@ -181,13 +192,8 @@ CAnimBlendAssocGroup::CreateAssociations(const char *blockName, RpClump *clump, 
 	for(i = 0; i < numAssocs; i++){
 		CAnimBlendHierarchy *hier = CAnimManager::GetAnimation(animNames[i], animBlock);
 #ifdef __EMSCRIPTEN__
-		// D11/D18 (seccion 1, 21/09): sin jerarquia, Init revienta (o deja la
-		// asociacion apuntando a nil) y el motor se queda mudo. Se avisa SOLO
-		// cuando falta el clip (es lo que se lee para saber que animaciones del
-		// ped.ifp del mod quedan por asociar) y se deja la asociacion marcada,
-		// para que el fallo se vea en vez de convertirse en pantalla negra.
 		if (hier == nil) {
-			printf("[od] anim sin jerarquia: %s (grupo %s)\n", animNames[i], blockName);
+			printf("[od] anim sin jerarquia: %.*s (grupo %.*s)\n", 40, animNames[i], 40, blockName);
 			assocList[i].animId = firstAnimId + i;
 			assocList[i].groupId = groupId;
 			continue;

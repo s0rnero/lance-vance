@@ -236,6 +236,12 @@ enum AnimationId
 	ANIM_STD_BOAT_DRIVE_RIGHT_DB,
 #endif
 
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	ANIM_STD_CAR_DIE_HORN_DS,
+	ANIM_STD_CAR_DIE_DS,
+	ANIM_STD_CAR_DIE_PS,
+#endif
+
 	ANIM_STD_NUM,
 
 	ANIM_STD_VAN_OPEN_DOOR_REAR_LHS,
@@ -330,10 +336,6 @@ enum AnimationId
 	ANIM_STRIP_F,
 	ANIM_STRIP_G,
 
-	// Sección 3 (20/09): clips que el `ped.ifp` del mod YA trae (272 clips
-	// servidos, comprobado leyendo el binario) y que el port no usaba: nadar
-	// (bloque C4) y agachado (bloque C5). Van al final de todo para no desplazar
-	// ningún ID existente (los grupos nuevos se declaran con descs propios).
 	ANIM_STD_SWIM_TREAD,        // swim_tread      (C4: nadar quieto)
 	ANIM_STD_SWIM_CRAWL,        // swim_crawl      (C4: nadar esprintando)
 	ANIM_STD_SWIM_BREAST,       // swim_breast     (C4: nadar avanzando)

@@ -111,6 +111,7 @@ CBoat::CBoat(int mi, uint8 owner) : CVehicle(owner)
 		m_boom.Init(-PI/5.0f, PI/5.0f, 0, 2);
 }
 
+
 void
 CBoat::SetModelIndex(uint32 id)
 {
@@ -132,13 +133,10 @@ CBoat::ProcessControl(void)
 	PruneWakeTrail();
 
 	if(bRenderScorched)
-		m_fBuoyancy *= 0.99f;
+		m_fBuoyancy *= Pow(0.99f, CTimer::GetTimeStep());
 
-#ifdef FIX_BUGS
-	if(FindPlayerPed() && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex())) {
-#else
-	if(FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR){
-#endif
+	if(FindPlayerPed() && FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 && GetModelIndex() == MI_PREDATOR && pDriver && IsPolicePedModel(pDriver->GetModelIndex()) &&
+		!FindPlayerPed()->m_pWanted->IsPlayerHides()) {
 		CVehicle *playerVeh = FindPlayerVehicle();
 		if(playerVeh && playerVeh->GetVehicleAppearance() == VEHICLE_APPEARANCE_BOAT &&
 		   (AutoPilot.m_nCarMission == MISSION_RAMPLAYER_FARAWAY || 
@@ -304,7 +302,7 @@ CBoat::ProcessControl(void)
 				BlowUpCar(m_pSetOnFireEntity);
 		}
 
-		if(speedSq < 0.25f && (CTimer::GetFrameCounter() + m_randomSeed) & 1)
+		if(speedSq < 0.25f && (CTimer::GetLogicalFrameCounter() + m_randomSeed) & 1)
 			CParticle::AddParticle(PARTICLE_ENGINE_STEAM, smokePos, smokeDir);
 		if(speedSq < 0.25f && m_fHealth <= 390.0f)
 			CParticle::AddParticle(PARTICLE_ENGINE_SMOKE, smokePos, 1.25f*smokeDir);
@@ -442,7 +440,7 @@ CBoat::ProcessControl(void)
 
 							CVector wakePos = GetPosition() + sternPos;
 							// no actual particles for player...
-						}else if(IsVisible() && ((CTimer::GetFrameCounter() + m_randomSeed) & 1) &&
+						}else if(IsVisible() && ((CTimer::GetLogicalFrameCounter() + m_randomSeed) & 1) &&
 						         CVisibilityPlugins::GetDistanceSquaredFromCamera(&propellerWorld) < SQR(70.0f * TheCamera.GenerationDistMultiplier)){
 							jetDir.z = 0.015f;
 							jetDir.x *= 3.5f;
@@ -547,7 +545,7 @@ CBoat::ProcessControl(void)
 		// Splashes
 		float speed = m_vecMoveSpeed.Magnitude();
 		if(speed > 0.05f && GetUp().x > 0.0f && !TheCamera.GetLookingForwardFirstPerson() && IsVisible() &&
-		   (AutoPilot.m_nCarMission != MISSION_CRUISE || (CTimer::GetFrameCounter()&2) == 0)){
+		   (AutoPilot.m_nCarMission != MISSION_CRUISE || (CTimer::GetLogicalFrameCounter()&2) == 0)){
 			CVector splashPos, splashDir;
 			float splashSize, front, waterLevel;
 
@@ -770,17 +768,17 @@ CBoat::ProcessControlInputs(uint8 pad)
 	if(m_nPadID > 3)
 		m_nPadID = 3;
 
-	m_fBrake += (CPad::GetPad(pad)->GetBrake()/255.0f - m_fBrake)*0.1f;
+	m_fBrake += (CPad::GetPad(pad)->GetBrake()/255.0f - m_fBrake)*(1.0f - Pow(0.9f, CTimer::GetTimeStep()));
 	m_fBrake = Clamp(m_fBrake, 0.0f, 1.0f);
 
 	if(m_fBrake < 0.05f){
 		m_fBrake = 0.0f;
-		m_fAccelerate += (CPad::GetPad(pad)->GetAccelerate()/255.0f - m_fAccelerate)*0.1f;
+		m_fAccelerate += (CPad::GetPad(pad)->GetAccelerate()/255.0f - m_fAccelerate)*(1.0f - Pow(0.9f, CTimer::GetTimeStep()));
 		m_fAccelerate = Clamp(m_fAccelerate, 0.0f, 1.0f);
 	}else
 		m_fAccelerate = -m_fBrake*0.3f;
 
-	m_fSteeringLeftRight += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteeringLeftRight)*0.2f;
+	m_fSteeringLeftRight += (-CPad::GetPad(pad)->GetSteeringLeftRight()/128.0f - m_fSteeringLeftRight)*(1.0f - Pow(0.8f, CTimer::GetTimeStep()));
 	m_fSteeringLeftRight = Clamp(m_fSteeringLeftRight, -1.0f, 1.0f);
 
 	float steeringSq = m_fSteeringLeftRight < 0.0f ? -SQR(m_fSteeringLeftRight) : SQR(m_fSteeringLeftRight);
@@ -927,6 +925,27 @@ CBoat::BlowUpCar(CEntity *culprit)
 }
 
 void
+CBoat::RenderMovingRadar(int alpha)
+{
+	CMatrix matrix;
+	CVector pos;
+	RpAtomic *atomic;
+
+	if(m_aBoatNodes[BOAT_MOVING]){
+		matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_MOVING]));
+		pos = matrix.GetPosition();
+		matrix.SetRotateY(m_fMovingRotation);
+		matrix.Translate(pos);
+		matrix.UpdateRW();
+
+		atomic = nil;
+		RwFrameForAllObjects(m_aBoatNodes[BOAT_MOVING], GetBoatAtomicObjectCB, &atomic);
+		if(atomic)
+			SetComponentAtomicAlpha(atomic, alpha);
+	}
+}
+
+void
 CBoat::PreRender(void)
 {
 	CMatrix matrix;
@@ -990,18 +1009,7 @@ CBoat::PreRender(void)
 				matrix.UpdateRW();
 			}
 		}
-		if(m_aBoatNodes[BOAT_MOVING]){
-			matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_MOVING]));
-			pos = matrix.GetPosition();
-			matrix.SetRotateY(m_fMovingRotation);
-			matrix.Translate(pos);
-			matrix.UpdateRW();
-
-			atomic = nil;
-			RwFrameForAllObjects(m_aBoatNodes[BOAT_MOVING], GetBoatAtomicObjectCB, &atomic);
-			if(atomic)
-				SetComponentAtomicAlpha(atomic, alpha);
-		}
+		RenderMovingRadar(alpha);
 		if(m_aBoatNodes[BOAT_WINDSCREEN]){
 			matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_WINDSCREEN]));
 			pos = matrix.GetPosition();
@@ -1015,6 +1023,13 @@ CBoat::PreRender(void)
 				SetComponentAtomicAlpha(atomic, Max(150-alpha, 0));
 		}
 		CShadows::StoreShadowForVehicle(this, VEH_SHD_TYPE_SEAPLANE);
+#ifdef VICEEXT_SP_BOAT_MOVING_RADAR
+	}else if(GetModelIndex() == MI_TROPIC){
+		m_fMovingRotation += m_fMovingSpeed*CTimer::GetTimeStep();
+		if(m_fMovingRotation > TWOPI) m_fMovingRotation -= TWOPI;
+		int alpha = (1.0f - Min(2.0f*m_fMovingSpeed*8.0f/PI, 1.0f))*255.0f;
+		RenderMovingRadar(alpha);
+#endif
 	}else if(GetModelIndex() == MI_COASTG || GetModelIndex() == MI_DINGHY || GetModelIndex() == MI_RIO ||
 	         GetModelIndex() == MI_SQUALO || GetModelIndex() == MI_MARQUIS){
 		if(m_aBoatNodes[BOAT_RUDDER]){
@@ -1065,7 +1080,7 @@ CBoat::PreRender(void)
 			if(rot > HALFPI) rot = PI;
 			else if(rot < -HALFPI) rot = -PI;
 			rot = Clamp(rot, -DEGTORAD(63.0f), DEGTORAD(63.0f));
-			m_fMovingSpeed += (0.008f * CWeather::Wind + 0.002f) * rot;
+			m_fMovingSpeed += (0.008f * CWeather::Wind + 0.002f) * rot * CTimer::GetTimeStep();
 			m_fMovingSpeed *= Pow(0.9985f, CTimer::GetTimeStep())/(500.0f*SQR(m_fMovingSpeed) + 1.0f);
 
 			matrix.SetRotateZ(flapHeading + m_fMovingSpeed*CTimer::GetTimeStep());

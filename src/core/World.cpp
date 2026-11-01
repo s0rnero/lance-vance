@@ -379,19 +379,19 @@ CWorld::ProcessLineOfSightSectorList(CPtrList &list, const CColLine &line, CColP
 			} else if(e->bUsesCollision)
 				colmodel = CModelInfo::GetColModel(e->GetModelIndex());
 
-			bool chassisHit = colmodel && CCollision::ProcessLineOfSight(line, e->GetMatrix(), *colmodel, point, mindist,
-                                                             ignoreSeeThrough, ignoreShootThrough);
-			if(chassisHit)
+			if(colmodel && CCollision::ProcessLineOfSight(line, e->GetMatrix(), *colmodel, point, mindist,
+                                                             ignoreSeeThrough, ignoreShootThrough))
 				entity = e;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if (carTyres && entity && entity->IsVehicle())
+				carTyres = false;
+#endif
+
 			if(carTyres && ((CVehicle*)e)->SetUpWheelColModel(&tyreCol) && CCollision::ProcessLineOfSight(line, e->GetMatrix(), tyreCol, tyreColPoint, tyreDist, false, ignoreShootThrough)){
 				float dp1 = DotProduct(line.p1 - line.p0, e->GetRight());
 				float dp2 = DotProduct(point.point - e->GetPosition(), e->GetRight());
-#ifdef VICEEXT_NO_WHEEL_PIERCE
-				bool wheelWins = tyreDist < mindist || dp1 < -0.85f && dp2 > 0.0f || dp1 > 0.85f && dp2 < 0.0f ||
-					(chassisHit && (tyreColPoint.point - point.point).Magnitude() <= 0.5f);
-#else
 				bool wheelWins = tyreDist < mindist || dp1 < -0.85f && dp2 > 0.0f || dp1 > 0.85f && dp2 < 0.0f;
-#endif
 				if(wheelWins){
 #ifdef __EMSCRIPTEN__
 					{
@@ -1889,7 +1889,12 @@ CWorld::SetPedsChoking(float x, float y, float z, float radius, CEntity* reason)
 	for (int32 i = poolSize - 1; i >= 0; i--) {
 		CPed* pPed = CPools::GetPedPool()->GetSlot(i);
 		// suspicious copypaste
-		if (pPed && pPed->m_nPedState != PED_DEAD && !pPed->bInVehicle && !pPed->m_pFire && !pPed->bFireProof && pPed->CharCreatedBy != MISSION_CHAR) {
+		if (pPed && pPed->m_nPedState != PED_DEAD && !pPed->bInVehicle && !pPed->m_pFire && !pPed->bFireProof
+#ifdef VICEEXT_SP_TEARGAS_DAMAGE
+#else
+			&& pPed->CharCreatedBy != MISSION_CHAR
+#endif
+			) {
 			if (Abs(pPed->GetPosition().z - z) < 5.0f && Abs(pPed->GetPosition().x - x) < radius &&
 				Abs(pPed->GetPosition().y - y) < radius) {
 				if (!pPed->IsPlayer())
@@ -1945,17 +1950,97 @@ CWorld::RemoveStaticObjects()
 	}
 }
 
+extern void OdWebMark(int);
+extern void OdWebEnt(int);
+
+// T21: la entidad del recorrido puede estar liberada. CWorld::Remove() + delete
+// dentro del ProcessControl de OTRA entidad (una explosion, un peaton que muere)
+// deja el nodo apuntando a memoria devuelta al pool, y el recorrido guarda el
+// `next` antes de procesar: el nodo sigue ahi pero el bicho ya no. Llamar a su
+// ProcessControl() virtual sobre memoria liberada salta por un vtable muerto y
+// acaba en un bucle mudo (mark=211 con un `ent` imposible, p.ej. modelo 6507).
+// Esta comprobacion solo hace aritmetica de punteros, sin dereferenciar.
+static inline bool
+OdEntidadEnAlgunPool(void *p)
+{
+	if (p == nil) return false;
+	return CPools::GetPedPool()->Contains(p) ||
+	       CPools::GetVehiclePool()->Contains(p) ||
+	       CPools::GetObjectPool()->Contains(p);
+}
+
+// El pase de luces lejanas recorre el pool de edificios entero (6.795) y el de
+// dummies (2.310) en cada update y llama a ProcessDistantLights() en cada uno.
+// Esa funcion no hace nada si el modelo no tiene ni un EFFECT_LIGHT con flareType
+// distinto de 1 y tamano distinto de 0 (es lo primero que mira, antes de tocar la
+// matriz), asi que una mascara por modelo deja el mismo resultado y convierte el
+// recorrido en una lectura de tabla. Se calcula una vez: son unas 5.500 entradas
+// de modelo, no 9.000 llamadas por frame a 120 fps.
+static uint8 *odDlLuz;      // el modelo tiene alguna luz de ese pase
+static uint8 *odDlEfecto;   // el modelo tiene algun 2d effect (solo para la traza)
+static int odDlModelos;
+
+static void
+OdDlPrepararMascaras(void)
+{
+	if (odDlLuz && odDlModelos == MODELINFOSIZE)
+		return;
+	auto odDlNuevo = new uint8[MODELINFOSIZE];
+	auto odDlNuevoEf = new uint8[MODELINFOSIZE];
+	memset(odDlNuevo, 0, MODELINFOSIZE);
+	memset(odDlNuevoEf, 0, MODELINFOSIZE);
+
+	for (int odI = 0; odI < MODELINFOSIZE; odI++) {
+		CBaseModelInfo *odMi = CModelInfo::GetModelInfo(odI);
+		if (!odMi)
+			continue;
+
+		int odNum = odMi->GetNum2dEffects();
+		if (odNum > 0)
+			odDlNuevoEf[odI] = 1;
+
+		for (int odJ = 0; odJ < odNum; odJ++) {
+			C2dEffect *odE = odMi->Get2dEffect(odJ);
+			if (odE && odE->type == EFFECT_LIGHT && odE->light.flareType != 1 && odE->light.size != 0.0f) {
+				odDlNuevo[odI] = 1;
+				break;
+			}
+		}
+	}
+
+	delete[] odDlLuz;
+	delete[] odDlEfecto;
+	odDlLuz = odDlNuevo;
+	odDlEfecto = odDlNuevoEf;
+	odDlModelos = MODELINFOSIZE;
+}
+
+// Un modelo fuera de la tabla (no deberia pasar) se trata como "tiene luz": se
+// llama como antes en vez de saltarselo.
+static inline bool
+OdDlTieneLuz(int odModelo)
+{
+	if (odModelo < 0 || odModelo >= odDlModelos)
+		return true;
+	return odDlLuz[odModelo] != 0;
+}
+
 void
 CWorld::Process(void)
 {
-	if(!(CTimer::GetFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
+	// T19: durante todo este pase los nodos de lista no vuelven al pool (ver
+	// CPtrListWalk en Lists.h). Es lo que impedía que un CWorld::Remove()
+	// llamado desde el ProcessControl de una entidad reciclase el nodo que el
+	// recorrido de ms_listMovingEntityPtrs estaba leyendo en ese mismo frame.
+	CPtrListWalk odWalkGuard;
+	OdWebMark(131);
+	if(!(CTimer::GetLogicalFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
+	OdWebMark(132);
 
-	// features.ini `EnableDistantLights` (familia 11): la clave manda en caliente;
-	// sin fichero el port conserva su valor (encendido). Los dos pools de coronas
-	// cuelgan de aqui, que es su unico dueno.
-	if (ViceExtFeatures::On("EnableDistantLights", true))
+	if (bEnableDistantLights)
 	{
 		static uint32 odDlEdificios = 0, odDlDummies = 0, odDlEfectos = 0, odDlLast = 0;
+		OdDlPrepararMascaras();
 		for (int i = CPools::GetDummyPool()->GetSize() - 1; i >= 0; i--) {
 			CDummy *odDlDummy = CPools::GetDummyPool()->GetSlot(i);
 
@@ -1963,9 +2048,11 @@ CWorld::Process(void)
 				continue;
 
 			odDlDummies++;
-			if (CModelInfo::GetModelInfo(odDlDummy->GetModelIndex())->GetNum2dEffects() > 0)
+			int odDlId = odDlDummy->GetModelIndex();
+			if (odDlId >= 0 && odDlId < odDlModelos && odDlEfecto[odDlId])
 				odDlEfectos++;
-			odDlDummy->ProcessDistantLights();
+			if (OdDlTieneLuz(odDlId))
+				odDlDummy->ProcessDistantLights();
 		}
 
 		for (int i = CPools::GetBuildingPool()->GetSize() - 1; i >= 0; i--) {
@@ -1975,9 +2062,11 @@ CWorld::Process(void)
 				continue;
 
 			odDlEdificios++;
-			if (CModelInfo::GetModelInfo(odDlEdificio->GetModelIndex())->GetNum2dEffects() > 0)
+			int odDlId = odDlEdificio->GetModelIndex();
+			if (odDlId >= 0 && odDlId < odDlModelos && odDlEfecto[odDlId])
 				odDlEfectos++;
-			odDlEdificio->ProcessDistantLights();
+			if (OdDlTieneLuz(odDlId))
+				odDlEdificio->ProcessDistantLights();
 		}
 #ifdef __EMSCRIPTEN__
 		{
@@ -1985,13 +2074,8 @@ CWorld::Process(void)
 			if (odDlNow - odDlLast > 1000) {
 				odDlLast = odDlNow;
 				char odDlT[208];
-				int odDlR = snprintf(odDlT, sizeof odDlT, "P4 kind=distlights schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 edificios=%d dummies=%d conefectos=%d", (unsigned)CTimer::GetFrameCounter(), odDlNow * 0.001f, (int)odDlEdificios, (int)odDlDummies, (int)odDlEfectos);
-				if (odDlR < 0 || odDlR >= (int)sizeof(odDlT)) {
-					char odDlO[208];
-					snprintf(odDlO, sizeof odDlO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), odDlNow * 0.001f, (int)sizeof(odDlT), odDlR);
-					ODTRACES(odDlO);
-				} else
-					ODTRACES(odDlT);
+				snprintf(odDlT, sizeof odDlT, "VEX mundo luces=1 edificios=%d dummies=%d conefectos=%d", (int)odDlEdificios, (int)odDlDummies, (int)odDlEfectos);
+				ODTRACES(odDlT);
 			}
 		}
 #endif
@@ -2000,6 +2084,7 @@ CWorld::Process(void)
 		odDlEfectos = 0;
 	}
 
+	OdWebMark(133);
 	if(bProcessCutsceneOnly) {
 		for(int i = 0; i < NUMCUTSCENEOBJECTS; i++) {
 			CCutsceneObject *csObj = CCutsceneMgr::GetCutsceneObject(i);
@@ -2023,7 +2108,8 @@ CWorld::Process(void)
 		CRecordDataForChase::ProcessControlCars();
 		CRecordDataForChase::SaveOrRetrieveCarPositions();
 	} else {
-		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+			odNodeSig = node->next;
 			CEntity *movingEnt = (CEntity *)node->item;
 			if(!movingEnt->bRemoveFromWorld && movingEnt->m_rwObject && RwObjectGetType(movingEnt->m_rwObject) == rpCLUMP &&
 			   RpAnimBlendClumpGetFirstAssociation(movingEnt->GetClump())) {
@@ -2036,18 +2122,77 @@ CWorld::Process(void)
 				}
 			}
 		}
-		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+		OdWebMark(137);
+		// T19: el siguiente se coge ANTES de tocar la entidad. Este cuerpo puede
+		// llamar a CWorld::Remove() y eso devuelve el CPtrNode al pool en el mismo
+		// frame; `node = node->next` leía el `next` de un nodo ya liberado, y si el
+		// pool lo reciclaba como InsertItem (inserta en la cabeza) el recorrido
+		// saltaba hacia atrás y volvía a procesar la misma lista sin terminar
+		// nunca. Es el cuelgue con mark=137: hilo a tope, sin JSERR, sin OOM y con
+		// el perro guardián vivo.
+		uint32 odListLen = 0;
+		for (CPtrNode *odN = ms_listMovingEntityPtrs.first; odN && odListLen < 8192; odN = odN->next)
+			odListLen++;
+#ifdef __EMSCRIPTEN__
+		// T20: tamano de la lista de entidades moviles para el heartbeat (mov=).
+		// Es el bucle que mas crece si el juego deja de soltar entidades; con esto
+		// se ve en la traza sin adivinar.
+		{
+			static uint32 odLastLen = 0xFFFFFFFF;
+			if (odListLen != odLastLen) {
+				odLastLen = odListLen;
+				EM_ASM({ try { OD.movingEnts = $0; } catch (e) {} }, (int)odListLen);
+			}
+		}
+#endif
+		uint32 odPasos = 0;
+		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+			odNodeSig = node->next;
 			CPhysical *movingEnt = (CPhysical *)node->item;
+			// T21: entidad ya liberada (ver OdEntidadEnAlgunPool). El nodo se
+			// desengancha y se sigue: no se puede procesar memoria muerta.
+			if (!OdEntidadEnAlgunPool(movingEnt)) {
+				char odFantT[128];
+				snprintf(odFantT, sizeof odFantT, "VEX entfantasma nodo=%p item=%p", (void*)node, (void*)movingEnt);
+				ODTRACES(odFantT);
+				ms_listMovingEntityPtrs.DeleteNode(node);
+				continue;
+			}
+			// Una entidad nueva entra por la cabeza, o sea por detrás del cursor:
+			// no puede visitarse en este recorrido. Si los pasos pasan del tamaño
+			// inicial, la lista se ha mordido la cola. Se corta el frame y queda
+			// dicho con qué entidad, que es lo que faltaba para cazarlo.
+			if (++odPasos > odListLen) {
+				char odCicloT[176];
+				snprintf(odCicloT, sizeof odCicloT, "VEX listaciclo pasos=%d len=%d model=%d st=%d",
+				         (int)odPasos, (int)odListLen, movingEnt->GetModelIndex(), (int)movingEnt->GetStatus());
+				ODTRACES(odCicloT);
+				break;
+			}
+			// Si vuelve a colgarse aquí, `ent` es exactamente la entidad en la
+			// mano: modelo * 16 + estado (ya no una de cada 8).
+			OdWebEnt(movingEnt->GetModelIndex() * 16 + (int)movingEnt->GetStatus());
+			// T19b: 210 peon / 211 coche / 212 otro / 213 borrado a mitad del
+			// recorrido. Con `ent` (modelo*16+estado) y el estado del peon, el
+			// proximo cuelgue dice en que rama se queda el hilo.
 			if(movingEnt->bRemoveFromWorld) {
+				OdWebMark(213);
 				RemoveEntityInsteadOfProcessingIt(movingEnt);
 			} else {
+				OdWebMark(movingEnt->IsPed() ? 210 : (movingEnt->IsVehicle() ? 211 : 212));
 				movingEnt->ProcessControl();
 				if(movingEnt->GetIsStatic()) { movingEnt->RemoveFromMovingList(); }
 			}
 		}
+		OdWebMark(134);
 		bForceProcessControl = true;
-		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+			odNodeSig = node->next;
 			CPhysical *movingEnt = (CPhysical *)node->item;
+			if (!OdEntidadEnAlgunPool(movingEnt)) {
+				ms_listMovingEntityPtrs.DeleteNode(node);
+				continue;
+			}
 			if(movingEnt->bWasPostponed) {
 				if(movingEnt->bRemoveFromWorld) {
 					RemoveEntityInsteadOfProcessingIt(movingEnt);
@@ -2058,8 +2203,10 @@ CWorld::Process(void)
 			}
 		}
 		bForceProcessControl = false;
+		OdWebMark(135);
 		if(CReplay::IsPlayingBack()) {
-			for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+				odNodeSig = node->next;
 				CEntity *movingEnt = (CEntity *)node->item;
 				movingEnt->bIsInSafePosition = true;
 				movingEnt->GetMatrix().UpdateRW();
@@ -2067,7 +2214,8 @@ CWorld::Process(void)
 			}
 		} else {
 			bNoMoreCollisionTorque = false;
-			for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+				odNodeSig = node->next;
 				CEntity *movingEnt = (CEntity *)node->item;
 				if(!movingEnt->bIsInSafePosition) {
 					movingEnt->ProcessCollision();
@@ -2077,7 +2225,8 @@ CWorld::Process(void)
 			}
 			bNoMoreCollisionTorque = true;
 			for(int i = 0; i < 4; i++) {
-				for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+				for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+					odNodeSig = node->next;
 					CEntity *movingEnt = (CEntity *)node->item;
 					if(!movingEnt->bIsInSafePosition) {
 						movingEnt->ProcessCollision();
@@ -2086,7 +2235,8 @@ CWorld::Process(void)
 					}
 				}
 			}
-			for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+				odNodeSig = node->next;
 				CEntity *movingEnt = (CEntity *)node->item;
 				if(!movingEnt->bIsInSafePosition) {
 					movingEnt->bIsStuck = true;
@@ -2097,7 +2247,8 @@ CWorld::Process(void)
 				}
 			}
 			bSecondShift = false;
-			for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+				odNodeSig = node->next;
 				CEntity *movingEnt = (CEntity *)node->item;
 				if(!movingEnt->bIsInSafePosition) {
 					movingEnt->ProcessShift();
@@ -2107,7 +2258,8 @@ CWorld::Process(void)
 				}
 			}
 			bSecondShift = true;
-			for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+				odNodeSig = node->next;
 				CPhysical *movingEnt = (CPhysical *)node->item;
 				if(!movingEnt->bIsInSafePosition) {
 					movingEnt->ProcessShift();
@@ -2125,7 +2277,9 @@ CWorld::Process(void)
 				}
 			}
 		}
-		for(CPtrNode *node = ms_listMovingEntityPtrs.first; node; node = node->next) {
+		OdWebMark(136);
+		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
+			odNodeSig = node->next;
 			CPed *movingPed = (CPed *)node->item;
 			if(movingPed->IsPed()) {
 				if(movingPed->bInVehicle && movingPed->m_nPedState != PED_EXIT_TRAIN ||
@@ -2175,7 +2329,7 @@ CWorld::Process(void)
 			odFallenPhase -= 1024.0f;
 		int32 odPhase = (int32)odFallenPhase;
 #else
-		int32 odPhase = (int32)CTimer::GetFrameCounter();
+		int32 odPhase = (int32)CTimer::GetLogicalFrameCounter();
 #endif
 		if((odPhase & 7) == 1) {
 			RemoveFallenPeds();
@@ -2212,25 +2366,54 @@ void
 CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, float fRadius, float fPower,
                                    CEntity *pCreator, bool bProcessVehicleBombTimer)
 {
-#ifdef VICEEXT_POLISH
-	int32 odSaved = 0;
-#endif
 	for(CPtrNode *pNode = list.first; pNode; pNode = pNode->next) {
 		CPhysical *pEntity = (CPhysical *)pNode->item;
 		CVector vecDistance = pEntity->GetPosition() - position;
 		float fMagnitude = vecDistance.Magnitude();
 		if(fRadius > fMagnitude) {
-#ifdef VICEEXT_POLISH
-			if(!CWorld::GetIsLineOfSightClear(position, pEntity->GetPosition(), true, false, false, true, false, false, false)) {
-				odSaved++;
-				continue;
-			}
-#endif
 			CWeapon::BlowUpExplosiveThings(pEntity);
 			CPed *pPed = (CPed *)pEntity;
 			CObject *pObject = (CObject *)pEntity;
 			CVehicle *pVehicle = (CVehicle *)pEntity;
 			if(!pEntity->bExplosionProof && (!pEntity->IsPed() || !pPed->bInVehicle)) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (fMagnitude > 1.5f) {
+					if (pEntity->IsPed() && !CWorld::GetIsLineOfSightClear(pPed->GetPosition(), position, true, false, false, false, false, true))
+						continue;
+
+					if (pEntity->IsVehicle() && pVehicle->IsBike()) {
+						if (!CWorld::GetIsLineOfSightClear(pEntity->GetPosition(), position, true, false, false, false, false, true))
+							continue;
+					} else if (pEntity->IsVehicle()) {
+						if (!CWorld::GetIsLineOfSightClear(pEntity->GetPosition() + pEntity->GetForward() * 1.5f, position, true, false, false, false, false, true) &&
+							!CWorld::GetIsLineOfSightClear(pEntity->GetPosition(), position, true, false, false, false, false, true) &&
+							!CWorld::GetIsLineOfSightClear(pEntity->GetPosition() - pEntity->GetForward() * 1.5f, position, true, false, false, false, false, true))
+							continue;
+					}
+
+					if (pEntity->IsObject() && !CWorld::GetIsLineOfSightClear(pObject->GetPosition(), position, true, false, false, false, false, true))
+						continue;
+				}
+#endif
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (fMagnitude > 1.5f) {
+					if (pEntity->IsPed() && !CWorld::GetIsLineOfSightClear(pPed->GetPosition(), position, true, false, false, false, false, true))
+						continue;
+
+					if (pEntity->IsVehicle() && pVehicle->IsBike()) {
+						if (!CWorld::GetIsLineOfSightClear(pEntity->GetPosition(), position, true, false, false, false, false, true))
+							continue;
+					} else if (pEntity->IsVehicle()) {
+						if (!CWorld::GetIsLineOfSightClear(pEntity->GetPosition() + pEntity->GetForward() * 1.5f, position, true, false, false, false, false, true) &&
+							!CWorld::GetIsLineOfSightClear(pEntity->GetPosition(), position, true, false, false, false, false, true) &&
+							!CWorld::GetIsLineOfSightClear(pEntity->GetPosition() - pEntity->GetForward() * 1.5f, position, true, false, false, false, false, true))
+							continue;
+					}
+
+					if (pEntity->IsObject() && !CWorld::GetIsLineOfSightClear(pObject->GetPosition(), position, true, false, false, false, false, true))
+						continue;
+				}
+#endif
 				if(pEntity->GetIsStatic()) {
 					if(pEntity->IsObject()) {
 						if (fPower > pObject->m_fUprootLimit || IsFence(pObject->GetModelIndex())) {
@@ -2327,15 +2510,6 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 			}
 		}
 	}
-#ifdef VICEEXT_POLISH
-	if(odSaved > 0) {
-#ifdef __EMSCRIPTEN__
-		char odT[192];
-		snprintf(odT, sizeof odT, "P4 kind=muro schema=1 gen=1 frame=%u sim=%.4f case=1 id=0 saved=%d radius=%.1f", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odSaved, fRadius);
-		ODTRACES(odT);
-#endif
-	}
-#endif
 }
 
 void

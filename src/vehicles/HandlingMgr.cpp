@@ -116,7 +116,6 @@ const char VehicleNames[NUMHANDLINGS][14] = {
 	"RCBARON",
 	"RCGOBLIN",
 	"RCCOPTER",
-	// Vice Extended (mismo orden que el enum)
 	"STREETFI",
 	"PEREN2",
 	"TRASH2",
@@ -345,7 +344,11 @@ cHandlingDataMgr::FindExactWord(const char *word, const char *words, int wordLen
 
 	for(i = 0; i < numWords; i++){
 		// BUG: the game does something really stupid here, it's fixed here
+		#ifdef VICEEXT_SP_HANDLING_NAMES
+		if(strcmp(word, words) == 0)
+		#else
 		if(strncmp(word, words, wordLen) == 0)
+		#endif
 			return i;
 		words += wordLen;
 	}

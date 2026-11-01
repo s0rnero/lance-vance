@@ -9,6 +9,7 @@
 #include "Game.h"
 #include "DMAudio.h"
 #include "screendroplets.h"
+#include "ondemand.h" // ODTRACES -> odtrace.log (traza de la fuente)
 
 #ifdef COMPATIBLE_SAVES
 #define PARTICLE_OBJECT_SIZEOF 0x84
@@ -67,6 +68,7 @@ CAudioHydrant::Remove(CParticleObject *particleobject)
 CParticleObject::CParticleObject() :
 	CPlaceable(),
 	m_nFrameCounter(0),
+	m_fFrameTimeCounter(0.0f),
 	m_nState(POBJECTSTATE_INITIALISED),
 	m_pNext(nil),
 	m_pPrev(nil),
@@ -151,6 +153,7 @@ CParticleObject::AddObject(uint16 type, CVector const &pos, CVector const &targe
 	pobj->m_nSkipFrames      = 1;
 	pobj->m_nCreationChance  = 0;
 	pobj->m_nFrameCounter    = 0;
+	pobj->m_fFrameTimeCounter = 0.0f;
 	
 	pobj->m_bRemove          = remove;
 	
@@ -387,9 +390,12 @@ CParticleObject::AddObject(tParticleType type, CVector const &pos, CVector const
 	pobj->m_vecTarget        = target;
 	
 	pobj->m_nNumEffectCycles = numEffectCycles;
-	pobj->m_nSkipFrames      = skipFrames;
+	// Un skip de 0 hacia que el objeto emitiera en cada frame renderizado; a
+	// 90/120 fps eso triplica la tasa. A 30 Hz un 0 y un 1 se comportan igual.
+	pobj->m_nSkipFrames      = (uint8)Max(1, (int32)skipFrames);
 	pobj->m_nCreationChance  = creationChance;
 	pobj->m_nFrameCounter    = 0;
+	pobj->m_fFrameTimeCounter = 0.0f;
 	
 	pobj->m_bRemove          = remove;
 	
@@ -445,7 +451,7 @@ CParticleObject::UpdateAll(void)
 	}
 
 	{
-		int32 frame = CTimer::GetFrameCounter() & 31;
+		int32 frame = CTimer::GetLogicalFrameCounter() & 31;
 		int32 counter = 0;
 	
 		CParticleObject *pobj = pFarListHead;
@@ -495,9 +501,19 @@ void CParticleObject::UpdateClose(void)
 		}
 	}
 	
-	if ( ++this->m_nFrameCounter >= this->m_nSkipFrames )
+#ifdef __EMSCRIPTEN__
+	static uint32 s_odFountainGroups = 0;
+	static uint32 s_odFountainParticles = 0;
+	static uint32 s_odFountainNextMs = 0;
+#endif
+
+	// El original emite una vez cada `m_nSkipFrames` actualizaciones a 30 Hz.
+	// Contar frames logicos de 30 Hz reproduce esa cadencia exacta a 30/60/
+	// 120 fps, sin depender de redondeos de milisegundos ni del timestep.
+	this->m_fFrameTimeCounter += (float)CTimer::GetLogicalFramesPassed();
+	if ( this->m_fFrameTimeCounter >= this->m_nSkipFrames )
     {
-		this->m_nFrameCounter = 0;
+		this->m_fFrameTimeCounter -= this->m_nSkipFrames;
 		
 		int32 randVal;
 		if ( this->m_nCreationChance != 0 )
@@ -938,6 +954,10 @@ void CParticleObject::UpdateClose(void)
 				
 				case POBJECT_WATER_FOUNTAIN_VERT:
 				{
+#ifdef __EMSCRIPTEN__
+					++s_odFountainGroups;
+					s_odFountainParticles += 8;
+#endif
 					CVector pos = this->GetPosition();
 					CVector vel = this->m_vecTarget;
 					
@@ -1026,6 +1046,25 @@ void CParticleObject::UpdateClose(void)
 			}
 		}
 	}
+
+#ifdef __EMSCRIPTEN__
+	{
+		// Una traza por segundo: grupos y particulas emitidas por la fuente.
+		// A 30 Hz deben ser ~30 grupos/s (240 particulas/s en la vertical).
+		uint32 odNow = CTimer::GetTimeInMilliseconds();
+		if (s_odFountainNextMs == 0)
+			s_odFountainNextMs = odNow + 1000;
+		else if (odNow >= s_odFountainNextMs) {
+			s_odFountainNextMs = odNow + 1000;
+			char odT[128];
+			snprintf(odT, sizeof odT, "VICEEXT fountain n=%u part=%u",
+				s_odFountainGroups, s_odFountainParticles);
+			ODTRACES(odT);
+			s_odFountainGroups = 0;
+			s_odFountainParticles = 0;
+		}
+	}
+#endif
 	
 	if ( this->m_nRemoveTimer != 0 && this->m_nRemoveTimer < CTimer::GetTimeInMilliseconds() )
 	{

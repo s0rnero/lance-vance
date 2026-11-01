@@ -19,6 +19,19 @@
 #error "Need librw for EXTENDED_PIPELINES"
 #endif
 
+int32 g_nSkyEnvMapSize = 128;
+int32 g_nSkyMatFXBlendStyle = 0;
+int32 g_nSkyMatFXTexgenStyle = 0;
+bool g_bSkyMatFXPS2Light = true;
+
+int32 g_nSkyWorldPipe = 0;
+
+// SkyGFX instalado: `dualPass=1`. Solo afecta al mundo transparente; los
+// vehiculos siguen por `defaultRenderCB` (arreglo del cristal).
+bool g_bSkyDualPass = true;
+
+
+
 namespace CustomPipes {
 
 rw::int32 CustomMatOffset;
@@ -48,6 +61,20 @@ rw::TexDictionary *neoTxd;
 
 bool bRenderingEnvMap;
 int32 EnvMapSize = 128;
+
+void
+SetEnvMapSize(int32 size)
+{
+	int32 n = 1;
+	while(n < size)
+		n *= 2;
+	if(n < 32)
+		n = 32;
+	if(n > 1024)
+		n = 1024;
+	EnvMapSize = n;
+}
+
 rw::Camera *EnvMapCam;
 rw::Texture *EnvMapTex;
 rw::Texture *EnvMaskTex;
@@ -123,7 +150,7 @@ RenderEnvMapScene(void)
 void
 EnvMapRender(void)
 {
-	if(VehiclePipeSwitch != VEHICLEPIPE_NEO)
+	if(VehiclePipeSwitch != VEHICLEPIPE_NEO && !LeedsCarPipeEnabled())
 		return;
 
 	RwCameraEndUpdate(Scene.camera);
@@ -134,9 +161,15 @@ EnvMapRender(void)
 	EnvMapCam->getFrame()->transform(&EnvMapCam->getFrame()->matrix, rw::COMBINEREPLACE);
 
 	rw::RGBA skycol;
+#ifdef VICEEXT_IMPROVED_VEHICLES
+	skycol.red = CTimeCycle::GetSkyTopRed();
+	skycol.green = CTimeCycle::GetSkyTopGreen();
+	skycol.blue = CTimeCycle::GetSkyTopBlue();
+#else
 	skycol.red = CTimeCycle::GetSkyBottomRed();
 	skycol.green = CTimeCycle::GetSkyBottomGreen();
 	skycol.blue = CTimeCycle::GetSkyBottomBlue();
+#endif
 	skycol.alpha = 255;
 	EnvMapCam->clear(&skycol, rwCAMERACLEARZ|rwCAMERACLEARIMAGE);
 	RwCameraBeginUpdate(EnvMapCam);
@@ -166,6 +199,9 @@ EnvMapRender(void)
 static void
 EnvMapInit(void)
 {
+#ifdef VICEEXT_SKY_ENVMAP_SIZE
+	SetEnvMapSize(g_nSkyEnvMapSize);
+#endif
 	if(neoTxd)
 		EnvMaskTex = neoTxd->find("CarReflectionMask");
 
@@ -350,6 +386,8 @@ InterpolatedLight DiffColor(Color(0.0f, 0.0f, 0.0f, 0.0f));
 InterpolatedLight SpecColor(Color(0.7f, 0.7f, 0.7f, 1.0f));
 rw::ObjPipeline *vehiclePipe;
 
+float LeedsEnvMult = 0.4f;
+
 void
 AttachVehiclePipe(rw::Atomic *atomic)
 {
@@ -374,6 +412,9 @@ float LightmapMult = 1.0f;
 InterpolatedFloat WorldLightmapBlend(1.0f);
 rw::ObjPipeline *worldPipe;
 
+float LeedsWorldPrelightTweakMult = 1.0f;
+float LeedsWorldPrelightTweakAdd = 0.0f;
+
 void
 AttachWorldPipe(rw::Atomic *atomic)
 {
@@ -385,6 +426,26 @@ AttachWorldPipe(rw::Clump *clump)
 {
 	FORLIST(lnk, clump->atomics)
 		AttachWorldPipe(rw::Atomic::fromClump(lnk));
+}
+
+bool
+LeedsCarPipeEnabled(void)
+{
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	return VehiclePipeSwitch == VEHICLEPIPE_LEEDS;
+#else
+	return false;
+#endif
+}
+
+bool
+LeedsWorldPipeEnabled(void)
+{
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	return g_nSkyWorldPipe == WORLDPIPE_LEEDS;
+#else
+	return false;
+#endif
 }
 
 
@@ -479,6 +540,14 @@ CustomPipeInit(void)
 
 	CreateVehiclePipe();
 	CreateWorldPipe();
+#ifdef RW_OPENGL
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	CreateLeedsVehiclePipe();
+#endif
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	CreateLeedsWorldPipe();
+#endif
+#endif
 	CreateGlossPipe();
 	CreateRimLightPipes();
 }
@@ -488,6 +557,14 @@ CustomPipeShutdown(void)
 {
 	DestroyVehiclePipe();
 	DestroyWorldPipe();
+#ifdef RW_OPENGL
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	DestroyLeedsVehiclePipe();
+#endif
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	DestroyLeedsWorldPipe();
+#endif
+#endif
 	DestroyGlossPipe();
 	DestroyRimLightPipes();
 

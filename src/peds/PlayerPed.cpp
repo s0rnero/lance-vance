@@ -11,6 +11,8 @@
 #include "Pad.h"
 #include "Camera.h"
 #include "WeaponEffects.h"
+#include "Sprite.h"
+#include "Sprite2d.h"
 #include "ModelIndices.h"
 #include "World.h"
 #include "RpAnimBlend.h"
@@ -46,9 +48,13 @@
 
 #ifdef VICEEXT_SWIMMING
 static int32 s_odSwimSlot = 0;
+static bool s_odSwimTired = false;
 #endif
 
 bool CPlayerPed::bDontAllowWeaponChange;
+#ifdef VICEEXT_EXTRA_CHEATS
+bool CPlayerPed::bNoWantedCheat;
+#endif
 #ifndef MASTER
 bool CPlayerPed::bDebugPlayerInfo;
 #endif
@@ -81,10 +87,6 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	m_fCurrentStamina = m_fMaxStamina = 150.0f;
 #endif
 #ifdef VICEEXT_SWIMMING
-	// Vice Extended (features.ini: EnableSwimming=1): "nadar sin riesgo de
-	// morir". El daño por ahogamiento (CPed::InflictDamage, WEAPONTYPE_DROWNING)
-	// se ignora cuando bDrownsInWater es falso, así que el jugador puede bucear
-	// sin morir; los NPC siguen ahogándose como en el juego original.
 	bDrownsInWater = false;
 #endif
 	SetInitialState();
@@ -134,12 +136,20 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 	bIsPlayerAiming = false;
 #endif
 
+#ifdef VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT
+	m_pThirdPersonMouseTarget = nil;
+#endif
+
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 	bIsAutoAiming = false;
 #endif
 
 #ifdef VICEEXT_IMPROVED_TECH_PART
 	m_bSkipPhoneCall = false;
+#endif
+
+#ifdef VICEEXT_FEATURES_INI
+	m_nHealthRegenerationTime = 0;
 #endif
 }
 
@@ -243,8 +253,12 @@ CPlayerPed::ReactivatePlayerPed(int32 index)
 	CWorld::Add(CWorld::Players[index].m_pPed);
 }
 
+#ifdef __EMSCRIPTEN__
+static bool s_odReloadManual = false;
+#endif
 #ifdef VICEEXT_CROUCH
-void CPlayerPed::ProcessCrouch(void)
+void
+CPlayerPed::ProcessCrouch(void)
 {
 	if (!bIsDucking)
 		return;
@@ -286,7 +300,7 @@ void CPlayerPed::ProcessCrouch(void)
 		if ((m_fMoveSpeed < 0.1f || (padLeftRight != 0 && padUpDown == 0)) && !curCrouchIdleAssoc && !bIsCurRollAnim || m_nPedState == PED_ROLL)
 			curCrouchIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
 
-		if (pad->GetTarget() && m_fMoveSpeed > 0.1f && (!curCrouchIdleAssoc || curCrouchIdleAssoc && curCrouchIdleAssoc->blendAmount >= 1.0f) && !bIsCurMoveAnim && !bIsCurRollAnim &&
+		if (pad->GetTarget() && m_fMoveSpeed > 0.1f && (!curCrouchIdleAssoc || curCrouchIdleAssoc && curCrouchIdleAssoc->blendAmount >= 1.0f) && !bIsCurMoveAnim && !bIsCurRollAnim && 
 			(padLeftRight < -20 || padLeftRight > 20)) {
 
 			if (curCrouchForwardAssoc)
@@ -339,7 +353,7 @@ void CPlayerPed::ProcessCrouch(void)
 	} else if (pad) {
 		if (m_fMoveSpeed < 0.1f) {
 			TheCamera.Cams[TheCamera.ActiveCam].m_fTargetCameraPosZ = 0.6f;
-
+		
 			if (!curCrouchIdleAssoc)
 				curCrouchIdleAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_CROUCH_IDLE, 4.0f);
 		}
@@ -353,7 +367,8 @@ void CPlayerPed::ProcessCrouch(void)
 	}
 }
 
-void CPlayerPed::FinishRollCB(CAnimBlendAssociation* assoc, void* arg)
+void
+CPlayerPed::FinishRollCB(CAnimBlendAssociation* assoc, void* arg)
 {
 	assoc->blendDelta = -1000.0f;
 
@@ -496,16 +511,34 @@ static void
 ViceExtAimTrace(CPlayerPed *ped)
 {
 	static int s_odAimSig = -1;
+	static uint32 s_odAimTick = 0;
 	int apunta = ped->bIsPlayerAiming ? 1 : 0;
 	int coche = ped->InVehicle() ? 1 : 0;
 	int modo = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 	int sig = apunta | (coche << 1) | (modo << 2);
-	if (sig == s_odAimSig)
+	uint32 ahora = CTimer::GetTimeInMilliseconds();
+	if (sig == s_odAimSig && !(apunta && ahora - s_odAimTick >= 1000))
 		return;
 	s_odAimSig = sig;
-	char t[160];
-	snprintf(t, sizeof t, "VEX apunta apunta=%d coche=%d modo=%d arma=%d estado=%d",
-		apunta, coche, modo, (int)ped->GetWeapon()->m_eWeaponType, (int)ped->m_nPedState);
+	s_odAimTick = ahora;
+	CVector camF = TheCamera.Cams[TheCamera.ActiveCam].Front;
+	float camAng = Atan2(camF.y, camF.x);
+	float pedAng = Atan2(Cos(ped->m_fRotationCur), -Sin(ped->m_fRotationCur));
+	float desv = RADTODEG(pedAng - camAng);
+	while (desv > 180.0f) desv -= 360.0f;
+	while (desv < -180.0f) desv += 360.0f;
+	if (desv < 0.0f) desv = -desv;
+	float peso = 0.0f;
+	AnimationId odAnims[] = { ANIM_STD_GUN_STAND, ANIM_STD_GUNMOVE_FWD, ANIM_STD_GUNMOVE_BWD,
+	                          ANIM_STD_GUNMOVE_L, ANIM_STD_GUNMOVE_R };
+	for (int i = 0; i < ARRAY_SIZE(odAnims); i++) {
+		CAnimBlendAssociation *odAssoc = RpAnimBlendClumpGetAssociation(ped->GetClump(), odAnims[i]);
+		if (odAssoc && odAssoc->blendAmount > peso)
+			peso = odAssoc->blendAmount;
+	}
+	char t[200];
+	snprintf(t, sizeof t, "VEX apunta apunta=%d coche=%d modo=%d arma=%d estado=%d desv=%.1f peso=%.2f",
+		apunta, coche, modo, (int)ped->GetWeapon()->m_eWeaponType, (int)ped->m_nPedState, desv, peso);
 	ODTRACES(t);
 }
 #endif
@@ -557,6 +590,32 @@ CPlayerPed::MakeChangesForNewWeapon(eWeaponType weapon)
 		weaponAnim->flags |= ASSOC_FADEOUTWHENDONE;
 	}
 	TheCamera.ClearPlayerWeaponMode();
+
+#ifdef __EMSCRIPTEN__
+	{
+		CWeaponInfo *odInfo = CWeaponInfo::GetWeaponInfo(weapon);
+		AssocGroupId odGrupo = odInfo->m_AnimToPlay;
+		AnimationId odAnims[4];
+		odAnims[0] = GetPrimaryFireAnim(odInfo);
+		odAnims[1] = GetCrouchFireAnim(odInfo);
+		odAnims[2] = GetReloadAnim(odInfo);
+		odAnims[3] = GetCrouchReloadAnim(odInfo);
+		char t[260];
+		snprintf(t, sizeof t, "WINFO arma=%d grupo=%d flags=0x%X canaim=%d witharm=%d reload=%d crouchr=%d sight=%d clips=%d|%d|%d|%d",
+			(int)weapon, (int)odGrupo, odInfo->m_Flags,
+			odInfo->IsFlagSet(WEAPONFLAG_CANAIM) ? 1 : 0,
+			odInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) ? 1 : 0,
+			odInfo->IsFlagSet(WEAPONFLAG_RELOAD) ? 1 : 0,
+			odInfo->IsFlagSet(WEAPONFLAG_CROUCHFIRE) ? 1 : 0,
+			(int)odInfo->m_nWeaponSight,
+			(int)odAnims[0], (int)odAnims[1], (int)odAnims[2], (int)odAnims[3]);
+		ODTRACES(t);
+		char b[80];
+		snprintf(b, sizeof b, "VICEEXT 1p bind tecla=%d",
+			ControlsManager.GetControllerKeyAssociatedWithAction(CAMERA_CHANGE_VIEW_ALL_SITUATIONS, KEYBOARD));
+		ODTRACES(b);
+	}
+#endif
 }
 
 void
@@ -631,12 +690,70 @@ CPlayerPed::SetInitialState(void)
 	m_attachWepAmmo = 0;
 }
 
+#ifdef __EMSCRIPTEN__
+// La condicion que hace valida una pose en VC: las animaciones de cuerpo entero
+// suman 1. Si esa suma se va, el cuerpo se colapsa (la "bandera") o flota. Esta
+// linea es la prueba objetiva de que el agachado no ha vuelto a romperse.
+static void
+odPoseTrace(CPlayerPed *ped)
+{
+	static uint32 s_odNext = 0;
+	uint32 odAhora = CTimer::GetTimeInMilliseconds();
+	if (odAhora < s_odNext && odAhora + 60000 >= s_odNext)
+		return;
+	s_odNext = odAhora + 250;
+
+	RpClump *odClump = ped->GetClump();
+	float odEnteras = 0.0f, odParcial = 0.0f;
+	int odN = 0;
+	for (CAnimBlendAssociation *a = RpAnimBlendClumpGetFirstAssociation(odClump); a; a = RpAnimBlendGetNextAssociation(a)) {
+		if (a->IsPartial()) {
+			odParcial += a->blendAmount;
+		} else if (a->blendAmount > 0.0f) {
+			odEnteras += a->blendAmount;
+			odN++;
+		}
+	}
+	CAnimBlendAssociation *odIdle = RpAnimBlendClumpGetAssociation(odClump, ANIM_STD_CROUCH_IDLE);
+	CAnimBlendAssociation *odFwd = RpAnimBlendClumpGetAssociation(odClump, ANIM_STD_CROUCH_FORWARD);
+	CAnimBlendAssociation *odBwd = RpAnimBlendClumpGetAssociation(odClump, ANIM_STD_CROUCH_BACKWARD);
+	CAnimBlendAssociation *odRollL = RpAnimBlendClumpGetAssociation(odClump, ANIM_STD_CROUCH_ROLL_L);
+	CAnimBlendAssociation *odRollR = RpAnimBlendClumpGetAssociation(odClump, ANIM_STD_CROUCH_ROLL_R);
+	// Cuanto mira el ped respecto al frente de la camara: con desv en 0 tras
+	// la rueda, la orientacion de costado no se queda pegada.
+	float odPedAng = Atan2(Cos(ped->m_fRotationCur), -Sin(ped->m_fRotationCur));
+	float odCamAng = Atan2(TheCamera.Cams[TheCamera.ActiveCam].Front.y, TheCamera.Cams[TheCamera.ActiveCam].Front.x);
+	float odDesv = RADTODEG(odPedAng - odCamAng);
+	while (odDesv > 180.0f) odDesv -= 360.0f;
+	while (odDesv < -180.0f) odDesv += 360.0f;
+	if (odDesv < 0.0f) odDesv = -odDesv;
+	char t[240];
+	snprintf(t, sizeof t, "POSE sum=%.2f par=%.2f n=%d idle=%.2f fwd=%.2f bwd=%.2f roll=%.2f rolt=%.2f mps=%.2f est=%d desv=%.0f",
+		odEnteras, odParcial, odN,
+		odIdle ? odIdle->blendAmount : 0.0f,
+		odFwd ? odFwd->blendAmount : 0.0f,
+		odBwd ? odBwd->blendAmount : 0.0f,
+		(odRollL ? odRollL->blendAmount : 0.0f) + (odRollR ? odRollR->blendAmount : 0.0f),
+		odRollL ? odRollL->currentTime : (odRollR ? odRollR->currentTime : -1.0f),
+		ped->m_fMoveSpeed, (int)ped->m_nPedState, odDesv);
+	ODTRACES(t);
+}
+#endif
+
 void
 CPlayerPed::SetRealMoveAnim(void)
 {
+#ifdef VICEEXT_SWIMMING
+	if (ViceExtIsSwimming())
+		return;
+#endif
 #ifdef VICEEXT_CROUCH
 	if (bIsDucking) {
 		ProcessCrouch();
+
+#ifdef __EMSCRIPTEN__
+		odPoseTrace(this);
+#endif
 
 		return;
 	}
@@ -1255,7 +1372,33 @@ CPlayerPed::PlayerControlM16(CPad *padUsed)
 		CTimer::GetTimeInMilliseconds() - CTimer::GetTimeStepInMilliseconds() < GetWeapon()->m_nTimer && GetWeapon()->m_eWeaponState != WEAPONSTATE_OUT_OF_AMMO) {
 		DMAudio.PlayFrontEndSound(SOUND_WEAPON_AK47_BULLET_ECHO, GetWeapon()->m_eWeaponType);
 	}
+#ifdef __EMSCRIPTEN__
+	{
+		CWeapon *odW = GetWeapon();
+		int odAntes = odW->m_eWeaponState;
+		int odClip = odW->m_nAmmoInClip;
+		int odTotal = odW->m_nAmmoTotal;
+		odW->Update(m_audioEntityId, nil);
+#ifdef VICEEXT_WEAPON_UZIOLD
+		if (odW->m_eWeaponType == WEAPONTYPE_UZIOLD
+		    && odAntes == WEAPONSTATE_FIRING && odW->m_eWeaponState != WEAPONSTATE_FIRING) {
+			char t[180];
+			if (odClip > 0) {
+				snprintf(t, sizeof t, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=ih_exit estado=%d clip=%d total=%d ok=1",
+					(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+					(int)odW->m_eWeaponState, odClip, odTotal);
+				ODTRACES(t);
+			}
+			snprintf(t, sizeof t, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=exit estado=%d clip=%d total=%d ok=1",
+				(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+				(int)odW->m_eWeaponState, odClip, odTotal);
+			ODTRACES(t);
+		}
+#endif
+	}
+#else
 	GetWeapon()->Update(m_audioEntityId, nil);
+#endif
 }
 
 void
@@ -1784,6 +1927,20 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			}
 
 			if ((padUsed->GetTarget() || IsDoomMode()) && bIsPlayerAiming && !cantFire && GetWeapon()->m_eWeaponState != WEAPONSTATE_RELOADING && !bIsAutoAiming) {
+#ifdef __EMSCRIPTEN__
+				{
+					static uint32 s_odR3PNext = 0;
+					uint32 odNow = CTimer::GetTimeInMilliseconds();
+					if (odNow >= s_odR3PNext || odNow + 60000 < s_odR3PNext) {
+						s_odR3PNext = odNow + 1000;
+						char t[140];
+						snprintf(t, sizeof t, "R3P arma=%d modo=%d ped=%d mira=%d apunta=%d spd=%.2f",
+							(int)weapon, (int)TheCamera.Cams[TheCamera.ActiveCam].Mode, (int)m_nPedState,
+							bIsPlayerAiming ? 1 : 0, 1, m_fMoveSpeed);
+						ODTRACES(t);
+					}
+				}
+#endif
 				if (!IsDoomMode()) {
 #ifdef VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
 					if (weapon == WEAPONTYPE_ROCKETLAUNCHER && !bRocketLauncherThirdPersonAiming)
@@ -1803,6 +1960,50 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 
 				if (m_nPedState != PED_ATTACK && weapon != WEAPONTYPE_CAMERA) {
 					SetPointGunAt(nil);
+
+					float multiplier = 1.0f;
+					for (int i = 1; i < 60; i++) {
+						CWorld::pIgnoreEntity = this;
+						CColPoint colpoint;
+						CEntity *hitEntityRaycast;
+						if (CWorld::ProcessLineOfSight(TheCamera.GetPosition(), TheCamera.GetPosition() + TheCamera.GetForward() * 20.0f, colpoint, hitEntityRaycast, true, false, true, false, false, true)) {
+							if (hitEntityRaycast->IsPed()) {
+								CPed *hitPed = (CPed*)hitEntityRaycast;
+								if ((hitPed->CanSeeEntity(this, DEGTORAD(80.0f)) && hitPed->m_nPedType != PEDTYPE_COP) ||
+								    (hitPed->CanSeeEntity(this, DEGTORAD(80.0f)) && hitPed->m_nPedType == PEDTYPE_COP && !FindPlayerPed()->m_pWanted->IsPlayerHides())) {
+									m_pPointGunAt = hitPed;
+									CWorld::pIgnoreEntity = nil;
+									Say(SOUND_PED_AIMING);
+									break;
+								}
+							}
+						}
+						CWorld::pIgnoreEntity = nil;
+
+						CVector spherePos = GetPosition() + CVector(0.0f, 0.0f, 0.6f) + (TheCamera.GetForward() * 0.5f) * multiplier;
+						CEntity *hitEntityShapecast = CWorld::TestSphereAgainstWorld(spherePos, 0.25f, this, true, false, true, false, false, false);
+						if (!hitEntityShapecast) {
+							if (i == 59 && m_pPointGunAt)
+								m_pPointGunAt = nil;
+
+							multiplier++;
+							continue;
+						}
+
+						if (hitEntityShapecast->IsPed()) {
+							CPed *hitPed = (CPed*)hitEntityShapecast;
+							if ((hitPed->CanSeeEntity(this, DEGTORAD(80.0f)) && hitPed->m_nPedType != PEDTYPE_COP) ||
+							    (hitPed->CanSeeEntity(this, DEGTORAD(80.0f)) && hitPed->m_nPedType == PEDTYPE_COP && !FindPlayerPed()->m_pWanted->IsPlayerHides())) {
+								m_pPointGunAt = hitPed;
+								Say(SOUND_PED_AIMING);
+								break;
+							}
+						} else if (m_pPointGunAt) {
+							m_pPointGunAt = nil;
+
+							break;
+						}
+					}
 				}
 			}
 
@@ -1946,7 +2147,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 
 	if (CPad::GetPad(0)->WeaponReloadJustDown() && weaponInfo->IsFlagSet(WEAPONFLAG_RELOAD)) {
 		CWeapon* weapon = GetWeapon();
-		if (weapon->m_eWeaponState == WEAPONSTATE_READY && weapon->m_nAmmoInClip > 0 && 
+		if (weapon->m_eWeaponState == WEAPONSTATE_READY && weapon->m_nAmmoInClip > 0 &&
 			weapon->m_nAmmoInClip < weaponInfo->m_nAmountofAmmunition && weapon->m_nAmmoTotal != weapon->m_nAmmoInClip) {
 
 			weapon->m_eWeaponState = WEAPONSTATE_RELOADING;
@@ -1963,7 +2164,26 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			bIsAttacking = false;
 			bIsPointingGunAt = false;
 			m_shootTimer = CTimer::GetTimeInMilliseconds();
+#ifdef __EMSCRIPTEN__
+			s_odReloadManual = true;
+			{
+				char t[90];
+				snprintf(t, sizeof t, "VICEEXT reload start arma=%d clip=%d/%d total=%d",
+					(int)weapon->m_eWeaponType, weapon->m_nAmmoInClip,
+					weaponInfo->m_nAmountofAmmunition, weapon->m_nAmmoTotal);
+				ODTRACES(t);
+			}
+#endif
 		}
+#ifdef __EMSCRIPTEN__
+		else {
+			char t[90];
+			snprintf(t, sizeof t, "VICEEXT reload no arma=%d clip=%d/%d total=%d",
+				(int)weapon->m_eWeaponType, weapon->m_nAmmoInClip,
+				weaponInfo->m_nAmountofAmmunition, weapon->m_nAmmoTotal);
+			ODTRACES(t);
+		}
+#endif
 	}
 #else
 	if (padUsed->GetWeapon() && m_nMoveState != PEDMOVE_SPRINT) {
@@ -2074,7 +2294,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 							limitedRotDest -= 2 * PI;
 						}
 
-						m_fRotationCur += (limitedRotDest - m_fRotationCur) / 2;
+						m_fRotationCur += (limitedRotDest - m_fRotationCur) * (1.0f - Pow(0.5f, CTimer::GetTimeStep()));
 					}
 				}
 			}
@@ -2282,7 +2502,11 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 		return;
 	}
 
-	if (!CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY) && padUsed->GetSprint()) {
+	if (!CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->IsFlagSet(WEAPONFLAG_HEAVY) && padUsed->GetSprint()
+#ifdef VICEEXT_SWIMMING
+		&& !ViceExtIsSwimming()
+#endif
+		) {
 #if defined VICEEXT_CROUCH && defined VICEEXT_FIRING_AND_AIMING
 		if ((!m_pCurrentPhysSurface || (!m_pCurrentPhysSurface->bInfiniteMass || m_pCurrentPhysSurface->m_phy_flagA08)) && !bIsPlayerAiming && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_WEAPON_FIRE) &&
 			!bIsDucking && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE) && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD))
@@ -2427,8 +2651,10 @@ CPlayerPed::FindNewAttackPoints(void)
 #define VICEEXT_SWIM_STROKE_SLACK	0.65f
 #define VICEEXT_SWIM_CRAWL_ROOT_M	2.505f
 #define VICEEXT_SWIM_BREAST_ROOT_M	3.011f
+#define VICEEXT_SWIM_BUOY_SPEED		1.5f
 #define VICEEXT_SWIM_CHEST_M	1.45f
 #define VICEEXT_SWIM_HIP_M	1.10f
+#define VICEEXT_SWIM_STAY_M		0.15f
 static float __attribute__((noinline))
 ViceExtSwimClipSpeed(AnimationId odAnim, CAnimBlendAssociation *odAssoc)
 {
@@ -2533,6 +2759,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 {
 	static int s_odSwimState = 0;
 	static int s_odSwimTicks = 0;
+	static int s_odSwimEnterTicks = 0;
 	static const AnimationId odFallAnims[7] = {
 		ANIM_STD_JUMP_LAUNCH, ANIM_STD_JUMP_GLIDE, ANIM_STD_JUMP_LAND,
 		ANIM_STD_FALL, ANIM_STD_FALL_GLIDE, ANIM_STD_FALL_LAND,
@@ -2546,11 +2773,34 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	float odLevelW = 0.0f;
 	bool odHasWater = CWaterLevel::GetWaterLevel(GetPosition(), &odLevelW, true);
 	float odDepth = odHasWater ? (odLevelW - GetPosition().z) : -1.0f;
+	// 29/10: el mod entra al agua en cuanto la superficie supera los pies, sin
+	// esperar a que el cuerpo se hunda hasta el pecho. Antes se exigia
+	// bIsInWater + 0.41 m y en un chapuzon se seguia viendo la animacion de
+	// caida libre durante segundos. Se usa el mismo criterio que el mod
+	// (nivel > pies + 0.2) y se mantiene nadando mientras haya 0.2 m.
+	//
+	// 29/10 (28.0): en un salto alto el centro del ped esta ~1.04 m sobre el
+	// agua cuando los pies la tocan, por eso `odDepth > 0.30` no se cumplia
+	// hasta despues de varios segundos de caida. Ahora se entra en el primer
+	// contacto si el fondo esta lo bastante profundo; las aguas someras siguen
+	// siendo para caminar.
+	bool odDeepEnough = false;
+	if (odHasWater && bIsInWater && s_odSwimState == 0) {
+		// La profundidad se mide contra el fondo, no contra un rayo de 3 m:
+		// en mar abierto el fondo queda mucho mas abajo y el rayo corto decia
+		// "someras", dejando otra vez la animacion de caida.
+		bool odFoundGround = false;
+		float odGroundZ = CWorld::FindGroundZFor3DCoord(GetPosition().x, GetPosition().y,
+			GetPosition().z, &odFoundGround);
+		if (odFoundGround)
+			odDeepEnough = (odLevelW - odGroundZ) > 1.0f;
+	}
+	bool odEntry = odHasWater && bIsInWater && odDeepEnough;
 	bool odGuard = padUsed && !bInVehicle && !DyingOrDead()
 	    && !CReplay::IsPlayingBack()
 	    && (s_odSwimState != 0
-	        ? (odHasWater && odDepth > (VICEEXT_SWIM_HIP_M - FEET_OFFSET))
-	        : (odHasWater && bIsInWater && odDepth > (VICEEXT_SWIM_CHEST_M - FEET_OFFSET)));
+	        ? (odHasWater && odDepth > 0.20f)
+	        : (odHasWater && (odDepth > 0.30f || odEntry)));
 
 	int16 odLR = padUsed ? padUsed->GetPedWalkLeftRight() : 0;
 	int16 odUD = padUsed ? padUsed->GetPedWalkUpDown() : 0;
@@ -2568,6 +2818,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			ViceExtPedRelease(PEDLANE_NADO, PEDCAP_ARMA);
 			s_odSwimState = 0;
 			s_odSwimTicks = 0;
+			s_odSwimTired = false;
 			m_fMoveSpeed = 0.0f;
 			m_vecMoveSpeed.x = 0.0f;
 			m_vecMoveSpeed.y = 0.0f;
@@ -2618,6 +2869,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 #endif
 		s_odSwimState = 1;
 		s_odSwimTicks = 0;
+		s_odSwimEnterTicks = 0;
 		s_odSwimLastPosOk = false;
 		s_odSwimMedido = 0.0f;
 		s_odSwimPrevTime = 0.0f;
@@ -2642,7 +2894,6 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 		}
 		{
 			float odEntrada = m_vecMoveSpeed.Magnitude();
-			float odVol = Min(1.0f, 0.35f + odEntrada * 0.25f);
 			CVector odPos = GetPosition();
 			odPos.z -= FEET_OFFSET * 0.5f;
 			CRGBA odColor;
@@ -2650,7 +2901,6 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			odColor.green = (uint8)((0.5f * CTimeCycle::GetDirectionalGreen() + CTimeCycle::GetAmbientGreen()) * 127.5f);
 			odColor.blue = (uint8)((0.5f * CTimeCycle::GetDirectionalBlue() + CTimeCycle::GetAmbientBlue()) * 127.5f);
 			odColor.alpha = (uint8)CGeneral::GetRandomNumberInRange(48, 96);
-			DMAudio.PlayOneShot(m_audioEntityId, SOUND_SPLASH, odVol);
 			int odN = 60 + (int)Min(140.0f, odEntrada * 30.0f);
 			CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, odPos, CVector(0.0f, 0.0f, 0.1f),
 				0.0f, odN, odColor, true);
@@ -2671,13 +2921,18 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 #endif
 	}
 	bIsInTheAir = false;
+	bIsLanding = false;
 	ViceExtSwimWeaponFists(this, true);
 
 	float odLevel;
 	AnimationId odSwimAnim;
 	if (padMove > 0.0f) {
 		s_odSwimTicks = 0;
-		if (odSprintBtn) {
+		if (odSprintBtn && m_fCurrentStamina <= -150.0f)
+			s_odSwimTired = true;
+
+		if (odSprintBtn && !s_odSwimTired) {
+			UseSprintEnergy();
 			s_odSwimState = 3;
 			odLevel = VICEEXT_SWIM_SEREGA_SPRINT;
 			odSwimAnim = ANIM_STD_SWIM_CRAWL;
@@ -2686,12 +2941,15 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			odLevel = VICEEXT_SWIM_SEREGA_SWIM;
 			odSwimAnim = ANIM_STD_SWIM_BREAST;
 		}
+
+		if (!odSprintBtn && m_fCurrentStamina < 0.0f)
+			s_odSwimTired = true;
 		float odPadHead = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -leftRight, upDown);
 		float odDest = CGeneral::LimitRadianAngle(odPadHead - TheCamera.Orientation);
-		m_fRotationCur = odDest;
 		m_fRotationDest = odDest;
-		m_vecMoveSpeed.x = -Sin(odDest) * odLevel;
-		m_vecMoveSpeed.y = Cos(odDest) * odLevel;
+		if (m_vecMoveSpeed.Magnitude2D() < odLevel)
+			ApplyMoveForce(GetForward() * 0.7f);
+		ApplyMoveForce(CVector(-m_vecMoveSpeed.x * 3.0f, -m_vecMoveSpeed.y * 3.0f, 0.0f));
 	} else {
 		if (s_odSwimTicks <= VICEEXT_SWIM_SEREGA_TIMEOUT) ++s_odSwimTicks;
 		s_odSwimState = 1;
@@ -2703,15 +2961,20 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	}
 	float odTargetZ = odLevelW - (VICEEXT_SWIM_CHEST_M - FEET_OFFSET);
 	float odDz = odTargetZ - GetPosition().z;
-	if (odDz > 0.6f)
-		m_vecMoveSpeed.z = 0.045f;
-	else if (odDz > 0.05f)
-		m_vecMoveSpeed.z = Max(0.004f, odDz * 0.04f);
-	else if (odDz > 0.0f)
-		m_vecMoveSpeed.z = 0.004f;
-	else
-		m_vecMoveSpeed.z = Max(-0.006f, odDz * 0.02f);
-	m_fMoveSpeed = odLevel * GAME_SPEED_TO_METERS_PER_SECOND;
+	float odZMax = VICEEXT_SWIM_BUOY_SPEED * CTimer::GetTimeStepInSeconds();
+	// Entrada rapida: el primer contacto no debe verse como un ascensor
+	// lento mientras el modelo sigue en pose de caida.
+	if (s_odSwimEnterTicks < 20) {
+		float odZFast = 4.0f * CTimer::GetTimeStepInSeconds();
+		if (odZFast > odZMax)
+			odZMax = odZFast;
+		s_odSwimEnterTicks++;
+	}
+	CVector odPosNado = GetPosition();
+	odPosNado.z += (odDz > odZMax) ? odZMax : ((odDz < -odZMax) ? -odZMax : odDz);
+	SetPosition(odPosNado);
+	m_vecMoveSpeed.z = 0.0f;
+	m_fMoveSpeed = m_vecMoveSpeed.Magnitude2D() * GAME_SPEED_TO_METERS_PER_SECOND;
 
 	CAnimBlendAssociation *odSwimAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_PLAYERSWIM, odSwimAnim, 4.0f);
 	float odMedido = 0.0f;
@@ -2732,7 +2995,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	if (padMove > 0.0f) {
 		float odSwimNatural = ViceExtSwimClipSpeed(odSwimAnim, odSwimAssoc);
 		float odWant = Min(padMove / PAD_MOVE_TO_GAME_WORLD_MOVE, 1.0f);
-		float odSpeed = odLevel * GAME_SPEED_TO_METERS_PER_SECOND;
+		float odSpeed = m_vecMoveSpeed.Magnitude2D() * GAME_SPEED_TO_METERS_PER_SECOND;
 		if (odSwimAssoc) {
 			odPedido = odSwimNatural > 0.01f ? odSpeed / odSwimNatural : 0.0f;
 			odSwimAssoc->speed = odPedido > 0.01f
@@ -2865,7 +3128,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 						true, true, false, true, false, false, nil))
 					odSuelo = odPie.z - odCol.point.z;
 			}
-			snprintf(t, sizeof t, "SWIM2 move spd=%.1f avance=%.2f velo=%.2f dt=%.2f sube=%.2f clip=%d camz=%.2f camdist=%.2f modo=%d ahogando=%d serega=%.3f ticks=%d sprint=%d assoc=%.2f est=%d rot=%.2f ori=%.2f beta=%.2f aim=%d law=%d hdg=%.2f sw=%.2f fall=%.2f contacto=%d aire=%d vz=%.3f nivel=%.2f hondo=%.2f arma=%d glide=%.2f pie=%d col=%d duke=%d obj=%d suelo=%.2f odcrouch=%d",
+			snprintf(t, sizeof t, "SWIM2 move spd=%.1f avance=%.2f velo=%.2f dt=%.2f sube=%.2f clip=%d camz=%.2f camdist=%.2f modo=%d ahogando=%d serega=%.3f ticks=%d sprint=%d assoc=%.2f est=%d rot=%.2f ori=%.2f beta=%.2f aim=%d law=%d hdg=%.2f sw=%.2f fall=%.2f contacto=%d aire=%d vz=%.3f nivel=%.2f hondo=%.2f arma=%d glide=%.2f pie=%d col=%d duke=%d obj=%d suelo=%.2f odcrouch=%d estamina=%.1f velreal=%.3f",
 				m_fMoveSpeed, odAvance, odVelo, odDtWorld, odSube, (int)odSwimAnim,
 				odCamPos.z,
 				CVector2D(odCamPos.x - GetPosition().x, odCamPos.y - GetPosition().y).Magnitude(),
@@ -2880,7 +3143,8 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 				odLevelW, odDepth, (int)m_nSelectedWepSlot,
 		0.0f,
 		(int)bIsStanding, (int)bHasCollided, (int)bIsDucking,
-		(int)(m_pPointGunAt != nil), odSuelo, 0);
+		(int)(m_pPointGunAt != nil), odSuelo, 0,
+		m_fCurrentStamina, m_vecMoveSpeed.Magnitude2D());
 			ODTRACES(t);
 			float odEsperada = odLevel * GAME_SPEED_TO_METERS_PER_SECOND;
 			bool odErrCat = odAvance > 8.0f;
@@ -2977,28 +3241,10 @@ CPlayerPed::ViceExtPedAtTrace(void)
 void
 CPlayerPed::ProcessControl(void)
 {
-	// features.ini `HealthRegenerationUpToHalf` (familia 11): el fichero del mod
-	// manda; con la clave a 0 no se recupera vida parado.
-	if (ViceExtFeatures::On("HealthRegenerationUpToHalf", true))
-	{
-		bool odRegenNow = false;
-		if (!bInVehicle && !bIsInTheAir && m_nMoveState == PEDMOVE_STILL && m_fHealth > 0.0f
-			&& m_fHealth < CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth * 0.5f)
-			odRegenNow = true;
-		if (odRegenNow)
-			m_fHealth = Min(m_fHealth + 0.15f, CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth * 0.5f);
-#ifdef __EMSCRIPTEN__
-		{
-			static bool s_odRegenWas = false;
-			if (odRegenNow != s_odRegenWas) {
-				s_odRegenWas = odRegenNow;
-				char t[176];
-				snprintf(t, sizeof t, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=8 id=0 regen=%d hp=%.1f max=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)odRegenNow, m_fHealth, (int)CWorld::Players[CWorld::PlayerInFocus].m_nMaxHealth);
-				ODTRACES(t);
-			}
-		}
+#if defined VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT && defined VICEEXT_FIRING_AND_AIMING
+	Find3rdPersonMouseTarget();
 #endif
-	}
+
 #ifdef VICEEXT_FIRING_AND_AIMING
 	if (bIsPlayerAiming && (!IsPedInControl() && m_nPedState != PED_ROLL || m_nPedState == PED_FIGHT)) {
 		bIsPlayerAiming = false;
@@ -3019,6 +3265,66 @@ CPlayerPed::ProcessControl(void)
 #ifdef __EMSCRIPTEN__
 	ViceExtMovTrace(this);
 #endif
+#ifdef __EMSCRIPTEN__
+	{
+		CPad *odPad = GetPadFromPlayer(this);
+		bool odWalk = odPad ? odPad->GetPedWalk() : false;
+		static bool s_odWalkPrev = false;
+		static uint32 s_odWalkNext = 0;
+		uint32 odNow = CTimer::GetTimeInMilliseconds();
+		bool odFlanco = odWalk != s_odWalkPrev;
+		s_odWalkPrev = odWalk;
+		if (odFlanco || (odWalk && odNow >= s_odWalkNext)) {
+			s_odWalkNext = odNow + 1000;
+			char t[80];
+			snprintf(t, sizeof t, "AIMWALK tecla=%d spd=%.2f",
+				ControlsManager.GetControllerKeyAssociatedWithAction(PED_WALK, KEYBOARD), m_fMoveSpeed);
+			ODTRACES(t);
+		}
+		if (s_odReloadManual && GetWeapon()->m_eWeaponState != WEAPONSTATE_RELOADING) {
+			s_odReloadManual = false;
+			char t[64];
+			snprintf(t, sizeof t, "VICEEXT reload done manual=1");
+			ODTRACES(t);
+		}
+		static int s_odSprint = -1;
+		int odSprint = (m_nMoveState == PEDMOVE_SPRINT) ? 1 : 0;
+		if (odSprint != s_odSprint) {
+			s_odSprint = odSprint;
+			if (odSprint) {
+				CWeaponInfo *odInfo = GetWeapon()->GetInfo();
+				char t[90];
+				snprintf(t, sizeof t, "VICEEXT sprint grupo=%d arma=%d pesada=%d",
+					(int)m_animGroup, (int)GetWeapon()->m_eWeaponType,
+					odInfo->IsFlagSet(WEAPONFLAG_HEAVY) ? 1 : 0);
+				ODTRACES(t);
+			}
+		}
+		static bool s_odDuckPrev = false;
+		static uint32 s_odDuckOff = 0;
+		static uint32 s_odDuckNext = 0;
+		bool odDuck = bIsDucking;
+		if (odDuck != s_odDuckPrev) {
+			s_odDuckPrev = odDuck;
+			if (!odDuck)
+				s_odDuckOff = odNow;
+		}
+		if (!odDuck && s_odDuckOff && odNow - s_odDuckOff < 2000 && odNow >= s_odDuckNext) {
+			s_odDuckNext = odNow + 250;
+			float odIdle = 0.0f, odFwd = 0.0f, odBwd = 0.0f;
+			CAnimBlendAssociation *odA = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_IDLE);
+			CAnimBlendAssociation *odB = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD);
+			CAnimBlendAssociation *odC = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_BACKWARD);
+			if (odA) odIdle = odA->blendAmount;
+			if (odB) odFwd = odB->blendAmount;
+			if (odC) odBwd = odC->blendAmount;
+			char t[120];
+			snprintf(t, sizeof t, "CROUCHPOSE desde=%u idle=%.2f fwd=%.2f back=%.2f",
+				(unsigned)(odNow - s_odDuckOff), odIdle, odFwd, odBwd);
+			ODTRACES(t);
+		}
+	}
+#endif
 #if defined __EMSCRIPTEN__ && defined VICEEXT_FIRING_AND_AIMING
 	ViceExtAimTrace(this);
 #endif
@@ -3026,7 +3332,7 @@ CPlayerPed::ProcessControl(void)
 	// Mobile has some debug/abandoned cheat thing in here: "gbFrankenTommy"
 
 	if (m_nEvadeAmount != 0)
-		--m_nEvadeAmount;
+		m_nEvadeAmount = uint8(m_nEvadeAmount - Min((uint32)m_nEvadeAmount, CTimer::GetLogicalFramesPassed()));
 
 	if (m_nEvadeAmount == 0)
 		m_pEvadingFrom = nil;
@@ -3039,7 +3345,7 @@ CPlayerPed::ProcessControl(void)
 	if (m_pCurrentPhysSurface && m_pCurrentPhysSurface->IsVehicle() && ((CVehicle*)m_pCurrentPhysSurface)->IsBoat()) {
 		bTryingToReachDryLand = true;
 
-	} else if (!(((uint8)CTimer::GetFrameCounter() + m_randomSeed) & 0xF)) {
+	} else if (!(((uint8)CTimer::GetLogicalFrameCounter() + m_randomSeed) & 0xF)) {
 		CVehicle *nearVeh = (CVehicle*)CWorld::TestSphereAgainstWorld(GetPosition(), 7.0f, nil, false, true, false, false, false, false);
 		if (nearVeh && nearVeh->IsBoat())
 			bTryingToReachDryLand = true;
@@ -3048,8 +3354,9 @@ CPlayerPed::ProcessControl(void)
 	}
 
 	if (m_nFadeDrunkenness) {
-		if (m_nDrunkenness - 1 > 0) {
-			--m_nDrunkenness;
+		uint32 odDrunkTicks = CTimer::GetLogicalFramesPassed();
+		if (m_nDrunkenness - odDrunkTicks > 0) {
+			m_nDrunkenness = uint8(m_nDrunkenness - odDrunkTicks);
 		} else {
 			m_nDrunkenness = 0;
 			CMBlur::ClearDrunkBlur();
@@ -3123,6 +3430,11 @@ CPlayerPed::ProcessControl(void)
 	else if (m_nMoveState == PEDMOVE_RUN)
 		RestoreSprintEnergy(0.3f);
 
+#ifdef VICEEXT_SWIMMING
+	if (s_odSwimTired && m_fCurrentStamina >= 0.0f)
+		s_odSwimTired = false;
+#endif
+
 	if (m_nPedState == PED_DEAD) {
 		ClearWeaponTarget();
 		return;
@@ -3179,18 +3491,6 @@ CPlayerPed::ProcessControl(void)
 	}
 #endif
 
-#ifdef VICEEXT_CROUCH
-	if (m_nPedState == PED_ROLL && !bIsStanding) {
-		RestorePreviousState();
-
-		ClearDuck();
-	}
-
-	if (m_nPedState == PED_ROLL && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L) && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R)) {
-		SetRealMoveAnim();
-	}
-#endif
-
 #ifdef VICEEXT_FIRING_AND_AIMING
 	if (InVehicle() && bIsPlayerAiming && m_pMyVehicle->GetUp().z < 0.2f)
 		ClearWeaponTarget();
@@ -3206,10 +3506,6 @@ CPlayerPed::ProcessControl(void)
 #endif
 
 #ifdef VICEEXT_SWIMMING
-	// Sección 3, bloque C4 (20/09): nadar. Va antes del reparto de control
-	// porque mientras se nada el control a pie no debe correr (ver
-	// ViceExtSwimControl). Si viene de una caída al agua, el estado se deja en
-	// PED_IDLE: ya no está cayendo, está nadando.
 	bool odSwimming = ViceExtSwimControl(padUsed);
 	if (odSwimming && (m_nPedState == PED_FALL || m_nPedState == PED_JUMP))
 		SetPedState(PED_IDLE);
@@ -3221,6 +3517,18 @@ CPlayerPed::ProcessControl(void)
 			AudioManager.FinishMissionAudioPhoneDialogue(slot);
 	} else if (m_nPedState == PED_ANSWER_MOBILE && !m_bSkipPhoneCall && CPad::GetPad(0)->ExitVehicleJustDown()) {
 		m_bSkipPhoneCall = true;
+	}
+#endif
+
+#ifdef VICEEXT_CROUCH
+	if (m_nPedState == PED_ROLL && !bIsStanding) {
+		RestorePreviousState();
+
+		ClearDuck();
+	}
+
+	if (m_nPedState == PED_ROLL && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L) && !RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R)) {
+		SetRealMoveAnim();
 	}
 #endif
 
@@ -3240,8 +3548,6 @@ CPlayerPed::ProcessControl(void)
 #endif
 #ifdef VICEEXT_SWIMMING
 				if (odSwimming) {
-					// C4: nadando. El movimiento lo pone ViceExtSwimControl; aquí no
-					// se reparte el control a pie (ni 1ª persona ni Zelda).
 				} else
 #endif
 				if (TheCamera.Using1stPersonWeaponMode()) {
@@ -3266,13 +3572,10 @@ CPlayerPed::ProcessControl(void)
 			}
 		if (IsPedInControl() && m_nPedState != PED_ANSWER_MOBILE && padUsed)
 #ifdef VICEEXT_SWIMMING
-			// R30 (29/09): nadando no hay arma que procesar (punos; el mod no dispara en
-			// el agua). Sin esto el clic abria mele y tapaba el nado (swim13).
 			if (!CPlayerPed::ViceExtIsSwimming())
 #endif
 			ProcessPlayerWeapon(padUsed);
 #ifdef __EMSCRIPTEN__
-		// R19: posición y velocidad real (todas las sondas).
 		ViceExtPedAtTrace();
 #endif
 		break;
@@ -3549,7 +3852,7 @@ void
 CPlayerPed::UpdateMeleeAttackers(void)
 {
 	CVector attackCoord;
-	if (((CTimer::GetFrameCounter() + m_randomSeed + 7) & 3) == 0) {
+	if (((CTimer::GetLogicalFrameCounter() + m_randomSeed + 7) & 3) == 0) {
 		GetMeleeAttackCoords(attackCoord, m_nAttackDirToCheck, 2.0f);
 
 		// Check if there is any vehicle/building inbetween us and m_nAttackDirToCheck. Peds will be able to attack us from those available directions.
@@ -3723,4 +4026,100 @@ CPlayerPed::Load(uint8*& buf)
 }
 #undef CopyFromBuf
 #undef CopyToBuf
+#endif
+
+#ifdef VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT
+void
+CPlayerPed::Find3rdPersonMouseTarget(void)
+{
+	if (!bIsPlayerAiming || InVehicle() || m_bHasLockOnTarget)
+		goto end;
+
+	{
+		CCam *cam = &TheCamera.Cams[TheCamera.ActiveCam];
+		CVector source;
+		CVector target;
+		CEntity *e = nil;
+		CColPoint point;
+		CWeaponInfo *info = GetWeapon()->GetInfo();
+
+		TheCamera.Find3rdPersonCamTargetVector(info->m_fRange, cam->Source, source, target);
+		if (CWorld::ProcessLineOfSight(source, target, point, e, false, false, true, false, false, false)) {
+			if (e->GetType() == ENTITY_TYPE_PED) {
+				CPed *ped = (CPed*)e;
+				if (ped != this && ped->m_nPedState != PED_DEAD && m_pThirdPersonMouseTarget != ped) {
+					m_pThirdPersonMouseTarget = ped;
+#ifdef __EMSCRIPTEN__
+					char t[128];
+					snprintf(t, sizeof t, "VEX hud objetivo=%d salud=%.0f arma=%d", (int)ped->GetModelIndex(), ped->m_fHealth, (int)GetWeapon()->m_eWeaponType);
+					ODTRACES(t);
+#endif
+				}
+			}
+			return;
+		}
+	}
+
+end:
+	m_pThirdPersonMouseTarget = nil;
+}
+
+void
+CPlayerPed::DrawTriangleForMouseRecruitPed(void)
+{
+	if (TheCamera.m_uiTransitionState != 0)
+		return;
+
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+
+	CPed *target = m_pThirdPersonMouseTarget;
+	if (target && OurPedCanSeeThisOne(target, true)) {
+		RwV3d in;
+		RwV3d out;
+		float w, h;
+
+		in.x = target->GetPosition().x;
+		in.y = target->GetPosition().y;
+		in.z = target->GetPosition().z;
+		target->m_pedIK.GetComponentPosition(in, 1);
+		in.z += 1.0f;
+
+		float health = target->m_fHealth / 100.0f;
+		CRGBA col = CRGBA((1.0f - health) * 255, health * 255, 0, 150);
+
+		if (health <= 0.0f)
+			col = CRGBA(0, 0, 0, 255);
+
+		if (CSprite::CalcScreenCoors(in, &out, &w, &h, false)) {
+			auto rotateVertices = [](CVector2D *rect, float x, float y, float angle) {
+				float xold, yold;
+				float _cos = cosf(angle);
+				float _sin = sinf(angle);
+				for (unsigned int i = 0; i < 4; i++) {
+					xold = rect[i].x;
+					yold = rect[i].y;
+					rect[i].x = x + (xold - x) * _cos + (yold - y) * _sin;
+					rect[i].y = y - (xold - x) * _sin + (yold - y) * _cos;
+				}
+			};
+
+			auto drawTriangle = [&](float x, float y, float tw, float th, CVector2D center, float angle, CRGBA const &col) {
+				CVector2D posn[4];
+				posn[1].x = x - (tw * 0.5f); posn[1].y = y - (th * 0.5f); posn[0].x = x + (tw * 0.5f); posn[0].y = y - (th * 0.5f);
+				posn[3].x = x; posn[3].y = y + (th * 0.5f); posn[2].x = x; posn[2].y = y + (th * 0.5f);
+
+				rotateVertices(posn, x + (tw * center.x), y + (th * center.y), angle);
+				CSprite2d::Draw2DPolygon(posn[0].x, posn[0].y, posn[1].x, posn[1].y, posn[2].x, posn[2].y, posn[3].x, posn[3].y, col);
+			};
+
+			float dist = Clamp(w / 128.0f, 0.0f, 1.0f);
+			drawTriangle(out.x, out.y, SCREEN_SCALE_Y(20.0f * dist), SCREEN_SCALE_Y(10.0f * dist), CVector2D(0.0f, 0.0f), DEGTORAD(180.0f), col);
+		}
+	}
+}
 #endif

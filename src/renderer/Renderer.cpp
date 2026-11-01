@@ -836,17 +836,6 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 }
 
 #ifdef __EMSCRIPTEN__
-// D10 (sección 1, 20/09): diagnóstico del "LOD pegado".
-//
-// Un edificio lejano tiene dos versiones: el modelo LOD (barato) y el real. El
-// LOD se deja de dibujar en cuanto el modelo REAL está cargado (`GetRwObject()`)
-// **y** su alfa llegó a 255 (el fundido de entrada terminó). Si cualquiera de
-// las dos cosas no pasa, el LOD se sigue viendo de cerca: eso es exactamente
-// "texturas de baja resolución que no se actualizan" (calles, muros, Malibú...).
-//
-// Esta traza dice CUÁL de las dos falla, una sola vez por modelo y con la
-// distancia, para no tener que adivinar entre "el streaming no trae el modelo"
-// y "el alfa no sube".
 static void
 OdLodLeftDiag(int32 model, CSimpleModelInfo *nonLOD, float dist)
 {
@@ -915,8 +904,6 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 		   nonLOD->GetRwObject() && nonLOD->m_alpha == 255)
 			return VIS_INVISIBLE;
 #ifdef __EMSCRIPTEN__
-		// D10: el LOD se va a dibujar estando pegado (≤60 m) porque el modelo real
-		// no cumple las dos condiciones de arriba.
 		if(dist < 60.0f)
 			OdLodLeftDiag(ent->m_modelIndex, nonLOD, dist);
 #endif
@@ -1502,7 +1489,7 @@ CRenderer::ScanBigBuildingList(CPtrList &list)
 	CEntity *ent;
 	int vis;
 
-	int f = CTimer::GetFrameCounter() & 3;
+	int f = CTimer::GetLogicalFrameCounter() & 3;
 	for(node = list.first; node; node = node->next){
 		ent = (CEntity*)node->item;
 		if(ent->bOffscreen || (ent->m_randomSeed&3) != f){

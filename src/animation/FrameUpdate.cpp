@@ -42,7 +42,11 @@ FrameUpdateCallBackNonSkinned(AnimBlendFrameData *frame, void *arg)
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++){
 		if((*node)->sequence){
@@ -93,7 +97,11 @@ FrameUpdateCallBackWithVelocityExtractionNonSkinned(AnimBlendFrameData *frame, v
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++)
 		if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -179,7 +187,11 @@ FrameUpdateCallBackWith3dVelocityExtractionNonSkinned(AnimBlendFrameData *frame,
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++)
 		if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -253,7 +265,11 @@ FrameUpdateCallBackSkinned(AnimBlendFrameData *frame, void *arg)
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++){
 		if((*node)->sequence){
@@ -305,7 +321,11 @@ FrameUpdateCallBackWithVelocityExtractionSkinned(AnimBlendFrameData *frame, void
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++)
 		if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -389,7 +409,11 @@ FrameUpdateCallBackWith3dVelocityExtractionSkinned(AnimBlendFrameData *frame, vo
 	if(updateData->foobar)
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->association->IsPartial())
+			{
 				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 	for(node = updateData->nodes; *node; node++)
 		if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -468,7 +492,11 @@ FrameUpdateCallBackNonSkinnedCompressed(AnimBlendFrameData *frame, void *arg)
 		if(updateData->foobar)
 			for(node = updateData->nodes; *node; node++)
 				if((*node)->sequence && (*node)->association->IsPartial())
-					totalBlendAmount += (*node)->association->blendAmount;
+				{
+				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -521,7 +549,11 @@ FrameUpdateCallBackNonSkinnedCompressed(AnimBlendFrameData *frame, void *arg)
 		if(updateData->foobar)
 			for(node = updateData->nodes; *node; node++)
 				if((*node)->sequence && (*node)->association->IsPartial())
-					totalBlendAmount += (*node)->association->blendAmount;
+				{
+				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 		for(node = updateData->nodes; *node; node++){
 			if((*node)->sequence){
@@ -575,7 +607,11 @@ FrameUpdateCallBackSkinnedCompressed(AnimBlendFrameData *frame, void *arg)
 		if(updateData->foobar)
 			for(node = updateData->nodes; *node; node++)
 				if((*node)->sequence && (*node)->association->IsPartial())
-					totalBlendAmount += (*node)->association->blendAmount;
+				{
+				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 		for(node = updateData->nodes; *node; node++)
 			if((*node)->sequence && (*node)->sequence->HasTranslation()){
@@ -631,7 +667,11 @@ FrameUpdateCallBackSkinnedCompressed(AnimBlendFrameData *frame, void *arg)
 		if(updateData->foobar)
 			for(node = updateData->nodes; *node; node++)
 				if((*node)->sequence && (*node)->association->IsPartial())
-					totalBlendAmount += (*node)->association->blendAmount;
+				{
+				totalBlendAmount += (*node)->association->blendAmount;
+				if(totalBlendAmount > 1.0f)
+					totalBlendAmount = 1.0f;
+			}
 
 		for(node = updateData->nodes; *node; node++){
 			if((*node)->sequence){

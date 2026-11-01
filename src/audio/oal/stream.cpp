@@ -1053,7 +1053,10 @@ CStream::BuffersShouldBeFilled()
 	if ( FillBuffers() != 0 )
 	{
 		SetPlay(true);
+		m_bStartPending = false;
 	}
+	else
+		m_bStartPending = true;
 }
 
 // returns whether it's queued (not on multi-thread)
@@ -1220,6 +1223,7 @@ CStream::CStream(ALuint *sources, ALuint (&buffers)[NUM_STREAMBUFFERS]) :
 	m_pBuffer(nil),
 	m_bPaused(false),
 	m_bActive(false),
+	m_bStartPending(false),
 #ifdef MULTITHREADED_AUDIO
 	m_bIExist(false),
 	m_bDoSeek(false),
@@ -1248,6 +1252,7 @@ bool CStream::Open(const char* filename, uint32 overrideSampleRate)
 
 	m_bPaused = false;
 	m_bActive = false;
+	m_bStartPending = false;
 	m_bReset = false;
 	m_nVolume = 0;
 	m_nPan = 0;
@@ -1279,16 +1284,9 @@ bool CStream::Open(const char* filename, uint32 overrideSampleRate)
 	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".mp3")], ".mp3"))
 		m_pSoundFile = new CMP3File(m_aFilename);
 	else if (!strcasecmp(&m_aFilename[strlen(m_aFilename) - strlen(".adf")], ".adf")){
-		// Web: aceptar tanto ADF original (XOR 0x22) como MP3 plano con
-		// extensión .adf (conversión ligera estilo revcDOS: ffmpeg 22kHz).
-		// Sniff previo del sync MP3 (0xFFE) para no escupir errores de
-		// mpg123 al probar el lector equivocado. Nativo intacto.
 		bool isPlainMp3 = false;
 		FILE *sniff = fopen(m_aFilename, "rb");
 		if(sniff){
-			// MP3 plano: sync 0xFFE o etiqueta ID3 (nuestros convertidos
-			// llevan ID3 y el sniff viejo los mandaba al lector XOR,
-			// que escupía el error "junk" y costaba una apertura fallida).
 			uint8 hdr[10];
 			size_t n = fread(hdr, 1, sizeof(hdr), sniff);
 			if(n >= 2 && ((hdr[0] == 0xFF && (hdr[1] & 0xE0) == 0xE0) ||
@@ -1516,15 +1514,22 @@ uint32 CStream::GetPosMS()
 	if (m_pSoundFile->GetChannels() == 0)
 		return 0;
 
-	ALint offset;
-	//alGetSourcei(m_alSource, AL_SAMPLE_OFFSET, &offset);
+	ALint offset = 0;
 	alGetSourcei(m_pAlSources[0], AL_BYTE_OFFSET, &offset);
 
-	//std::lock_guard<std::mutex> lock(m_mutex);
+	ALint queued = 0, processed = 0;
+	alGetSourcei(m_pAlSources[0], AL_BUFFERS_QUEUED, &queued);
+	alGetSourcei(m_pAlSources[0], AL_BUFFERS_PROCESSED, &processed);
 
-	return m_pSoundFile->Tell()
-		- m_pSoundFile->samples2ms(m_pSoundFile->GetBufferSamples() * (NUM_STREAMBUFFERS/2-1)) / m_pSoundFile->GetChannels()
-		+ m_pSoundFile->samples2ms(offset/m_pSoundFile->GetSampleSize()) / m_pSoundFile->GetChannels();
+	int32 pending = queued - processed;
+	if ( pending < 0 )
+		pending = 0;
+
+	int32 position = int32(m_pSoundFile->Tell())
+		- int32(m_pSoundFile->samples2ms(m_pSoundFile->GetBufferSamples() * (uint32)pending) / m_pSoundFile->GetChannels())
+		+ int32(m_pSoundFile->samples2ms(offset/m_pSoundFile->GetSampleSize()) / m_pSoundFile->GetChannels());
+
+	return position < 0 ? 0 : (uint32)position;
 }
 
 uint32 CStream::GetLengthMS()
@@ -1717,6 +1722,19 @@ void CStream::Update()
 	if ( !m_bPaused )
 	{
 		
+#ifndef MULTITHREADED_AUDIO
+		if ( m_bStartPending && !m_bActive )
+		{
+			ClearBuffers();
+			if ( FillBuffers() != 0 )
+			{
+				m_bStartPending = false;
+				SetPlay(true);
+			}
+			return;
+		}
+#endif
+
 		bool buffersQueuedAndStarted = false;
 		bool buffersQueuedButNotStarted = false;
 #ifdef MULTITHREADED_AUDIO
@@ -1733,21 +1751,14 @@ void CStream::Update()
 	ALint totalBuffers[2] = {0, 0};
 	ALint buffersProcessed[2] = {0, 0};
 
-	// Relying a lot on left buffer states in here
 
 #ifdef __EMSCRIPTEN__
-	// Web: los dos sources estéreo pueden desincronizarse (Web Audio) o el
-	// bridge JS puede no escribir el out-param; eso dejaba este do/while
-	// girando para siempre (freeze en cinemáticas con speech). Acotar y, si
-	// persiste el desacuerdo, seguir con el izquierdo como ya hace el resto.
 	int syncTries = 0;
 #endif
 	do
 	{
-		//alSourcef(m_pAlSources[0], AL_ROLLOFF_FACTOR, 0.0f);
 		alGetSourcei(m_pAlSources[0], AL_BUFFERS_QUEUED, &totalBuffers[0]);
 		alGetSourcei(m_pAlSources[0], AL_BUFFERS_PROCESSED, &buffersProcessed[0]);
-		//alSourcef(m_pAlSources[1], AL_ROLLOFF_FACTOR, 0.0f);
 		alGetSourcei(m_pAlSources[1], AL_BUFFERS_QUEUED, &totalBuffers[1]);
 		alGetSourcei(m_pAlSources[1], AL_BUFFERS_PROCESSED, &buffersProcessed[1]);
 #ifdef __EMSCRIPTEN__
@@ -1766,6 +1777,7 @@ void CStream::Update()
 	} while (buffersProcessed[0] != buffersProcessed[1]);
 
 		assert(buffersProcessed[0] == buffersProcessed[1]);
+		ALint processedCount = buffersProcessed[0];
 
 		// Correcting OpenAL concepts here:
 		// AL_BUFFERS_QUEUED = Number of *all* buffers in queue, including processed, processing and pending
@@ -1812,7 +1824,7 @@ void CStream::Update()
 				while (!tempFillBuffer.empty()) {
 					auto elem = tempFillBuffer.front();
 					tempFillBuffer.pop();
-					buffersQueuedButNotStarted = BufferShouldBeFilledAndQueued(&elem);
+					buffersQueuedButNotStarted = buffersQueuedButNotStarted || BufferShouldBeFilledAndQueued(&elem);
 				}
 #ifdef MULTITHREADED_AUDIO
 				m_mutex.unlock();
@@ -1825,6 +1837,9 @@ void CStream::Update()
 		// Source may be starved to audio and stopped itself
 		if (m_bActive && !buffersQueuedAndStarted && (buffersQueuedButNotStarted || (totalBuffers[1] - buffersProcessed[1] != 0)))
 			SetPlay(true);
+
+		if (m_bActive && m_nLoopCount == 1 && totalBuffers[0] == processedCount && !IsPlaying())
+			m_bActive = false;
 	}
 }
 

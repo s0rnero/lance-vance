@@ -7,6 +7,11 @@
 
 class CObject;
 
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+// Compartido por coches y motos: cambia el material del intermitente.
+void ViceExtSetIndicatorMaterial(RwFrame *frame, bool on);
+#endif
+
 enum {
 	CARWHEEL_FRONT_LEFT,
 	CARWHEEL_REAR_LEFT,
@@ -135,18 +140,19 @@ public:
 	void SetupSuspensionLines(void);
 	void ScanForCrimes(void);
 	void BlowUpCarsInPath(void);
-#ifdef VICEEXT_TURN_SIGNALS
-	// Sección 3, bloque C3.4: intermitentes (coronas en los objetos/dummies
-	// `indicator*` del modelo) del coche del jugador y de los NPC cercanos.
-	// Define APAGADO por defecto (paridad con StandardCarsUseTurnSignals=0).
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 	void ViceExtProcessTurnSignals(void);
+	void ViceExtApplyIndicatorMaterials(void);
+	bool m_bIndicatorState[2];
 #endif
-#ifdef VICEEXT_CAR_ROTATE_WHEEL
-	// v2.5 "Rotating steering wheel": gira el objeto suelto `steeringwheel` del
-	// modelo, que su propio tutorial (AdaptingVehiclesEN.txt, lineas 14-15) manda
-	// colgar de `chassis_hi` y con el pivote inclinado. Lo traen 18 modelos del
-	// gta3.img servido (medido en el plan 1.12, F9); en los demas es un no-op.
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 	void ViceExtRotateSteeringWheel(void);
+#ifdef VICEEXT_IMPROVED_VEHICLES
+	void SetWheelMissing(int32 wheel);	// 6.11: la rueda se cae y vuela
+#endif
+#endif
+#ifdef VICEEXT_CHEAT_EFFECTS
+	void DoHoverAboveSurface(void);	// 11.03 AIRWAYS: vuelo del coche con el mando
 #endif
 	bool HasCarStoppedBecauseOfLight(void);
 	void SetBusDoorTimer(uint32 timer, uint8 type);

@@ -3,8 +3,6 @@
 #include "Game.h"
 #include "PCSave.h"
 
-// 8 ranuras visibles (GTAVCsf1..8.b) + la 9 = autosave / quicksave de pausa
-// (GTAVCsf9.b). Ver PAUSE_SAVE_SLOT en GenericGameStorage.cpp y VICEEXT_AUTOSAVE.
 #define SLOT_COUNT (9)
 
 void InitRadioStationPositionList();
@@ -31,14 +29,16 @@ wchar *GetNameOfSavedGame(int32 slot);
 bool CheckDataNotCorrupt(int32 slot, char *name);
 bool RestoreForStartLoad();
 #ifdef VICEEXT_SAVE_ANYWHERE
-// Sección 3 (Vice Extended, "Saving anywhere"): las tres condiciones del mod
-// (sin misión, sin nivel de búsqueda y sin moverse) para guardar donde sea.
 bool ViceExtCanSaveAnywhere(void);
 #endif
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+extern bool bAutoSave;
+extern bool bSaveAnywhere;
+extern bool bIsAutoSaveRequested;
+void DoAutoSave(void);
+#endif
+
 #ifdef VICEEXT_AUTOSAVE
-// Sección 3, C2b: verdadero SÓLO mientras el autosave escribe. La ranura 9 (la
-// del autoguardado) no se puede pisar con un guardado normal: `MENUACTION_SAVEGAME`
-// lo rechaza salvo con esta marca puesta (ver Frontend.cpp).
 extern bool ViceExtAutosaveInProgress;
 #endif
 int align4bytes(int32 size);
@@ -69,9 +69,6 @@ const char TopLineEmptyFile[] = "THIS FILE IS NOT VALID YET";
 
 #ifdef MISSION_REPLAY
 extern int8 IsQuickSave; // originally int
-// Ranura de pausa = 9ª (GTAVCsf9.b): la usan el quicksave/autosave
-// (SaveGameForPause) y el reintento de misión del port móvil. Con SLOT_COUNT = 9
-// es también la última de las matrices de ranuras (SlotFileName, Slots...).
 extern const int PAUSE_SAVE_SLOT;
 
 bool SaveGameForPause(int);

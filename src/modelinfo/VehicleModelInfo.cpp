@@ -4,6 +4,7 @@
 #include "RwHelper.h"
 #include "General.h"
 #include "NodeName.h"
+#include "SteeringWheel.h"
 #include "TxdStore.h"
 #include "Weather.h"
 #include "HandlingMgr.h"
@@ -20,6 +21,7 @@
 #include "ModelIndices.h"
 #include "ModelInfo.h"
 #include "custompipes.h"
+#include "ondemand.h"
 
 int8 CVehicleModelInfo::ms_compsToUse[2] = { -2, -2 };
 int8 CVehicleModelInfo::ms_compsUsed[2];
@@ -67,11 +69,54 @@ RwObjectNameIdAssocation carIds[] = {
 	{ "bump_rear_dummy",	CAR_BUMP_REAR,	VEHICLE_FLAG_REAR | VEHICLE_FLAG_COLLAPSE },
 	{ "windscreen_dummy",	CAR_WINDSCREEN,	VEHICLE_FLAG_WINDSCREEN | VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_FRONT | VEHICLE_FLAG_COLLAPSE },
 
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	{ "steeringwheel",	CAR_STEERINGWHEEL,	VEHICLE_FLAG_LEFT },
+	{ "headlight_l",		CAR_HEADLIGHT_L,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DRAWLAST },
+	{ "headlight_l_hi",		CAR_HEADLIGHT_L,	VEHICLE_FLAG_LEFT | VEHICLE_FLAG_DRAWLAST },
+	{ "headlight_r",		CAR_HEADLIGHT_R,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DRAWLAST },
+	{ "headlight_r_hi",		CAR_HEADLIGHT_R,	VEHICLE_FLAG_RIGHT | VEHICLE_FLAG_DRAWLAST },
+	{ "taillight_l",		CAR_TAILLIGHT_L,	VEHICLE_FLAG_LEFT },
+	{ "taillight_r",		CAR_TAILLIGHT_R,	VEHICLE_FLAG_RIGHT },
+	{ "reversinglight_l",	CAR_REVERSINGLIGHT_L,	VEHICLE_FLAG_LEFT },
+	{ "reversinglight_r",	CAR_REVERSINGLIGHT_R,	VEHICLE_FLAG_RIGHT },
+	{ "brakelight_l",		CAR_BRAKELIGHT_L,	VEHICLE_FLAG_LEFT },
+	{ "brakelight_r",		CAR_BRAKELIGHT_R,	VEHICLE_FLAG_RIGHT },
+	{ "servicelights_0",		CAR_SERVICELIGHTS_0,	VEHICLE_FLAG_DRAWLAST },
+	{ "servicelights_1",		CAR_SERVICELIGHTS_1,	VEHICLE_FLAG_DRAWLAST },
+	{ "servicelights_2",		CAR_SERVICELIGHTS_2,	VEHICLE_FLAG_DRAWLAST },
+	{ "servicelights_3",		CAR_SERVICELIGHTS_3,	VEHICLE_FLAG_DRAWLAST },
+	{ "clearance_lights",		CAR_CLEARANCE_LIGHTS,	VEHICLE_FLAG_DRAWLAST },
+	{ "indicator_lf",		CAR_INDICATOR_LF,	VEHICLE_FLAG_LEFT },
+	{ "indicator_rf",		CAR_INDICATOR_RF,	VEHICLE_FLAG_RIGHT },
+	{ "indicator2_lf",		CAR_INDICATOR_2_LF,	VEHICLE_FLAG_LEFT },
+	{ "indicator2_rf",		CAR_INDICATOR_2_RF,	VEHICLE_FLAG_RIGHT },
+	{ "indicator_lr",		CAR_INDICATOR_LR,	VEHICLE_FLAG_LEFT },
+	{ "indicator_rr",		CAR_INDICATOR_RR,	VEHICLE_FLAG_RIGHT },
+	{ "indicator2_lr",		CAR_INDICATOR_2_LR,	VEHICLE_FLAG_LEFT },
+	{ "indicator2_rr",		CAR_INDICATOR_2_RR,	VEHICLE_FLAG_RIGHT },
+#endif
+
 	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "engine",			CAR_POS_ENGINE,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "overheat",		CAR_POS_OVERHEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "overheat2",		CAR_POS_OVERHEAT_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	{ "headlights2",		CAR_POS_HEADLIGHTS_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "taillights2",		CAR_POS_TAILLIGHTS_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "reversinglights",	CAR_POS_REVERSINGLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "reversinglights2",	CAR_POS_REVERSINGLIGHTS_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "brakelights",		CAR_POS_BRAKELIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "brakelights2",		CAR_POS_BRAKELIGHTS_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "indicators_f",		CAR_POS_INDICATORS_F,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "indicators_r",		CAR_POS_INDICATORS_R,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "indicators2_f",		CAR_POS_INDICATORS_2_F,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "indicators2_r",		CAR_POS_INDICATORS_2_R,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "petrolcap",		CAR_POS_PETROLCAP,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+#endif
 	{ "extra1",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra2",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra3",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
@@ -100,6 +145,15 @@ RwObjectNameIdAssocation boatIds[] = {
 #endif
 #endif
 	{ "ped_frontseat",	BOAT_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+#ifdef VICEEXT_SP_BOAT_EXTRAS
+	{ "boat_moving_high",	BOAT_MOVING,	0 },
+	{ "extra1",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra2",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra3",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra4",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra5",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+	{ "extra6",		0, VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
+#endif
 	{ nil, 0, 0 }
 };
 
@@ -142,11 +196,21 @@ RwObjectNameIdAssocation bikeIds[] = {
 	{ "wheel_rear",		BIKE_WHEEL_REAR,	0 },
 	{ "mudguard",		BIKE_MUDGUARD,	0 },
 	{ "handlebars",		BIKE_HANDLEBARS,	0 },
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	{ "headlight_l",	BIKE_HEADLIGHT_L,	VEHICLE_FLAG_FRONT },
+	{ "taillight_l",	BIKE_TAILLIGHT_L,	VEHICLE_FLAG_LEFT },
+	{ "indicator_lf",	BIKE_INDICATOR_LF,	VEHICLE_FLAG_LEFT },
+	{ "indicator_lr",	BIKE_INDICATOR_LR,	VEHICLE_FLAG_LEFT },
+	{ "indicator_rf",	BIKE_INDICATOR_RF,	VEHICLE_FLAG_RIGHT },
+	{ "indicator_rr",	BIKE_INDICATOR_RR,	VEHICLE_FLAG_RIGHT },
+#endif
 	{ "ped_frontseat",	CAR_POS_FRONTSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "ped_backseat",	CAR_POS_BACKSEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "headlights",		CAR_POS_HEADLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "taillights",		CAR_POS_TAILLIGHTS,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "exhaust",		CAR_POS_EXHAUST,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "overheat",		CAR_POS_OVERHEAT,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
+	{ "overheat2",		CAR_POS_OVERHEAT_2,	VEHICLE_FLAG_POS | CLUMP_FLAG_NO_HIERID },
 	{ "extra1",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra2",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
 	{ "extra3",		0,	VEHICLE_FLAG_DRAWLAST | VEHICLE_FLAG_COMP | CLUMP_FLAG_NO_HIERID },
@@ -179,6 +243,14 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	}
 	m_numColours = 0;
 	m_animFileIndex = -1;
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	bNewLights = false;
+	lightsOffTexture = nil;
+	lightsOnTexture = nil;
+	serviceLightsOffTexture = nil;
+	serviceLightsOnTexture = nil;
+	newLightsData = tNewLightsData();
+#endif
 }
 
 void
@@ -196,16 +268,6 @@ CVehicleModelInfo::DeleteRwObject(void)
 	CClumpModelInfo::DeleteRwObject();
 }
 
-// Vice Extended (R11b, 10ª partida): los extras (`extra1..6`) NO siempre son una
-// sola malla. El `police.dff` del mod cuelga de `extra1..3` las lentes de las
-// luces de servicio (`servicelights_1..3`, cada una con su propia malla) y
-// `PreprocessHierarchy` saca esos extras del clump para guardarlos en
-// `m_comps`. Clonando sólo el atomic del extra —lo que hacía este código— los
-// hijos se quedaban fuera: la barra salía SIN lentes y
-// `CVehicle::FindDummyFrame` no encontraba ningún `servicelights_*` (traza
-// `SVLIGHTS model=156 dummies=0` en todas las partidas). Ahora se clona el
-// subárbol completo del marco del componente. Mismo patrón que
-// `RecurseFrameChildrenToCloneCB` (PedFight.cpp), que clona partes de ped.
 static RpClump *gViceExtCompClump;	// clump al que van los clones
 
 static RwObject*
@@ -223,19 +285,14 @@ ViceExtCloneCompFrameCB(RwFrame *frame, void *data)
 	RwFrame *newFrame = RwFrameCreate();
 	RwFrameAddChild((RwFrame*)data, newFrame);
 	RwFrameTransform(newFrame, RwFrameGetMatrix(frame), rwCOMBINEREPLACE);
-	// El NOMBRE no viaja solo: `RwFrameCreate` deja el marco vacío y el plugin
-	// de nombres sólo se rellena al clonar marcos de verdad o al leer el .dff.
-	// Sin esta copia los hijos se llamarían "" y `FindDummyFrame` seguiría sin
-	// ver los `servicelights_*` (que es justo lo que se está arreglando).
 	if (GetFrameNodeName(frame) != nil)
 		strncpy(GetFrameNodeName(newFrame), GetFrameNodeName(frame), 23);
+	CVisibilityPlugins::SetFrameHierarchyId(newFrame, CVisibilityPlugins::GetFrameHierarchyId(frame));
 	RwFrameForAllObjects(frame, ViceExtCloneCompAtomicCB, newFrame);
 	RwFrameForAllChildren(frame, ViceExtCloneCompFrameCB, newFrame);
 	return newFrame;	// no-nil = sigue con los hermanos (librw para con nil)
 }
 
-// Clona un componente al clump de la instancia: su atomic y todo su subárbol
-// (los dummies de las luces de servicio viven ahí).
 static RwFrame*
 ViceExtCloneComponent(RpClump *clump, RpAtomic *comp)
 {
@@ -252,42 +309,157 @@ RwObject*
 CVehicleModelInfo::CreateInstance(void)
 {
 	RpClump *clump;
-	RwFrame *clumpframe, *f;
+	RwFrame *extrasframe, *f;
 	int32 comp1, comp2;
 
 	clump = (RpClump*)CClumpModelInfo::CreateInstance();
+	if(clump == nil)
+		return nil;
 	if(m_numComps != 0){
-		clumpframe = RpClumpGetFrame(clump);
+		extrasframe = RpClumpGetFrame(clump);
+#ifdef VICEEXT_SP_BIKE_EXTRAS_FRAME
+		if(m_vehicleType == VEHICLE_TYPE_HELI || m_vehicleType == VEHICLE_TYPE_BIKE){
+			RwFrame *extras = CClumpModelInfo::GetFrameFromId(clump, 1);
+			if(extras != nil)
+				extrasframe = extras;
+		}
+#endif
 
 		comp1 = ChooseComponent();
 		if(comp1 != -1 && m_comps[comp1]){
 			f = ViceExtCloneComponent(clump, m_comps[comp1]);
-			RwFrameAddChild(clumpframe, f);
+			RwFrameAddChild(extrasframe, f);
 		}
 		ms_compsUsed[0] = comp1;
 
 		comp2 = ChooseSecondComponent();
 		if(comp2 != -1 && m_comps[comp2]){
 			f = ViceExtCloneComponent(clump, m_comps[comp2]);
-			RwFrameAddChild(clumpframe, f);
+			RwFrameAddChild(extrasframe, f);
 		}
 		ms_compsUsed[1] = comp2;
 	}else{
 		ms_compsUsed[0] = -1;
 		ms_compsUsed[1] = -1;
+#ifdef VICEEXT_SP_COMPS_TO_USE_RESET
+		ms_compsToUse[0] = -2;
+		ms_compsToUse[1] = -2;
+#endif
 	}
 	return (RwObject*)clump;
 }
+
+static RwObject*
+SetWheelRendererCB(RwObject *object, void *data)
+{
+	if(RwObjectGetType(object) == rpATOMIC)
+		CVehicleModelInfo::SetAtomicRendererCB((RpAtomic*)object, data);
+	return object;
+}
+
+#ifdef __EMSCRIPTEN__
+static RpAtomic*
+OdRepairVehicleMesh(RpAtomic *atomic, void *data)
+{
+	RpGeometry *geo = RpAtomicGetGeometry(atomic);
+	if(geo == nil || geo->triangles == nil || geo->meshHeader == nil ||
+	   (geo->flags & rpGEOMETRYNATIVE) || geo->meshHeader->flags != 0 ||
+	   geo->numTriangles <= 0 || geo->numVertices <= 0 ||
+	   geo->meshHeader->totalIndices != (uint32)geo->numTriangles * 3)
+		return atomic;
+	rw::MeshHeader *header = geo->meshHeader;
+	rw::Mesh *meshes = header->getMeshes();
+	int32 mismatches = 0;
+	bool signature = false;
+	for(uint32 m = 0; m < header->numMeshes; m++){
+		rw::Mesh *mesh = &meshes[m];
+		int32 matId = geo->matList.findIndex(mesh->material);
+		if(matId < 0 || mesh->indices == nil)
+			return atomic;
+		for(uint32 n = 0; n < m; n++)
+			if(meshes[n].material == mesh->material)
+				return atomic;
+		uint32 index = 0;
+		int32 meshMismatches = 0;
+		for(int32 t = 0; t < geo->numTriangles; t++){
+			rw::Triangle *tri = &geo->triangles[t];
+			if(tri->matId != matId)
+				continue;
+			for(int32 v = 0; v < 3; v++, index++){
+				if(index >= mesh->numIndices || tri->v[v] >= geo->numVertices)
+					return atomic;
+				if(mesh->indices[index] != tri->v[v]){
+					if(index >= 16 || (index & 1) || (meshMismatches && mesh->indices[index] != 0))
+						return atomic;
+					meshMismatches++;
+					mismatches++;
+				}
+			}
+		}
+		if(index != mesh->numIndices)
+			return atomic;
+		if(meshMismatches >= 2)
+			signature = true;
+	}
+	if(!signature)
+		return atomic;
+	for(uint32 m = 0; m < header->numMeshes; m++){
+		rw::Mesh *mesh = &meshes[m];
+		int32 matId = geo->matList.findIndex(mesh->material);
+		uint32 index = 0;
+		for(int32 t = 0; t < geo->numTriangles; t++){
+			rw::Triangle *tri = &geo->triangles[t];
+			if(tri->matId != matId)
+				continue;
+			for(int32 v = 0; v < 3; v++, index++)
+				if(mesh->indices[index] != tri->v[v])
+					mesh->indices[index] = tri->v[v];
+		}
+	}
+	static int32 odReported = 0;
+	if(odReported < 256){
+		RwFrame *frame = RpAtomicGetFrame(atomic);
+		const char *name = frame ? GetFrameNodeName(frame) : nil;
+		char message[192];
+		snprintf(message, sizeof message, "CABINA38 reparacion modelo=%s atomic=%s indices=%d",
+			(const char*)data, name ? name : "?", mismatches);
+		ODTRACES(message);
+		odReported++;
+	}
+	return atomic;
+}
+#endif
 
 void
 CVehicleModelInfo::SetClump(RpClump *clump)
 {
 	CClumpModelInfo::SetClump(clump);
+#ifdef __EMSCRIPTEN__
+	RpClumpForAllAtomics(clump, OdRepairVehicleMesh, m_name);
+#endif
 	SetAtomicRenderCallbacks();
 	SetFrameIds(ms_vehicleDescs[m_vehicleType]);
 	PreprocessHierarchy();
 	FindEditableMaterialList();
 	SetEnvironmentMap();
+
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	RwTexDictionary *modelTxd = CTxdStore::GetSlot(GetTxdSlot())->texDict;
+	if(modelTxd){
+		lightsOffTexture = RwTexDictionaryFindNamedTexture(modelTxd, "lights");
+		lightsOnTexture = RwTexDictionaryFindNamedTexture(modelTxd, "lightson");
+		serviceLightsOffTexture = RwTexDictionaryFindNamedTexture(modelTxd, "servicelights");
+		serviceLightsOnTexture = RwTexDictionaryFindNamedTexture(modelTxd, "servicelightson");
+	}
+#endif
+
+	if(m_vehicleType == VEHICLE_TYPE_CAR){
+		RwFrame *odWheel = VICEEXT_VOLANTE ? ViceExtAddSteeringWheel(m_clump, m_name) : nil;
+		if(odWheel){
+			CVisibilityPlugins::SetFrameHierarchyId(odWheel, CAR_STEERINGWHEEL);
+			RwFrameForAllObjects(odWheel, SetWheelRendererCB, m_clump);
+		}
+	}
 }
 
 void
@@ -314,9 +486,16 @@ CVehicleModelInfo::ConvertAnimFileIndex(void)
 RwFrame*
 CVehicleModelInfo::CollapseFramesCB(RwFrame *frame, void *data)
 {
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	if(strstr(GetFrameNodeName(frame), "light_l") ||
+	   strstr(GetFrameNodeName(frame), "light_r") ||
+	   strstr(GetFrameNodeName(frame), "indicator"))
+		return frame;
+#endif
 	RwFrameForAllChildren(frame, CollapseFramesCB, data);
 	RwFrameForAllObjects(frame, MoveObjectsCB, data);
-	RwFrameDestroy(frame);
+	if(frame->child == nil)
+		RwFrameDestroy(frame);
 	return frame;
 }
 
@@ -358,6 +537,60 @@ CVehicleModelInfo::HasAlphaMaterialCB(RpMaterial *material, void *data)
 	return material;
 }
 
+// Un material suelto con alfa no convierte la carroceria en cristal. Medido en
+// el DFF: el Cheetah tiene 6 triangulos con alfa 102 de 1109 en `chassis_hi` (y
+// el Police 6 de 972, alfa 101); con la regla anterior ("cualquier material con
+// alfa") el chasis entero se dibujaba en la lista transparente, ordenado tarde y
+// mezclado como una luna. Una luna de verdad (`window_*`, `windscreen_*`) tiene
+// TODOS sus triangulos con alfa. Se exige mayoria de triangulos alfa para el
+// cuerpo; los paneles y extras conservan la regla original.
+static bool
+OdGeometryMostlyAlpha(RpGeometry *geo)
+{
+	int32 i, total, alpha;
+
+	if(geo == nil || geo->triangles == nil || geo->matList.numMaterials <= 0)
+		return false;
+	total = geo->numTriangles;
+	if(total <= 0)
+		return false;
+	alpha = 0;
+	for(i = 0; i < total; i++){
+		int32 m = geo->triangles[i].matId;
+		if(m >= 0 && m < geo->matList.numMaterials){
+			RpMaterial *mat = geo->matList.materials[m];
+			if(mat && RpMaterialGetColor(mat)->alpha != 0xFF)
+				alpha++;
+		}
+	}
+	return 2*alpha >= total;
+}
+
+
+static void
+ViceExtCabinaTrace(RpClump *clump, const char *atomicName, bool cristal, bool transparente)
+{
+#ifdef __EMSCRIPTEN__
+	static char odLastModel[32];
+	char odT[240];
+	CVehicleModelInfo *vmi = (CVehicleModelInfo*)CVisibilityPlugins::GetClumpModelInfo(clump);
+	const char *odModel = vmi ? vmi->GetModelName() : "?";
+	if(!cristal)
+		return;
+	if(!odLastModel[0] || strcmp(odLastModel, odModel)){
+		strncpy(odLastModel, odModel, 31);
+		odLastModel[31] = 0;
+		snprintf(odT, sizeof odT,
+			"VICEEXT cabina modelo=%s atomic=%s con cristal -> pase %s",
+			odLastModel, atomicName ? atomicName : "?",
+			transparente ? "transparente" : "normal");
+		ODTRACES(odT);
+	}
+#else
+	(void)clump; (void)atomicName; (void)cristal; (void)transparente;
+#endif
+}
+
 
 RpAtomic*
 CVehicleModelInfo::SetAtomicRendererCB(RpAtomic *atomic, void *data)
@@ -365,16 +598,46 @@ CVehicleModelInfo::SetAtomicRendererCB(RpAtomic *atomic, void *data)
 	RpClump *clump;
 	char *name;
 	bool alpha;
+	bool esExtra;
+	bool esWindscreen;
+	bool esVolante;
+	bool transparente;
 
 	clump = (RpClump*)data;
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
 	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
-	if(strstr(name, "_hi") || !CGeneral::faststrncmp(name, "extra", 5)) {
-		if(alpha || strncmp(name, "windscreen", 10) == 0)
+	// El pase transparente es para lo que de verdad se mezcla (cristales y
+	// calcomanias), no para cualquier atomic que tenga UN material con alfa: con
+	// la prueba anterior media carroceria (bump_front_hi_ok, boot_hi_dam,
+	// extra1/2...) entraba en la lista ordenada de alfa, se dibujaba despues del
+	// personaje y sin escribir profundidad, y su textura marron se veia cruzada
+	// por delante del ocupante. La mayoria de triangulos decide, como en el
+	// chassis.
+	if(alpha)
+		alpha = OdGeometryMostlyAlpha(RpAtomicGetGeometry(atomic));
+	esExtra = !CGeneral::faststrncmp(name, "extra", 5);
+	esWindscreen = strncmp(name, "windscreen", 10) == 0;
+	esVolante = strcmp(name, "steeringwheel") == 0;
+	transparente = alpha || esWindscreen;
+	ViceExtCabinaTrace(clump, name, alpha, transparente);
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	if (strstr(name, "_hi") || esExtra || esVolante) {
+		if (transparente)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
 		else
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+		if (strncmp(name, "window", 6) == 0)
+			CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_DOORWINDOW);
+		if (esExtra || esVolante)
+			CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_NOCULL);
+#else
+	if(strstr(name, "_hi") || esExtra) {
+		if(alpha)
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB);
+		else
+			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB);
+#endif
 	}else if(strstr(name, "_lo")){
 		RpClumpRemoveAtomic(clump, atomic);
 		RpAtomicDestroy(atomic);
@@ -392,15 +655,18 @@ CVehicleModelInfo::SetAtomicRendererCB_BigVehicle(RpAtomic *atomic, void *data)
 {
 	char *name;
 	bool alpha;
+	bool esVolante;
 
 	name = GetFrameNodeName(RpAtomicGetFrame(atomic));
 	alpha = false;
 	RpGeometryForAllMaterials(RpAtomicGetGeometry(atomic), HasAlphaMaterialCB, &alpha);
-	if(strstr(name, "_hi") || !CGeneral::faststrncmp(name, "extra", 5)) {
+	esVolante = strcmp(name, "steeringwheel") == 0;
+	if(strstr(name, "_hi") || !CGeneral::faststrncmp(name, "extra", 5) || esVolante) {
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_BigVehicle);
 		else
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleHiDetailCB_BigVehicle);
+		CVisibilityPlugins::SetAtomicFlag(atomic, ATOMIC_FLAG_NOCULL);
 	}else if(strstr(name, "_lo")){
 		if(alpha)
 			CVisibilityPlugins::SetAtomicRenderCallback(atomic, CVisibilityPlugins::RenderVehicleLowDetailAlphaCB_BigVehicle);
@@ -579,6 +845,9 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 	m_numDoors = 0;
 	m_numComps = 0;
 
+	RwFrame *odDetach[6];
+	int32 odNumDetach = 0;
+
 	for(i = 0; desc[i].name; i++){
 		RwObjectNameAssociation assoc;
 
@@ -604,7 +873,8 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 		}else{
 			atomic = (RpAtomic*)GetFirstObject(assoc.frame);
 			RpClumpRemoveAtomic(m_clump, atomic);
-			RwFrameRemoveChild(assoc.frame);
+			if(odNumDetach < 6)
+				odDetach[odNumDetach++] = assoc.frame;
 			SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 			m_comps[m_numComps++] = atomic;
 		}
@@ -636,10 +906,50 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 
 		SetVehicleComponentFlags(assoc.frame, desc[i].flags);
 
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+		if(!CGeneral::faststrncmp(desc[i].name, "headlight_l", 11) ||
+		   !CGeneral::faststrncmp(desc[i].name, "headlight_l_hi", 14) ||
+		   !CGeneral::faststrncmp(desc[i].name, "taillight_l", 11))
+			bNewLights = true;
+
+		RwFrame *parentFrame = RwFrameGetParent(assoc.frame);
+		const char *parentName = parentFrame ? GetFrameNodeName(parentFrame) : "";
+		if(!CGeneral::faststrncmp(parentName, "wing_lf_dummy", 11)){
+			if(!CGeneral::faststrncmp(desc[i].name, "headlight_l", 11))
+				newLightsData.bWingHeadlights = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator_lf", 12))
+				newLightsData.bWingIndicators1 = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator2_lf", 13))
+				newLightsData.bWingIndicators2 = true;
+		}else if(!CGeneral::faststrncmp(parentName, "bump_front_dummy", 16)){
+			if(!CGeneral::faststrncmp(desc[i].name, "headlight_l", 11))
+				newLightsData.bBumperHeadlights = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator_lf", 12))
+				newLightsData.bBumperForwardIndicators1 = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator2_lf", 13))
+				newLightsData.bBumperForwardIndicators2 = true;
+		}else if(!CGeneral::faststrncmp(parentName, "bump_rear_dummy", 16)){
+			if(!CGeneral::faststrncmp(desc[i].name, "taillight_l", 11))
+				newLightsData.bBumperTaillights = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator_lr", 12))
+				newLightsData.bBumperRearIndicators1 = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "indicator2_lr", 13))
+				newLightsData.bBumperRearIndicators2 = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "brakelight_l", 12))
+				newLightsData.bBumperBrakelights = true;
+			else if(!CGeneral::faststrncmp(desc[i].name, "reversinglight_l", 16))
+				newLightsData.bBumperReversinglights = true;
+		}
+#endif
+
 		if(desc[i].flags & VEHICLE_FLAG_ADD_WHEEL){
 			if(m_wheelId == -1)
 				RwFrameDestroy(assoc.frame);
+#ifdef VICEEXT_NEW_VEHICLE_LOADER // Custom wheels
+			else if(m_wheelId != 249){
+#else
 			else{
+#endif
 				RwV3d scale;
 				atomic = (RpAtomic*)CModelInfo::GetModelInfo(m_wheelId)->CreateInstance();
 				RwFrameDestroy(RpAtomicGetFrame(atomic));
@@ -654,6 +964,30 @@ CVehicleModelInfo::PreprocessHierarchy(void)
 			}
 		}
 	}
+
+	for(i = 0; i < odNumDetach; i++)
+		RwFrameRemoveChild(odDetach[i]);
+
+// El asiento sale del dummy del DFF, como en el mod. El override a 0,12f del
+// 19/10 se aplicaba tambien a la 6507 y con el grupo DIRT dejaba al jinete
+// hundido bajo el sillon; el DFF policial trae su propia altura.
+#ifdef __EMSCRIPTEN__
+	if(!CGeneral::faststricmp(GetModelName(), "polwintergreen") ||
+	   !CGeneral::faststricmp(GetModelName(), "wintergreen")){
+		static uint8 s_odBikeSeatTrace = 0;
+		uint8 odBit = !CGeneral::faststricmp(GetModelName(), "polwintergreen") ? 1 : 2;
+		if(!(s_odBikeSeatTrace & odBit)){
+			s_odBikeSeatTrace |= odBit;
+			char odT[256];
+			snprintf(odT, sizeof odT,
+				"VICEEXT bike model=%s anim=%d seat=%.2f,%.2f,%.2f back=%.2f,%.2f,%.2f",
+				GetModelName(), (int)m_animFileIndex,
+				m_positions[CAR_POS_FRONTSEAT].x, m_positions[CAR_POS_FRONTSEAT].y, m_positions[CAR_POS_FRONTSEAT].z,
+				m_positions[CAR_POS_BACKSEAT].x, m_positions[CAR_POS_BACKSEAT].y, m_positions[CAR_POS_BACKSEAT].z);
+			ODTRACES(odT);
+		}
+	}
+#endif
 }
 
 void
@@ -852,11 +1186,17 @@ CVehicleModelInfo::GetEditableMaterialListCB(RpMaterial *material, void *data)
 	cbdata = (editableMatCBData*)data;
 	col = RpMaterialGetColor(material);
 	if(col->red == 0x3C && col->green == 0xFF && col->blue == 0){
-		cbdata->vehicle->m_materials1[cbdata->numMats1++] = material;
-		RpMaterialSetColor(material, &white);
+		if(cbdata->numMats1 < NUM_FIRST_MATERIALS){
+			cbdata->vehicle->m_materials1[cbdata->numMats1] = material;
+			RpMaterialSetColor(material, &white);
+		}
+		cbdata->numMats1++;
 	}else if(col->red == 0xFF && col->green == 0 && col->blue == 0xAF){
-		cbdata->vehicle->m_materials2[cbdata->numMats2++] = material;
-		RpMaterialSetColor(material, &white);
+		if(cbdata->numMats2 < NUM_SECOND_MATERIALS){
+			cbdata->vehicle->m_materials2[cbdata->numMats2] = material;
+			RpMaterialSetColor(material, &white);
+		}
+		cbdata->numMats2++;
 	}
 	return material;
 }
@@ -883,8 +1223,8 @@ CVehicleModelInfo::FindEditableMaterialList(void)
 	RpClumpForAllAtomics(m_clump, GetEditableMaterialListCB, &cbdata);
 	for(i = 0; i < m_numComps; i++)
 		GetEditableMaterialListCB(m_comps[i], &cbdata);
-	m_materials1[cbdata.numMats1] = nil;
-	m_materials2[cbdata.numMats2] = nil;
+	m_materials1[Min(cbdata.numMats1, NUM_FIRST_MATERIALS - 1)] = nil;
+	m_materials2[Min(cbdata.numMats2, NUM_SECOND_MATERIALS - 1)] = nil;
 	maxFirstMaterials = Max(maxFirstMaterials, cbdata.numMats1);
 	maxSecondMaterials = Max(maxSecondMaterials, cbdata.numMats2);
 	m_currentColour1 = -1;
@@ -1129,7 +1469,10 @@ CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 		RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
 #ifndef PS2_MATFX
 		float coef = RpMatFXMaterialGetEnvMapCoefficient(material);
+#ifdef VICEEXT_ENV_MAP_COEF
+#else
 		coef *= 0.25f;	// Tone down a bit for PC
+#endif
 		RpMatFXMaterialSetEnvMapCoefficient(material, coef);
 #endif
 	}
@@ -1167,7 +1510,11 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 	}
 
 	RpClumpForAllAtomics(m_clump, SetEnvironmentMapCB, nil);
+#ifdef VICEEXT_NEW_VEHICLE_LOADER // Custom wheels
+	if(m_wheelId != -1 && m_wheelId != 249){
+#else
 	if(m_wheelId != -1){
+#endif
 		wheelmi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(m_wheelId);
 		for(i = 0; i < wheelmi->m_numAtomics; i++)
 			SetEnvironmentMapCB(wheelmi->m_atomics[i], nil);
@@ -1182,7 +1529,11 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 			break;
 		}
 	}
+#ifdef VICEEXT_SP_ENV_MAP_EXTRAS
+	if(!odCompExcluded)
+#else
 	if(false && !odCompExcluded)
+#endif
 	for(i = 0; i < m_numComps; i++){
 		if(m_comps[i])
 			SetEnvironmentMapCB(m_comps[i], nil);
@@ -1192,7 +1543,11 @@ CVehicleModelInfo::SetEnvironmentMap(void)
 #ifdef EXTENDED_PIPELINES
 	CustomPipes::AttachVehiclePipe(m_clump);
 #ifdef VICEEXT_FIX_SILENTPATCH
+#ifdef VICEEXT_SP_ENV_MAP_EXTRAS
+	if(!odCompExcluded)
+#else
 	if(false && !odCompExcluded)
+#endif
 	for(i = 0; i < m_numComps; i++){
 		if(m_comps[i])
 			CustomPipes::AttachVehiclePipe(m_comps[i]);

@@ -158,12 +158,19 @@ CSprite::RenderOneXLUSprite_Rotate_Aspect(float x, float y, float z, float w, fl
 	float vs[4];
 	int i;
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (z < 0.5f) {
+		if (z < 0.1f)
+			return;
+		int f = (z - 0.1f) / (0.5f - 0.1f) * 255;
+#else
 	// Fade out when too near
 	// why not in buffered version?
 	if(z < 2.3f){
 		if(z < 1.3f)
 			return;
 		int f = (z - 1.3f)/(2.3f-1.3f) * 255;
+#endif
 		r = f*r >> 8;
 		g = f*g >> 8;
 		b = f*b >> 8;

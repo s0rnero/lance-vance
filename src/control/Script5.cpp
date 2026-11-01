@@ -2333,6 +2333,8 @@ INITSAVEBUF
 	uint32 tmp;
 
 	ReadSaveBuf(&varSpace, buf);
+	if (varSpace > ARRAY_SIZE(ScriptSpace))
+		return;
 	for (uint32 i = 0; i < varSpace; i++)
 		ReadSaveBuf(&ScriptSpace[i], buf);
 	ReadSaveBuf(&tmp, buf);

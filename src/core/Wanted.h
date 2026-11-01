@@ -2,15 +2,14 @@
 
 #include "Crime.h"
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#define TIME_DELAY_BEFORE_BEING_SEEN 350
+#define TIME_AUTOMATIC_UPDATED_LAST_SEEN_POS_PLAYER 25000
+#endif
+
 class CEntity;
 class CCopPed;
-
-// Etiqueta de sesión de la traza de la sección 2 (P1). La pone la sonda en
-// `window.__vcWantedTag` y viaja en cada línea: el servidor de desarrollo
-// comparte UN odtrace.log entre todas las pestañas y los tres agentes, así que
-// sin etiqueta las líneas de dos sesiones se mezclan (y una sonda ajena puede
-// contaminar el veredicto de la otra).
-unsigned WantedTraceTag(void);
+class CVehicle;
 
 class CWanted
 {
@@ -36,27 +35,19 @@ public:
 	CCrimeBeingQd m_aCrimes[16];
 	CCopPed *m_pCops[10];
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	uint32 m_nLastTimeSeenPlayer;
+	CVector m_vecLastSeenPosPlayer;
+	CVehicle* m_vLastSeenPlayerVehicle;
+	uint32 m_nTimeDelayBeforeBeingSeen;
+	uint32 m_nTimeAutomaticUpdatedPosPlayer;
+
+	bool m_bNextReportIsLastSeen;
+	bool m_bSearchPlayerRandomly;
+#endif
+
 	static int32 MaximumWantedLevel;
 	static int32 nMaximumWantedLevel;
-
-#ifdef VICEEXT_HIDE_COPS
-	// Vice Extended (v1.0 "Changed wanted system", sección 2 / P1): estado de la
-	// búsqueda cuando el jugador se esconde. Los campos van AL FINAL a propósito:
-	// ningún offset de la estructura original se mueve (CReplay copia `CWanted`
-	// por valor con `PlayerWanted = *m_pWanted`).
-	CVector m_vecLastKnownPos;   // última posición en la que un policía te vio
-	uint32 m_nLastSeenTime;      // cuándo fue eso
-	uint32 m_nHiddenSince;       // desde cuándo no te ve nadie (0 = te ven)
-	uint32 m_nLastStarDrop;      // último descenso por estar escondido
-	uint8 m_bHiding : 1;         // hay búsqueda en curso (nadie te ve, nivel > 1)
-
-	// `fullSweep` = refresca también el barrido del pool de peds (caro); si es
-	// false solo se miran los perseguidores. UpdateHiding() lo llama a 5 Hz.
-	bool AnyCopSeesPlayer(const CVector &playerPos, bool fullSweep);
-	void UpdateHiding(void);
-	bool IsHiding(void) { return m_bHiding; }
-	CVector GetLastKnownPos(void) { return m_vecLastKnownPos; }
-#endif
 
 public:
 	void Initialise();
@@ -83,6 +74,11 @@ public:
 	void Suspend();
 
 	bool IsIgnored(void) { return m_bIgnoredByCops || m_bIgnoredByEveryone; }
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	bool IsPlayerLost() const;
+	bool IsPlayerHides() const;
+#endif
 
 	static int32 WorkOutPolicePresence(CVector posn, float radius);
 	static void SetMaximumWantedLevel(int32 level);

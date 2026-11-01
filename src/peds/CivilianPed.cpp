@@ -544,7 +544,7 @@ CCivilianPed::EnterVacantNearbyCars(void)
 		m_pMyVehicle->bEngineOn = true;
 
 	} else if (!bHasAlreadyStoleACar) {
-		if (m_nLookForVacantCarsCounter == 8) {
+		if (m_nLookForVacantCarsCounter >= 8) {
 			m_nLookForVacantCarsCounter = 0;
 			if (IsPedInControl() && m_objective == OBJECTIVE_NONE) {
 
@@ -593,7 +593,7 @@ CCivilianPed::EnterVacantNearbyCars(void)
 				}
 			}
 		} else {
-			++m_nLookForVacantCarsCounter;
+			m_nLookForVacantCarsCounter += CTimer::GetLogicalFramesPassed();
 		}
 	}
 }

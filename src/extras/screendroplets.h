@@ -4,6 +4,8 @@
 
 class CParticleObject;
 
+extern int32 g_nSkyNeoWaterDrops;
+
 class ScreenDroplets
 {
 public:
@@ -58,6 +60,7 @@ public:
 	static void Shutdown(void);
 	static void Process(void);
 	static void Render(void);
+	static bool IsVisible(void);
 	static void AddToRenderList(ScreenDrop *drop);
 
 	static void Clear(void);
@@ -66,6 +69,7 @@ public:
 	static void FillScreen(int n);
 	static void FillScreenMoving(float amount, bool isBlood = false);
 	static void RegisterSplash(CParticleObject *pobj);
+	static void AddExtendedDroplet(int32 particleType, CVector const &pos);
 
 	static void ProcessCameraMovement(void);
 	static void SprayDrops(void);

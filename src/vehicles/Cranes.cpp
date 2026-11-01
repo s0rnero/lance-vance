@@ -89,8 +89,8 @@ void CCranes::AddThisOneCrane(CEntity* pEntity)
 	pCrane->m_pCraneEntity = (CBuilding*)pEntity;
 	pCrane->m_nCraneStatus = CCrane::NONE;
 	pCrane->m_fHookAngle = NumCranes; // lol wtf
-	while (pCrane->m_fHookAngle > TWOPI)
-		pCrane->m_fHookAngle -= TWOPI;
+	if (pCrane->m_fHookAngle > TWOPI || pCrane->m_fHookAngle < -TWOPI)
+		pCrane->m_fHookAngle = fmodf(pCrane->m_fHookAngle, TWOPI);
 	pCrane->m_fHookOffset = DEFAULT_OFFSET;
 	pCrane->m_fHookHeight = DEFAULT_OFFSET;
 	pCrane->m_nTimeForNextCheck = 0;
@@ -388,10 +388,11 @@ bool CCrane::RotateCarriedCarProperly()
 	if (!m_pVehiclePickedUp)
 		return true;
 	float fAngleDelta = m_fDropoffHeading - CGeneral::GetATanOfXY(m_pVehiclePickedUp->GetForward().x, m_pVehiclePickedUp->GetForward().y);
-	while (fAngleDelta < -HALFPI)
-		fAngleDelta += PI;
-	while (fAngleDelta > HALFPI)
-		fAngleDelta -= PI;
+	if (fAngleDelta < -HALFPI || fAngleDelta > HALFPI){
+		fAngleDelta = fmodf(fAngleDelta, PI);
+		if (fAngleDelta > HALFPI) fAngleDelta -= PI;
+		if (fAngleDelta < -HALFPI) fAngleDelta += PI;
+	}
 	float fDeltaThisFrame = CAR_ROTATION_SPEED * CTimer::GetTimeStep();
 	if (Abs(fAngleDelta) <= fDeltaThisFrame) // no rotation is actually applied?
 		return true;
@@ -501,10 +502,11 @@ bool CCrane::GoTowardsTarget(float fAngleToTarget, float fDistanceToTarget, floa
 {
 	bool bAngleMovementFinished, bOffsetMovementFinished, bHeightMovementFinished;
 	float fHookAngleDelta = fAngleToTarget - m_fHookAngle;
-	while (fHookAngleDelta > PI)
-		fHookAngleDelta -= TWOPI;
-	while (fHookAngleDelta < -PI)
-		fHookAngleDelta += TWOPI;
+	if (fHookAngleDelta > PI || fHookAngleDelta < -PI){
+		fHookAngleDelta = fmodf(fHookAngleDelta + PI, TWOPI);
+		if (fHookAngleDelta < 0.0f) fHookAngleDelta += TWOPI;
+		fHookAngleDelta -= PI;
+	}
 	float fHookAngleChangeThisFrame = fSpeedMultiplier * CTimer::GetTimeStep() * HOOK_ANGLE_MOVEMENT_SPEED;
 	if (Abs(fHookAngleDelta) < fHookAngleChangeThisFrame) {
 		m_fHookAngle = fAngleToTarget;

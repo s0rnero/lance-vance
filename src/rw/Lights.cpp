@@ -3,6 +3,7 @@
 #include <rpworld.h>
 
 #include "Lights.h"
+#include "Camera.h" // 8.13: la altura decide si hay ambiente
 #include "Timer.h"
 #include "Timecycle.h"
 #include "Coronas.h"
@@ -58,7 +59,15 @@ SetLightsWithTimeOfDayColour(RpWorld *)
 			AmbientLightColourForFrame_PedsCarsAndObjects.blue = CTimeCycle::GetAmbientBlue_Obj() * CCoronas::LightsMult;
 		}
 
-		if(CWeather::LightningFlash && !CCullZones::CamNoRain()){
+		if (TheCamera.GetPosition().z >= 80000.0f) {
+			AmbientLightColourForFrame.red = 0.0f;
+			AmbientLightColourForFrame.green = 0.0f;
+			AmbientLightColourForFrame.blue = 0.0f;
+
+			AmbientLightColourForFrame_PedsCarsAndObjects.red = 0.0f;
+			AmbientLightColourForFrame_PedsCarsAndObjects.green = 0.0f;
+			AmbientLightColourForFrame_PedsCarsAndObjects.blue = 0.0f;
+		} else if(CWeather::LightningFlash && !CCullZones::CamNoRain()){
 			AmbientLightColourForFrame.red = 1.0f;
 			AmbientLightColourForFrame.green = 1.0f;
 			AmbientLightColourForFrame.blue = 1.0f;

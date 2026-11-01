@@ -20,9 +20,72 @@ int CPostFX::EffectSwitch = POSTFX_NORMAL;
 bool CPostFX::BlurOn = false;
 bool CPostFX::MotionBlurOn = false;
 
+bool g_bSkyDisableColourOverlay = false;
+
+bool g_bSkyTrailsBlur = false;
+bool g_bSkyTrailsMotionBlur = false;
+
+float g_fSkyCurrentBlurAlpha = 37.5f;
+float g_fSkyCurrentBlurOffset = 2.0f;
+
+int32 g_nSkySeamOffsetX = 1;
+bool g_bSkySeamFix = false;
+int32 g_nSkySeamOffsetY = 1;
+
 static RwIm2DVertex Vertex[4];
 static RwIm2DVertex Vertex2[4];
+static RwIm2DVertex SeamVertex[4];
 static RwImVertexIndex Index[6] = { 0, 1, 2, 0, 2, 3 };
+
+bool
+CPostFX::UseTrailsBlur(void)
+{
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	return g_bSkyTrailsBlur || BlurOn;
+#else
+	return BlurOn;
+#endif
+}
+
+bool
+CPostFX::UseTrailsMotionBlur(void)
+{
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	return g_bSkyTrailsMotionBlur || MotionBlurOn;
+#else
+	return MotionBlurOn;
+#endif
+}
+
+int32
+CPostFX::BlurAlpha(void)
+{
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	return (int32)(g_fSkyCurrentBlurAlpha*0.8f);
+#else
+	return 30;
+#endif
+}
+
+float
+CPostFX::BlurOffset(void)
+{
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	return g_fSkyCurrentBlurOffset;
+#else
+	return 2.0f;
+#endif
+}
+
+bool
+CPostFX::ColourOverlayEnabled(void)
+{
+#ifdef VICEEXT_SKY_DISABLE_COLOUR_OVERLAY
+	if(g_bSkyDisableColourOverlay)
+		return false;
+#endif
+	return EffectSwitch != POSTFX_OFF && EffectSwitch != POSTFX_SIMPLE;
+}
 
 #ifdef RW_D3D9
 void *colourfilterVC_PS;
@@ -32,9 +95,21 @@ void *contrast_PS;
 int32 u_blurcolor;
 int32 u_contrastAdd;
 int32 u_contrastMult;
+int32 u_gradeR;
+int32 u_gradeG;
+int32 u_gradeB;
 rw::gl3::Shader *colourFilterVC;
 rw::gl3::Shader *contrast;
+rw::gl3::Shader *grading;
 #endif
+
+bool CPostFX::m_bYCbCrFilter = false;
+float CPostFX::m_lumaScale = 219.0f / 255.0f;
+float CPostFX::m_lumaOffset = 16.0f / 255.0f;
+float CPostFX::m_cbScale = 1.23f;
+float CPostFX::m_cbOffset = 0.0f;
+float CPostFX::m_crScale = 1.23f;
+float CPostFX::m_crOffset = 0.0f;
 
 void
 CPostFX::InitOnce(void)
@@ -43,6 +118,9 @@ CPostFX::InitOnce(void)
 	u_blurcolor = rw::gl3::registerUniform("u_blurcolor");
 	u_contrastAdd = rw::gl3::registerUniform("u_contrastAdd");
 	u_contrastMult = rw::gl3::registerUniform("u_contrastMult");
+	u_gradeR = rw::gl3::registerUniform("u_gradeR");
+	u_gradeG = rw::gl3::registerUniform("u_gradeG");
+	u_gradeB = rw::gl3::registerUniform("u_gradeB");
 #endif
 }
 
@@ -108,8 +186,8 @@ CPostFX::Open(RwCamera *cam)
 	RwIm2DVertexSetIntRGBA(&Vertex[3], 255, 255, 255, 255);
 
 
-	RwIm2DVertexSetScreenX(&Vertex2[0], zero + 2.0f);
-	RwIm2DVertexSetScreenY(&Vertex2[0], zero + 2.0f);
+	RwIm2DVertexSetScreenX(&Vertex2[0], zero + BlurOffset());
+	RwIm2DVertexSetScreenY(&Vertex2[0], zero + BlurOffset());
 	RwIm2DVertexSetScreenZ(&Vertex2[0], RwIm2DGetNearScreenZ());
 	RwIm2DVertexSetCameraZ(&Vertex2[0], RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetRecipCameraZ(&Vertex2[0], 1.0f/RwCameraGetNearClipPlane(cam));
@@ -117,8 +195,8 @@ CPostFX::Open(RwCamera *cam)
 	RwIm2DVertexSetV(&Vertex2[0], 0.0f, 1.0f/RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetIntRGBA(&Vertex2[0], 255, 255, 255, 255);
 
-	RwIm2DVertexSetScreenX(&Vertex2[1], 2.0f);
-	RwIm2DVertexSetScreenY(&Vertex2[1], ymax + 2.0f);
+	RwIm2DVertexSetScreenX(&Vertex2[1], BlurOffset());
+	RwIm2DVertexSetScreenY(&Vertex2[1], ymax + BlurOffset());
 	RwIm2DVertexSetScreenZ(&Vertex2[1], RwIm2DGetNearScreenZ());
 	RwIm2DVertexSetCameraZ(&Vertex2[1], RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetRecipCameraZ(&Vertex2[1], 1.0f/RwCameraGetNearClipPlane(cam));
@@ -126,8 +204,8 @@ CPostFX::Open(RwCamera *cam)
 	RwIm2DVertexSetV(&Vertex2[1], 1.0f, 1.0f/RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetIntRGBA(&Vertex2[1], 255, 255, 255, 255);
 
-	RwIm2DVertexSetScreenX(&Vertex2[2], xmax + 2.0f);
-	RwIm2DVertexSetScreenY(&Vertex2[2], ymax + 2.0f);
+	RwIm2DVertexSetScreenX(&Vertex2[2], xmax + BlurOffset());
+	RwIm2DVertexSetScreenY(&Vertex2[2], ymax + BlurOffset());
 	RwIm2DVertexSetScreenZ(&Vertex2[2], RwIm2DGetNearScreenZ());
 	RwIm2DVertexSetCameraZ(&Vertex2[2], RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetRecipCameraZ(&Vertex2[2], 1.0f/RwCameraGetNearClipPlane(cam));
@@ -135,8 +213,8 @@ CPostFX::Open(RwCamera *cam)
 	RwIm2DVertexSetV(&Vertex2[2], 1.0f, 1.0f/RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetIntRGBA(&Vertex2[2], 255, 255, 255, 255);
 
-	RwIm2DVertexSetScreenX(&Vertex2[3], xmax + 2.0f);
-	RwIm2DVertexSetScreenY(&Vertex2[3], zero + 2.0f);
+	RwIm2DVertexSetScreenX(&Vertex2[3], xmax + BlurOffset());
+	RwIm2DVertexSetScreenY(&Vertex2[3], zero + BlurOffset());
 	RwIm2DVertexSetScreenZ(&Vertex2[3], RwIm2DGetNearScreenZ());
 	RwIm2DVertexSetCameraZ(&Vertex2[3], RwCameraGetNearClipPlane(cam));
 	RwIm2DVertexSetRecipCameraZ(&Vertex2[3], 1.0f/RwCameraGetNearClipPlane(cam));
@@ -172,6 +250,15 @@ CPostFX::Open(RwCamera *cam)
 	assert(contrast);
 	}
 
+	{
+#include "shaders/obj/im2d_vert.inc"
+#include "shaders/obj/grading_frag.inc"
+	const char *vs[] = { shaderDecl, header_vert_src, im2d_vert_src, nil };
+	const char *fs[] = { shaderDecl, header_frag_src, grading_frag_src, nil };
+	grading = Shader::create(vs, fs);
+	assert(grading);
+	}
+
 #endif
 }
 
@@ -205,6 +292,10 @@ CPostFX::Close(void)
 		contrast->destroy();
 		contrast = nil;
 	}
+	if(grading){
+		grading->destroy();
+		grading = nil;
+	}
 #endif
 }
 
@@ -214,19 +305,19 @@ CPostFX::RenderOverlayBlur(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, pFrontBuffer);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 
-	RwIm2DVertexSetIntRGBA(&Vertex[0], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex[1], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex[2], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex[3], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex2[0], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex2[1], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex2[2], r*2, g*2, b*2, 30);
-	RwIm2DVertexSetIntRGBA(&Vertex2[3], r*2, g*2, b*2, 30);
+	RwIm2DVertexSetIntRGBA(&Vertex[0], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex[1], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex[2], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex[3], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex2[0], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex2[1], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex2[2], r*2, g*2, b*2, BlurAlpha());
+	RwIm2DVertexSetIntRGBA(&Vertex2[3], r*2, g*2, b*2, BlurAlpha());
 
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 
-	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, BlurOn ? Vertex2 : Vertex, 4, Index, 6);
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, UseTrailsBlur() ? Vertex2 : Vertex, 4, Index, 6);
 
 
 	RwIm2DVertexSetIntRGBA(&Vertex2[0], r, g, b, a);
@@ -242,7 +333,7 @@ CPostFX::RenderOverlayBlur(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
 
 	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
-	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, BlurOn ? Vertex2 : Vertex, 4, Index, 6);
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, UseTrailsBlur() ? Vertex2 : Vertex, 4, Index, 6);
 }
 
 void
@@ -294,7 +385,7 @@ CPostFX::RenderOverlayShader(RwCamera *cam, int32 r, int32 g, int32 b, int32 a)
 		blurcolors[0] = r*f/255.0f;
 		blurcolors[1] = g*f/255.0f;
 		blurcolors[2] = b*f/255.0f;
-		blurcolors[3] = 30/255.0f;
+		blurcolors[3] = BlurAlpha()/255.0f;
 #ifdef RW_D3D9
 		rw::d3d::d3ddevice->SetPixelShaderConstantF(10, blurcolors, 1);
 		rw::d3d::im2dOverridePS = colourfilterVC_PS;
@@ -343,7 +434,7 @@ CPostFX::NeedBackBuffer(void)
 		// no actual rendering here
 		return false;
 	case POSTFX_NORMAL:
-		if(MotionBlurOn)
+		if(UseTrailsMotionBlur())
 			return false;
 		else
 			return true;
@@ -368,7 +459,7 @@ CPostFX::NeedFrontBuffer(int32 type)
 		// no actual rendering here
 		return false;
 	case POSTFX_NORMAL:
-		if(MotionBlurOn)
+		if(UseTrailsMotionBlur())
 			return true;
 		else
 			return false;
@@ -378,12 +469,95 @@ CPostFX::NeedFrontBuffer(int32 type)
 	return false;
 }
 
+static RwMatrix RGB2YUV = {
+	{  0.299f,	-0.168736f,	 0.500f }, 0,
+	{  0.587f,	-0.331264f,	-0.418688f }, 0,
+	{  0.114f,	 0.500f,	-0.081312f }, 0,
+	{  0.000f,	 0.000f,	 0.000f }, 0,
+};
+
+static RwMatrix YUV2RGB = {
+	{  1.000f,	 1.000f,	 1.000f }, 0,
+	{  0.000f,	-0.344136f,	 1.772f }, 0,
+	{  1.402f,	-0.714136f,	 0.000f }, 0,
+	{  0.000f,	 0.000f,	 0.000f }, 0,
+};
+
 void
 CPostFX::GetBackBuffer(RwCamera *cam)
 {
 	RwRasterPushContext(pBackBuffer);
 	RwRasterRenderFast(RwCameraGetRaster(cam), 0, 0);
 	RwRasterPopContext();
+}
+
+void
+CPostFX::RenderSeamFix(RwCamera *cam, int32 offX, int32 offY)
+{
+	if(pFrontBuffer == nil)
+		Open(cam);
+	if(pBackBuffer == nil)
+		return;
+
+	GetBackBuffer(cam);
+
+	float xmin = -0.5f + offX;
+	float ymin = -0.5f + offY;
+	float xmax = RwRasterGetWidth(pBackBuffer) - 0.5f + offX;
+	float ymax = RwRasterGetHeight(pBackBuffer) - 0.5f + offY;
+
+	float z = RwIm2DGetNearScreenZ();
+	float recipz = 1.0f/RwCameraGetNearClipPlane(cam);
+
+	RwIm2DVertexSetScreenX(&SeamVertex[0], xmin);
+	RwIm2DVertexSetScreenY(&SeamVertex[0], ymin);
+	RwIm2DVertexSetScreenZ(&SeamVertex[0], z);
+	RwIm2DVertexSetCameraZ(&SeamVertex[0], RwCameraGetNearClipPlane(cam));
+	RwIm2DVertexSetRecipCameraZ(&SeamVertex[0], recipz);
+	RwIm2DVertexSetU(&SeamVertex[0], 0.0f, recipz);
+	RwIm2DVertexSetV(&SeamVertex[0], 0.0f, recipz);
+	RwIm2DVertexSetIntRGBA(&SeamVertex[0], 255, 255, 255, 255);
+
+	RwIm2DVertexSetScreenX(&SeamVertex[1], xmin);
+	RwIm2DVertexSetScreenY(&SeamVertex[1], ymax);
+	RwIm2DVertexSetScreenZ(&SeamVertex[1], z);
+	RwIm2DVertexSetCameraZ(&SeamVertex[1], RwCameraGetNearClipPlane(cam));
+	RwIm2DVertexSetRecipCameraZ(&SeamVertex[1], recipz);
+	RwIm2DVertexSetU(&SeamVertex[1], 0.0f, recipz);
+	RwIm2DVertexSetV(&SeamVertex[1], 1.0f, recipz);
+	RwIm2DVertexSetIntRGBA(&SeamVertex[1], 255, 255, 255, 255);
+
+	RwIm2DVertexSetScreenX(&SeamVertex[2], xmax);
+	RwIm2DVertexSetScreenY(&SeamVertex[2], ymax);
+	RwIm2DVertexSetScreenZ(&SeamVertex[2], z);
+	RwIm2DVertexSetCameraZ(&SeamVertex[2], RwCameraGetNearClipPlane(cam));
+	RwIm2DVertexSetRecipCameraZ(&SeamVertex[2], recipz);
+	RwIm2DVertexSetU(&SeamVertex[2], 1.0f, recipz);
+	RwIm2DVertexSetV(&SeamVertex[2], 1.0f, recipz);
+	RwIm2DVertexSetIntRGBA(&SeamVertex[2], 255, 255, 255, 255);
+
+	RwIm2DVertexSetScreenX(&SeamVertex[3], xmax);
+	RwIm2DVertexSetScreenY(&SeamVertex[3], ymin);
+	RwIm2DVertexSetScreenZ(&SeamVertex[3], z);
+	RwIm2DVertexSetCameraZ(&SeamVertex[3], RwCameraGetNearClipPlane(cam));
+	RwIm2DVertexSetRecipCameraZ(&SeamVertex[3], recipz);
+	RwIm2DVertexSetU(&SeamVertex[3], 1.0f, recipz);
+	RwIm2DVertexSetV(&SeamVertex[3], 0.0f, recipz);
+	RwIm2DVertexSetIntRGBA(&SeamVertex[3], 255, 255, 255, 255);
+
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
+	RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)pBackBuffer);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
+	RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, SeamVertex, 4, Index, 6);
+
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)nil);
 }
 
 void
@@ -417,22 +591,23 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 	if(type == MOTION_BLUR_SNIPER){
 		if(!bJustInitialised)
 			RenderOverlaySniper(cam, red, green, blue, blur);
-	}else switch(EffectSwitch){
-	case POSTFX_OFF:
-	case POSTFX_SIMPLE:
-		// no actual rendering here
-		break;
-	case POSTFX_NORMAL:
-		if(MotionBlurOn){
-			if(!bJustInitialised)
-				RenderOverlayBlur(cam, red, green, blue, blur);
-		}else{
+	}else if(ColourOverlayEnabled()){
+		switch(EffectSwitch){
+		case POSTFX_OFF:
+		case POSTFX_SIMPLE:
+			break;
+		case POSTFX_NORMAL:
+			if(UseTrailsMotionBlur()){
+				if(!bJustInitialised)
+					RenderOverlayBlur(cam, red, green, blue, blur);
+			}else{
+				RenderOverlayShader(cam, red, green, blue, blur);
+			}
+			break;
+		case POSTFX_MOBILE:
 			RenderOverlayShader(cam, red, green, blue, blur);
+			break;
 		}
-		break;
-	case POSTFX_MOBILE:
-		RenderOverlayShader(cam, red, green, blue, blur);
-		break;
 	}
 
 	if(!bJustInitialised)
@@ -454,6 +629,63 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 		bJustInitialised = true;
 
 	POP_RENDERGROUP();
+
+	if (m_bYCbCrFilter) {
+		RwRasterPushContext(pFrontBuffer);
+		RwRasterRenderFast(RwCameraGetRaster(cam), 0, 0);
+		RwRasterPopContext();
+
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
+		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)pFrontBuffer);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
+
+		RwMatrix m = RGB2YUV;
+
+		RwMatrix m2;
+		m2.right.x = m_lumaScale;
+		m2.up.x = 0.0f;
+		m2.at.x = 0.0f;
+		m2.pos.x = m_lumaOffset;
+		m2.right.y = 0.0f;
+		m2.up.y = m_cbScale;
+		m2.at.y = 0.0f;
+		m2.pos.y = m_cbOffset;
+		m2.right.z = 0.0f;
+		m2.up.z = 0.0f;
+		m2.at.z = m_crScale;
+		m2.pos.z = m_crOffset;
+
+		RwMatrixOptimize(&m2, nil);
+
+		RwMatrixTransform(&m, &m2, rwCOMBINEPOSTCONCAT);
+		RwMatrixTransform(&m, &YUV2RGB, rwCOMBINEPOSTCONCAT);
+
+		float gradeR[4], gradeG[4], gradeB[4];
+		gradeR[0] = m.right.x; gradeR[1] = m.up.x; gradeR[2] = m.at.x; gradeR[3] = m.pos.x;
+		gradeG[0] = m.right.y; gradeG[1] = m.up.y; gradeG[2] = m.at.y; gradeG[3] = m.pos.y;
+		gradeB[0] = m.right.z; gradeB[1] = m.up.z; gradeB[2] = m.at.z; gradeB[3] = m.pos.z;
+
+#ifdef RW_OPENGL
+		rw::gl3::im2dOverrideShader = grading;
+		grading->use();
+		glUniform4fv(grading->uniformLocations[u_gradeR], 1, gradeR);
+		glUniform4fv(grading->uniformLocations[u_gradeG], 1, gradeG);
+		glUniform4fv(grading->uniformLocations[u_gradeB], 1, gradeB);
+#endif
+		RwIm2DRenderIndexedPrimitive(rwPRIMTYPETRILIST, Vertex, 4, Index, 6);
+#ifdef RW_OPENGL
+		rw::gl3::im2dOverrideShader = nil;
+#endif
+
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)TRUE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, (void*)NULL);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+	}
 }
 
 int CPostFX::PrevRed[NUMAVERAGE], CPostFX::AvgRed;

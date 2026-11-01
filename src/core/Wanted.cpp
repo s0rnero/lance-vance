@@ -11,136 +11,24 @@
 #include "Wanted.h"
 #include "General.h"
 #include "Stats.h"
-#include "ondemand.h"   // web: ODTRACES -> odtrace.log (canal de traza del port)
+#include "EventList.h"
+#include "Script.h"
+#include "ondemand.h"
+#if defined VICEEXT_IMPROVED_TECH_PART && defined DEBUG
+#include "Debug.h"
+#endif
 
 int32 CWanted::MaximumWantedLevel = 6;
 int32 CWanted::nMaximumWantedLevel = 9600;
 
-// Radio de "ve al jugador": mismo orden de magnitud que el alcance útil de un
-// arma corta y bastante más que los 18 m del chequeo de presencia vanilla, para
-// distinguir "hay policía cerca" de "el policía te está viendo".
-#define WANTED_SIGHT_RADIUS 40.0f
-
-#ifdef VICEEXT_HIDE_COPS
-// Vice Extended (v1.0): ritmo de la huida. 5 s de gracia (los policías te
-// "recuerdan" y siguen buscando) y luego una estrella cada 15 s sin que nadie
-// te vea. Con 2 estrellas: 1 en 20 s. Con 6: 0 en 95 s.
-#define VICEEXT_HIDE_GRACE_MS 5000
-#define VICEEXT_HIDE_STAR_MS 15000
-// Cada cuánto se refresca el barrido de "¿me ve algún policía de la calle?".
-// Esa parte recorre TODO el pool de peds (y lanza un ProcessLineOfSight por
-// policía a menos de 40 m), y UpdateHiding() corre en CADA frame; el contrato
-// es de segundos (5 s de gracia + 15 s por estrella), así que 5 Hz sobra. La
-// lista de perseguidores (m_pCops, como mucho 10) sí se mira cada frame.
-// Peor caso del filtro: 200 ms de decisión de visibilidad "vieja" — por debajo
-// de la tolerancia del verificador (2.5 s).
-#define VICEEXT_HIDE_SWEEP_MS 200
-// Cuánto tiene que DURAR un avistamiento para contar (histéresis). El barrido va
-// a 5 Hz y en la calle el resultado parpadea; por debajo de este umbral el
-// destello no corta la búsqueda ni reinicia la racha (el jugador sigue
-// escondido). Ver el porqué en UpdateHiding().
-#define VICEEXT_HIDE_SEEN_MS 400
-// Coseno del ángulo de "te ve" (75° a cada lado del morro del policía).
-#define WANTED_SIGHT_COS 0.26f
-// Revisión del bloque, impresa UNA vez por sesión (`WANTEDHIDEINIT`): la
-// etiqueta `build=` del JS NO cambia cuando sólo se recompone el `.wasm`, así
-// que sin esto un log no puede probar qué binario jugó.
-// rev 3 = traza de `WANTEDCOP join` limitada a una línea por segundo (`burst=`) y
-//         esta línea de prueba de revisión.
-// rev 4 = además, barrido de visibilidad a 5 Hz (antes: cada frame).
-// rev 5 = las guardas de tiempo de la traza y del barrido **reanclan cuando el reloj
-//         del motor retrocede** (al cargar partida: antes la traza se quedaba muda
-//         toda la sesión) y `UpdateHiding()` sale si todavía no hay jugador (antes de
-//         `FindPlayerCoords()`, que desreferencia sin comprobar).
-//         (La cadencia y el sonido del drive-by por arma van aparte: se prueban con
-//         `delay=` en las líneas `DRIVEBY shot`.)
-// rev 6 = el "te ve" exige ADEMÁS que el policía mire hacia ti (75°) y un
-//         avistamiento < 400 ms no corta la búsqueda (histéresis). Antes: a
-//         nivel >= 2 la estrella no bajaba nunca en partida (`start`/`seen`
-//         encadenados cada 200 ms).
-// rev 7 = la regla de esconderse cubre TAMBIÉN el nivel 1 (la última estrella).
-//         Medido en la partida del 21/09: de 3 estrellas sólo cayeron las de
-//         arriba; la última quedaba en manos de la regla vanilla de nivel 1 (1
-//         punto de chaos/s SIEMPRE que no haya policía a menos de 18 m), que no
-//         entiende de esconderse: con una patrulla cerca no cae nunca.
-#define VICEEXT_HIDE_REV 7
-#endif
-
-// Etiqueta de sesión: el dev server comparte UN odtrace.log entre todas las
-// pestañas, así que si hay otra sonda (u otro agente) jugando a la vez las
-// líneas se mezclan. La sonda pone un número en window.__vcWantedTag y su traza
-// lo lleva impreso para poder separarla. Sin EM_ASM (build nativo) es 0.
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-unsigned
-WantedTraceTag(void)
+#ifdef VICEEXT_EXTRA_CHEATS
+static inline bool
+ViceExtNeverWanted(void)
 {
-	return (unsigned)EM_ASM_INT({ return (window.__vcWantedTag | 0); });
-}
-#else
-unsigned
-WantedTraceTag(void)
-{
-	return 0;
+	CPlayerPed *player = FindPlayerPed();
+	return player != nil && player->bNoWantedCheat;
 }
 #endif
-
-// ¿Este policía tiene línea de visión al jugador? Réplica del criterio que ya
-// usa CCopPed::CopAI para decidir si dispara (CWorld::ProcessLineOfSight), pero
-// con edificios/objetos bloqueando de verdad (en CopPed esa llamada va sin
-// chequeo de edificios porque solo decide si apuntar al coche).
-static bool
-WantedCopSeesPlayer(CPed *cop, const CVector &playerPos)
-{
-	CVector copPos = cop->GetPosition();
-	copPos.z += 1.0f;
-	CVector target = playerPos;
-	target.z += 0.9f;
-
-	if ((copPos - target).MagnitudeSqr() > sq(WANTED_SIGHT_RADIUS))
-		return false;
-
-	// Sección 2 (P1, 5ª partida): además de la línea de visión, el policía tiene
-	// que estar MIRANDO hacia el jugador. Sin esto, cualquier patrulla a 40 m de
-	// espaldas (o cruzando de lado) contaba como "te ve": en la partida del
-	// 20/09 salieron 1.205 avistamientos en 649 s con el jugador escondido, así
-	// que el contador de 15 s no llegaba a pagar nunca y la mecánica no hacía
-	// nada (0 estrellas bajadas en toda la partida). Vanilla no tiene el
-	// concepto de "verte", así que el ángulo es decisión de este bloque y queda
-	// aquí escrito: 75° a cada lado del morro.
-	CVector toPlayer = target - copPos;
-	toPlayer.z = 0.0f;
-	float dist2D = toPlayer.Magnitude();
-	if (dist2D > 0.001f) {
-		toPlayer *= 1.0f / dist2D;
-		CVector copFwd = cop->GetForward();
-		copFwd.z = 0.0f;
-		copFwd.Normalise();
-		if (DotProduct(copFwd, toPlayer) < WANTED_SIGHT_COS)
-			return false;   // mira hacia otro lado: no te ve
-	}
-
-	CColPoint colPoint;
-	CEntity *entity = nil;
-	bool hit = CWorld::ProcessLineOfSight(copPos, target, colPoint, entity,
-		true,   // checkBuildings
-		false,  // checkVehicles
-		false,  // checkPeds
-		true,   // checkObjects
-		false,  // checkDummies
-		true,   // ignoreSeeThrough
-		false);
-
-	if (hit) {
-		CPed *player = FindPlayerPed();
-		// El propio policía (o su coche) no cuenta como obstáculo: la línea sale
-		// de dentro de él cuando va conduciendo.
-		if (entity && entity != (CEntity*)player && entity != (CEntity*)player->m_pMyVehicle
-			&& entity != (CEntity*)cop && entity != (CEntity*)cop->m_pMyVehicle)
-			return false;   // lo tapa un edificio/objeto
-	}
-	return true;
-}
 
 void
 CWanted::Initialise()
@@ -154,24 +42,6 @@ CWanted::Initialise()
 	m_MaxCops = 0;
 	m_MaximumLawEnforcerVehicles = 0;
 	m_RoadblockDensity = 0;
-#ifdef VICEEXT_HIDE_COPS
-	// Vice Extended (P1): sin búsqueda en curso. m_nLastSeenTime arranca en el
-	// instante actual para que la gracia de 5 s no dispare sola al empezar.
-	m_vecLastKnownPos = CVector(0.0f, 0.0f, 0.0f);
-	m_nLastSeenTime = CTimer::GetTimeInMilliseconds();
-	m_nHiddenSince = 0;
-	m_nLastStarDrop = 0;
-	m_bHiding = false;
-	// Una línea por sesión: deja en el log qué revisión y con qué constantes
-	// corrió de verdad (el `.wasm` se recompone sin tocar la etiqueta del JS).
-	{
-		char line[128];
-		snprintf(line, sizeof(line), "WANTEDHIDEINIT tag=%u rev=%d star_ms=%d grace_ms=%d sight_m=%d sweep_ms=%d seen_ms=%d sight_dot=%.2f t=%u",
-			WantedTraceTag(), VICEEXT_HIDE_REV, VICEEXT_HIDE_STAR_MS, VICEEXT_HIDE_GRACE_MS, (int)WANTED_SIGHT_RADIUS,
-			VICEEXT_HIDE_SWEEP_MS, VICEEXT_HIDE_SEEN_MS, WANTED_SIGHT_COS, (unsigned)CTimer::GetTimeInMilliseconds());
-		ODTRACES(line);
-	}
-#endif
 	m_bIgnoredByCops = false;
 	m_bIgnoredByEveryone = false;
 	m_bSwatRequired = false;
@@ -181,6 +51,15 @@ CWanted::Initialise()
 	m_nWantedLevel = 0;
 	m_nMinWantedLevel = 0;
 	m_CopsBeatingSuspect = 0;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_nLastTimeSeenPlayer = 0;
+	m_vecLastSeenPosPlayer = CVector(0.0f, 0.0f, 0.0f);
+	m_nTimeDelayBeforeBeingSeen = 0;
+	m_nTimeAutomaticUpdatedPosPlayer = 0;
+	m_bNextReportIsLastSeen = false;
+	m_bSearchPlayerRandomly = false;
+#endif
 
 	for (int i = 0; i < ARRAY_SIZE(m_pCops); i++)
 		m_pCops[i] = nil;
@@ -224,7 +103,11 @@ CWanted::NumOfHelisRequired()
 		return 1;
 	case 5:
 	case 6:
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		return 2;
+#else
 		return 1;
+#endif
 	default:
 		return 0;
 	}
@@ -233,6 +116,11 @@ CWanted::NumOfHelisRequired()
 void
 CWanted::SetWantedLevel(int32 level)
 {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (level > 0)
+		m_vecLastSeenPosPlayer = FindPlayerCoors();
+#endif
+
 	if (level > MaximumWantedLevel)
 		level = MaximumWantedLevel;
 
@@ -320,12 +208,20 @@ CWanted::SetMaximumWantedLevel(int32 level)
 void
 CWanted::RegisterCrime(eCrimeType type, const CVector &coors, uint32 id, bool policeDoesntCare)
 {
+#ifdef VICEEXT_EXTRA_CHEATS
+	if(ViceExtNeverWanted())
+		return;
+#endif
 	AddCrimeToQ(type, id, coors, false, policeDoesntCare);
 }
 
 void
 CWanted::RegisterCrime_Immediately(eCrimeType type, const CVector &coors, uint32 id, bool policeDoesntCare)
 {
+#ifdef VICEEXT_EXTRA_CHEATS
+	if(ViceExtNeverWanted())
+		return;
+#endif
 #ifdef FIX_SIGNIFICANT_BUGS
 	if(!AddCrimeToQ(type, id, coors, true, policeDoesntCare))
 #else
@@ -341,7 +237,6 @@ CWanted::ClearQdCrimes()
 		m_aCrimes[i].m_nType = CRIME_NONE;
 }
 
-// returns whether the crime had been reported already
 bool
 CWanted::AddCrimeToQ(eCrimeType type, int32 id, const CVector &coors, bool reported, bool policeDoesntCare)
 {
@@ -375,6 +270,19 @@ CWanted::ReportCrimeNow(eCrimeType type, const CVector &coors, bool policeDoesnt
 {
 	float sensitivity, chaos;
 	int wantedLevelDrop;
+
+#ifdef VICEEXT_EXTRA_CHEATS
+	if(ViceExtNeverWanted()){
+		m_nChaos = 0;
+		if(m_nWantedLevel > 0)
+			SetWantedLevel(0);
+		return;
+	}
+#endif
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_nLastTimeSeenPlayer = CTimer::GetTimeInMilliseconds();
+#endif
 
 	if(CDarkel::FrenzyOnGoing())
 		sensitivity = m_fCrimeSensitivity*0.3f;
@@ -444,7 +352,7 @@ CWanted::ReportCrimeNow(eCrimeType type, const CVector &coors, bool policeDoesnt
 		m_nChaos += 100.0f * chaos;
 		break;
 	default:
-	//	Error("Undefined crime type, RegisterCrime, Crime.cpp");	// different file for some reason
+
 		Error("Undefined crime type, RegisterCrime, Wanted.cpp");
 	}
 	m_nChaos = Max(m_nChaos, m_nMinChaos);
@@ -477,25 +385,41 @@ CWanted::UpdateWantedLevel()
 		CStats::WantedStarsAttained += 2 - m_nWantedLevel;
 		m_nWantedLevel = 2;
 		m_MaximumLawEnforcerVehicles = 2;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		m_MaxCops = 5;
+#else
 		m_MaxCops = 3;
+#endif
 		m_RoadblockDensity = 0;
 	} else if (m_nChaos >= 550 && m_nChaos < 1200) {
 		CStats::WantedStarsAttained += 3 - m_nWantedLevel;
 		m_nWantedLevel = 3;
 		m_MaximumLawEnforcerVehicles = 2;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		m_MaxCops = 7;
+#else
 		m_MaxCops = 4;
+#endif
 		m_RoadblockDensity = 12;
 	} else if (m_nChaos >= 1200 && m_nChaos < 2400) {
 		CStats::WantedStarsAttained += 4 - m_nWantedLevel;
 		m_nWantedLevel = 4;
 		m_MaximumLawEnforcerVehicles = 2;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		m_MaxCops = 10;
+#else
 		m_MaxCops = 6;
+#endif
 		m_RoadblockDensity = 18;
 	} else if (m_nChaos >= 2400 && m_nChaos < 4800) {
 		CStats::WantedStarsAttained += 5 - m_nWantedLevel;
 		m_nWantedLevel = 5;
 		m_MaximumLawEnforcerVehicles = 3;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		m_MaxCops = 10;
+#else
 		m_MaxCops = 8;
+#endif
 		m_RoadblockDensity = 24;
 	} else if (m_nChaos >= 4800) {
 		CStats::WantedStarsAttained += 6 - m_nWantedLevel;
@@ -509,6 +433,21 @@ CWanted::UpdateWantedLevel()
 		m_nLastWantedLevelChange = CTimer::GetTimeInMilliseconds();
 }
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+bool CWanted::IsPlayerLost() const
+{
+	int wantedLevel = FindPlayerPed()->m_pWanted->GetWantedLevel();
+	int timeCopsSeenPlayerAfterLost = 25000 + (5000 * wantedLevel);
+	return CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_pWanted->m_nLastTimeSeenPlayer > timeCopsSeenPlayerAfterLost;
+}
+
+bool CWanted::IsPlayerHides() const
+{
+	int timeInMs = FindPlayerPed()->InVehicle() ? 3000 : 500;
+	return CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_pWanted->m_nLastTimeSeenPlayer > timeInMs;
+}
+#endif
+
 int32
 CWanted::WorkOutPolicePresence(CVector posn, float radius)
 {
@@ -516,19 +455,176 @@ CWanted::WorkOutPolicePresence(CVector posn, float radius)
 	CPed *ped;
 	CVehicle *vehicle;
 	int numPolice = 0;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	CWanted* wanted = FindPlayerPed()->m_pWanted;
+
+	bool nobodySawPlayer = true;
+	float timeDelayDiff = CTimer::GetTimeInMilliseconds() - wanted->m_nTimeDelayBeforeBeingSeen;
+#endif
 
 	i = CPools::GetPedPool()->GetSize();
 	while(--i >= 0){
 		ped = CPools::GetPedPool()->GetSlot(i);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		if (ped && IsPolicePedModel(ped->GetModelIndex())) {
+			CCopPed* copPed = (CCopPed*)ped;
+
+			if (copPed->DyingOrDead())
+				continue;
+
+			if (wanted->GetWantedLevel() == 0) {
+				copPed->m_vecLastPosPlayerBeforeHiding = FindPlayerCoors();
+				wanted->m_vecLastSeenPosPlayer = FindPlayerCoors();
+			}
+
+			float searchRadius = radius;
+			if (ped->InVehicle() && wanted->GetWantedLevel() >= 2)
+				searchRadius = 90.0f;
+
+			if ((posn - ped->GetPosition()).Magnitude() < searchRadius) {
+				float angleOfSight;
+				if (ped->InVehicle()) {
+					angleOfSight = -1.0f;
+				} else {
+					CVector distance = ped->GetPosition() - posn;
+					CVector copForward = ped->GetForward();
+					angleOfSight = DotProduct(copForward, distance);
+				}
+
+				RwV3d copHeadPos;
+				copHeadPos.x = 0.0f;
+				copHeadPos.y = 0.0f;
+				copHeadPos.z = 0.0f;
+				ped->m_pedIK.GetComponentPosition(copHeadPos, PED_HEAD);
+
+				RwV3d playerHeadPos;
+				playerHeadPos.x = 0.0f;
+				playerHeadPos.y = 0.0f;
+				playerHeadPos.z = 0.0f;
+				FindPlayerPed()->m_pedIK.GetComponentPosition(playerHeadPos, PED_HEAD);
+
+				CColPoint colPoint;
+				CEntity* hitEntity = nil;
+				if (FindPlayerPed()->bIsDucking) {
+					CWorld::ProcessLineOfSight(copHeadPos, playerHeadPos, colPoint, hitEntity, true, true, false, false, false, true, true, true);
+				} else {
+					bool bCheckVehicles = false;
+					if (!FindPlayerVehicle()) {
+						CEntity* hitEntity2;					if (CWorld::ProcessLineOfSight(copHeadPos, playerHeadPos, colPoint, hitEntity2, true, true, false, false, false, true, true, true)) {
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+						CVehicle* hitVehicle = hitEntity2 && hitEntity2->IsVehicle() ? (CVehicle*)hitEntity2 : nil;
+						if (hitVehicle && hitVehicle->IsHighVehicle())
+							bCheckVehicles = true;
+#endif
+					}
+					}
+
+					CWorld::ProcessLineOfSight(copHeadPos, playerHeadPos, colPoint, hitEntity, true, bCheckVehicles, false, false, false, true, true, true);
+				}
+
+				bool bCopSeesPlayer = angleOfSight < -0.25f && !hitEntity;
+
+				int event;
+				if ((wanted->GetWantedLevel() == 0 && bCopSeesPlayer) ||
+					(wanted->GetWantedLevel() > 0 && !wanted->IsPlayerLost()) ||
+					CEventList::FindClosestEvent(EVENT_GUNSHOT, posn, &event))
+					numPolice++;
+
+				if (bCopSeesPlayer)
+					nobodySawPlayer = false;
+
+				if (bCopSeesPlayer && timeDelayDiff > TIME_DELAY_BEFORE_BEING_SEEN) {
+					if (FindPlayerVehicle() && !wanted->IsPlayerHides())
+						wanted->m_vLastSeenPlayerVehicle = FindPlayerVehicle();
+
+					if (FindPlayerVehicle())
+						if (wanted->m_vLastSeenPlayerVehicle != FindPlayerVehicle() && Distance(ped->GetPosition(), posn) > 12.5f && FindPlayerVehicle()->m_vehType != VEHICLE_TYPE_BIKE)
+							break;
+
+					wanted->m_nLastTimeSeenPlayer = CTimer::GetTimeInMilliseconds();
+					wanted->m_nTimeAutomaticUpdatedPosPlayer = CTimer::GetTimeInMilliseconds();
+
+					copPed->m_bLookingForPlayer = false;
+					copPed->m_vecLastPosPlayerBeforeHiding = FindPlayerCoors();
+					copPed->m_bMovesToLastPlayerPosition = false;
+					wanted->m_vecLastSeenPosPlayer = FindPlayerCoors();
+					wanted->m_bSearchPlayerRandomly = false;
+				} else if (wanted->GetWantedLevel() > 0 && !copPed->m_bLookingForPlayer) {
+					copPed->m_bMovesToLastPlayerPosition = true;
+				}
+			}
+		}
+#else
 		if(ped &&
 		   IsPolicePedModel(ped->GetModelIndex()) &&
 		   (posn - ped->GetPosition()).Magnitude() < radius)
 			numPolice++;
+#endif
 	}
 
 	i = CPools::GetVehiclePool()->GetSize();
 	while(--i >= 0){
 		vehicle = CPools::GetVehiclePool()->GetSlot(i);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		if (vehicle &&
+			vehicle->IsHeli() &&
+			IsPoliceVehicleModel(vehicle->GetModelIndex()) &&
+			vehicle != FindPlayerVehicle() &&
+			(posn - vehicle->GetPosition()).Magnitude() < radius) {
+
+			RwV3d playerHeadPos;
+			playerHeadPos.x = 0.0f;
+			playerHeadPos.y = 0.0f;
+			playerHeadPos.z = 0.0f;
+			FindPlayerPed()->m_pedIK.GetComponentPosition(playerHeadPos, PED_HEAD);
+
+			CColPoint colPoint;
+			CEntity* hitEntity;
+			if (FindPlayerPed()->bIsDucking) {
+				CWorld::ProcessLineOfSight(vehicle->GetPosition() + CVector(0.0f, 0.0f, 0.75f), playerHeadPos, colPoint, hitEntity, true, true, false, false, false, true, true, true);
+			} else {
+				bool bCheckVehicles = false;
+				if (!FindPlayerVehicle()) {
+					CEntity* hitEntity2;
+					if (CWorld::ProcessLineOfSight(vehicle->GetPosition() + CVector(0.0f, 0.0f, 0.75f), playerHeadPos, colPoint, hitEntity2, true, true, false, false, false, true, true, true)) {
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+						CVehicle* hitVehicle = hitEntity2 && hitEntity2->IsVehicle() ? (CVehicle*)hitEntity2 : nil;
+						if (hitVehicle && hitVehicle->IsHighVehicle())
+							bCheckVehicles = true;
+#endif
+					}
+				}
+
+				CWorld::ProcessLineOfSight(vehicle->GetPosition() + CVector(0.0f, 0.0f, 0.75f), playerHeadPos, colPoint, hitEntity, true, bCheckVehicles, false, false, false, true, true, true);
+			}
+#ifdef DEBUG
+			if (!hitEntity && !wanted->IsPlayerHides())
+				CDebug::AddLine(vehicle->GetPosition(), playerHeadPos, 0xfff000, 0xfff000);
+#endif
+
+			bool isHeliSeesPlayer = !hitEntity;
+
+			if (isHeliSeesPlayer)
+				nobodySawPlayer = false;
+
+			if (isHeliSeesPlayer && timeDelayDiff > TIME_DELAY_BEFORE_BEING_SEEN) {
+				if (FindPlayerVehicle() && !wanted->IsPlayerHides())
+					wanted->m_vLastSeenPlayerVehicle = FindPlayerVehicle();
+
+				if (FindPlayerVehicle())
+					if (wanted->m_vLastSeenPlayerVehicle != FindPlayerVehicle() && Distance(vehicle->GetPosition(), posn) > 15.0f && FindPlayerVehicle()->m_vehType != VEHICLE_TYPE_BIKE)
+						break;
+
+				wanted->m_nLastTimeSeenPlayer = CTimer::GetTimeInMilliseconds();
+				wanted->m_nTimeAutomaticUpdatedPosPlayer = CTimer::GetTimeInMilliseconds();
+				wanted->m_vecLastSeenPosPlayer = FindPlayerCoors();
+
+				nobodySawPlayer = false;
+
+				numPolice++;
+			}
+		}
+#else
 		if(vehicle &&
 		   vehicle->bIsLawEnforcer &&
 		   IsPoliceVehicleModel(vehicle->GetModelIndex()) &&
@@ -536,169 +632,75 @@ CWanted::WorkOutPolicePresence(CVector posn, float radius)
 		   vehicle->GetStatus() != STATUS_ABANDONED && vehicle->GetStatus() != STATUS_WRECKED &&
 		   (posn - vehicle->GetPosition()).Magnitude() < radius)
 			numPolice++;
+#endif
 	}
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (nobodySawPlayer)
+		wanted->m_nTimeDelayBeforeBeingSeen = CTimer::GetTimeInMilliseconds();
+
+	if (wanted->IsPlayerLost())
+		return 0;
+#endif
 
 	return numPolice;
 }
 
-#ifdef VICEEXT_HIDE_COPS
-// ---------------------------------------------------------------------------
-// Vice Extended (v1.0 "Changed wanted system", sección 2 / P1): esconderse de
-// la policía.
-//
-// Contrato (medido antes en la línea base, ver el plan de mecánicas):
-//  - "verte" = estar a menos de 40 m CON línea de visión libre. Vanilla no
-//    distinguía verte de estar cerca (solo miraba 18 m).
-//  - nivel <= 1 no se toca: ahí vanilla ya baja chaos 1/s si no hay policía a
-//    18 m, y duplicar la regla daría prisas raras.
-//  - nivel >= 2: no baja mientras alguien te vea; baja UNA estrella cada 15 s
-//    sin que nadie te vea, después de 5 s de gracia. En vanilla, a partir de 2
-//    estrellas el nivel no bajaba NUNCA (medido: chaos clavado 120 s).
-//  - mientras dura la búsqueda, los perseguidores a pie van a la última
-//    posición conocida (CCopPed::CopAI) en vez de a tu posición viva.
-//
-// Todo esto es solo tiempo + lectura de estado: no toca las decisiones de
-// disparo/arresto de la policía.
-// ---------------------------------------------------------------------------
-bool
-CWanted::AnyCopSeesPlayer(const CVector &playerPos, bool fullSweep)
-{
-	// 1) Los que te persiguen: son los que importan (y son pocos).
-	for (int i = 0; i < ARRAY_SIZE(m_pCops); i++) {
-		if (m_pCops[i] && WantedCopSeesPlayer(m_pCops[i], playerPos))
-			return true;
-	}
-
-	// 2) Cualquier policía de la calle que mire hacia ti (patrulla, helicóptero…).
-	// Esta parte recorre el pool entero: solo se refresca cada
-	// VICEEXT_HIDE_SWEEP_MS (si no, entre barrido y barrido se responde con la
-	// lista de perseguidores, que es la que decide si te están viendo de verdad).
-	if (!fullSweep)
-		return false;
-	int i = CPools::GetPedPool()->GetSize();
-	while (--i >= 0) {
-		CPed *ped = CPools::GetPedPool()->GetSlot(i);
-		if (ped && IsPolicePedModel(ped->GetModelIndex()) && WantedCopSeesPlayer(ped, playerPos))
-			return true;
-	}
-	return false;
-}
-
-void
-CWanted::UpdateHiding(void)
-{
-	// Salvaguarda de P7 (auditoría a nivel 3): `FindPlayerCoors()` desreferencia al
-	// jugador SIN comprobar que exista (`PlayerInfo.cpp`: `ped->InVehicle()`), y
-	// UpdateHiding() corre en cada frame, en cualquier estado del juego (menú de
-	// detención/muerte, transición de misión). Si no hay jugador no hay nada que
-	// esconder. Vanilla llama a lo mismo, pero sólo dentro del bloque de 1 s y con
-	// nivel <= 1: aquí es la primera línea del frame, así que se comprueba.
-	if (FindPlayerPed() == nil)
-		return;
-	// Sección 2 (P1, 5ª partida): HISTÉRESIS. `static` a propósito, como el
-	// temporizador del barrido (no se le añaden campos a `CWanted`).
-	static uint32 seenSince = 0;
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	if (now < seenSince)
-		seenSince = 0;   // el reloj del motor retrocede al cargar partida
-	CVector playerPos = FindPlayerCoors();
-
-	// Nivel 0: nada que buscar.
-	// Sección 2 (P1, 5ª partida): el nivel 1 TAMBIÉN entra aquí. Antes se dejaba
-	// a la regla vanilla (sin policía a menos de 18 m), que no sabe de esconderse:
-	// en la partida del 21/09 las estrellas bajaban de 3 a 1 y la última no caía
-	// nunca. La gracia y el temporizador son los mismos (5 s + 15 s sin que nadie
-	// te vea); la vía vanilla sigue viva y puede bajarla antes si no hay nadie
-	// cerca.
-	if (m_nWantedLevel == 0) {
-		seenSince = 0;
-		if (m_bHiding) {
-			char line[64];
-			snprintf(line, sizeof(line), "WANTEDHIDE end tag=%u t=%u", WantedTraceTag(), (unsigned)now);
-			ODTRACES(line);
-		}
-		m_bHiding = false;
-		m_nHiddenSince = 0;
-		m_nLastSeenTime = now;
-		m_vecLastKnownPos = playerPos;
-		return;
-	}
-
-	// El barrido del pool (paso 2 de AnyCopSeesPlayer) va a 5 Hz; los
-	// perseguidores, cada frame. El temporizador es un `static` a propósito: no
-	// toca `CWanted` (la estructura se copia ENTERA en los guardados de misión,
-	// así que no se le añaden campos por un detalle de coste).
-	static uint32 lastSightSweep = 0;
-	// Misma trampa que en la traza: el reloj retrocede al cargar partida y la
-	// resta daría un valor enorme (barrido completo cada frame). Reanclar.
-	if (now < lastSightSweep)
-		lastSightSweep = 0;
-	bool fullSweep = (now - lastSightSweep) >= VICEEXT_HIDE_SWEEP_MS;
-	if (fullSweep)
-		lastSightSweep = now;
-
-	bool seen = AnyCopSeesPlayer(playerPos, fullSweep);
-	if (seen) {
-		if (seenSince == 0)
-			seenSince = now;
-	} else {
-		seenSince = 0;
-	}
-
-	// Sección 2 (P1, 5ª partida): un destello de < VICEEXT_HIDE_SEEN_MS no corta
-	// la búsqueda. En la partida del 20/09 el barrido (5 Hz) declaraba "te ve" y
-	// "no te ve" alternos con un policía en la calle: 1.205 `seen` encadenados,
-	// racha máxima 9 s de los 15 que hacen falta, 0 estrellas bajadas. Con esto,
-	// para reiniciar la racha tiene que verte de forma sostenida.
-	if (seen && now - seenSince >= VICEEXT_HIDE_SEEN_MS) {
-		// Te ven: se refresca la última posición conocida y se corta la búsqueda.
-		if (m_bHiding) {
-			char line[96];
-			snprintf(line, sizeof(line), "WANTEDHIDE seen tag=%u d=%u t=%u", WantedTraceTag(),
-				(unsigned)(now - seenSince), (unsigned)now);
-			ODTRACES(line);
-			m_bHiding = false;
-		}
-		m_vecLastKnownPos = playerPos;
-		m_nLastSeenTime = now;
-		m_nHiddenSince = 0;
-		return;
-	}
-
-	if (m_nHiddenSince == 0) {
-		m_nHiddenSince = now;
-		m_nLastStarDrop = now;
-		m_bHiding = true;
-		char line[128];
-		snprintf(line, sizeof(line), "WANTEDHIDE start tag=%u lvl=%d chaos=%d t=%u", WantedTraceTag(), m_nWantedLevel, m_nChaos, (unsigned)now);
-		ODTRACES(line);
-		return;
-	}
-
-	if (now - m_nLastSeenTime < VICEEXT_HIDE_GRACE_MS)
-		return;   // te acaban de ver: siguen buscando donde te vieron
-
-	if (now - m_nLastStarDrop >= VICEEXT_HIDE_STAR_MS) {
-		m_nLastStarDrop = now;
-		char line[128];
-		snprintf(line, sizeof(line), "WANTEDHIDE drop tag=%u lvl=%d->%d chaos=%d t=%u", WantedTraceTag(), m_nWantedLevel,
-			m_nWantedLevel - 1, m_nChaos, (unsigned)now);
-		ODTRACES(line);
-		// SetWantedLevel deja el chaos canónico del nivel nuevo y limpia la cola
-		// de crímenes: es la bajada limpia de "se han cansado de buscarte".
-		SetWantedLevel(m_nWantedLevel - 1);
-		if (m_nWantedLevel == 0)
-			m_bHiding = false;   // CopAI ya devuelve a cada perseguidor a la calle
-	}
-}
-#endif
-
 void
 CWanted::Update(void)
 {
-#ifdef VICEEXT_HIDE_COPS
-	UpdateHiding();   // cada frame: los temporizadores son de milisegundos
+	/* El opcode SET_MAX_WANTED_LEVEL deja el tope puesto al terminar la
+	   mision que lo pone (medido: en partida quedaba MaximumWantedLevel 4 y
+	   nMaximumWantedLevel 1800, asi que el caos se recortaba a 1800 y ni los
+	   trucos podian pasar de 4 estrellas). En partida libre el tope es el del
+	   mod: 6. Durante una mision se respeta el que fije el script. */
+	if (!CTheScripts::IsPlayerOnAMission() && MaximumWantedLevel < 6) {
+		MaximumWantedLevel = 6;
+		nMaximumWantedLevel = 7200;
+	}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_nWantedLevel > 0 && IsPlayerLost())
+		SetWantedLevel(0);
+
+	if (!IsPlayerHides())
+		m_vecLastSeenPosPlayer = FindPlayerCoors();
+
+	if (m_nWantedLevel == 0) {
+		m_nLastTimeSeenPlayer = CTimer::GetTimeInMilliseconds();
+	} else if (m_nWantedLevel > 0) {
+		float timeAutomaticUpdatedDiff = CTimer::GetTimeInMilliseconds() - m_nTimeAutomaticUpdatedPosPlayer;
+		if (timeAutomaticUpdatedDiff > TIME_AUTOMATIC_UPDATED_LAST_SEEN_POS_PLAYER) {
+			float randomX = CGeneral::GetRandomNumberInRange(-50.0f, 50.0f);
+			float randomY = CGeneral::GetRandomNumberInRange(-50.0f, 50.0f);
+			m_vecLastSeenPosPlayer = FindPlayerCoors() + CVector(randomX, randomY, 0.0f);
+			m_nTimeAutomaticUpdatedPosPlayer = CTimer::GetTimeInMilliseconds();
+			m_bSearchPlayerRandomly = true;
+		}
+
+		CWanted::WorkOutPolicePresence(FindPlayerCoors(), 150.0f);
+	}
 #endif
+
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_IMPROVED_TECH_PART)
+	{
+		static int32 s_lastLevel = -1;
+		static bool s_lastLost = false;
+		static bool s_lastHides = false;
+		bool lost = m_nWantedLevel > 0 && IsPlayerLost();
+		bool hides = m_nWantedLevel > 0 && IsPlayerHides();
+		if (m_nWantedLevel != s_lastLevel || lost != s_lastLost || hides != s_lastHides) {
+			s_lastLevel = m_nWantedLevel;
+			s_lastLost = lost;
+			s_lastHides = hides;
+			char line[128];
+			snprintf(line, sizeof(line), "VEX wanted lvl=%d lost=%d hides=%d cops=%d chaos=%d max=%d/%d seen=%u",
+				m_nWantedLevel, lost ? 1 : 0, hides ? 1 : 0, m_CurrentCops, m_nChaos,
+				MaximumWantedLevel, nMaximumWantedLevel, (unsigned)m_nLastTimeSeenPlayer);
+			ODTRACES(line);
+		}
+	}
+#endif
+
 	if (CTimer::GetTimeInMilliseconds() > m_nLastTimeSuspended + 20000) {
 		m_nMinChaos = 0;
 		m_nMinWantedLevel = 0;
@@ -707,7 +709,11 @@ CWanted::Update(void)
 		if (m_nWantedLevel > 1) {
 			m_nLastUpdateTime = CTimer::GetTimeInMilliseconds();
 		} else {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			float radius = 70.0f;
+#else
 			float radius = 18.0f;
+#endif
 			CVector playerPos = FindPlayerCoors();
 			if (WorkOutPolicePresence(playerPos, radius) == 0) {
 				m_nLastUpdateTime = CTimer::GetTimeInMilliseconds();
@@ -751,6 +757,12 @@ CWanted::Update(void)
 			}
 		}
 	}
+
+#ifdef VICEEXT_EXTRA_CHEATS
+	if(ViceExtNeverWanted() && (m_nWantedLevel > 0 || m_nChaos > 0))
+		SetWantedLevel(0);
+#endif
+
 }
 
 void

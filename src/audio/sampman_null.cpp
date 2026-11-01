@@ -327,8 +327,6 @@ cSampleManager::PreloadStreamedFile(uint32 nFile, uint8 nStream)
 	ASSERT( nStream < MAX_STREAMS );
 }
 
-// Backend nulo: no hay audio, así que se mantiene el comportamiento de
-// siempre (el motor da el fichero por cargado).
 bool8
 cSampleManager::IsStreamedFileOpened(uint8 nStream)
 {

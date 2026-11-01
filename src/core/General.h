@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ctype.h>
+#include "Timer.h"
 
 class CGeneral
 {
@@ -166,6 +167,12 @@ public:
 		
 	static int32 GetRandomNumberInRange(int32 low, int32 high)
 		{ return low + (high - low)*(GetRandomNumber()/float(MYRAND_MAX + 1)); }
+	static bool ChancePerTick(uint32 oneInN)
+	{
+		if (oneInN <= 1)
+			return true;
+		return float(GetRandomNumber()) < CTimer::GetTimeStepFix() * (float(MYRAND_MAX + 1) / float(oneInN));
+	}
 	static void SetRandomSeed(int32 seed)
 		{ mysrand(seed); }
 };

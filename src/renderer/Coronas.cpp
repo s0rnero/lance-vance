@@ -14,6 +14,7 @@
 #include "Timecycle.h"
 #include "Coronas.h"
 #include "PointLights.h"
+#include "WidescreenFixOptions.h"
 #include "Shadows.h"
 #include "Clock.h"
 #include "Bridge.h"
@@ -91,11 +92,6 @@ CCoronas::Init(void)
 			gpCoronaTexture[i] = RwTextureRead(aCoronaSpriteNames[i], nil);
 
 #ifdef __EMSCRIPTEN__
-	// Traza (una sola vez) de qué texturas de corona quedaron cargadas. Si
-	// `coronastar` sale NIL, `RegisterCorona` guarda un puntero nulo y
-	// `CCoronas::Render` salta el dibujo: ninguna corona TYPE_STAR se ve (ni las
-	// de la sirena policial ni las de las farolas), aunque el juego no se queje.
-	// Es la primera cosa que hay que descartar cuando "desaparecen las luces".
 	{
 		static bool trazado = false;
 		if(!trazado){
@@ -103,10 +99,7 @@ CCoronas::Init(void)
 			for(i = 0; i < 9; i++){
 				RwRaster *ras = gpCoronaTexture[i] ? RwTextureGetRaster(gpCoronaTexture[i]) : nil;
 				char cb[160];
-				// Se leen los campos del raster directamente: el shim de fakerw
-				// declara RwRasterGetFormat pero no lo implementa (símbolo sin
-				// definir al enlazar).
-				sprintf(cb, "CORONA tex[%d] %s=%s %dx%d depth=%d fmt=0x%X flags=0x%X",
+				snprintf(cb, sizeof cb, "CORONA tex[%d] %s=%s %dx%d depth=%d fmt=0x%X flags=0x%X",
 					i, aCoronaSpriteNames[i], gpCoronaTexture[i] ? "ok" : "NIL",
 					ras ? ras->width : 0, ras ? ras->height : 0,
 					ras ? ras->depth : -1, ras ? ras->format : 0,
@@ -276,9 +269,6 @@ CCoronas::Render(void)
 {
 	int i, j;
 	int screenw, screenh;
-	// Contadores de la traza de diagnóstico (ver el bloque __EMSCRIPTEN__ al final
-	// del bucle): distinguen "no hay coronas registradas" de "las hay pero se
-	// saltan por falta de textura", que en pantalla se ven igual (nada).
 	int coronasDibujadas = 0, coronasSinTextura = 0;
 	(void)coronasDibujadas; (void)coronasSinTextura;
 
@@ -369,9 +359,13 @@ CCoronas::Render(void)
 					spriteCoors.z -= aCoronas[i].nearDist;
 
 					if(aCoronas[i].texture == gpCoronaTexture[8]){
-						// what's this?
 						float f = 1.0f - aCoronas[i].someAngle*2.0f/PI;
-						float wscale = 6.0f*sq(sq(sq(f))) + 0.5f;
+#ifdef VICEEXT_WFP_SMALLER_VEHICLE_CORONA
+						const float fStretch = g_bWSPOptionSmallerVehicleCorona ? 2.0f : 6.0f;
+#else
+						const float fStretch = 6.0f;
+#endif
+						float wscale = fStretch*sq(sq(sq(f))) + 0.5f;
 						float hscale = 0.35f - (wscale - 0.5f) * 0.06f;
 						hscale = Max(hscale, 0.15f);
 
@@ -436,15 +430,11 @@ CCoronas::Render(void)
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, nil);
 
 #ifdef __EMSCRIPTEN__
-	// Traza (una vez por segundo, 20 líneas como mucho): cuántas coronas se
-	// dibujaron de verdad en el fotograma. Siempre hay algunas (farolas,
-	// faros), así que lo que interesa comparar es la misma escena con y sin
-	// sirena: un delta de 2-4 con la moto policial delante son sus luces.
 	{
 		static int ncoronas = 0;
-		if(ncoronas < 400 && (CTimer::GetFrameCounter() % 60) == 0){
+		if(ncoronas < 400 && (CTimer::GetLogicalFrameCounter() % 60) == 0){
 			char cb[128];
-			sprintf(cb, "CORONAREND f=%u dibujadas=%d sinTextura=%d",
+			snprintf(cb, sizeof cb, "CORONAREND f=%u dibujadas=%d sinTextura=%d",
 				CTimer::GetFrameCounter(), coronasDibujadas, coronasSinTextura);
 			ODTRACES(cb);
 			ncoronas++;
@@ -471,7 +461,7 @@ CCoronas::Render(void)
 			RwIm2DVertexSetScreenY(&vertexbufferX[1], aCoronas[i].prevY[j+1]);
 			RwIm2DVertexSetIntRGBA(&vertexbufferX[1], aCoronas[i].prevRed[j+1] * alpha2 / 256, aCoronas[i].prevGreen[j+1] * alpha2 / 256, aCoronas[i].prevBlue[j+1] * alpha2 / 256, 255);
 
-#ifdef FIX_BUGS
+#if defined(FIX_BUGS) || defined(VICEEXT_SP_CORONA_LINES)
 			RwIm2DVertexSetScreenZ(&vertexbufferX[0], RwIm2DGetNearScreenZ());
 			RwIm2DVertexSetCameraZ(&vertexbufferX[0], RwCameraGetNearClipPlane(Scene.camera));
 			RwIm2DVertexSetRecipCameraZ(&vertexbufferX[0], 1.0f/RwCameraGetNearClipPlane(Scene.camera));
@@ -519,7 +509,7 @@ CCoronas::RenderReflections(void)
 
 			// check if we want a reflection on this corona
 			if(aCoronas[i].renderReflection){
-				if(((CTimer::GetFrameCounter() + i) & 0xF) == 0 &&
+				if(((CTimer::GetLogicalFrameCounter() + i) & 0xF) == 0 &&
 				   CWorld::ProcessVerticalLine(aCoronas[i].coors, -1000.0f, point, entity, true, false, false, false, true, false, nil))
 					aCoronas[i].heightAboveRoad = aCoronas[i].coors.z - point.point.z;
 			}else{
@@ -717,7 +707,17 @@ CCoronas::DoSunAndMoon(void)
 	sunCoors *= 150.0f;
 	sunCoors += TheCamera.GetPosition();
 
-	if(CTimeCycle::GetSunDirection().z > -0.2f){
+	if(TheCamera.GetPosition().z >= 70000.0f){
+		RegisterCorona(SUN_CORE,
+			255, 175, 0,
+			255, sunCoors, 15.0f,
+			999999.88f, TYPE_STAR, FLARE_NONE, REFLECTION_OFF, LOSCHECK_OFF, STREAK_OFF, 0.0f);
+
+		RegisterCorona(SUN_CORONA,
+			255, 175, 0,
+			255, sunCoors, 60.0f,
+			999999.88f, TYPE_STAR, FLARE_SUN, REFLECTION_OFF, LOSCHECK_ON, STREAK_OFF, 0.0f);
+	}else if(CTimeCycle::GetSunDirection().z > -0.2f){
 		float size = ((CGeneral::GetRandomNumber()&0xFF) * 0.005f + 10.0f) * CTimeCycle::GetSunSize();
 		RegisterCorona(SUN_CORE,
 			CTimeCycle::GetSunCoreRed(), CTimeCycle::GetSunCoreGreen(), CTimeCycle::GetSunCoreBlue(),

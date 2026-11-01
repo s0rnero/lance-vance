@@ -136,7 +136,7 @@ CClouds::Render(void)
 	RwV3d campos = TheCamera.GetPosition();
 
 	// Moon
-#ifdef VICEEXT_MOON
+#ifdef VICEEXT_IMPROVED_TECH_PART
 	float moonfadeout;
 	float odMoonSmooth = 1.9f;
 	if ((int)minute > 1100)
@@ -159,13 +159,8 @@ CClouds::Render(void)
 			if (odMoonNow - odMoonLast > 1000) {
 				odMoonLast = odMoonNow;
 				char odMoonT[208];
-				int odMoonR = snprintf(odMoonT, sizeof odMoonT, "P4 kind=moon schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 fadeout=%.1f brillo=%d sol=%.3f,%.3f,%.3f pos=%.1f,%.1f,%.1f", (unsigned)CTimer::GetFrameCounter(), odMoonNow * 0.001f, moonfadeout, brightness, sunCoors.x, sunCoors.y, sunCoors.z, pos.x, pos.y, pos.z);
-				if (odMoonR < 0 || odMoonR >= (int)sizeof(odMoonT)) {
-					char odMoonO[208];
-					snprintf(odMoonO, sizeof odMoonO, "P4 kind=overflow schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 cap=%d ret=%d", (unsigned)CTimer::GetFrameCounter(), odMoonNow * 0.001f, (int)sizeof(odMoonT), odMoonR);
-					ODTRACES(odMoonO);
-				} else
-					ODTRACES(odMoonT);
+				snprintf(odMoonT, sizeof odMoonT, "VEX mundo luna=1 fadeout=%.1f brillo=%d sol=%.3f,%.3f,%.3f pos=%.1f,%.1f,%.1f", moonfadeout, brightness, sunCoors.x, sunCoors.y, sunCoors.z, pos.x, pos.y, pos.z);
+				ODTRACES(odMoonT);
 			}
 		}
 #endif
@@ -347,7 +342,7 @@ CClouds::Render(void)
 bool
 UseDarkBackground(void)
 {
-	return TheCamera.GetForward().z < -0.9f || gbShowCollisionPolys;
+	return TheCamera.GetPosition().z < 12000.0f && (TheCamera.GetForward().z < -0.9f || gbShowCollisionPolys);
 }
 
 void
@@ -367,13 +362,24 @@ CClouds::RenderBackground(int16 topred, int16 topgreen, int16 topblue,
 
 	ms_HorizonTilt = SCREEN_WIDTH/2.0f * Tan(ms_cameraRoll);
 
+	if (TheCamera.GetPosition().z >= 12000.0f) {
+		float multiplier = Max(0.0f, 1.0f - ((TheCamera.GetPosition().z - 12000.0f) / 70000.0f));
+		topred = topred * multiplier;
+		topgreen = topgreen * multiplier;
+		topblue = topblue * multiplier;
+		botred = botred * multiplier;
+		botgreen = botgreen * multiplier;
+		botblue = botblue * multiplier;
+		alpha = 255;
+	}
+
 	if(UseDarkBackground()){
 		ms_colourTop.r = 50;
 		ms_colourTop.g = 50;
 		ms_colourTop.b = 50;
 		ms_colourTop.a = 255;
 		if(gbShowCollisionPolys){
-			if(CTimer::GetFrameCounter() & 1){
+			if(CTimer::GetLogicalFrameCounter() & 1){
 				ms_colourTop.r = 0;
 				ms_colourTop.g = 0;
 				ms_colourTop.b = 0;
@@ -470,8 +476,14 @@ CClouds::RenderHorizon(void)
 
 	PUSH_RENDERGROUP("CClouds::RenderHorizon");
 
-	ms_colourBottom.a = 230;
-	ms_colourTop.a = 80;
+	if (TheCamera.GetPosition().z >= 12000.0f) {
+		float multiplier = Max(0.0f, 1.0f - ((TheCamera.GetPosition().z - 12000.0f) / 50000.0f));
+		ms_colourBottom.a = 230 * multiplier;
+		ms_colourTop.a = 80 * multiplier;
+	} else {
+		ms_colourBottom.a = 230;
+		ms_colourTop.a = 80;
+	}
 
 	float topright = ms_horizonZ - ms_HorizonTilt;
 	float topleft = ms_horizonZ + ms_HorizonTilt;
@@ -482,9 +494,16 @@ CClouds::RenderHorizon(void)
 		ms_colourTop, ms_colourTop, ms_colourBottom, ms_colourBottom);
 
 
-	ms_colourBkGrd.r = 128.0f*CTimeCycle::GetAmbientRed();
-	ms_colourBkGrd.g = 128.0f*CTimeCycle::GetAmbientGreen();
-	ms_colourBkGrd.b = 128.0f*CTimeCycle::GetAmbientBlue();
+	if (TheCamera.GetPosition().z >= 12000.0f) {
+		float multiplier = Max(0.0f, 1.0f - ((TheCamera.GetPosition().z - 12000.0f) / 50000.0f));
+		ms_colourBkGrd.r = 128.0f*CTimeCycle::GetAmbientRed() * multiplier;
+		ms_colourBkGrd.g = 128.0f*CTimeCycle::GetAmbientGreen() * multiplier;
+		ms_colourBkGrd.b = 128.0f*CTimeCycle::GetAmbientBlue() * multiplier;
+	} else {
+		ms_colourBkGrd.r = 128.0f*CTimeCycle::GetAmbientRed();
+		ms_colourBkGrd.g = 128.0f*CTimeCycle::GetAmbientGreen();
+		ms_colourBkGrd.b = 128.0f*CTimeCycle::GetAmbientBlue();
+	}
 	ms_colourBkGrd.a = 255;
 
 	float horzstrip = SCREEN_STRETCH_Y(HORIZSTRIPHEIGHT);

@@ -69,6 +69,9 @@ CRoadBlocks::GenerateRoadBlockCopsForCar(CVehicle* pVehicle, int32 roadBlockType
 		eCopType copType = COP_STREET;
 		switch (pVehicle->GetModelIndex())
 		{
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		case MI_FBICAR:
+#endif
 		case MI_FBIRANCH:
 			modelInfoId = MI_FBI;
 			copType = COP_FBI;
@@ -87,6 +90,14 @@ CRoadBlocks::GenerateRoadBlockCopsForCar(CVehicle* pVehicle, int32 roadBlockType
 		CCopPed* pCopPed = new CCopPed(copType);
 		if (copType == COP_STREET)
 			pCopPed->SetCurrentWeapon(WEAPONTYPE_COLT45);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		else if (copType == COP_SWAT)
+			pCopPed->SetCurrentWeapon(WEAPONTYPE_UZI);
+		else if (copType == COP_FBI)
+			pCopPed->SetCurrentWeapon(WEAPONTYPE_MP5);
+		else if (copType == COP_ARMY)
+			pCopPed->SetCurrentWeapon(WEAPONTYPE_M4);
+#endif
 		CPedPlacement::FindZCoorForPed(&posForZ);
 		pCopPed->SetPosition(posForZ);
 		pCopPed->SetOrientation(0.0f, 0.0f, -HALFPI);
@@ -113,13 +124,17 @@ CRoadBlocks::GenerateRoadBlockCopsForCar(CVehicle* pVehicle, int32 roadBlockType
 void 
 CRoadBlocks::GenerateRoadBlocks(void) 
 { 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (FindPlayerPed()->m_pWanted->IsPlayerHides())
+		return;
+#endif
 	CMatrix tmp1, tmp2;
 	static int16 unk;
 #ifdef SQUEEZE_PERFORMANCE
 	if (FindPlayerPed()->m_pWanted->m_RoadblockDensity == 0)
 		return;
 #endif
-	uint32 frame = CTimer::GetFrameCounter() & 0xF;
+	uint32 frame = CTimer::GetLogicalFrameCounter() & 0xF;
 	int16 nRoadblockNode = (int16)(NUMROADBLOCKS * frame) / 16;
 	const int16 maxRoadBlocks = (int16)(NUMROADBLOCKS * (frame + 1)) / 16;
 	for (; nRoadblockNode < Min(NumRoadBlocks, maxRoadBlocks); nRoadblockNode++) {
@@ -157,7 +172,7 @@ CRoadBlocks::GenerateRoadBlocks(void)
 			InOrOut[nRoadblockNode] = false;
 		}
 	}
-	int i = CTimer::GetFrameCounter() & 0xF;
+	int i = CTimer::GetLogicalFrameCounter() & 0xF;
 	if (!aScriptRoadBlocks[i].m_bInUse)
 		return;
 	if ((aScriptRoadBlocks[i].GetPosition() - FindPlayerCoors()).Magnitude() < 100.0f) {
@@ -289,6 +304,10 @@ CRoadBlocks::CreateRoadBlockBetween2Points(CVector point1, CVector point2)
 		CWorld::FindObjectsKindaColliding(tmp.GetPosition(), pMI->GetColModel()->boundingSphere.radius, 0, &colliding, 2, nil, false, true, true, false, false);
 		if (colliding == 0) {
 			CObject* pObject = new CObject(MI_ROADWORKBARRIER1, true);
+#ifdef VICEEXT_SP_ROADBLOCK_POOL
+			if (!pObject)
+				continue;
+#endif
 			pObject->GetMatrix() = tmp;
 			pObject->ObjectCreatedBy = TEMP_OBJECT;
 			pObject->m_nEndOfLifeTime = CTimer::GetTimeInMilliseconds() + 600000;

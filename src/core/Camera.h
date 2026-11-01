@@ -22,11 +22,11 @@ enum
 	CAM_ZOOM_1,
 	CAM_ZOOM_2,
 	CAM_ZOOM_3,
-	CAM_ZOOM_TOPDOWN,
-	CAM_ZOOM_CINEMATIC,
 #ifdef VICEEXT_FIRST_PERSON
 	CAM_ZOOM_REAL_1ST_PERSON,
 #endif
+	CAM_ZOOM_TOPDOWN,
+	CAM_ZOOM_CINEMATIC,
 };
 
 const float DefaultFOV = 70.0f; // beta: 80.0f
@@ -86,6 +86,9 @@ public:
 #ifdef VICEEXT_FIRST_PERSON
 		MODE_REAL_1ST_PERSON,
 #endif
+#ifdef VICEEXT_CHEAT_EFFECTS
+		MODE_FOLLOWPROJECTILE,	// 11.06 RCROCKET: la camara sigue el cohete
+#endif
 	};
 
 	bool    bBelowMinDist; //used for follow ped mode
@@ -102,6 +105,7 @@ public:
 	bool    Rotating;
 #ifdef VICEEXT_FIRST_PERSON
 	bool	m_bFixed1stPersonCamInVeh;
+	bool	m_bViceExtFpEntered;
 #endif
 
 	int16   Mode;                   // CameraMode
@@ -262,6 +266,9 @@ public:
 #ifdef VICEEXT_FIRST_PERSON
 	void Process_Real_1st_Person(const CVector& CameraTarget, float, float, float);
 	void LimitAngleBetaRelativelyTwoAngles(CVector normalizedRelativeVector, float leftLimitingAngle, float rightLimitingAngle);
+#endif
+#ifdef VICEEXT_CHEAT_EFFECTS
+	void Process_FollowProjectile(const CVector& CameraTarget, float, float, float);
 #endif
 
 	// custom stuff

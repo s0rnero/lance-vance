@@ -5,9 +5,6 @@
 #ifndef __EMSCRIPTEN__
 #include "AL/efx.h"
 #else
-// Web: el SDK no trae AL/efx.h ni hay EFX en el navegador.
-// Declaraciones mínimas para compilar; los punteros quedan a NULL y las
-// funciones son no-op (IsFXSupported()==false y sin ALC_EXT_EFX en Web Audio).
 #include <AL/al.h>
 #include <AL/alc.h>
 #ifndef AL_EFFECT_NULL

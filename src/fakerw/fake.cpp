@@ -76,7 +76,8 @@ RwV3d *RwMatrixGetUp(RwMatrix * matrix) { return &matrix->up; }
 RwV3d *RwMatrixGetAt(RwMatrix * matrix) { return &matrix->at; }
 RwV3d *RwMatrixGetPos(RwMatrix * matrix) { return &matrix->pos; }
 RwMatrix *RwMatrixUpdate(RwMatrix * matrix) { matrix->update(); return matrix; }
-//RwMatrix *RwMatrixOptimize(RwMatrix * matrix, const RwMatrixTolerance *tolerance);
+RwMatrix *RwMatrixOptimize(RwMatrix * matrix, const RwMatrixTolerance *tolerance)
+	{ matrix->optimize((Matrix::Tolerance*)tolerance); return matrix; }
 
 
 
@@ -309,8 +310,6 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 	*tex = Texture::streamReadNative(stream);
 #ifdef LIBRW
 #ifdef __EMSCRIPTEN__
-	// DIAG F3a (bracket): ¿tex nil (lectura) o convert nil (conversión)?
-	// Acotado + a odtrace.log. Quitar con el fix raíz.
 	if (*tex == nil) {
 		static int n = 0;
 		if (n < 50) { n++; ODTRACES("hackRead tex NIL"); printf("[texconv] hackRead tex NIL\n"); }
@@ -324,7 +323,7 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 		if (n < 50) {
 			n++;
 			char t[96];
-			snprintf(t, sizeof t, "hackRead convert NIL tex=%s", (*tex)->name);
+			snprintf(t, sizeof t, "hackRead convert NIL tex=%.*s", 31, (*tex)->name);
 			ODTRACES(t);
 			printf("[texconv] %s\n", t);
 		}
@@ -801,8 +800,6 @@ RpAtomic *RpAtomicRender(RpAtomic * atomic) { atomic->render(); return atomic; }
 RpClump *RpAtomicGetClump(const RpAtomic * atomic) { return atomic->clump; }
 //RpInterpolator *RpAtomicGetInterpolator(RpAtomic * atomic);
 RpGeometry *RpAtomicGetGeometry(const RpAtomic * atomic) { return atomic->geometry; }
-// librw's Atomic::RenderCB returns Atomic* (like RenderWare), so this cast is
-// exact. It MUST stay exact: wasm traps on call_indirect signature mismatches.
 void RpAtomicSetRenderCallBack(RpAtomic * atomic, RpAtomicCallBackRender callback) { atomic->setRenderCB((Atomic::RenderCB)callback); }
 RpAtomicCallBackRender RpAtomicGetRenderCallBack(const RpAtomic * atomic) { return (RpAtomicCallBackRender)atomic->renderCB; }
 //RwBool RpAtomicInstance(RpAtomic *atomic);

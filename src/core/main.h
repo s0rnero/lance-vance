@@ -47,21 +47,13 @@ bool InitialiseGameStep(void); // progressive loading, true when ready
 #endif
 void LoadingScreen(const char *str1, const char *str2, const char *splashscreen);
 #ifdef __EMSCRIPTEN__
-// Pantalla de carga in-game (splash vanilla + barra con fracción explícita,
-// sin texto). Se dibuja un tramo por tick durante la carga troceada.
 void WebDrawLoadScreen(float frac);
-// Secuencia de carga (arranque / partida guardada): fija la portada a splash1,
-// reinicia la barra monótona una sola vez y silencia cualquier otra pantalla de
-// carga del motor mientras dure. Begin es idempotente dentro de la secuencia.
 void WebBeginLoadScreen(void);
 void WebEndLoadScreen(void);
+const char *WebGetLoadSplashTxdPath(void);
 extern float gWebLoadFrac;
-// F1b-A2: el SÍ de carga difiere el init; AfterInner lo corre monolítico
-// (con splash ya pintado) cuando este flag está a 1.
 extern int gWebBootInitPending;
-// PERF: ms de streaming (Update->LoadRequestedModels) desde el último FPSLOG.
 extern uint32 gWebStrmMs;
-// Contador FPS en esquina (?fps en la URL). Media de 500 ms.
 void WebDrawFps(void);
 #endif
 void LoadingIslandScreen(const char *levelName);
@@ -94,4 +86,10 @@ extern bool gbDrawVersionText;
 
 #ifdef NO_MOVIES
 extern bool gbNoMovies;
+#endif
+#ifdef VICEEXT_LOAD_SAVE_ON_STARTUP
+extern int32 gbGameSaveOnStartup;
+#endif
+#ifdef VICEEXT_ENV_MAP_COEF
+extern int32 g_nEnvMapStrength;
 #endif

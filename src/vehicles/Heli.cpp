@@ -1,4 +1,5 @@
 #include "common.h"
+#include "ondemand.h"
 #include "main.h"
 
 #include "General.h"
@@ -27,7 +28,6 @@
 #include "Object.h"
 #include "HandlingMgr.h"
 #include "Ropes.h"
-#include "ondemand.h"
 #include "Heli.h"
 #ifdef FIX_BUGS
 #include "Replay.h"
@@ -40,6 +40,9 @@ enum
 	HELI_STATUS_FLY_AWAY,
 	HELI_STATUS_SHOT_DOWN,
 	HELI_STATUS_HOVER2,
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	HELI_STATUS_WAIT,
+#endif
 };
 
 CHeli *CHeli::pHelis[NUM_HELIS];
@@ -56,7 +59,17 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(id);
 	m_vehType = VEHICLE_TYPE_HELI;
+#ifdef NEW_VEHICLE_LOADER
+	if (GetModelIndex() >= MI_FIRST_NEW_VEHICLE) {
+		pVehicleShadowSettings = &mi->vehicleShadowData;
+		pVehicleSample = &mi->vehicleSampleData;
+		pHandling = &mi->handlingData;
+	} else {
+		pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+	}
+#else
 	pHandling = mod_HandlingManager.GetHandlingData((tVehicleType)mi->m_handlingId);
+#endif
 	SetModelIndex(id);
 	m_heliStatus = HELI_STATUS_HOVER;
 	m_pathState = 0;
@@ -94,8 +107,12 @@ CHeli::CHeli(int32 id, uint8 CreatedBy)
 
 	m_aSwatState[0] = m_aSwatState[1] = m_aSwatState[2] = m_aSwatState[3] = 0;
 
-	// BUG: not in game but gets initialized to CDCDCDCD in debug
 	m_nLastShotTime = 0;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_nLookingForPlayerTimer = 0;
+	m_vPotentialPlayerPosOffset = { 0.0f, 0.0f, 0.0f };
+#endif
 }
 
 void
@@ -133,7 +150,7 @@ CHeli::ProcessControl(void)
 		m_fOdPhase -= 1024.0f;
 	int32 odPhase = (int32)m_fOdPhase;
 #else
-	int32 odPhase = (int32)CTimer::GetFrameCounter();
+	int32 odPhase = (int32)CTimer::GetLogicalFrameCounter();
 #endif
 	int i;
 
@@ -142,7 +159,6 @@ CHeli::ProcessControl(void)
 
 	CWindModifiers::RegisterOne(GetPosition(), 1);
 
-	// Find target
 	CVector target(0.0f, 0.0f, 0.0f);
 	CVector2D vTargetDist;
 	if(m_heliType == HELI_TYPE_CATALINA && m_heliStatus != HELI_STATUS_SHOT_DOWN){
@@ -174,8 +190,6 @@ CHeli::ProcessControl(void)
 			target = GetPosition();
 			break;
 
-
-		// Take off
 		case 8:
 			target.x = GetPosition().x;
 			target.y = GetPosition().y;
@@ -185,7 +199,7 @@ CHeli::ProcessControl(void)
 			PathPoint = 2;
 			m_pathState = 9;
 			break;
-		// Circle around dam
+
 		case 9:
 			target.x = DamPathX[PathPoint];
 			target.y = DamPathY[PathPoint];
@@ -210,7 +224,7 @@ CHeli::ProcessControl(void)
 				}
 			}
 			break;
-		// how do we get here?
+
 		case 11:
 			target.x = LongPathX[PathPoint];
 			target.y = LongPathY[PathPoint];
@@ -224,8 +238,6 @@ CHeli::ProcessControl(void)
 			}
 			break;
 
-
-		// Fly away
 		case 12:
 			target.x = GetPosition().x;
 			target.y = GetPosition().y;
@@ -240,10 +252,16 @@ CHeli::ProcessControl(void)
 			GetMatrix().GetPosition().y = GetMatrix().GetPosition().y*0.99f + target.y*0.01f;
 		}
 	}else{
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		vTargetDist = FindPlayerPed()->m_pWanted->m_vecLastSeenPosPlayer + m_vPotentialPlayerPosOffset - GetPosition();
+		m_fTargetZ = FindPlayerPed()->m_pWanted->m_vecLastSeenPosPlayer.z;
+		if (m_fTargetZ = FindPlayerPed()->m_pWanted->IsPlayerHides())
+			m_fTargetZ += 25.0f;
+#else
 		vTargetDist = FindPlayerCoors() - GetPosition();
 		m_fTargetZ = FindPlayerCoors().z;
+#endif
 
-		// Heli flies away to (0, 0)
 		if(m_heliStatus == HELI_STATUS_FLY_AWAY && GetPosition().z > 20.0f){
 			vTargetDist.x = 0.0f - GetPosition().x;
 			vTargetDist.y = 0.0f - GetPosition().y;
@@ -253,7 +271,14 @@ CHeli::ProcessControl(void)
 		switch(m_heliStatus){
 		case HELI_STATUS_HOVER:
 			groundZ = CWorld::FindGroundZFor3DCoord(GetPosition().x, GetPosition().y, 1000.0f, nil);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if (groundZ > 5.0f)
+				m_fTargetZ = Max(groundZ, m_fTargetZ) + 8.0f;
+			else
+				m_fTargetZ = Max(groundZ, m_fTargetZ) + 12.0f;
+#else
 			m_fTargetZ = Max(groundZ, m_fTargetZ) + 8.0f;
+#endif
 			break;
 		case HELI_STATUS_SHOT_DOWN:
 			groundZ = CWorld::FindGroundZFor3DCoord(GetPosition().x, GetPosition().y, 1000.0f, nil);
@@ -269,24 +294,53 @@ CHeli::ProcessControl(void)
 			break;
 		}
 
-		// Move up if too low
 		if(GetPosition().z - 2.0f < groundZ && m_heliStatus != HELI_STATUS_SHOT_DOWN)
 			m_vecMoveSpeed.z += CTimer::GetTimeStep()*0.01f;
 		m_vecMoveSpeed.z = Clamp(m_vecMoveSpeed.z, -0.3f, 0.3f);
 	}
 
 	float fTargetDist = vTargetDist.Magnitude();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (!FindPlayerPed()->m_pWanted->IsPlayerHides() && m_heliStatus != HELI_STATUS_SHOT_DOWN) {
+		m_vPotentialPlayerPosOffset = { 0.0f, 0.0f, 0.0f };
+
+		if ((CCullZones::PlayerNoRain() || CGame::IsInInterior()) && fTargetDist < 100.0f)
+			m_heliStatus = HELI_STATUS_WAIT;
+		else if (m_heliStatus == HELI_STATUS_WAIT)
+			m_heliStatus = HELI_STATUS_HOVER;
+	}
+#endif
 
 	switch(m_heliStatus){
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	case HELI_STATUS_WAIT:
+#endif
 	case HELI_STATUS_HOVER:
 	case HELI_STATUS_HOVER2:{
 		float targetHeight;
 		if(m_heliType == HELI_TYPE_CATALINA)
 			targetHeight = 8.0f;
 		else
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			targetHeight = 40.0f - m_nHeliId*13.0f;
+#else
 			targetHeight = 40.0f - m_nHeliId*10.0f;
+#endif
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		float lookingForPlayerTimeDiff = CTimer::GetTimeInMilliseconds() - m_nLookingForPlayerTimer;
+
+		if(fTargetDist > targetHeight || (FindPlayerPed()->m_pWanted->IsPlayerHides() && lookingForPlayerTimeDiff > 10000)) {
+			m_heliStatus = HELI_STATUS_CHASE_PLAYER;
+
+			float randomX = CGeneral::GetRandomNumberInRange(-50.0f, 50.0f);
+			float randomY = CGeneral::GetRandomNumberInRange(-50.0f, 50.0f);
+			m_vPotentialPlayerPosOffset = CVector(randomX, randomY, 0.0f);
+		}
+#else
 		if(fTargetDist > targetHeight)
 			m_heliStatus = HELI_STATUS_CHASE_PLAYER;
+#endif
 		}
 		if(m_numSwat)
 			SendDownSwat();
@@ -297,14 +351,21 @@ CHeli::ProcessControl(void)
 			targetHeight = 4.0f;
 		else
 			targetHeight = 30.0f - m_nHeliId*7.5f;
-		if(fTargetDist < 1.0f ||
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		m_nLookingForPlayerTimer = CTimer::GetTimeInMilliseconds();
+
+		if (fTargetDist < 1.0f ||
+		   fTargetDist < targetHeight && CWorld::GetIsLineOfSightClear(GetPosition(), FindPlayerPed()->m_pWanted->m_vecLastSeenPosPlayer, true, false, false, false, false, false) && !FindPlayerPed()->m_pWanted->IsPlayerHides())
+#else
+		if (fTargetDist < 1.0f ||
 		   fTargetDist < targetHeight && CWorld::GetIsLineOfSightClear(GetPosition(), FindPlayerCoors(), true, false, false, false, false, false))
+#endif
 			m_heliStatus = HELI_STATUS_HOVER;
 		}
 		break;
 	}
 
-	// Find xy speed
 	float speed;
 	if(fTargetDist > 100.0f)
 		speed = 1.0f;
@@ -312,7 +373,11 @@ CHeli::ProcessControl(void)
 		speed = 0.7f;
 	else
 		speed = 0.4f;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if(m_heliStatus == HELI_STATUS_HOVER || m_heliStatus == HELI_STATUS_HOVER2 || m_heliStatus == HELI_STATUS_SHOT_DOWN || m_heliStatus == HELI_STATUS_WAIT)
+#else
 	if(m_heliStatus == HELI_STATUS_HOVER || m_heliStatus == HELI_STATUS_HOVER2 || m_heliStatus == HELI_STATUS_SHOT_DOWN)
+#endif
 		speed = 0.0f;
 
 	if(fTargetDist != 0.0f)
@@ -322,7 +387,7 @@ CHeli::ProcessControl(void)
 	CVector2D targetSpeed = vTargetDist * speed;
 
 	if(m_heliStatus == HELI_STATUS_HOVER2 || m_heliStatus == HELI_STATUS_SHOT_DOWN){
-		bool force = !!((odPhase + m_randomSeed) & 8);
+		bool force = !!((CTimer::GetLogicalFrameCounter() + m_randomSeed) & 8);
 		if(m_bTestRight){
 			if(force || CWorld::TestSphereAgainstWorld(GetPosition() + 4.0f*GetRight(), 2.0f, this, true, false, false, false, false, false) == nil){
 				if(m_heliStatus == HELI_STATUS_SHOT_DOWN){
@@ -336,9 +401,9 @@ CHeli::ProcessControl(void)
 			}else{
 				m_bTestRight = false;
 				if(m_heliStatus == HELI_STATUS_HOVER2)
-					m_fTargetOffset += 5.0f;
+					m_fTargetOffset += 5.0f * CTimer::GetTimeStep();
 				else
-					m_fTargetOffset -= 5.0f;
+					m_fTargetOffset -= 5.0f * CTimer::GetTimeStep();
 			}
 		}else{
 			if(force || CWorld::TestSphereAgainstWorld(GetPosition() - 4.0f*GetRight(), 2.0f, this, true, false, false, false, false, false) == nil){
@@ -353,9 +418,9 @@ CHeli::ProcessControl(void)
 			}else{
 				m_bTestRight = true;
 				if(m_heliStatus == HELI_STATUS_HOVER2)
-					m_fTargetOffset += 5.0f;
+					m_fTargetOffset += 5.0f * CTimer::GetTimeStep();
 				else
-					m_fTargetOffset -= 5.0f;
+					m_fTargetOffset -= 5.0f * CTimer::GetTimeStep();
 			}
 		}
 
@@ -369,7 +434,7 @@ CHeli::ProcessControl(void)
 		}
 	}else
 		if(m_fTargetOffset >= 2.0f)
-			m_fTargetOffset -= 2.0f;
+			m_fTargetOffset -= 2.0f * CTimer::GetTimeStep();
 
 	CVector2D speedDir = targetSpeed - m_vecMoveSpeed;
 	float speedDiff = speedDir.Magnitude();
@@ -388,14 +453,16 @@ CHeli::ProcessControl(void)
 	GetMatrix().GetPosition().x += m_vecMoveSpeed.x*CTimer::GetTimeStep();
 	GetMatrix().GetPosition().y += m_vecMoveSpeed.y*CTimer::GetTimeStep();
 
-	// Find z target
 	if(m_heliStatus == HELI_STATUS_FLY_AWAY)
 		m_fTargetZ = 1000.0f;
 	if((CTimer::GetTimeInMilliseconds() + 800*m_nHeliId) & 0x800)
 		m_fTargetZ += 2.0f;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	m_fTargetZ += m_nHeliId*7.0f;
+#else
 	m_fTargetZ += m_nHeliId*5.0f;
+#endif
 
-	// Find z speed
 	float targetSpeedZ = (m_fTargetZ - GetPosition().z)*0.01f;
 	float speedDiffZ = targetSpeedZ - m_vecMoveSpeed.z;
 	float speedIncZ = CTimer::GetTimeStep()*0.001f;
@@ -409,15 +476,17 @@ CHeli::ProcessControl(void)
 		m_vecMoveSpeed.z += speedIncZ*1.5f;
 	GetMatrix().GetPosition().z += m_vecMoveSpeed.z*CTimer::GetTimeStep();
 
-	// Find angular speed
 	float targetAngularSpeed;
 	m_fAngularSpeed *= Pow(0.995f, CTimer::GetTimeStep());
 	if(fTargetDist < 8.0f)
 		targetAngularSpeed = 0.0f;
 	else{
 		float rotationDiff = CGeneral::GetATanOfXY(vTargetDist.x, vTargetDist.y) - m_fRotation;
-		while(rotationDiff < -3.14f) rotationDiff += 6.28f;
-		while(rotationDiff > 3.14f) rotationDiff -= 6.28f;
+		if(rotationDiff < -3.14f || rotationDiff > 3.14f){
+			rotationDiff = fmodf(rotationDiff, 6.28f);
+			if(rotationDiff > 3.14f) rotationDiff -= 6.28f;
+			if(rotationDiff < -3.14f) rotationDiff += 6.28f;
+		}
 		if(Abs(rotationDiff) > 0.4f){
 			if(rotationDiff < 0.0f)
 				targetAngularSpeed = -0.2f;
@@ -436,21 +505,23 @@ CHeli::ProcessControl(void)
 		m_fAngularSpeed += angularSpeedInc;
 	m_fRotation += m_fAngularSpeed * CTimer::GetTimeStep();
 
-	// Set matrix
 	CVector up(3.0f*m_vecMoveSpeed.x, 3.0f*m_vecMoveSpeed.y, 1.0f);
 	up.Normalise();
-	CVector fwd(-Cos(m_fRotation), -Sin(m_fRotation), 0.0f);	// not really forward
+	CVector fwd(-Cos(m_fRotation), -Sin(m_fRotation), 0.0f);
 	CVector right = CrossProduct(up, fwd);
 	fwd = CrossProduct(up, right);
 	GetRight() = right;
 	GetForward() = fwd;
 	GetUp() = up;
 
-	// Search light and shooting
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if(m_heliStatus == HELI_STATUS_FLY_AWAY || m_heliType == HELI_TYPE_CATALINA || CCullZones::PlayerNoRain() || FindPlayerPed()->m_pWanted->IsPlayerHides())
+#else
 	if(m_heliStatus == HELI_STATUS_FLY_AWAY || m_heliType == HELI_TYPE_CATALINA || CCullZones::PlayerNoRain())
+#endif
 		m_fSearchLightIntensity = 0.0f;
 	else {
-		// Update search light history once every 1000ms
+
 		int timeDiff = CTimer::GetTimeInMilliseconds() - m_nSearchLightTimer;
 		while (timeDiff > 1000) {
 			for (i = 5; i > 0; i--) {
@@ -479,7 +550,11 @@ CHeli::ProcessControl(void)
 
 		if (m_fSearchLightIntensity < 0.9f || sq(FindPlayerCoors().x - m_fSearchLightX) + sq(FindPlayerCoors().y - m_fSearchLightY) > sq(7.0f))
 			m_nShootTimer = CTimer::GetTimeInMilliseconds();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		else if (CTimer::GetTimeInMilliseconds() > m_nPoliceShoutTimer && !FindPlayerPed()->m_pWanted->IsPlayerHides()) {
+#else
 		else if (CTimer::GetTimeInMilliseconds() > m_nPoliceShoutTimer) {
+#endif
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_PED_HELI_PLAYER_FOUND, 0.0f);
 			m_nPoliceShoutTimer = CTimer::GetTimeInMilliseconds() + 4500 + (CGeneral::GetRandomNumber() & 0xFFF);
 		}
@@ -487,7 +562,7 @@ CHeli::ProcessControl(void)
 		if (!CReplay::IsPlayingBack())
 #endif
 		{
-			// Shoot
+
 			int shootTimeout;
 			if (m_heliType == HELI_TYPE_RANDOM) {
 				switch (FindPlayerPed()->m_pWanted->GetWantedLevel()) {
@@ -508,10 +583,14 @@ CHeli::ProcessControl(void)
 			if (FindPlayerPed()->m_pWanted->IsIgnored())
 				m_nShootTimer = CTimer::GetTimeInMilliseconds();
 			else {
-				// Check if line of sight is clear
+
 				if (CTimer::GetTimeInMilliseconds() > m_nShootTimer + shootTimeout &&
 					CTimer::GetPreviousTimeInMilliseconds() <= m_nShootTimer + shootTimeout) {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+					if (CWorld::GetIsLineOfSightClear(GetPosition(), FindPlayerPed()->m_pWanted->m_vecLastSeenPosPlayer, true, false, false, false, false, false) && !FindPlayerPed()->m_pWanted->IsPlayerHides()) {
+#else
 					if (CWorld::GetIsLineOfSightClear(GetPosition(), FindPlayerCoors(), true, false, false, false, false, false)) {
+#endif
 						if (m_heliStatus == HELI_STATUS_HOVER2)
 							m_heliStatus = HELI_STATUS_HOVER;
 					}
@@ -522,11 +601,14 @@ CHeli::ProcessControl(void)
 					}
 				}
 
-				// Shoot!
 				if (CTimer::GetTimeInMilliseconds() > m_nShootTimer + shootTimeout &&
+#ifdef VICEEXT_IMPROVED_TECH_PART
+					CTimer::GetTimeInMilliseconds() > m_nLastShotTime + 200 && !FindPlayerPed()->m_pWanted->IsPlayerHides()) {
+#else
 					CTimer::GetTimeInMilliseconds() > m_nLastShotTime + 200) {
+#endif
 					CVector shotTarget = FindPlayerCoors();
-					// some inaccuracy
+
 					shotTarget.x += ((CGeneral::GetRandomNumber() & 0xFF) - 128) / 50.0f;
 					shotTarget.y += ((CGeneral::GetRandomNumber() & 0xFF) - 128) / 50.0f;
 					CVector direction = FindPlayerCoors() - GetPosition();
@@ -542,7 +624,6 @@ CHeli::ProcessControl(void)
 		}
 	}
 
-	// Process ropes
 	for(i = 0; i < 4; i++){
 		if(m_aSwatState[i] == 0)
 			continue;
@@ -582,13 +663,10 @@ CHeli::Render(void)
 	mat.Translate(pos);
 	mat.UpdateRW();
 
-	// PORTADO -- FramerateVigilante (MIT, (c) 2023 GTA modding (Junior_Djjr)) rotorFinalSpeed
-	//   https://github.com/GTAmodding/FramerateVigilante
-	// Que se toma: el rotor sumaba por frame (a 120 fps giraba 2,4x mas rapido que a 50).
-	// Adaptacion: escala por CTimer::GetTimeStep() (1,0 a 50 fps); el wrap a 6,28 se queda igual.
-	// Medible: criterio PASS = el rotor da las mismas vueltas por segundo a 35 y a 120 fps.
 #ifdef VICEEXT_FIX_FV_ROTOR
 	m_fRotorRotation += (3.14f/6.5f) * CTimer::GetTimeStep();
+#else
+	m_fRotorRotation += 3.14f/6.5f;
 #endif
 	if(m_fRotorRotation > 6.28f)
 		m_fRotorRotation -= 6.28f;
@@ -612,7 +690,11 @@ CHeli::PreRenderAlways(void)
 			80*m_fSearchLightIntensity, 80*m_fSearchLightIntensity, 80*m_fSearchLightIntensity, 80*m_fSearchLightIntensity,
 			50.0f, true, 1.0f, nil, false);
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		CVector front = GetMatrix() * CVector(0.0f, 5.0f, -1.0f);
+#else
 		CVector front = GetMatrix() * CVector(0.0f, 7.0f, 0.0f);
+#endif
 		CVector toPlayer = FindPlayerCoors() - front;
 		toPlayer.Normalise();
 		float intensity = m_fSearchLightIntensity*sq(CTimeCycle::GetSpriteBrightness());
@@ -668,10 +750,9 @@ CHeli::SpawnFlyingComponent(int32 component)
 		return nil;
 
 	obj->SetModelIndexNoCreate(MI_CAR_WHEEL);
-	// object needs base model
+
 	obj->RefModelInfo(GetModelIndex());
 
-	// create new atomic
 	matrix = RwFrameGetLTM(m_aHeliNodes[component]);
 	frame = RwFrameCreate();
 	atomic = RpAtomicClone(atomic);
@@ -681,7 +762,6 @@ CHeli::SpawnFlyingComponent(int32 component)
 	obj->AttachToRwObject((RwObject*)atomic);
 	obj->bDontStream = true;
 
-	// init object
 	obj->m_fMass = 10.0f;
 	obj->m_fTurnMass = 25.0f;
 	obj->m_fAirResistance = 0.99f;
@@ -691,7 +771,6 @@ CHeli::SpawnFlyingComponent(int32 component)
 	obj->SetIsStatic(false);
 	obj->bIsPickup = false;
 
-	// life time
 	CObject::nNoTempObjects++;
 	if(component == HELI_TOPROTOR)
 		obj->m_nEndOfLifeTime = CTimer::GetTimeInMilliseconds() + 1000;
@@ -741,7 +820,11 @@ bool
 CHeli::SendDownSwat(void)
 {
 	if(m_numSwat == 0 || !CStreaming::HasModelLoaded(MI_SWAT) ||
-	   CGeneral::GetRandomNumber() & 0x7F || (GetPosition() - FindPlayerCoors()).Magnitude() > 50.0f)
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	   !CGeneral::ChancePerTick(128) || (GetPosition() - FindPlayerCoors()).Magnitude() > 50.0f || FindPlayerPed()->m_pWanted->IsPlayerHides())
+#else
+	   !CGeneral::ChancePerTick(128) || (GetPosition() - FindPlayerCoors()).Magnitude() > 50.0f)
+#endif
 		return false;
 
 	CMatrix mat(GetMatrix());
@@ -761,7 +844,6 @@ CHeli::SendDownSwat(void)
 	}
 	return false;
 }
-
 
 void
 CHeli::InitHelis(void)
@@ -806,7 +888,7 @@ CHeli::GenerateHeli(bool catalina)
 	}
 	heli->GetMatrix().SetTranslate(heliPos);
 	if(catalina)
-		heli->GetMatrix().SetRotateZOnly(DEGTORAD(270.0f));	// game actually uses 3.14 here
+		heli->GetMatrix().SetRotateZOnly(DEGTORAD(270.0f));
 
 	heli->SetStatus(STATUS_ABANDONED);
 	heli->bIsLocked = true;
@@ -832,16 +914,17 @@ CHeli::UpdateHelis(void)
 {
 	int i, j;
 
-	// Spawn new police helis
-	int numHelisRequired = 
+	int numHelisRequired =
 #ifdef FIX_BUGS
 		CReplay::IsPlayingBack() ? 0 :
 #endif
 		FindPlayerPed()->m_pWanted->NumOfHelisRequired();
+#ifndef VICEEXT_IMPROVED_TECH_PART
 	if(CCullZones::PlayerNoRain() || CGame::IsInInterior())
 		numHelisRequired = 0;
+#endif
 	if(CStreaming::HasModelLoaded(MI_CHOPPER) && CTimer::GetTimeInMilliseconds() > TestForNewRandomHelisTimer){
-		// Spawn a police heli
+
 		TestForNewRandomHelisTimer = CTimer::GetTimeInMilliseconds() + 15000;
 		if(NumRandomHelis < numHelisRequired){
 			NumRandomHelis++;
@@ -856,7 +939,6 @@ CHeli::UpdateHelis(void)
 		}
 	}
 
-	// Handle script heli
 	if(ScriptHeliOn){
 		if(CStreaming::HasModelLoaded(MI_CHOPPER) && pHelis[HELI_SCRIPT] == nil){
 			pHelis[HELI_SCRIPT] = GenerateHeli(false);
@@ -868,7 +950,6 @@ CHeli::UpdateHelis(void)
 			pHelis[HELI_SCRIPT]->m_heliStatus = HELI_STATUS_FLY_AWAY;
 	}
 
-	// Delete helis that we no longer need
 	for(i = 0; i < NUM_HELIS; i++)
 		if(pHelis[i] && pHelis[i]->m_heliStatus == HELI_STATUS_FLY_AWAY && pHelis[i]->GetPosition().z > 150.0f){
 			CWorld::Remove(pHelis[i]);
@@ -878,10 +959,9 @@ CHeli::UpdateHelis(void)
 				NumRandomHelis--;
 		}
 
-	// Handle explosions
 	for(i = 0; i < NUM_HELIS; i++){
 		if(pHelis[i] && pHelis[i]->m_heliStatus == HELI_STATUS_SHOT_DOWN && CTimer::GetTimeInMilliseconds() > pHelis[i]->m_nExplosionTimer){
-			// Second part of explosion
+
 			static int nFrameGen;
 			CRGBA colors[8];
 
@@ -935,7 +1015,7 @@ CHeli::UpdateHelis(void)
 
 			TestForNewRandomHelisTimer = CTimer::GetTimeInMilliseconds() + 50000;
 		}else if(pHelis[i] && pHelis[i]->m_heliStatus == HELI_STATUS_SHOT_DOWN && CTimer::GetTimeInMilliseconds()+7000 > pHelis[i]->m_nExplosionTimer){
-			// First part of explosion
+
 			if(CTimer::GetPreviousTimeInMilliseconds()+7000 < pHelis[i]->m_nExplosionTimer){
 				pHelis[i]->SpawnFlyingComponent(HELI_BACKROTOR);
 				pHelis[i]->SpawnFlyingComponent(HELI_TAIL);
@@ -951,7 +1031,6 @@ CHeli::UpdateHelis(void)
 		}
 	}
 
-	// Find police helis to remove
 	for(i = 0; i < 2; i++)
 		if(pHelis[i] && pHelis[i]->m_heliStatus != HELI_STATUS_FLY_AWAY){
 			if(numHelisRequired > 0)
@@ -960,7 +1039,6 @@ CHeli::UpdateHelis(void)
 				pHelis[i]->m_heliStatus = HELI_STATUS_FLY_AWAY;
 		}
 
-	// Remove all helis if in a tunnel or under water
 	if(FindPlayerCoors().z < - 2.0f)
 		for(i = 0; i < NUM_HELIS; i++)
 			if(pHelis[i] && pHelis[i]->m_heliStatus != HELI_STATUS_SHOT_DOWN)
@@ -1001,7 +1079,7 @@ CHeli::TestBulletCollision(CVector *line0, CVector *line1, CVector *bulletPos, i
 
 	for(i = 0; i < NUM_HELIS; i++)
 		if(pHelis[i] && !pHelis[i]->bBulletProof && CCollision::DistToLine(line0, line1, &pHelis[i]->GetPosition()) < 5.0f){
-			// Find bullet position
+
 			float distToHeli = (pHelis[i]->GetPosition() - *line0).Magnitude();
 			CVector line = (*line1 - *line0);
 			float lineLength = line.Magnitude();
@@ -1009,25 +1087,12 @@ CHeli::TestBulletCollision(CVector *line0, CVector *line1, CVector *bulletPos, i
 
 			pHelis[i]->m_nBulletDamage += damage;
 
-#ifdef VICEEXT_HELI_HEALTH
-			const int32 odHeliDamageLimit = 400;
-#else
 			const int32 odHeliDamageLimit = 700;
-#endif
 			if(pHelis[i]->m_heliType == HELI_CATALINA && pHelis[i]->m_nBulletDamage > 400 ||
 			   pHelis[i]->m_heliType != HELI_CATALINA && pHelis[i]->m_nBulletDamage > odHeliDamageLimit){
 				pHelis[i]->m_fAngularSpeed = CGeneral::GetRandomTrueFalse() ? 0.05f : -0.05f;
 				pHelis[i]->m_heliStatus = HELI_STATUS_SHOT_DOWN;
 				pHelis[i]->m_nExplosionTimer = CTimer::GetTimeInMilliseconds() + 10000;
-#ifdef VICEEXT_HELI_HEALTH
-				if(pHelis[i]->m_heliType != HELI_CATALINA){
-					uint32 odNowHeli = CTimer::GetTimeInMilliseconds();
-					char odTh[200];
-					snprintf(odTh, sizeof odTh, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=13 id=0 lim=%d dmg=%d down=1",
-						(unsigned)CTimer::GetFrameCounter(), odNowHeli * 0.001f, (int)odHeliDamageLimit, (int)pHelis[i]->m_nBulletDamage);
-					ODTRACES(odTh);
-				}
-#endif
 			}
 
 			hit = true;

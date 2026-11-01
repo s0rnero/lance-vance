@@ -94,8 +94,13 @@ CAnimBlendNode::NextKeyFrame(void)
 	looped = false;
 	frameB = frameA;
 
+	int guard = sequence->numFrames * 4;
 	// Advance as long as we have to
 	while(remainingTime <= 0.0f){
+		if(--guard < 0){
+			remainingTime = 0.0f;
+			break;
+		}
 		frameA++;
 
 		if(frameA >= sequence->numFrames){
@@ -131,8 +136,13 @@ CAnimBlendNode::NextKeyFrameCompressed(void)
 	looped = false;
 	frameB = frameA;
 
+	int guard = sequence->numFrames * 4;
 	// Advance as long as we have to
 	while(remainingTime <= 0.0f){
+		if(--guard < 0){
+			remainingTime = 0.0f;
+			break;
+		}
 		frameA++;
 
 		if(frameA >= sequence->numFrames){
@@ -170,8 +180,13 @@ CAnimBlendNode::FindKeyFrame(float t)
 	if(sequence->numFrames == 1){
 		remainingTime = 0.0f;
 	}else{
+		int guard = sequence->numFrames * 4;
 		// advance until t is between frameB and frameA
 		while (t > sequence->GetKeyFrame(++frameA)->deltaTime) {
+			if(--guard < 0){
+				remainingTime = 0.0f;
+				return false;
+			}
 			t -= sequence->GetKeyFrame(frameA)->deltaTime;
 			if (frameA + 1 >= sequence->numFrames) {
 				// reached end of animation

@@ -113,9 +113,6 @@ enum tVehicleType
 	HANDLING_RCGOBLIN,
 	HANDLING_RCCOPTER,
 
-	// Vice Extended: vehículos nuevos. Van al final para que ningún ID
-	// existente cambie, pero las motos tienen que caber en BikeHandlingData[],
-	// que va por rango (ver NUMBIKEHANDLINGS y GetBikePointer).
 	HANDLING_STREETFI,		// 6500, bike
 	HANDLING_PEREN2,		// 6501
 	HANDLING_TRASH2,		// 6502
@@ -133,8 +130,6 @@ enum tVehicleType
 	NUMBOATHANDLINGS = HANDLING_SEAPLANE+1 - HANDLING_PREDATOR,
 };
 
-// Motos de Vice Extended: están fuera del rango contiguo original, así que el
-// índice dentro de BikeHandlingData[] no es id-HANDLING_BIKE.
 inline int32 BikeHandlingSlot(int32 id)
 {
 	if (id >= HANDLING_BIKE && id <= HANDLING_FREEWAY)
@@ -302,8 +297,6 @@ public:
 	tHandlingData *GetHandlingData(tVehicleType id) { return &HandlingData[id]; }
 	tBikeHandlingData *GetBikePointer(uint8 id) {
 		int32 slot = BikeHandlingSlot(id);
-		// sólo se llama con motos; el clamp evita un índice negativo si algún
-		// día entra un id que no lo es
 		return &BikeHandlingData[slot < 0 ? 0 : slot];
 	}
 	tFlyingHandlingData *GetFlyingPointer(uint8 id);

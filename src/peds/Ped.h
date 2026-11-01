@@ -695,6 +695,12 @@ public:
 	float m_tJumpAllowedTimer;
 #endif
 
+#ifdef VICEEXT_PED_VARIATIONS
+	RwTexture* texClothingVariation;
+	RwTexture* texShadeVariation;
+	uint8 curClothingVariation;
+#endif
+
 	static void *operator new(size_t) throw();
 	static void *operator new(size_t, int) throw();
 	static void operator delete(void*, size_t) throw();
@@ -736,6 +742,7 @@ public:
 	virtual void SetMoveAnim(void);
 
 	void AddWeaponModel(int id);
+	void BuildWeaponModel(void);
 	void AimGun(void);
 	void KillPedWithCar(CVehicle *veh, float impulse);
 	void Say(uint16 audio);

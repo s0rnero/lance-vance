@@ -78,6 +78,12 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 		{
 			float vy = 0.35f;
 			time = CTimer::GetTimeInMilliseconds() + 2000;
+#ifdef VICEEXT_CHEAT_EFFECTS
+			if (FindPlayerPed()->bViceExtRcRocket) {
+				vy += 1.65f;
+				time += 18000;
+			}
+#endif
 			if (entity->GetModelIndex() == MI_SPARROW || entity->GetModelIndex() == MI_HUNTER || entity->GetModelIndex() == MI_SENTINEL) {
 				matrix = ped->GetMatrix();
 				matrix.GetPosition() = pos;
@@ -95,7 +101,11 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 					vy = 0.35f * speed + 0.15f;
 					matrix.SetTranslate(0.0f, 1.0f, 1.0f);
 					matrix.Rotate(0.0f, ry, rz);
+#ifdef VICEEXT_SP_NPC_RPG
+					matrix.GetPosition() = pos;
+#else
 					matrix.GetPosition() += pos;
+#endif
 				} else {
 					matrix = ped->GetMatrix();
 				}
@@ -263,6 +273,18 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 	gaProjectileInfo[i].m_bInUse = true;
 	CWorld::Add(ms_apProjectile[i]);
 
+#ifdef VICEEXT_CHEAT_EFFECTS
+	if (weapon == WEAPONTYPE_ROCKET && FindPlayerPed()->bViceExtRcRocket) {
+		CVector pos = ms_apProjectile[i]->GetPosition();
+		pos.z += 0.5f;
+		ms_apProjectile[i]->SetPosition(pos);
+
+		TheCamera.Cams[TheCamera.ActiveCam].CamTargetEntity = ms_apProjectile[i];
+		TheCamera.m_bLookingAtPlayer = false;
+		TheCamera.Cams[TheCamera.ActiveCam].Mode = CCam::MODE_FOLLOWPROJECTILE;
+	}
+#endif
+
 	gaProjectileInfo[i].m_vecPos = ms_apProjectile[i]->GetPosition();
 
 	if (entity && entity->IsPed() && !ped->m_pCollidingEntity) {
@@ -385,7 +407,12 @@ CProjectileInfo::Update()
 					RemoveProjectile(&gaProjectileInfo[i], ms_apProjectile[i]);
 				}
 				CWorld::pIgnoreEntity = nil;
-				ms_apProjectile[i]->m_vecMoveSpeed *= 1.07f;
+#ifdef VICEEXT_CHEAT_EFFECTS
+				if (FindPlayerPed()->bViceExtRcRocket)
+					ms_apProjectile[i]->m_vecMoveSpeed = TheCamera.Cams[TheCamera.ActiveCam].Front;
+				else
+#endif
+				ms_apProjectile[i]->m_vecMoveSpeed *= Pow(1.07f, CTimer::GetTimeStep());
 
 #ifdef VICEEXT_WEAPON_GRENADE_LAUNCHER
 			} else if (gaProjectileInfo[i].m_eWeaponType == WEAPONTYPE_GRENADE_LAUNCHER_GRENADE) {

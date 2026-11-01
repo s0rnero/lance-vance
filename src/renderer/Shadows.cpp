@@ -18,6 +18,8 @@
 #include "Replay.h"
 #endif
 #include "PointLights.h"
+#include "PointlightTexture.h"
+#include "ondemand.h" // web: ODTRACES -> odtrace.log (T0 plan 15.0: medida de las texturas de sombra)
 #include "SpecialFX.h"
 #include "Script.h"
 #include "TimeStep.h"
@@ -70,13 +72,14 @@ CShadows::Init(void)
 	int32 slut = CTxdStore::FindTxdSlot("particle");
 	CTxdStore::SetCurrentTxd(slut);
 
+	gpShadowHeadLightsTex = CreateHeadlightTexture();
+
 	gpShadowCarTex        = RwTextureRead("shad_car",     nil);
 	gpShadowPedTex        = RwTextureRead("shad_ped",     nil);
 	gpShadowHeliTex       = RwTextureRead("shad_heli",    nil);
 	gpShadowBikeTex       = RwTextureRead("shad_bike",    nil);
 	gpShadowBaronTex      = RwTextureRead("shad_rcbaron", nil);
 	gpShadowExplosionTex  = RwTextureRead("shad_exp",     nil);
-	gpShadowHeadLightsTex = RwTextureRead("headlight",    nil);
 	gpOutline1Tex         = RwTextureRead("outline_64",   nil);
 	gpOutline2Tex         = RwTextureRead("outline2_64",  nil);
 	gpOutline3Tex         = RwTextureRead("outline3_64",  nil);
@@ -87,6 +90,15 @@ CShadows::Init(void)
 	gpPostShadowTex       = RwTextureRead("lamp_shad_64", nil);
 
 	CTxdStore::PopCurrentTxd();
+
+	if(!gpShadowHeadLightsTex){
+		CTxdStore::PushCurrentTxd();
+		CTxdStore::SetCurrentTxd(slut);
+		gpShadowHeadLightsTex = RwTextureRead("headlight", nil);
+		CTxdStore::PopCurrentTxd();
+		if(!gpShadowHeadLightsTex)
+			gpShadowHeadLightsTex = CreateHeadlightTextureRetail();
+	}
 
 	ASSERT(gpShadowCarTex != nil);
 	ASSERT(gpShadowPedTex != nil);
@@ -104,6 +116,32 @@ CShadows::Init(void)
 	ASSERT(gpCrackedGlassTex != nil);
 	ASSERT(gpPostShadowTex != nil);
 
+	{
+		static bool trazado = false;
+		if(!trazado){
+			trazado = true;
+			struct { const char *nombre; RwTexture *tex; } odTex[] = {
+				{ "shad_car",		gpShadowCarTex },
+				{ "shad_ped",		gpShadowPedTex },
+				{ "shad_heli",		gpShadowHeliTex },
+				{ "shad_bike",		gpShadowBikeTex },
+				{ "shad_exp",		gpShadowExplosionTex },
+				{ "headlight",		gpShadowHeadLightsTex },
+				{ "reflection01",	gpReflectionTex },
+				{ "lamp_shad_64",	gpPostShadowTex },
+			};
+			for (int i = 0; i < (int)(sizeof(odTex)/sizeof(odTex[0])); i++){
+				RwRaster *ras = odTex[i].tex ? RwTextureGetRaster(odTex[i].tex) : nil;
+				char cb[160];
+				sprintf(cb, "SHD tex %s=%s %dx%d depth=%d fmt=0x%X flags=0x%X",
+					odTex[i].nombre, odTex[i].tex ? "ok" : "NIL",
+					ras ? ras->width : 0, ras ? ras->height : 0,
+					ras ? ras->depth : -1, ras ? ras->format : 0,
+					ras ? ras->flags : 0);
+				ODTRACES(cb);
+			}
+		}
+	}
 
 	ShadowIndexList[0] = 0;
 	ShadowIndexList[1] = 2;
@@ -751,7 +789,9 @@ CShadows::StoreCarLightShadow(CVehicle *pCar, int32 nID, RwTexture *pTexture, CV
 				nBlue  = (int32)(nBlue  * fMult);
 			}
 
-			if ( pCar->m_vecMoveSpeed.Magnitude() * CTimeStep::ms_fTimeStep > 0.4f || pCar == FindPlayerVehicle() )
+			bool odEnMovimiento = pCar->m_vecMoveSpeed.Magnitude() * CTimeStep::ms_fTimeStep > 0.4f || pCar == FindPlayerVehicle();
+
+			if ( odEnMovimiento )
 			{
 				StoreShadowToBeRendered(SHADOWTYPE_ADDITIVE, pTexture, pPosn,
 						fFrontX, fFrontY,
@@ -769,6 +809,23 @@ CShadows::StoreCarLightShadow(CVehicle *pCar, int32 nID, RwTexture *pTexture, CV
 						6.0f, 1.0f, 27.0f,
 						false, 0.4f);
 			}
+
+#ifdef __EMSCRIPTEN__
+			{
+				static int nTrazas = 0;
+				if(nTrazas < 200 && (CTimer::GetLogicalFrameCounter() % 60) == 0){
+					nTrazas++;
+					RwRaster *ras = pTexture ? RwTextureGetRaster(pTexture) : nil;
+					char cb[192];
+					sprintf(cb, "HDLSHADOW f=%u model=%d charco=%s tex=%dx%d depth=%d",
+						CTimer::GetFrameCounter(), pCar->GetModelIndex(),
+						odEnMovimiento ? "movimiento" : "quieto",
+						ras ? ras->width : 0, ras ? ras->height : 0,
+						ras ? ras->depth : -1);
+					ODTRACES(cb);
+				}
+			}
+#endif
 		}
 	}
 }

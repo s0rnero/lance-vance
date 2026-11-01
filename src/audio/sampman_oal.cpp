@@ -129,9 +129,6 @@ void *gPlayerTalkData = 0;
 CChannel aChannel[NUM_CHANNELS];
 
 #ifdef __EMSCRIPTEN__
-// Web on-demand: muestras SFX como audio/sfx/<i>.mp3 (troceadas de sfx.RAW
-// con tools/split_sfx.py, receta revcDOS). Se decodifican a PCM bajo demanda
-// y se cachean; el banco monolítico de 340 MB nunca se carga ni se descarga.
 #include <mpg123.h>
 static uint8 *odSfxData[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxBytes[TOTAL_AUDIO_SAMPLES];
@@ -140,23 +137,10 @@ static uint32 odSfxTick[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxClock = 0;
 static size_t odSfxCached = 0;
 static bool odMpg123Init = false;
-// Tope de PCM cacheado: lo que suena queda, lo viejo se libera y se
-// re-decodifica al reutilizar (unos ms, inaudible).
 static const size_t odSfxCap = 96 * 1024 * 1024;
-// Contadores de diagnóstico (odtrace.log): un "miss" en medio de un bucle del
-// motor (= re-decodificar) se oye como corte/hipo; el hit/miss y los ms dicen
-// si el corte es eso o es el propio banco de muestras.
 static uint32 odSfxHit = 0, odSfxMiss = 0, odSfxMs = 0, odSfxEvicted = 0;
 static uint32 odSfxStatT = 0;
 
-// F6b: reparto de las decodificaciones de SFX entre frames. Un "miss" cuesta
-// 1-22 ms (fetch + mpg123) y al entrar en zona nueva llegan varios juntos: en
-// la MISMA imagen se acumulaban y hacían el pico de 30-50 ms medido en F5c
-// (4x más sonidos nuevos en esos segundos). Ahora, si el frame ya gastó su
-// presupuesto, el sample queda EN COLA y se decodifica en los frames
-// siguientes; no se pierde nada: el motor reintenta la petición cada frame
-// hasta que el canal arranca. Una petición REPETIDA (motor, sirenas, claxon)
-// se promociona a "ahora": nunca espera dos veces.
 #define ODSFX_FRAME_MS 6      // ms de decode inline por frame
 #define ODSFX_FRAME_N  3      // y como mucho 3 decodes inline por frame
 #define ODSFX_PEND_MAX 32     // cola de diferidos
@@ -171,6 +155,24 @@ static uint32 odSfxPendFr[ODSFX_PEND_MAX];
 static uint32 odSfxPendBytes[ODSFX_PEND_MAX];
 static uint32 odSfxPendRate[ODSFX_PEND_MAX];
 static int odSfxPendN = 0;
+
+static uint32 s_odChSfx[NUM_CHANNELS];
+static uint32 s_odChSince[NUM_CHANNELS];
+static uint8  s_odChState[NUM_CHANNELS];
+static uint8  s_odChTries[NUM_CHANNELS];
+#define OD_CH_NONE  0
+#define OD_CH_INIT  1
+#define OD_CH_START 2
+#define OD_CH_MAX_WAIT 700
+
+static void
+OdSfxChannelClear(uint32 nChannel)
+{
+	s_odChState[nChannel] = OD_CH_NONE;
+	s_odChSfx[nChannel] = 0;
+	s_odChSince[nChannel] = 0;
+	s_odChTries[nChannel] = 0;
+}
 
 static void
 OdSfxStat(const char *why)
@@ -204,9 +206,6 @@ OdSfxEvict(void)
 		bool found = false;
 		for (uint32 i = 0; i < TOTAL_AUDIO_SAMPLES; i++) {
 			if (odSfxData[i] && odSfxTick[i] < oldestTick) {
-				// PIN: las muestras con puntos de loop (motor, sirenas, ambientes)
-				// no se tiran nunca. Re-descodificarlas (o re-descargarlas) en
-				// medio de un bucle se oye como corte/hipo.
 				int32 le = SampleManager.GetSampleLoopEndOffset(i);
 				if (SampleManager.GetSampleLoopStartOffset(i) != 0 ||
 				    (le != 0 && le != -1))
@@ -258,9 +257,6 @@ OdSfxBudgetReset(uint32 fr)
 	odSfxFrameN = 0;
 }
 
-// Decodifica lo que quedó en cola en frames ANTERIORES (nunca lo del frame
-// actual: si no, el "reparto" volvería a ser el mismo pico). Una vez por frame
-// desde cSampleManager::Service().
 static void
 OdSfxPump(void)
 {
@@ -315,7 +311,6 @@ OdSfxDecode(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 		OdSfxBudgetReset(fr);
 	p = OdSfxPendFind(nSample);
 	if (p >= 0) {
-		// Ya estaba en cola y lo vuelven a pedir: urgente. Se promociona.
 		OdSfxPendDrop(p);
 	} else if (odSfxFrameN >= ODSFX_FRAME_N || odSfxFrameMs >= ODSFX_FRAME_MS) {
 		if (odSfxPendN < ODSFX_PEND_MAX) {
@@ -343,8 +338,6 @@ static bool
 OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 {
 	odSfxMiss++;
-	// F2: reloj de pared — CTimer avanza 1 vez por frame y un decode dentro
-	// del mismo frame medía 0 ms (decms=0 siempre).
 	uint32 odT0 = (uint32)emscripten_get_now();
 	if (!odMpg123Init) {
 		if (mpg123_init() != MPG123_OK)
@@ -353,17 +346,34 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	}
 	char path[64];
 	snprintf(path, sizeof(path), "audio/sfx/%u.mp3", nSample);
-	FILE *probe = fopen(path, "rb"); // wrapped: trae el fichero si falta
-	if (!probe)
+#ifdef __EMSCRIPTEN__
+	static uint32 odNoMs[TOTAL_AUDIO_SAMPLES];
+	static int odNoTrace = 0;
+	uint32 odNow = (uint32)emscripten_get_now();
+	if (odNoMs[nSample] != 0 && odNow >= odNoMs[nSample] && odNow - odNoMs[nSample] < 120)
 		return false;
+#endif
+	FILE *probe = fopen(path, "rb");
+	if (!probe) {
+#ifdef __EMSCRIPTEN__
+		if (odNoTrace < 40 && (odNoMs[nSample] == 0 || odNow - odNoMs[nSample] > 4000 || odNow < odNoMs[nSample])) {
+			char t[128];
+			odNoTrace++;
+			snprintf(t, sizeof t, "ODSFXNO sfx=%u (mp3 no disponible)", nSample);
+			ODTRACES(t);
+		}
+		odNoMs[nSample] = odNow ? odNow : 1;
+#endif
+		return false;
+	}
+#ifdef __EMSCRIPTEN__
+	odNoMs[nSample] = 0;
+#endif
 	fclose(probe);
 	mpg123_handle *mh = mpg123_new(nil, nil);
 	if (!mh)
 		return false;
 #ifdef __EMSCRIPTEN__
-	// Gapless (usa el tag LAME para saltar delay/padding): sin esto cada
-	// muestra decodificada trae ~100ms de basura/delay y el realloc de abajo
-	// corta contenido real. Medido en producción (SFXLEN difiere siempre).
 	mpg123_param(mh, MPG123_ADD_FLAGS, MPG123_GAPLESS, 0.);
 #endif
 	bool ok = false;
@@ -379,8 +389,12 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 		pcm = (uint8*)malloc(cap);
 		if (pcm) {
 			ok = true;
+			int emptyReads = 0;
+			double odDecodeStart = emscripten_get_now();
 			for (;;) {
+				if (emscripten_get_now() - odDecodeStart > 250.0) { ok = false; break; }
 				if (len + 65536 > cap) {
+					if (cap >= 32u * 1024u * 1024u) { ok = false; break; }
 					cap *= 2;
 					uint8 *np = (uint8*)realloc(pcm, cap);
 					if (!np) { ok = false; break; }
@@ -392,8 +406,11 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 				if (err == MPG123_DONE)
 					break;
 				if (err != MPG123_OK) { ok = false; break; }
+				if (done == 0) {
+					if (++emptyReads > 32) { ok = false; break; }
+				} else
+					emptyReads = 0;
 			}
-		// A mono por si el mp3 salio estereo
 		if (ok && channels == 2 && len >= 4) {
 			int16 *s = (int16*)pcm;
 			size_t frames = len / 4;
@@ -401,8 +418,6 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 				s[i] = (int16)(((int32)s[2*i] + (int32)s[2*i+1]) / 2);
 			len = frames * 2;
 		}
-		// REVERSIÓN 17/09: quitar 2112 muestras empeoró el audio (más cortado).
-		// El delay no era el problema; no tocar el contenido decodificado.
 	}
 }
 	mpg123_close(mh);
@@ -411,18 +426,12 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 		free(pcm);
 		return false;
 	}
-	// Ajustar al tamaño SDT: el resto del motor (slots, longitudes, loops)
-	// trabaja con nSize. El mp3 conserva duración/frecuencia.
 	if (len != wantBytes) {
 #ifdef __EMSCRIPTEN__
-		// DIAG audio-motor: ¿cuánto difiere el decode del SDT? (delay/padding
-		// MP3). Si difiere sistemáticamente ~4KB, hay que quitar el gap.
 		{
 			static int n = 0, nloop = 0;
 			int32 lEnd = SampleManager.GetSampleLoopEndOffset(nSample);
 			bool8 isLoop = SampleManager.GetSampleLoopStartOffset(nSample) != 0 || (lEnd != 0 && lEnd != -1);
-			// Las muestras con loop (motor, sirenas) se trazan SIEMPRE, aunque se
-			// pase el cupo general: son las que hacen cortes al girar el bucle.
 			if (n < 40 || (isLoop && nloop < 25)) {
 				if (n < 40) n++; else nloop++;
 				char t[192];
@@ -448,8 +457,6 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	odSfxCached += len;
 	OdSfxEvict();
 	{
-		// Traza por muestra decodificada: si el motor re-decodifica cada ~1,4 s
-		// (ventana de marcha) aqui se ve el hueco y los ms que dura.
 		static int nmiss = 0;
 		uint32 odMs = (uint32)emscripten_get_now() - odT0;
 		odSfxMs += odMs;
@@ -527,10 +534,6 @@ add_providers()
 	SampleManager.SetNum3DProvidersAvailable(0);
 
 #ifdef __EMSCRIPTEN__
-	// Emscripten's OpenAL exposes a single implicit device (Web Audio) and
-	// no ALC_ENUMERATION_EXT, so probing yields zero providers ("no audio
-	// software"). Register the default device directly; id NULL means
-	// alcOpenDevice(NULL) below. No EFX in the browser port.
 	providers[0].id = NULL;
 	strcpy(providers[0].name, "Web Audio");
 	providers[0].sources = MAXCHANNELS;
@@ -1350,8 +1353,6 @@ cSampleManager::Initialise(void)
 			return FALSE;
 		}
 #ifdef __EMSCRIPTEN__
-		// Web on-demand: el buffer masivo no se usa (PCM por muestra). Se
-		// libera aquí mismo para no retenerlo.
 		free((void*)nSampleBankMemoryStartAddress[SFX_BANK_0]);
 		nSampleBankMemoryStartAddress[SFX_BANK_0] = 0;
 #endif
@@ -1462,7 +1463,7 @@ cSampleManager::Initialise(void)
 	}
 	
 #ifdef __EMSCRIPTEN__
-	printf("[web] sampman init ok\n");
+	printf("[web] sampman init ok bank0=%d chan=%u\n", (int)gBankLoaded[SFX_BANK_0], (unsigned)_maxSamples);
 #endif
 	return TRUE;
 }
@@ -1666,8 +1667,6 @@ cSampleManager::LoadSampleBank(uint8 nBank)
 	}
 #else
 #ifdef __EMSCRIPTEN__
-	// Web on-demand: sin carga masiva; cada muestra se decodifica al usarla
-	// (OdSfxDecode) y el flag permite reproducir.
 	(void)nBank;
 #else
 	if ( fseek(fpSampleDataHandle, nSampleBankDiscStartOffset[nBank], SEEK_SET) != 0 )
@@ -1724,7 +1723,6 @@ cSampleManager::LoadMissionAudio(uint8 nSlot, uint32 nSample)
 	ASSERT(nSample < TOTAL_AUDIO_SAMPLES);
 
 #ifdef __EMSCRIPTEN__
-	// Web on-demand: del mp3 por muestra (OdSfxDecode ajusta a nSize).
 	if (!OdSfxDecode(nSample, m_aSamples[nSample].nSize, m_aSamples[nSample].nFrequency))
 		return FALSE;
 	memcpy(gPlayerTalkData, odSfxData[nSample], m_aSamples[nSample].nSize);
@@ -1820,7 +1818,6 @@ cSampleManager::LoadPedComment(uint32 nComment)
 	}
 #else
 #ifdef __EMSCRIPTEN__
-	// Web on-demand: del mp3 por muestra al slot (cabe por diseño).
 	if (!OdSfxDecode(nComment, m_aSamples[nComment].nSize, m_aSamples[nComment].nFrequency))
 		return FALSE;
 	if (m_aSamples[nComment].nSize > PED_BLOCKSIZE)
@@ -1971,6 +1968,21 @@ cSampleManager::SetChannelReverbFlag(uint32 nChannel, bool8 nReverbFlag)
 	}
 }
 
+static bool8
+OdSfxChannelDefer(uint32 nChannel, uint32 nSfx, int32 nFreq)
+{
+	if ( aChannel[nChannel].IsUsed() )
+		aChannel[nChannel].Stop();
+	aChannel[nChannel].Reset();
+	OdSfxChannelClear(nChannel);
+	aChannel[nChannel].SetSampleData(nil, 0, nFreq);
+	aChannel[nChannel].SetPitch(1.0f);
+	s_odChSfx[nChannel] = nSfx;
+	s_odChSince[nChannel] = CTimer::GetTimeInMilliseconds();
+	s_odChState[nChannel] = OD_CH_INIT;
+	return TRUE;
+}
+
 bool8
 cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 {
@@ -1978,16 +1990,28 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 	
 	uintptr addr;
 
+#ifdef __EMSCRIPTEN__
+	if ( !IsSampleBankLoaded(nBank) ) {
+		static int odBankTrace = 0;
+		if ( odBankTrace < 10 ) {
+			char t[128];
+			odBankTrace++;
+			snprintf(t, sizeof t, "ODSFXBANK sfx=%u bank=%u loaded=%d ch=%u",
+			         nSfx, nBank, (int)IsSampleBankLoaded(nBank), nChannel);
+			ODTRACES(t);
+		}
+	}
+#endif
+
 	if ( nSfx < SAMPLEBANK_MAX )
 	{
 		if ( !IsSampleBankLoaded(nBank) )
 			return FALSE;
 
 #ifdef __EMSCRIPTEN__
-		// Web on-demand: PCM por muestra (sin banco monolítico).
 		if (nBank == SFX_BANK_0) {
 			if (!OdSfxDecode(nSfx, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency))
-				return FALSE;
+				return OdSfxChannelDefer(nChannel, nSfx, (int32)m_aSamples[nSfx].nFrequency);
 			odSfxTick[nSfx] = ++odSfxClock;
 			addr = (uintptr)odSfxData[nSfx];
 		} else
@@ -2002,7 +2026,7 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 
 #ifdef __EMSCRIPTEN__
 		if (!OdSfxDecode(nSfx, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency))
-			return FALSE;
+			return OdSfxChannelDefer(nChannel, nSfx, (int32)m_aSamples[nSfx].nFrequency);
 		odSfxTick[nSfx] = ++odSfxClock;
 		addr = (uintptr)odSfxData[nSfx];
 #else
@@ -2053,16 +2077,12 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 	if ( aChannel[nChannel].HasSource() )
 	{
 #ifdef __EMSCRIPTEN__
-		// F4a: coste real del arranque de canal (SetSampleData puede traer la
-		// muestra on-demand: suspensión+decode). t0 antes; la resta tras el
-		// resume (patrón validado en OdSfxDecode).
 		uint32 odChT0 = (uint32)emscripten_get_now();
 #endif
 		aChannel[nChannel].SetSampleData   ((void*)addr, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency);
 		aChannel[nChannel].SetLoopPoints   (0, -1);
 		aChannel[nChannel].SetPitch        (1.0f);
 #ifdef __EMSCRIPTEN__
-		// DIAG audio-motor: qué muestra ocupa cada canal (parear stop->start).
 		{
 			static int n = 0;
 			if (n < 200) {
@@ -2190,6 +2210,10 @@ cSampleManager::StartChannel(uint32 nChannel)
 {
 	ASSERT( nChannel < NUM_CHANNELS );
 	
+	if ( s_odChState[nChannel] == OD_CH_INIT ) {
+		s_odChState[nChannel] = OD_CH_START;
+		return;
+	}
 	aChannel[nChannel].Start();
 }
 
@@ -2197,6 +2221,7 @@ void
 cSampleManager::StopChannel(uint32 nChannel)
 {
 	ASSERT( nChannel < NUM_CHANNELS );
+	OdSfxChannelClear(nChannel);
 	aChannel[nChannel].Stop();
 }
 
@@ -2210,18 +2235,6 @@ cSampleManager::PreloadStreamedFile(uint32 nFile, uint8 nStream)
 		CStream *stream = aStream[nStream];
 
 		stream->Close();
-		// ------------------------------------------------------------------
-		// Web: "audio de misión" = slots 1..2 (stream != 0).
-		//
-		// En el juego original este Open es un fopen sobre el disco: el fichero
-		// está o no está, pero nunca "todavía no". Aquí el fichero suele venir
-		// de la capa on-demand, que en partida APLAZA lo que no está (contesta
-		// "no está" y sigue). Con un WAV de misión eso es fatal: el diálogo no
-		// arranca, el motor lo da por terminado en 30 frames y el script corre
-		// en vacío → subtítulos que pasan volando y voces mudas.
-		// Por eso aquí se ESPERA a tenerlo (la radio, stream 0, sigue igual: sus
-		// .adf de 30 MB sí se notarían como freeze).
-		// ------------------------------------------------------------------
 		bool8 bWaited = FALSE;
 		if (nStream != 0) {
 			odBlockingPush();
@@ -2235,10 +2248,6 @@ cSampleManager::PreloadStreamedFile(uint32 nFile, uint8 nStream)
 		{
 			stream->Close();
 		}
-		// Segundo intento (solo audio de mision): el fichero puede haber
-		// aterrizado entre que se pidio y que se abrio. Sin esto, un WAV que
-		// llega con un frame de retraso se quedaba fuera para siempre (el
-		// script ya habia pasado de linea).
 		if ( !stream->IsOpened() && nStream != 0 )
 		{
 #ifdef PS2_AUDIO_PATHS
@@ -2251,8 +2260,6 @@ cSampleManager::PreloadStreamedFile(uint32 nFile, uint8 nStream)
 		if (bWaited)
 			odBlockingPop();
 #ifdef __EMSCRIPTEN__
-		// Sin este dato, "la cinemática no suena" es adivinar: dice si el
-		// fichero del track llegó a abrirse de verdad (y cuál es).
 		{
 			char st[200];
 			snprintf(st, sizeof st, "STREAM preload n=%d file=%s open=%d spk=%d wait=%d", (int)nFile,
@@ -2425,7 +2432,6 @@ cSampleManager::StartStreamedFile(uint32 nFile, uint32 nPos, uint8 nStream)
 	CStream *stream = aStream[nStream];
 
 #ifdef __EMSCRIPTEN__
-	// DIAG radio: cuánto cuesta abrir+seek de una emisora (¿el tirón?).
 	uint32 odRT0 = 0, odRT1 = 0;
 	if (nFile < STREAMED_SOUND_CITY_AMBIENT)
 		odRT0 = CTimer::GetTimeInMilliseconds();
@@ -2567,9 +2573,6 @@ cSampleManager::IsStreamPlaying(uint8 nStream)
 	return FALSE;
 }
 
-// Web: ¿el fichero del stream llegó a abrirse? El motor de misiones lo usa
-// para no dar por "cargado" un diálogo cuyo fichero no está: si no está, el
-// script se "termina" la línea en 30 frames (subtítulos volando y sin voz).
 bool8
 cSampleManager::IsStreamedFileOpened(uint8 nStream)
 {
@@ -2583,6 +2586,38 @@ cSampleManager::Service(void)
 {
 #ifdef __EMSCRIPTEN__
 	OdSfxPump(); // F6b: drena la cola de samples diferidos (presupuesto propio)
+	for ( uint32 odCh = 0; odCh < NUM_CHANNELS; odCh++ ) {
+		if ( s_odChState[odCh] == OD_CH_NONE )
+			continue;
+		uint32 odSfx = s_odChSfx[odCh];
+		if ( odSfx >= TOTAL_AUDIO_SAMPLES ) {
+			OdSfxChannelClear(odCh);
+			continue;
+		}
+		if ( CTimer::GetTimeInMilliseconds() - s_odChSince[odCh] > OD_CH_MAX_WAIT ) {
+			static int odGiveUpTrace = 0;
+			if ( odGiveUpTrace < 20 ) {
+				char t[128];
+				odGiveUpTrace++;
+				snprintf(t, sizeof t, "ODSFXGIVEUP sfx=%u ms=%u tries=%u",
+				         odSfx, CTimer::GetTimeInMilliseconds() - s_odChSince[odCh], (unsigned)s_odChTries[odCh]);
+				ODTRACES(t);
+			}
+			OdSfxChannelClear(odCh);
+			continue;
+		}
+		if ( !odSfxData[odSfx] ) {
+			if ( s_odChTries[odCh] < 255 )
+				s_odChTries[odCh]++;
+			if ( !OdSfxDecode(odSfx, m_aSamples[odSfx].nSize, m_aSamples[odSfx].nFrequency) )
+				continue;
+		}
+		aChannel[odCh].SetSampleData(odSfxData[odSfx], m_aSamples[odSfx].nSize, m_aSamples[odSfx].nFrequency);
+		odSfxTick[odSfx] = ++odSfxClock;
+		if ( s_odChState[odCh] == OD_CH_START )
+			aChannel[odCh].Start();
+		s_odChState[odCh] = OD_CH_NONE;
+	}
 #endif
 	for ( int32 i = 0; i < MAX_STREAMS; i++ )
 	{
@@ -2608,7 +2643,6 @@ cSampleManager::InitialiseSampleBanks(void)
 	if ( fpSampleDescHandle == NULL )
 		return FALSE;
 #ifdef __EMSCRIPTEN__
-	// Web on-demand: tabla SDT por fd; sfx.RAW no existe (muestras en audio/sfx/*.mp3).
 	{
 		size_t odWant = sizeof(tSample) * MAIN_BANK_AUDIO_SAMPLES;
 		size_t odGot = 0;
@@ -2620,9 +2654,6 @@ cSampleManager::InitialiseSampleBanks(void)
 				odGot += q;
 			}
 		}
-		// IDENTIDAD DE DATOS (una sola línea, va a odtrace y consola): dice si
-		// el motor está usando la SDT nueva o una vieja de la caché. readBytes =
-		// tamaño real leído; h = FNV-1a de los primeros 4 KB de la tabla.
 		{
 			uint32 h = 2166136261u;
 			uint32 hlim = (uint32)(odGot < 4096 ? odGot : 4096);
@@ -2651,9 +2682,6 @@ cSampleManager::InitialiseSampleBanks(void)
 		fpSampleDescHandle = NULL;
 
 #ifdef __EMSCRIPTEN__
-		// Web on-demand: sfx.RAW no existe (muestras sueltas). Se sigue con
-		// la tabla SDT; el PCM llega por OdSfxDecode. Marcar para que los
-		// lectores directos no usen el handle nulo.
 		fpSampleDataHandle = NULL;
 #else
 		return FALSE;
@@ -2668,7 +2696,6 @@ cSampleManager::InitialiseSampleBanks(void)
 	}
 #ifdef __EMSCRIPTEN__
 	else {
-		// Sin sfx.RAW (muestras sueltas): tamaño derivado de la tabla.
 		_nSampleDataEndOffset = m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nOffset + m_aSamples[MAIN_BANK_AUDIO_SAMPLES - 1].nSize;
 	}
 #endif
@@ -2677,8 +2704,6 @@ cSampleManager::InitialiseSampleBanks(void)
 	fpSampleDataHandle = op_open_file(SampleBankDataFilename, &e);
 #endif
 #ifdef __EMSCRIPTEN__
-	// Web: leer por read() directo (se vio "null function" dentro de fread
-	// bajo Asyncify en este punto concreto).
 	{
 		size_t odWant = sizeof(tSample) * MAIN_BANK_AUDIO_SAMPLES;
 		size_t odGot = 0;

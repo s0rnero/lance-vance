@@ -13,9 +13,7 @@ public:
 	static void operator delete(void*, size_t) throw();
 
 	void ReplaceWithNewModel(int32 id);
-#ifdef VICEEXT_DISTANT_LIGHTS
 	void ProcessDistantLights();
-#endif
 
 	virtual bool GetIsATreadable(void) { return false; }
 };

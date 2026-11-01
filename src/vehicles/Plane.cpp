@@ -154,7 +154,7 @@ CPlane::ProcessControl(void)
 	if(m_bHasBeenHit){
 		// BUG: since this is all based on frames, you can skip the explosion processing when you go into the menu
 		if(GetModelIndex() == MI_AIRTRAIN){
-			int frm = CTimer::GetFrameCounter() - m_nFrameWhenHit;
+			int frm = CTimer::GetLogicalFrameCounter() - m_nFrameWhenHit;
 			if(frm == 20){
 				static int nFrameGen;
 				CRGBA colors[8];
@@ -208,7 +208,7 @@ CPlane::ProcessControl(void)
 				FlagToDestroyWhenNextProcessed();
 			}
 		}else{
-			int frm = CTimer::GetFrameCounter() - m_nFrameWhenHit;
+			int frm = CTimer::GetLogicalFrameCounter() - m_nFrameWhenHit;
 			if(frm == 20){
 				static int nFrameGen;
 				CRGBA colors[8];
@@ -273,7 +273,7 @@ CPlane::ProcessControl(void)
 	}
 
 	// Update plane position and speed
-	if(GetModelIndex() == MI_AIRTRAIN || !m_isFarAway || ((CTimer::GetFrameCounter() + m_randomSeed) & 7) == 0){
+	if(GetModelIndex() == MI_AIRTRAIN || !m_isFarAway || ((CTimer::GetLogicalFrameCounter() + m_randomSeed) & 7) == 0){
 		if(GetModelIndex() == MI_AIRTRAIN){
 			float pathPositionRear = PlanePathPosition[m_nPlaneId] - 30.0f;
 			if(pathPositionRear < 0.0f)
@@ -310,7 +310,7 @@ CPlane::ProcessControl(void)
 				nextTrackNode = 0;
 				pos2 = TotalLengthOfFlightPath;
 			}
-			while(pathPositionRear < pos1 || pathPositionRear > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionRear < pos1 || pathPositionRear > pos2); guard--){
 				m_nCurPathNode = (m_nCurPathNode+1) % NumPathNodes;
 				nextTrackNode = m_nCurPathNode + 1;
 				pos1 = pPathNodes[m_nCurPathNode].t;
@@ -343,7 +343,7 @@ CPlane::ProcessControl(void)
 				nextPathNodeFront = 0;
 				pos2 = TotalLengthOfFlightPath;
 			}
-			while(pathPositionFront < pos1 || pathPositionFront > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionFront < pos1 || pathPositionFront > pos2); guard--){
 				curPathNodeFront = (curPathNodeFront+1) % NumPathNodes;
 				nextPathNodeFront = curPathNodeFront + 1;
 				pos1 = pPathNodes[curPathNodeFront].t;
@@ -373,7 +373,7 @@ CPlane::ProcessControl(void)
 				nextPathNodeFront2 = 0;
 				pos2 = TotalLengthOfFlightPath;
 			}
-			while(pathPositionFront2 < pos1 || pathPositionFront2 > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionFront2 < pos1 || pathPositionFront2 > pos2); guard--){
 				curPathNodeFront2 = (curPathNodeFront2+1) % NumPathNodes;
 				nextPathNodeFront2 = curPathNodeFront2 + 1;
 				pos1 = pPathNodes[curPathNodeFront2].t;
@@ -450,7 +450,7 @@ CPlane::ProcessControl(void)
 				nextTrackNode = 0;
 				pos2 = totalLengthOfFlightPath;
 			}
-			while(pathPositionRear < pos1 || pathPositionRear > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionRear < pos1 || pathPositionRear > pos2); guard--){
 				m_nCurPathNode = (m_nCurPathNode+1) % numPathNodes;
 				nextTrackNode = m_nCurPathNode + 1;
 				pos1 = pathNodes[m_nCurPathNode].t;
@@ -480,7 +480,7 @@ CPlane::ProcessControl(void)
 				nextPathNodeFront = 0;
 				pos2 = totalLengthOfFlightPath;
 			}
-			while(pathPositionFront < pos1 || pathPositionFront > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionFront < pos1 || pathPositionFront > pos2); guard--){
 				curPathNodeFront = (curPathNodeFront+1) % numPathNodes;
 				nextPathNodeFront = curPathNodeFront + 1;
 				pos1 = pathNodes[curPathNodeFront].t;
@@ -510,7 +510,7 @@ CPlane::ProcessControl(void)
 				nextPathNodeFront2 = 0;
 				pos2 = totalLengthOfFlightPath;
 			}
-			while(pathPositionFront2 < pos1 || pathPositionFront2 > pos2){
+			for(int guard = NumPathNodes; guard > 0 && (pathPositionFront2 < pos1 || pathPositionFront2 > pos2); guard--){
 				curPathNodeFront2 = (curPathNodeFront2+1) % numPathNodes;
 				nextPathNodeFront2 = curPathNodeFront2 + 1;
 				pos1 = pathNodes[curPathNodeFront2].t;
@@ -653,7 +653,7 @@ CPlane::PreRender(void)
 #ifdef CPLANE_ROTORS
 	CMatrix mat;
 	CVector pos;
-	m_fRotorRotation += 3.14f/6.5f;
+	m_fRotorRotation += 3.14f/6.5f * CTimer::GetTimeStep();
 	if(m_fRotorRotation > 6.28f)
 		m_fRotorRotation -= 6.28f;
 
@@ -992,7 +992,7 @@ CPlane::TestRocketCollision(CVector *rocketPos)
 		   plane->GetModelIndex() != MI_AIRTRAIN && plane->GetModelIndex() == MI_DEADDODO &&	// strange check
 #endif
 		   !plane->m_bHasBeenHit && (*rocketPos - plane->GetPosition()).Magnitude() < 25.0f){
-			plane->m_nFrameWhenHit = CTimer::GetFrameCounter();
+			plane->m_nFrameWhenHit = CTimer::GetLogicalFrameCounter();
 			plane->m_bHasBeenHit = true;
 			CWorld::Players[CWorld::PlayerInFocus].m_pPed->m_pWanted->RegisterCrime_Immediately(CRIME_DESTROYED_CESSNA,
 				plane->GetPosition(), i+1983, false);

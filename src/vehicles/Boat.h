@@ -19,6 +19,7 @@ class CBoat : public CVehicle
 {
 public:
 	float m_fMovingRotation;
+	void RenderMovingRadar(int alpha);
 	float m_fMovingSpeed;
 	int32 m_boat_unused1;
 	RwFrame *m_aBoatNodes[NUM_BOAT_NODES];

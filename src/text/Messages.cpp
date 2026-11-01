@@ -22,16 +22,6 @@ tBigMessage CMessages::BIGMessages[NUMBIGMESSAGES];
 char CMessages::PreviousMissionTitle[16]; // unused
 
 #ifdef __EMSCRIPTEN__
-// ---------------------------------------------------------------------------
-// R3 (plan 06, 5ª partida): los textos que salen solos.
-//
-// El jugador los vio "aparecer y desaparecer muy rápido" sin estar en misión, y
-// en la traza **no había ni una línea de texto**: era imposible saber quién los
-// pedía. Esta traza deja constancia de cada mensaje ENCOLADO (no de cada frame
-// pintado) con su clave GXT, su duración, su canal y si hay misión activa, que
-// es lo que permite rastrear el origen (la clave se busca en el .gxt y el canal
-// distingue mensaje breve, grande o ayuda). Una línea por mensaje, como mucho.
-// ---------------------------------------------------------------------------
 static void ViceExtTraceText(const char *canal, wchar *msg, uint32 time, int flag)
 {
 	static uint32 s_odN = 0;

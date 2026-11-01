@@ -6,6 +6,11 @@ struct TxdDef {
 	RwTexDictionary *texDict;
 	int refCount;
 	char name[20];
+	// Estado de la carga partida (TXD mas grande que el buffer de streaming).
+	// Va por slot: con dos canales hay dos TXD grandes en vuelo y guardarlo en
+	// estaticas hacia que uno continuara en la posicion del otro.
+	int32 loadNumTextures;
+	uint32 loadStreamPos;
 };
 
 class CTxdStore

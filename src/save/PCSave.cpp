@@ -3,8 +3,6 @@
 #include "crossplatform.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-// Web: /userfiles es IDBFS; sin flush explícito lo guardado muere en memoria
-// (el sync de beforeunload casi nunca completa, y en crash jamás).
 #define WEB_FLUSH_USERFILES() EM_ASM({ try { OD.syncUserfiles('save'); } catch (e) { console.log('[od] flush save no disponible'); } })
 #else
 #define WEB_FLUSH_USERFILES() do {} while (0)
@@ -34,8 +32,6 @@ void
 C_PcSave::SetSaveDirectory(const char *path)
 {
 #ifdef __EMSCRIPTEN__
-	// Barra normal: DeleteFile() es unlink() sin casepath; con '\\' el
-	// borrado fallaba en silencio y el slot seguía listando. '/' vale en todo.
 	sprintf(DefaultPCSaveFileName, "%s/%s", "/userfiles", "GTAVCsf");
 #else
 	sprintf(DefaultPCSaveFileName, "%s\\%s", path, "GTAVCsf");
@@ -78,16 +74,29 @@ C_PcSave::SaveSlot(int32 slot)
 	_psGetUserFilesFolder();
 	int file = CFileMgr::OpenFile(ValidSaveName, "wb");
 	if (file != 0) {
-#ifdef MISSION_REPLAY
-		if (!IsQuickSave)
-#endif
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+		int8 odSavedQuickSave = IsQuickSave;
+		if (bSaveAnywhere && !IsQuickSave)
+			IsQuickSave = SAVE_TYPE_QUICKSAVE;
+		if (!IsQuickSave && !bAutoSave && !bSaveAnywhere)
 			DoGameSpecificStuffBeforeSave();
-		if (GenericSave(file)) {
+#elif defined MISSION_REPLAY
+		if (!IsQuickSave)
+			DoGameSpecificStuffBeforeSave();
+#else
+		DoGameSpecificStuffBeforeSave();
+#endif
+		bool saved = GenericSave(file);
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+		IsQuickSave = odSavedQuickSave;
+		bSaveAnywhere = false;
+		bAutoSave = false;
+#endif
+		if (saved) {
 			if (!!CFileMgr::CloseFile(file))
 				nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
 			WEB_FLUSH_USERFILES();
 #ifdef __EMSCRIPTEN__
-			// DIAG contenido: posición al guardar (vs post-carga).
 			{
 				CVector p(0.0f, 0.0f, 0.0f);
 				CPlayerPed *pl = FindPlayerPed();

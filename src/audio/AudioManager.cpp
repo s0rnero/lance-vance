@@ -80,7 +80,7 @@ cAudioManager::Initialise()
 			}
 		}
 #ifdef __EMSCRIPTEN__
-		printf("[web] audiomanager init ok\n");
+		printf("[web] audiomanager init ok init=%d ch=%d\n", (int)m_bIsInitialised, (int)m_nActiveSamples);
 #endif
 	}
 }
@@ -204,8 +204,6 @@ cAudioManager::DestroyEntity(int32 id)
 	if (m_bIsInitialised && id >= 0 && id < NUM_AUDIOENTITIES && m_asAudioEntities[id].m_bIsUsed) {
 		m_asAudioEntities[id].m_bIsUsed = FALSE;
 #ifdef __EMSCRIPTEN__
-		// Web: al morir la entidad, parar sus loops huerfanos (claxon/motores
-		// que quedaban sonando infinito al despawnear el coche).
 		for (uint32 i = 0; i < NUM_CHANNELS_GENERIC; i++) {
 			if (m_asActiveSamples[i].m_nSampleIndex != NO_SAMPLE &&
 			    m_asActiveSamples[i].m_nEntityIndex == id &&
@@ -1086,7 +1084,7 @@ cAudioManager::AddReleasingSounds()
 				}
 				sample.m_nFramesToPlay--;
 #endif
-				if (m_bReduceReleasingPriority) {
+				if (m_bReduceReleasingPriority && CTimer::GetLogicalFramesPassed() != 0) {
 					if (sample.m_nPriority < 20)
 						sample.m_nPriority++;
 				}
@@ -1362,12 +1360,6 @@ cAudioManager::ProcessActiveQueues()
 #endif
 
 #ifdef __EMSCRIPTEN__
-	// DIAG + red de seguridad "bucle del Malibú": cualquier sonido que quede
-	// sonando en bucle infinito (m_nLoopCount == 0) se registra al empezar, con
-	// un latido cada 2 s y otra línea al terminar: dice QUÉ sample suena, en qué
-	// canal, quién lo emite (entidad + tipo) y cuánto lleva. Se corta en dos
-	// casos: emisor huérfano (nadie puede pararlo) o loop inaudible (volumen 0)
-	// durante 25 s (el que se queda pegado al pasar por una zona, p.ej. Malibú).
 	{
 		static struct { uint8 on; uint32 t0, last, silent; } wl[NUM_CHANNELS];
 		uint32 now = CTimer::GetTimeInMilliseconds();
@@ -1379,8 +1371,6 @@ cAudioManager::ProcessActiveQueues()
 			bool8 playingLoop = as.m_nSampleIndex != NO_SAMPLE && as.m_nLoopCount == 0 &&
 			                    SampleManager.GetChannelUsedFlag(i);
 			if (playingLoop && ent >= 0 && !entUsed) {
-				// Emisor huérfano: no hay nada que pueda seguir pidiendo este
-				// sonido. Cortarlo (mismo criterio que DestroyEntity).
 				char t[160];
 				snprintf(t, sizeof t, "LOOPORPHAN ch=%u sfx=%u ent=%d type=%d dursec=%u",
 					i, (uint32)as.m_nSampleIndex, ent, entType,
@@ -1400,9 +1390,6 @@ cAudioManager::ProcessActiveQueues()
 					wl[i].silent = 0;
 			}
 			if (playingLoop && wl[i].silent != 0 && now - wl[i].silent > 25000) {
-				// Loop que ya no se oye (fuera de alcance) y sigue vivo: se
-				// queda pegado para siempre. Si alguien lo vuelve a pedir, se
-				// re-arranca solo.
 				char t[176];
 				snprintf(t, sizeof t, "LOOPKILL ch=%u sfx=%u ent=%d type=%d dursec=%u silentsec=%u",
 					i, (uint32)as.m_nSampleIndex, ent, entType,
@@ -1416,8 +1403,6 @@ cAudioManager::ProcessActiveQueues()
 				continue;
 			}
 			if (playingLoop && !wl[i].on) {
-				// Estado del watchdog (LOOPKILL/ORPHAN); las trazas
-				// START/ALIVE/END se retiraron (higiene de log, fluides-v2).
 				wl[i].on = 1; wl[i].t0 = now; wl[i].last = now; wl[i].silent = 0;
 			} else if (wl[i].on) {
 				wl[i].on = 0;

@@ -20,6 +20,8 @@
 #include "ZoneCull.h"
 #include "SpecialFX.h"
 #include "Replay.h"
+#include "ModelIndices.h"
+#include "ondemand.h"
 
 int32 CWeather::SoundHandle = -1;
 
@@ -49,6 +51,8 @@ float CWeather::WindClipped;
 float CWeather::TrafficLightBrightness;
 
 bool CWeather::bScriptsForceRain;
+
+bool CWeather::bBryxLights;
 
 tRainStreak Streaks[NUM_RAIN_STREAKS];
 
@@ -138,6 +142,15 @@ void CWeather::Init(void)
 	SoundHandle = DMAudio.CreateEntity(AUDIOTYPE_WEATHER, (void*)1);
 	if (SoundHandle >= 0)
 		DMAudio.SetEntityStatus(SoundHandle, TRUE);
+	bBryxLights = false;
+#ifdef VICEEXT_SP_NEW_GAME_RESET
+	StreamAfterRainTimer = 0;
+#ifdef __EMSCRIPTEN__
+	char spReset[64];
+	snprintf(spReset, sizeof spReset, "VEX sp reset lluvia=%d", StreamAfterRainTimer);
+	ODTRACES(spReset);
+#endif
+#endif
 }
 
 void CWeather::Update(void)
@@ -168,10 +181,13 @@ void CWeather::Update(void)
 	if (NewWeatherType != WEATHER_RAINY || OldWeatherType != WEATHER_RAINY) {
 		LightningFlash = false;
 		LightningBurst = false;
+
+		if (bBryxLights) // 8.12: fuera el relampago, fuera su luz
+			HideBryxLights();
 	}
 	else{
 		if (LightningBurst) {
-			if ((CGeneral::GetRandomNumber() & 255) >= 32) {
+			if (!CGeneral::ChancePerTick(8)) {
 				// 0.875 probability
 				if (CTimer::GetTimeInMilliseconds() - LightningFlashLastChange > MIN_TIME_BETWEEN_LIGHTNING_FLASH_CHANGES) {
 					bool bOldLightningFlash = LightningFlash;
@@ -183,21 +199,25 @@ void CWeather::Update(void)
 			else {
 				// 0.125 probability
 				LightningBurst = false;
-				LightningDuration = Min(CTimer::GetFrameCounter() - LightningStart, 20);
+				LightningDuration = Min(CTimer::GetLogicalFrameCounter() - LightningStart, 20);
 				LightningFlash = false;
 				WhenToPlayLightningSound = CTimer::GetTimeInMilliseconds() + 150 * (20 - LightningDuration);
+
+				HideBryxLights(); // 8.12
 			}
 		}
 		else {
-			if (CGeneral::GetRandomNumber() >= 200) {
+			if (!CGeneral::ChancePerTick(328)) {
 				// lower probability on PC due to randomness bug
 				LightningFlash = false;
 			}
 			else {
 				LightningBurst = true;
-				LightningStart = CTimer::GetFrameCounter();
+				LightningStart = CTimer::GetLogicalFrameCounter();
 				LightningFlashLastChange = CTimer::GetTimeInMilliseconds();
 				LightningFlash = true;
+
+				ShowBryxLights(); // 8.12
 			}
 		}
 	}
@@ -249,7 +269,12 @@ void CWeather::Update(void)
 		CloudCoverage = 1.0f - InterpolationValue;
 	else
 		CloudCoverage = 0.0f;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if ((NewWeatherType != WEATHER_SUNNY && OldWeatherType != WEATHER_EXTRA_SUNNY) &&
+		(NewWeatherType != WEATHER_EXTRA_SUNNY && OldWeatherType != WEATHER_SUNNY))
+#else
 	if (NewWeatherType != WEATHER_SUNNY && OldWeatherType != WEATHER_EXTRA_SUNNY)
+#endif
 		CloudCoverage += InterpolationValue;
 	
 	// Fog
@@ -307,10 +332,13 @@ void CWeather::Update(void)
 	TrafficLightBrightness = Max(Foggyness, TrafficLightBrightness);
 	TrafficLightBrightness = Max(Rain, TrafficLightBrightness);
 
-	AddRain();
+	// AddRain genera gotas por llamada; a 90/120 fps se llamaba tres/cuatro
+	// veces mas por segundo que a 30. Solo en frames logicos de 30 Hz.
+	if (CTimer::GetLogicalFramesPassed() != 0)
+		AddRain();
 
 	if ((NewWeatherType == WEATHER_SUNNY || NewWeatherType == WEATHER_EXTRA_SUNNY) &&
-		!CGame::IsInInterior() && !CCutsceneMgr::IsRunning() && (CTimer::GetFrameCounter() & 7) == 0) {
+		!CGame::IsInInterior() && !CCutsceneMgr::IsRunning() && (CTimer::GetLogicalFrameCounter() & 7) == 0) {
 #ifdef FIX_BUGS
 		if (FindPlayerPed() && (!FindPlayerPed()->CheckIfInTheAir() || FindPlayerPed()->CheckIfInTheAir() && FindPlayerPed()->GetPosition().z < 7.5f &&
 			CClock::GetHours() > 6 && CClock::GetHours() < 18))
@@ -342,7 +370,7 @@ void CWeather::AddHeatHaze()
 
 void CWeather::AddBeastie()
 {
-	if(FindPlayerVehicle() || CTimer::GetFrameCounter()%10 || (CGeneral::GetRandomNumber()&5) == 0)
+	if(FindPlayerVehicle() || CTimer::GetLogicalFrameCounter()%10 || CGeneral::ChancePerTick(4))
 		return;
 	CVector pos = TheCamera.GetPosition();
 	float dist = CGeneral::GetRandomNumberInRange(90.0f, 60.0f);
@@ -444,12 +472,15 @@ void CWeather::AddRain()
 		startStreamAfterRain = 1;
 		StreamAfterRainTimer = 800;
 	}else if(startStreamAfterRain){
-		if(StreamAfterRainTimer > 0){
-			AddStreamAfterRain();
-			StreamAfterRainTimer--;
-		}else{
-			startStreamAfterRain = 0;
-			StreamAfterRainTimer = 800;
+		int32 odRainTicks = (int32)CTimer::GetLogicalFramesPassed();
+		if (odRainTicks > 0) {
+			if(StreamAfterRainTimer > 0){
+				AddStreamAfterRain();
+				StreamAfterRainTimer -= Min(StreamAfterRainTimer, odRainTicks);
+			}else{
+				startStreamAfterRain = 0;
+				StreamAfterRainTimer = 800;
+			}
 		}
 	}
 
@@ -643,7 +674,7 @@ void CWeather::RenderRainStreaks(void)
 #endif
 			}
 		}
-		else if ((CGeneral::GetRandomNumber() & 0xF00) == 0){
+		else if (CGeneral::ChancePerTick(16)){
 			// 1/16 probability
 			Streaks[i].direction = CVector(0.0f, 0.0f, -12.0f);
 			Streaks[i].position = 6.0f * TheCamera.GetForward() + TheCamera.GetPosition() + CVector(-1.8f * Streaks[i].direction.x, -1.8f * Streaks[i].direction.y, 8.0f);
@@ -681,6 +712,89 @@ void CWeather::RenderRainStreaks(void)
 	}
 	TempBufferVerticesStored = 0;
 	TempBufferIndicesStored = 0;
+}
+
+void
+CWeather::ShowBryxLights()
+{
+	if (bBryxLights)
+		return;
+
+	bBryxLights = true;
+
+	CTimeModelInfo* mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_BRYX_LIGHTS);
+	if (mi) {
+		mi->SetTimes(23, 5);
+
+		mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODBRYX_LIGHTS);
+		if (mi)
+			mi->SetTimes(23, 5);
+
+		mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_OD_CHARIOT_LGHTS01);
+		if (mi) {
+			mi->SetTimes(0, 0);
+
+			mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_OD_CHARIOT_LGHTS02);
+			if (mi) {
+				mi->SetTimes(0, 0);
+
+				mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODCHARIOT_LGHTS01);
+				if (mi) {
+					mi->SetTimes(0, 0);
+
+					mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODCHARIOT_LGHTS02);
+					if (mi)
+						mi->SetTimes(0, 0);
+				}
+			}
+		}
+	}
+
+#ifdef __EMSCRIPTEN__
+	char odT[128];
+	snprintf(odT, sizeof odT, "VEX mundo bryx=1 modelo=%d", (int)MI_BRYX_LIGHTS);
+	ODTRACES(odT);
+#endif
+}
+
+void
+CWeather::HideBryxLights()
+{
+	bBryxLights = false;
+
+	CTimeModelInfo* mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_BRYX_LIGHTS);
+	if (mi) {
+		mi->SetTimes(0, 0);
+
+		mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODBRYX_LIGHTS);
+		if (mi)
+			mi->SetTimes(0, 0);
+
+		mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_OD_CHARIOT_LGHTS01);
+		if (mi) {
+			mi->SetTimes(24, 5);
+
+			mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_OD_CHARIOT_LGHTS02);
+			if (mi) {
+				mi->SetTimes(23, 5);
+
+				mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODCHARIOT_LGHTS01);
+				if (mi) {
+					mi->SetTimes(24, 5);
+
+					mi = (CTimeModelInfo*)CModelInfo::GetModelInfo(MI_LODCHARIOT_LGHTS02);
+					if (mi)
+						mi->SetTimes(23, 5);
+				}
+			}
+		}
+	}
+
+#ifdef __EMSCRIPTEN__
+	char odT[128];
+	snprintf(odT, sizeof odT, "VEX mundo bryx=0 modelo=%d", (int)MI_BRYX_LIGHTS);
+	ODTRACES(odT);
+#endif
 }
 
 #ifdef SECUROM

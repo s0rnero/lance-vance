@@ -46,8 +46,9 @@ void CSetPieces::AddOne(uint8 type, CVector2D vTriggerInf, CVector2D vTriggerSup
 
 void CSetPieces::Update(void)
 {
-	int nFirst = NumSetPieces * (CTimer::GetFrameCounter() % 8) / 8;
-	int nLast = NumSetPieces * (CTimer::GetFrameCounter() % 8 + 1) / 8;
+	uint32 frame = CTimer::GetLogicalFrameCounter() % 8;
+	int nFirst = NumSetPieces * frame / 8;
+	int nLast = NumSetPieces * (frame + 1) / 8;
 	for (int i = nFirst; i < nLast; i++)
 		aSetPieces[i].Update();
 #ifndef MASTER

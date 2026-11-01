@@ -1,6 +1,9 @@
+#include <stdlib.h>
+
 #include "common.h"
 
 #include "RwHelper.h"
+#include "ondemand.h" // traza VEHCRISTAL (cristal del coche en el pase transparente)
 #include "templates.h"
 #include "main.h"
 #include "Entity.h"
@@ -11,8 +14,20 @@
 #include "Camera.h"
 #include "VisibilityPlugins.h"
 #include "World.h"
+#include "PlayerInfo.h" // traza ODDASH: coche del jugador
+
 #include "custompipes.h"
 #include "MemoryHeap.h"
+#include "ondemand.h" // PEDALPHA: alfa del clump de los peds en partida
+#include "Timer.h"
+#include "NodeName.h"
+
+#ifdef __EMSCRIPTEN__
+namespace rw { namespace gl3 { void SetOdTraceTag(const char *tag); } }
+#define OD_TAG(atomic) rw::gl3::SetOdTraceTag(GetFrameNodeName(RpAtomicGetFrame(atomic)))
+#else
+#define OD_TAG(atomic)
+#endif
 
 CLinkList<CVisibilityPlugins::AlphaObjectInfo> CVisibilityPlugins::m_alphaList;
 CLinkList<CVisibilityPlugins::AlphaObjectInfo> CVisibilityPlugins::m_alphaBoatAtomicList;
@@ -152,11 +167,19 @@ CVisibilityPlugins::SetRenderWareCamera(RwCamera *camera)
 	else
 		ms_cullCompsDist = sq(TheCamera.LODDistMultiplier * 20.0f);
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	ms_vehicleLod0Dist = sq(140.0f * VEHICLE_LODDIST_MULTIPLIER);
+	ms_vehicleLod1Dist = sq(160.0f * VEHICLE_LODDIST_MULTIPLIER);
+	ms_vehicleFadeDist = sq(170.0f * VEHICLE_LODDIST_MULTIPLIER);
+	ms_bigVehicleLod0Dist = sq(130.0f * VEHICLE_LODDIST_MULTIPLIER);
+	ms_bigVehicleLod1Dist = sq(220.0f * VEHICLE_LODDIST_MULTIPLIER);
+#else
 	ms_vehicleLod0Dist = sq(70.0f * VEHICLE_LODDIST_MULTIPLIER);
 	ms_vehicleLod1Dist = sq(90.0f * VEHICLE_LODDIST_MULTIPLIER);
 	ms_vehicleFadeDist = sq(100.0f * VEHICLE_LODDIST_MULTIPLIER);
 	ms_bigVehicleLod0Dist = sq(60.0f * VEHICLE_LODDIST_MULTIPLIER);
 	ms_bigVehicleLod1Dist = sq(150.0f * VEHICLE_LODDIST_MULTIPLIER);
+#endif
 	ms_pedLod1Dist = sq(60.0f * TheCamera.LODDistMultiplier);
 	ms_pedFadeDist = sq(70.0f * TheCamera.LODDistMultiplier);
 }
@@ -183,6 +206,90 @@ SetAlphaCB(RpMaterial *material, void *data)
 	return material;
 }
 
+struct OdAlphaSave
+{
+	uint8 *values;
+	int capacity;
+	int count;
+	int saved;
+	int idx;
+};
+
+static uint8 *s_odAlphaBuffer;
+static int s_odAlphaCapacity;
+
+static RpMaterial*
+OdAlphaCountCB(RpMaterial *material, void *data)
+{
+	(void)material;
+	++((OdAlphaSave*)data)->count;
+	return material;
+}
+
+static RpMaterial*
+OdAlphaSaveCB(RpMaterial *material, void *data)
+{
+	OdAlphaSave *state = (OdAlphaSave*)data;
+	if(state->saved < state->capacity)
+		state->values[state->saved++] = ((RwRGBA*)RpMaterialGetColor(material))->alpha;
+	return material;
+}
+
+static RpMaterial*
+OdAlphaRestoreCB(RpMaterial *material, void *data)
+{
+	OdAlphaSave *state = (OdAlphaSave*)data;
+	if(state->idx < state->saved)
+		((RwRGBA*)RpMaterialGetColor(material))->alpha = state->values[state->idx++];
+	return material;
+}
+
+static bool
+OdAlphaBegin(RpGeometry *geo, int alpha, OdAlphaSave *state)
+{
+	state->values = nil;
+	state->capacity = 0;
+	state->count = 0;
+	state->saved = 0;
+	state->idx = 0;
+	RpGeometryForAllMaterials(geo, OdAlphaCountCB, state);
+	if(state->count <= 0)
+		return false;
+	if(state->count > s_odAlphaCapacity){
+		int capacity = s_odAlphaCapacity ? s_odAlphaCapacity : 16;
+		while(capacity < state->count)
+			capacity *= 2;
+		uint8 *buffer = (uint8*)realloc(s_odAlphaBuffer, capacity);
+		if(buffer == nil)
+			return false;
+		s_odAlphaBuffer = buffer;
+		s_odAlphaCapacity = capacity;
+	}
+	state->values = s_odAlphaBuffer;
+	state->capacity = s_odAlphaCapacity;
+	RpGeometryForAllMaterials(geo, OdAlphaSaveCB, state);
+	RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)alpha);
+	return true;
+}
+
+static void
+OdAlphaEnd(RpGeometry *geo, OdAlphaSave *state)
+{
+#ifdef __EMSCRIPTEN__
+	{
+		static bool s_od17Alfa = false;
+		if (!s_od17Alfa) {
+			s_od17Alfa = true;
+			ODTRACES("VEX 17 alfa save");
+		}
+	}
+#endif
+	state->idx = 0;
+	RpGeometryForAllMaterials(geo, OdAlphaRestoreCB, state);
+	state->values = nil;
+	state->capacity = 0;
+}
+
 RpMaterial*
 SetTextureCB(RpMaterial *material, void *data)
 {
@@ -194,8 +301,10 @@ void
 CVisibilityPlugins::RenderAtomicList(CLinkList<AlphaObjectInfo> &list)
 {
 	CLink<AlphaObjectInfo> *node;
-	for(node = list.tail.prev; node != &list.head; node = node->prev)
+	for(node = list.tail.prev; node != &list.head; node = node->prev){
+		OD_TAG(node->item.atomic);
 		RENDERCALLBACK(node->item.atomic);
+	}
 }
 
 void
@@ -229,7 +338,9 @@ CVisibilityPlugins::RenderFadingEntities(CLinkList<AlphaObjectInfo> &list)
 		if(mi->GetModelType() == MITYPE_SIMPLE && mi->m_noZwrite)
 			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, FALSE);
 
-		if(e->bDistanceFade){
+		bool atomicModel = mi->GetModelType() == MITYPE_SIMPLE || mi->GetModelType() == MITYPE_TIME;
+		atomicModel = atomicModel && RwObjectGetType(e->m_rwObject) == rpATOMIC;
+		if(e->bDistanceFade && atomicModel){
 			DeActivateDirectional();
 			SetAmbientColours();
 			e->bImBeingRendered = true;
@@ -267,7 +378,11 @@ CVisibilityPlugins::RenderWheelAtomicCB(RpAtomic *atomic)
 
 	mi = GetAtomicModelInfo(atomic);
 	len = Sqrt(DistToCameraSq);
+	#ifdef VICEEXT_IMPROVED_TECH_PART
+	lodatm = mi->GetAtomicFromDistance(len * TheCamera.LODDistMultiplier / VEHICLE_LODDIST_MULTIPLIER - 315.0f);
+#else
 	lodatm = mi->GetAtomicFromDistance(len * TheCamera.LODDistMultiplier / VEHICLE_LODDIST_MULTIPLIER);
+#endif
 	if(lodatm){
 		if(RpAtomicGetGeometry(lodatm) != RpAtomicGetGeometry(atomic))
 			RpAtomicSetGeometry(atomic, RpAtomicGetGeometry(lodatm), rpATOMICSAMEBOUNDINGSPHERE);
@@ -301,9 +416,12 @@ CVisibilityPlugins::RenderAlphaAtomic(RpAtomic *atomic, int alpha)
 	geo = RpAtomicGetGeometry(atomic);
 	flags = RpGeometryGetFlags(geo);
 	RpGeometrySetFlags(geo, flags | rpGEOMETRYMODULATEMATERIALCOLOR);
-	RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)alpha);
+	OdAlphaSave state;
+	bool odSaveOk = OdAlphaBegin(geo, alpha, &state);
+	OD_TAG(atomic);
 	RENDERCALLBACK(atomic);
-	RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)255);
+	if(odSaveOk)
+		OdAlphaEnd(geo, &state);
 	RpGeometrySetFlags(geo, flags);
 	return atomic;
 }
@@ -343,17 +461,20 @@ CVisibilityPlugins::RenderFadingAtomic(RpAtomic *atomic, float camdist)
 	if(fadefactor > 1.0f)
 		fadefactor = 1.0f;
 	alpha = mi->m_alpha * fadefactor;
+	OD_TAG(atomic);
 	if(alpha == 255)
 		RENDERCALLBACK(atomic);
 	else{
 		RpGeometry *geo = RpAtomicGetGeometry(lodatm);
 		uint32 flags = RpGeometryGetFlags(geo);
 		RpGeometrySetFlags(geo, flags | rpGEOMETRYMODULATEMATERIALCOLOR);
-		RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)alpha);
+		OdAlphaSave state;
+		bool odSaveOk = OdAlphaBegin(geo, alpha, &state);
 		if(geo != RpAtomicGetGeometry(atomic))
 			RpAtomicSetGeometry(atomic, geo, rpATOMICSAMEBOUNDINGSPHERE); // originally 5 (mistake?)
 		RENDERCALLBACK(atomic);
-		RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)255);
+		if(odSaveOk)
+			OdAlphaEnd(geo, &state);
 		RpGeometrySetFlags(geo, flags);
 	}
 
@@ -365,22 +486,143 @@ CVisibilityPlugins::RenderFadingAtomic(RpAtomic *atomic, float camdist)
 
 
 
+#ifdef __EMSCRIPTEN__
+// Traza de medida (30/10, 36.3): el `chassis_hi` del coche que lleva el jugador,
+// comparado material a material contra el DFF. Una cabecera con los totales del
+// atomic y una linea por material con el nombre de la textura, si existe y los
+// triangulos que le apuntan, leidos de dos sitios: la malla ya instanciada
+// (`meshHeader`, que es lo que se dibuja) y el array de triangulos leido del DFF
+// (`geo->triangles`). Si `tris` y `tris_dff` difieren, el reparto por material se
+// rompio al montar la malla; si coinciden y la textura no existe, falta el TXD; si
+// todo coincide, el fallo es del dibujo, no de los datos. Se emite una sola vez
+// por atomic, al entrar al pase de detalle (no por frame).
+static void
+OdDumpPlayerVehicleChassis(RpAtomic *atomic)
+{
+	static RpAtomic *odVistos[8];
+	static int odNVistos = 0;
+	CEntity *ent;
+	RpGeometry *geo;
+	rw::MeshHeader *mh;
+	CBaseModelInfo *mi;
+	const char *nm;
+	char t[248];
+	int i, n;
+
+	ent = FindPlayerEntity();
+	if(ent == nil || !ent->IsVehicle() || ent->m_rwObject == nil)
+		return;
+	if(RwObjectGetType(ent->m_rwObject) != rpCLUMP)
+		return;
+	if((RpClump*)ent->m_rwObject != RpAtomicGetClump(atomic))
+		return;
+	for(i = 0; i < odNVistos; i++)
+		if(odVistos[i] == atomic)
+			return;
+	if(odNVistos >= (int)(sizeof(odVistos)/sizeof(odVistos[0])))
+		return;
+	odVistos[odNVistos++] = atomic;
+
+	geo = RpAtomicGetGeometry(atomic);
+	if(geo == nil)
+		return;
+	mh = geo->meshHeader;
+	n = geo->matList.numMaterials;
+	mi = CModelInfo::GetModelInfo(ent->GetModelIndex());
+	nm = GetFrameNodeName(RpAtomicGetFrame(atomic));
+	snprintf(t, sizeof t, "ODDASH modelo=%s atomic=%s verts=%d tris=%d mats=%d mallas=%d",
+		mi ? mi->GetModelName() : "?", nm ? nm : "?",
+		RpGeometryGetNumVertices(geo), RpGeometryGetNumTriangles(geo),
+		n, mh ? (int)mh->numMeshes : -1);
+	ODTRACES(t);
+
+	for(i = 0; i < n; i++){
+		RpMaterial *m = RpGeometryGetMaterial(geo, i);
+		RwTexture *tex = m ? RpMaterialGetTexture(m) : nil;
+		const RwRGBA *col = m ? RpMaterialGetColor(m) : nil;
+		int trisMalla = -1;
+		int trisDff = 0;
+		int j;
+
+		if(mh && (mh->flags & rw::MeshHeader::TRISTRIP) == 0 && i < mh->numMeshes)
+			trisMalla = (int)(mh->getMeshes()[i].numIndices / 3);
+		for(j = 0; geo->triangles && j < geo->numTriangles; j++)
+			if(geo->triangles[j].matId == i)
+				trisDff++;
+
+		snprintf(t, sizeof t, "ODDASH m=%d tex=%s existe=%d alfa=%d tris=%d tris_dff=%d",
+			i, tex ? RwTextureGetName(tex) : "-", tex ? 1 : 0,
+			col ? (int)col->alpha : -1, trisMalla, trisDff);
+		ODTRACES(t);
+	}
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+static void
+OdTraceDoorCull(RpAtomic *atomic, float dot, uint32 flags)
+{
+	static RpAtomic *odDoorVistos[16];
+	static int odNDoorVistos = 0;
+	CEntity *ent;
+	RwFrame *frame;
+	RwMatrix *ltm;
+	const char *nm;
+	int i;
+	float cull;
+	char t[240];
+
+	ent = FindPlayerEntity();
+	if(ent == nil || !ent->IsVehicle() || ent->m_rwObject == nil)
+		return;
+	if((RpClump*)ent->m_rwObject != RpAtomicGetClump(atomic))
+		return;
+	frame = RpAtomicGetFrame(atomic);
+	nm = frame ? GetFrameNodeName(frame) : nil;
+	if(nm == nil || strncmp(nm, "door_", 5) != 0)
+		return;
+	for(i = 0; i < odNDoorVistos; i++)
+		if(odDoorVistos[i] == atomic)
+			return;
+	if(odNDoorVistos >= (int)(sizeof(odDoorVistos)/sizeof(odDoorVistos[0])))
+		return;
+	odDoorVistos[odNDoorVistos++] = atomic;
+	cull = DistToCameraSq > CVisibilityPlugins::ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 &&
+		PitchToCamera < 0.2f && dot > 0.0f &&
+		((flags & ATOMIC_FLAG_ANGLECULL) || 0.1f*DistToCameraSq < dot*dot);
+	ltm = RwFrameGetLTM(frame);
+	snprintf(t, sizeof t, "VEHDOOR2 atomic=%s dot=%.2f flags=0x%X dist=%.1f cull=%.0f pitch=%.2f at=(%.2f,%.2f,%.2f)",
+		nm, (double)dot, (unsigned)flags, (double)DistToCameraSq, (double)cull,
+		(double)PitchToCamera, ltm ? (double)ltm->at.x : 0.0, ltm ? (double)ltm->at.y : 0.0,
+		ltm ? (double)ltm->at.z : 0.0);
+	ODTRACES(t);
+}
+#endif
+
 RpAtomic*
 CVisibilityPlugins::RenderVehicleHiDetailCB(RpAtomic *atomic)
 {
 	RwFrame *clumpframe;
+
+#ifdef __EMSCRIPTEN__
+	OdDumpPlayerVehicleChassis(atomic);
+#endif
 	float dot;
 	uint32 flags;
 
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_vehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
+			RwFrameGetLTM(clumpframe), flags);
+#ifdef __EMSCRIPTEN__
+		OdTraceDoorCull(atomic, dot, flags);
+#endif
 		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f){
-			dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
-				RwFrameGetLTM(clumpframe), flags);
 			if(dot > 0.0f && ((flags & ATOMIC_FLAG_ANGLECULL) || 0.1f*DistToCameraSq < dot*dot))
 				return atomic;
 		}
+		OD_TAG(atomic);
 		RENDERCALLBACK(atomic);
 	}
 	return atomic;
@@ -396,6 +638,32 @@ CVisibilityPlugins::RenderVehicleHiDetailAlphaCB(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_vehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+#ifdef __EMSCRIPTEN__
+		{
+			static RpAtomic *odCristalVisto[16];
+			static int odNCristalVisto = 0;
+			const char *odNm = GetFrameNodeName(RpAtomicGetFrame(atomic));
+			if(odNm && DistToCameraSq < 400.0f &&
+			   (strncmp(odNm, "window", 6) == 0 || strncmp(odNm, "windscreen", 10) == 0)){
+				int odI, odYa = 0;
+				for(odI = 0; odI < odNCristalVisto; odI++)
+					if(odCristalVisto[odI] == atomic)
+						odYa = 1;
+				if(!odYa && odNCristalVisto < 16){
+					RpGeometry *odG = RpAtomicGetGeometry(atomic);
+					RpMaterial *odM = odG ? RpGeometryGetMaterial(odG, 0) : nil;
+					const RwRGBA *odC = odM ? RpMaterialGetColor(odM) : nil;
+					char odT[200];
+					odCristalVisto[odNCristalVisto++] = atomic;
+					snprintf(odT, sizeof odT, "VEHCRISTAL atomic=%s tris=%d alfa=%d tex=%d dist=%.1f cull=%.0f",
+						odNm, odG ? RpGeometryGetNumTriangles(odG) : -1,
+						odC ? (int)odC->alpha : -1, odM && RpMaterialGetTexture(odM) ? 1 : 0,
+						Sqrt(DistToCameraSq), ms_cullCompsDist);
+					ODTRACES(odT);
+				}
+			}
+		}
+#endif
 		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
 			RwFrameGetLTM(clumpframe), flags);
 		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f)
@@ -424,12 +692,13 @@ CVisibilityPlugins::RenderVehicleHiDetailCB_BigVehicle(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_bigVehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
+			RwFrameGetLTM(clumpframe), flags);
 		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f){
-			dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
-				RwFrameGetLTM(clumpframe), flags);
 			if(dot > 0.0f)
 				return atomic;
 		}
+		OD_TAG(atomic);
 		RENDERCALLBACK(atomic);
 	}
 	return atomic;
@@ -669,6 +938,20 @@ CVisibilityPlugins::RenderPedCB(RpAtomic *atomic)
 	dist = GetDistanceSquaredFromCamera(RpClumpGetFrame(clump));
 	if(dist < ms_pedLod1Dist){
 		alpha = GetClumpAlpha(clump);
+#ifdef __EMSCRIPTEN__
+		if(alpha != 255){
+			static uint32 odNextPedAlpha = 0;
+			uint32 odNow = CTimer::GetTimeInMilliseconds();
+			if(odNow >= odNextPedAlpha){
+				odNextPedAlpha = odNow + 2000;
+				char odT[160];
+				CClumpModelInfo *odMi = (CClumpModelInfo*)GetClumpModelInfo(clump);
+				snprintf(odT, sizeof odT, "PEDALPHA modelo=%s alpha=%d",
+					odMi ? odMi->GetModelName() : "?", alpha);
+				ODTRACES(odT);
+			}
+		}
+#endif
 		if(alpha == 255)
 			RENDERCALLBACK(atomic);
 		else
@@ -946,6 +1229,7 @@ void*
 CVisibilityPlugins::ClumpCopyConstructor(void *dst, const void *src, int32, int32)
 {
 	CLUMPEXT(dst)->visibilityCB = CLUMPEXT(src)->visibilityCB;
+	CLUMPEXT(dst)->alpha = 0xFF;
 	return dst;
 }
 

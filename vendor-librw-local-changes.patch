@@ -16,10 +16,36 @@ index f228298..33031e7 100644
  
  // Atomic Rights plugin
 diff --git a/src/d3d/d3d.cpp b/src/d3d/d3d.cpp
-index f1f5f49..292deb3 100644
+index f1f5f49..848c8b1 100644
 --- a/src/d3d/d3d.cpp
 +++ b/src/d3d/d3d.cpp
-@@ -860,12 +860,31 @@ rasterToImage(Raster *raster)
+@@ -841,6 +841,25 @@ rasterToImage(Raster *raster)
+ 	int32 depth;
+ 	Image *image;
+ 
++	// 24/10 (sexta): guarda de tamano. Aqui se pedia memoria con las
++	// dimensiones que trajera el raster, y `Image::allocate` hace
++	// `stride = width*bpp; malloc(stride*height)` con `int32`: un raster con
++	// dimensiones corruptas (cabecera de textura truncada o formato no
++	// soportado) pedia un bloque imposible y el malloc de WASM trapaba con
++	// "memory access out of bounds". Era el cuelgue sin motivo aparente: la
++	// pila del error era `rasterToImage -> Image::allocate -> mustmalloc`
++	// dentro de `CTxdStore::FinishLoadTxd`, con el heap a 81 MB de 512 MB, o
++	// sea no era falta de memoria sino un tamano absurdo. Un raster fuera de
++	// rango no se convierte y devuelve nil, que ya es un camino soportado
++	// (`hackRead convert NIL`).
++	if(raster->width <= 0 || raster->height <= 0 ||
++	   raster->width > 4096 || raster->height > 4096){
++#ifdef __EMSCRIPTEN__
++		printf("[raster] descartado w=%d h=%d fmt=0x%x\n", raster->width, raster->height, raster->format);
++#endif
++		return nil;
++	}
++
+ 	bool unlock = false;
+ 	if(raster->pixels == nil){
+ 		raster->lock(0, Raster::LOCKREAD);
+@@ -860,12 +879,31 @@ rasterToImage(Raster *raster)
  		switch(natras->format){
  		case D3DFMT_DXT1:
  			image->setPixelsDXT(1, pix);
@@ -52,7 +78,7 @@ index f1f5f49..292deb3 100644
  			image->setPixelsDXT(5, pix);
  			break;
 diff --git a/src/d3d/d3d8.cpp b/src/d3d/d3d8.cpp
-index 671948f..81dfd01 100644
+index 671948f..824a6eb 100644
 --- a/src/d3d/d3d8.cpp
 +++ b/src/d3d/d3d8.cpp
 @@ -2,6 +2,9 @@
@@ -139,7 +165,7 @@ index 671948f..81dfd01 100644
  Texture*
  readNativeTexture(Stream *stream)
  {
-@@ -568,6 +638,26 @@ readNativeTexture(Stream *stream)
+@@ -568,6 +638,39 @@ readNativeTexture(Stream *stream)
  		}
  	}
  
@@ -154,25 +180,44 @@ index 671948f..81dfd01 100644
 +	// pallength == 0: con paleta el orden del stream es paleta->niveles, asi que
 +	// adelantar el nivel 0 corromperia la paleta (caso raro, pero no se toca).
 +	if(compression == 1 && !hasAlpha && numLevels >= 1 && pallength == 0){
-+		odPre0Size = stream->readU32();
-+		odPre0 = rwNewT(uint8, odPre0Size, MEMDUR_FUNCTION | ID_IMAGE);
-+		stream->read8(odPre0, odPre0Size);
-+		odScanA = dxt1HasAlpha(odPre0, odPre0Size);
-+		if(odScanA)
-+			hasAlpha = 1;
++		uint32 odStreamSize = stream->readU32();
++		odPre0 = odStreamSize ? rwNewT(uint8, odStreamSize, MEMDUR_FUNCTION | ID_IMAGE) : nil;
++		if(odPre0 == nil){
++			// Sin memoria (o tamano disparatado): se salta el bloque y no se
++			// aplica la correccion de alfa. Se mantiene la posicion del
++			// stream para que los niveles siguientes se lean bien.
++			odPre0Size = 0;
++			while(odStreamSize > 0){
++				uint32 odChunk = odStreamSize > 1048576 ? 1048576 : odStreamSize;
++				stream->seek((int32)odChunk);
++				odStreamSize -= odChunk;
++			}
++		}else{
++			odPre0Size = odStreamSize;
++			stream->read8(odPre0, odPre0Size);
++			odScanA = dxt1HasAlpha(odPre0, odPre0Size);
++			if(odScanA)
++				hasAlpha = 1;
++		}
 +	}
 +#endif
 +
  	Raster *raster;
  	D3dRaster *ras;
  	if(compression){
-@@ -589,6 +679,16 @@ readNativeTexture(Stream *stream)
+@@ -589,14 +692,54 @@ readNativeTexture(Stream *stream)
  	uint32 size;
  	uint8 *data;
  	for(int32 i = 0; i < numLevels; i++){
 +#ifdef __EMSCRIPTEN__
 +		if(i == 0 && odPre0){
 +			if(i < raster->getNumLevels()){
++				uint32 odNeed = ras->texture ? (uint32)getLevelSize(raster, 0) : 0;
++				if(odPre0Size > odNeed){
++					// El fichero declara mas bytes de los que caben en el
++					// nivel: copiarlos reventaria el heap de WASM.
++					odPre0Size = odNeed;
++				}
 +				data = raster->lock(0, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
 +				memcpy(data, odPre0, odPre0Size);
 +				raster->unlock(0);
@@ -182,8 +227,31 @@ index 671948f..81dfd01 100644
 +#endif
  		size = stream->readU32();
  		if(i < raster->getNumLevels()){
- 			data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-@@ -597,6 +697,11 @@ readNativeTexture(Stream *stream)
+-			data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
+-			stream->read8(data, size);
+-			raster->unlock(i);
++			int32 need = ras->texture ? getLevelSize(raster, i) : 0;
++			if(need <= 0){
++				// Sin nivel utilizable: no se escribe nada y se salta el bloque.
++				stream->seek(size);
++			}else{
++				if((int64)size > (int64)need){
++					// El fichero declara mas bytes de los que caben en el
++					// nivel: copiarlos reventaria el heap de WASM (y con el
++					// heap corrupto el motor peta mas tarde al colgar la
++					// textura). Se rellena solo lo que cabe y se salta el resto.
++					uint32 excess = size - (uint32)need;
++					size = (uint32)need;
++					while(excess > 0){
++						uint32 odChunk = excess > 1048576 ? 1048576 : excess;
++						stream->seek((int32)odChunk);
++						excess -= odChunk;
++					}
++				}
++				data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
++				stream->read8(data, size);
++				raster->unlock(i);
++			}
  		}else
  			stream->seek(size);
  	}
@@ -195,8 +263,126 @@ index 671948f..81dfd01 100644
  	return tex;
  }
  
+diff --git a/src/geometry.cpp b/src/geometry.cpp
+index 5d31c34..5e45042 100644
+--- a/src/geometry.cpp
++++ b/src/geometry.cpp
+@@ -134,16 +134,52 @@ Geometry*
+ Geometry::streamRead(Stream *stream)
+ {
+ 	uint32 version;
++	uint32 structLength = 0;
+ 	GeoStreamData buf;
+ 	SurfaceProperties surfProps;
+ 	MaterialList *ret;
+ 	static SurfaceProperties reset = { 1.0f, 1.0f, 1.0f };
+ 
+-	if(!findChunk(stream, ID_STRUCT, nil, &version)){
++	if(!findChunk(stream, ID_STRUCT, &structLength, &version)){
+ 		RWERROR((ERR_CHUNK, "STRUCT"));
+ 		return nil;
+ 	}
+ 	stream->read32(&buf, sizeof(buf));
++	// 24/10 (guardia de cuelgues): el STRUCT tiene que poder contener lo que dice
++	// su cabecera. Con un DFF corrupto o truncado (`numVertices`/`numTriangles`
++	// basura) `Geometry::create` calculaba un tamano que desbordaba el int32 y
++	// luego rellenaba `numTriangles` entradas: la escritura se salia del bloque,
++	// corrompia las listas de dlmalloc y el siguiente malloc moria con "memory
++	// access out of bounds" (visto el 24/10 en Geometry::create y, en la misma
++	// sesion, en gl3::instance). Se rechaza el atomic antes de reservar nada: el
++	// motor marca el modelo como fallido (traza `FAIL model <nombre>`) en vez de
++	// arrastrar el heap roto. Los topes son de cordura, no de rendimiento: el
++	// DFF mas grande del juego no llega ni a una decima parte.
++	{
++		int32 texSets = (buf.flags & 0xFF0000) >> 16;
++		if(texSets == 0)
++			texSets = (buf.flags & Geometry::TEXTURED) ? 1 :
++			          (buf.flags & Geometry::TEXTURED2) ? 2 : 0;
++		uint64 need = sizeof(GeoStreamData);
++		if(version < 0x34000)
++			need += 12;
++		if(!(buf.flags & Geometry::NATIVE)){
++			if(buf.flags & Geometry::PRELIT)
++				need += 4*(uint64)buf.numVertices;
++			need += 8*(uint64)texSets*(uint64)buf.numVertices;
++			need += 8*(uint64)buf.numTriangles;
++		}
++		if(buf.numVertices > 0)
++			need += 24*(uint64)buf.numMorphTargets;
++		if(buf.numVertices < 0 || buf.numTriangles < 0 || buf.numMorphTargets <= 0 ||
++		   buf.numVertices > 2000000 || buf.numTriangles > 4000000 ||
++		   need > (uint64)structLength){
++			printf("[rw] GEOSTRUCT rechazado verts=%d tris=%d morph=%d flags=%08x struct=%u need=%u\n",
++			       buf.numVertices, buf.numTriangles, buf.numMorphTargets,
++			       buf.flags, structLength, (uint32)need);
++			return nil;
++		}
++	}
+ 	Geometry *geo = Geometry::create(buf.numVertices,
+ 	                                 buf.numTriangles, buf.flags);
+ 	if(geo == nil)
+diff --git a/src/geoplg.cpp b/src/geoplg.cpp
+index c1e1356..fdfe965 100644
+--- a/src/geoplg.cpp
++++ b/src/geoplg.cpp
+@@ -38,6 +38,11 @@ Geometry::allocateMeshes(int32 numMeshes, uint32 numIndices, bool32 noIndices)
+ 	uint16 *indices;
+ 	int32 oldNumMeshes;
+ 	int32 i;
++	if(numMeshes < 0 || numMeshes > 100000 || numIndices > 4000000){
++		printf("[rw] MESHALLOC rechazado meshes=%d indices=%u\n", numMeshes, (uint32)numIndices);
++		numMeshes = 0;
++		numIndices = 0;
++	}
+ 	sz = sizeof(MeshHeader) + numMeshes*sizeof(Mesh);
+ 	if(!noIndices)
+ 		sz += numIndices*sizeof(uint16);
+@@ -117,6 +122,20 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
+ 	Geometry *geo = (Geometry*)object;
+ 
+ 	stream->read32(&mhs, sizeof(MeshHeaderStream));
++	{
++		uint64 need = sizeof(MeshHeaderStream) + (uint64)mhs.numMeshes*sizeof(MeshStream)
++		            + (uint64)mhs.totalIndices*4;
++		if(mhs.numMeshes > 100000 || mhs.totalIndices > 4000000 ||
++		   (!(geo->flags & Geometry::NATIVE) && len > (int32)sizeof(MeshHeaderStream) && need > (uint64)len)){
++			printf("[rw] MESHBAD meshes=%u indices=%u len=%d need=%u\n",
++			       (uint32)mhs.numMeshes, (uint32)mhs.totalIndices, len, (uint32)need);
++			geo->meshHeader = nil;
++			geo->allocateMeshes(0, 0, false);
++			if(len > (int32)sizeof(MeshHeaderStream))
++				stream->seek(len - sizeof(MeshHeaderStream));
++			return stream;
++		}
++	}
+ 	// Have to do this dance for War Drum's meshes
+ 	bool32 hasData = len > int32(sizeof(MeshHeaderStream)+mhs.numMeshes*sizeof(MeshStream));
+ 	assert(geo->meshHeader == nil);
+@@ -130,7 +149,21 @@ readMesh(Stream *stream, int32 len, void *object, int32, int32)
+ 	for(uint32 i = 0; i < mh->numMeshes; i++){
+ 		stream->read32(&ms, sizeof(MeshStream));
+ 		mesh->numIndices = ms.numIndices;
+-		mesh->material = geo->matList.materials[ms.matIndex];
++		// 26/10: DFF con `matIndex` fuera de la lista (editado/reconvertido) dejaba
++		// aqui un puntero basura; se dibujaba y reventaba en setMaterial, matando el
++		// frame y congelando el juego. Se cae al primer material (o a ninguno) y se
++		// avisa una sola vez.
++		if(ms.matIndex >= 0 && ms.matIndex < geo->matList.numMaterials)
++			mesh->material = geo->matList.materials[ms.matIndex];
++		else{
++			static int32 reported = 0;
++			if(reported < 8){
++				reported++;
++				printf("[rw] MESHBADMAT matIndex=%d mats=%d\n",
++				       (int)ms.matIndex, (int)geo->matList.numMaterials);
++			}
++			mesh->material = geo->matList.numMaterials > 0 ? geo->matList.materials[0] : nil;
++		}
+ 		if(geo->flags & Geometry::NATIVE){
+ 			// War Drum OpenGL stores uint16 indices here
+ 			if(hasData){
 diff --git a/src/gl/gl3device.cpp b/src/gl/gl3device.cpp
-index 9df47ee..3feafdf 100644
+index 9df47ee..025fb03 100644
 --- a/src/gl/gl3device.cpp
 +++ b/src/gl/gl3device.cpp
 @@ -2,6 +2,9 @@
@@ -209,7 +395,16 @@ index 9df47ee..3feafdf 100644
  
  #include "../rwbase.h"
  #include "../rwerror.h"
-@@ -99,6 +102,17 @@ const char *shaderDecl310es =
+@@ -10,6 +13,8 @@
+ #include "../rwengine.h"
+ #include "../rwpipeline.h"
+ #include "../rwobjects.h"
++#include "../rwanim.h"
++#include "../rwplugins.h"
+ #ifdef RW_OPENGL
+ 
+ #include "rwgl3.h"
+@@ -99,6 +104,17 @@ const char *shaderDecl310es =
  "#define FRAGCOLOR(c) (fragColor = c)\n"
  "precision highp float;\n"
  "precision highp int;\n";
@@ -227,7 +422,16 @@ index 9df47ee..3feafdf 100644
  
  const char *shaderDecl;
  
-@@ -576,6 +590,37 @@ setAddressV(uint32 stage, int32 addressing)
+@@ -135,6 +151,8 @@ int32 u_lightColor;
+ 
+ int32 u_matColor;
+ int32 u_surfProps;
++	int32 u_specularPower;
++	int32 u_specColor;
+ 
+ Shader *defaultShader, *defaultShader_noAT;
+ Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
+@@ -576,6 +594,37 @@ setAddressV(uint32 stage, int32 addressing)
  	}
  }
  
@@ -265,7 +469,7 @@ index 9df47ee..3feafdf 100644
  static void
  setRasterStageOnly(uint32 stage, Raster *raster)
  {
-@@ -586,6 +631,17 @@ setRasterStageOnly(uint32 stage, Raster *raster)
+@@ -586,6 +635,21 @@ setRasterStageOnly(uint32 stage, Raster *raster)
  		if(raster){
  			assert(raster->platform == PLATFORM_GL3);
  			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, raster, nativeRasterOffset);
@@ -275,7 +479,11 @@ index 9df47ee..3feafdf 100644
 +			// Paridad desktop: blanco opaco, sin tocar el whitetex compartido.
 +			if(natras->texid == 0){
 +				bindTexture(whitetex);
-+				alpha = 0;
++				// 21/10: con alfa 0 el modelo se dibujaba INVISIBLE (el
++				// jugador veia peds y NPCs "transparentes" cuando un skin se
++				// recargaba). El comentario de arriba ya decia "blanco opaco":
++				// el alfa va a 1 (opaco) y no a 0.
++				alpha = 1;
 +			}else{
 +#else
 +			{
@@ -283,7 +491,7 @@ index 9df47ee..3feafdf 100644
  			bindTexture(natras->texid);
  
  			rwStateCache.texstage[stage].filter = (rw::Texture::FilterMode)natras->filterMode;
-@@ -593,6 +649,11 @@ setRasterStageOnly(uint32 stage, Raster *raster)
+@@ -593,6 +657,11 @@ setRasterStageOnly(uint32 stage, Raster *raster)
  			rwStateCache.texstage[stage].addressingV = (rw::Texture::Addressing)natras->addressV;
  
  			alpha = natras->hasAlpha;
@@ -295,7 +503,7 @@ index 9df47ee..3feafdf 100644
  		}else{
  			bindTexture(whitetex);
  			alpha = 0;
-@@ -620,6 +681,15 @@ setRasterStage(uint32 stage, Raster *raster)
+@@ -620,6 +689,17 @@ setRasterStage(uint32 stage, Raster *raster)
  		if(raster){
  			assert(raster->platform == PLATFORM_GL3);
  			Gl3Raster *natras = PLUGINOFFSET(Gl3Raster, raster, nativeRasterOffset);
@@ -303,7 +511,9 @@ index 9df47ee..3feafdf 100644
 +			// Igual que setRasterStageOnly: raster sin GL (texid 0) -> blanco.
 +			if(natras->texid == 0){
 +				bindTexture(whitetex);
-+				alpha = 0;
++				// 21/10: con alfa 0 el modelo se dibujaba INVISIBLE (el jugador
++				// veia peds y NPCs "transparentes"). Blanco opaco: alfa 1.
++				alpha = 1;
 +			}else{
 +#else
 +			{
@@ -311,7 +521,7 @@ index 9df47ee..3feafdf 100644
  			bindTexture(natras->texid);
  			uint32 filter = rwStateCache.texstage[stage].filter;
  			uint32 addrU = rwStateCache.texstage[stage].addressingU;
-@@ -643,6 +713,11 @@ setRasterStage(uint32 stage, Raster *raster)
+@@ -643,6 +723,11 @@ setRasterStage(uint32 stage, Raster *raster)
  				natras->addressV = addrV;
  			}
  			alpha = natras->hasAlpha;
@@ -323,7 +533,62 @@ index 9df47ee..3feafdf 100644
  		}else{
  			bindTexture(whitetex);
  			alpha = 0;
-@@ -675,6 +750,15 @@ evictRaster(Raster *raster)
+@@ -660,6 +745,54 @@ setRasterStage(uint32 stage, Raster *raster)
+ 	}
+ }
+ 
++#ifdef __EMSCRIPTEN__
++// Traza de material (17): una linea por MATERIAL distinto (no por color). Sirve
++// para separar "este material no se dibuja" de "se dibuja transparente" o "lo
++// descarta el alpha test": el interior del coche (0,0,0,255 sin textura) y el
++// cristal (81,81,81,89 sin textura) son los dos casos que faltan en pantalla.
++// Antes deduplicaba por color y se agotaba con los 16 alfas del fundido de un
++// solo coche, asi que nunca llegaba a trazar el chasis. Ahora la clave es el
++// puntero del material (estable por geometria), los materiales con textura que
++// no estan a alfa 255 se saltan (fundido de aparicion) y la linea dice de que
++// atomic sale el material, que es lo que distingue "no se dibuja" de "se dibuja
++// y no se ve".
++static const char *odTraceTag = nil;
++static uint32 odTraceSeq = 0;
++
++void
++SetOdTraceTag(const char *tag)
++{
++	odTraceTag = tag;
++}
++
++void
++odMatTrace(Material *m, InstanceData *inst)
++{
++	static Material *seen[512];
++	static int n = 0;
++	uint32 seq = odTraceSeq++;
++	if(n >= (int)(sizeof(seen)/sizeof(seen[0])))
++		return;	// tabla llena: no se recorre en cada dibujo (es el camino caliente)
++	if(m->texture && m->color.alpha != 0xFF)
++		return;
++	for(int i = 0; i < n; i++)
++		if(seen[i] == m)
++			return;
++	if(n >= (int)(sizeof(seen)/sizeof(seen[0])))
++		return;
++	seen[n++] = m;
++	char t[288];
++	snprintf(t, sizeof t, "MATVEX atom=%s seq=%u tex=%d c=%d,%d,%d,%d vA=%d tA=%d blend=%d at=%d func=%u ref=%.3f cull=%d zw=%d idx=%u",
++		odTraceTag ? odTraceTag : "-", seq,
++		m->texture ? 1 : 0, m->color.red, m->color.green, m->color.blue, m->color.alpha,
++		(int)rwStateCache.vertexAlpha, (int)rwStateCache.textureAlpha,
++		(int)rwStateCache.blendEnable, (int)rwStateCache.alphaTestEnable,
++		alphaFunc, alphaRef, (int)rwStateCache.cullmode, (int)rwStateCache.zwrite,
++		(uint32)(inst ? inst->numIndex : 0));
++	EM_ASM({ try { (window.__odq = window.__odq || []).push(UTF8ToString($0)); } catch (e) {} }, t);
++}
++#endif
++
+ void
+ evictRaster(Raster *raster)
+ {
+@@ -675,6 +808,15 @@ evictRaster(Raster *raster)
  void
  setTexture(int32 stage, Texture *tex)
  {
@@ -339,7 +604,23 @@ index 9df47ee..3feafdf 100644
  	if(tex == nil || tex->raster == nil){
  		setRasterStage(stage, nil);
  		return;
-@@ -1411,11 +1495,28 @@ showRaster(Raster *raster, uint32 flags)
+@@ -1093,6 +1235,15 @@ setMaterial(const RGBA &color, const SurfaceProperties &surfaceprops, float extr
+ 	surfProps[2] = surfaceprops.diffuse;
+ 	surfProps[3] = extraSurfProp;
+ 	setUniform(u_surfProps, surfProps);
++	// PORTADO -- GTA VC original de PC: el exponente del especular Blinn por luz.
++	float specPower[4];
++	specPower[0] = MatFX::specularFresnel;
++	specPower[1] = MatFX::specularPower;
++	specPower[2] = specPower[3] = 0.0f;
++	setUniform(u_specularPower, specPower);
++	RGBAf specCol;
++	convColor(&specCol, &MatFX::specularColor);
++	setUniform(u_specColor, &specCol);
+ }
+ 
+ void
+@@ -1411,11 +1562,28 @@ showRaster(Raster *raster, uint32 flags)
  	else
  		SDL_GL_SetSwapInterval(0);
  	SDL_GL_SwapWindow(glGlobals.window);
@@ -368,7 +649,7 @@ index 9df47ee..3feafdf 100644
  	glfwSwapBuffers(glGlobals.window);
  #endif
  }
-@@ -1633,11 +1734,45 @@ makeVideoModeList(void)
+@@ -1633,11 +1801,45 @@ makeVideoModeList(void)
  
  	modes = glfwGetVideoModes(glGlobals.monitor, &num);
  	rwFree(glGlobals.modes);
@@ -415,7 +696,7 @@ index 9df47ee..3feafdf 100644
  
  	for(i = 0; i < num; i++)
  		addVideoMode(&modes[i]);
-@@ -1718,7 +1853,15 @@ startGLFW(void)
+@@ -1718,7 +1920,15 @@ startGLFW(void)
  		glfwWindowHint(GLFW_SAMPLES, glGlobals.numSamples);
  
  	int i;
@@ -432,7 +713,7 @@ index 9df47ee..3feafdf 100644
  		glfwWindowHint(GLFW_CLIENT_API, profiles[i].gl);
  		glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, profiles[i].major);
  		glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, profiles[i].minor);
-@@ -1727,6 +1870,9 @@ startGLFW(void)
+@@ -1727,6 +1937,9 @@ startGLFW(void)
  			win = glfwCreateWindow(mode->mode.width, mode->mode.height, glGlobals.winTitle, glGlobals.monitor, nil);
  		else
  			win = glfwCreateWindow(glGlobals.winWidth, glGlobals.winHeight, glGlobals.winTitle, nil, nil);
@@ -442,7 +723,7 @@ index 9df47ee..3feafdf 100644
  		if(win){
  			gl3Caps.gles = profiles[i].gl == GLFW_OPENGL_ES_API;
  			gl3Caps.glversion = profiles[i].major*10 + profiles[i].minor;
-@@ -1740,6 +1886,9 @@ startGLFW(void)
+@@ -1740,6 +1953,9 @@ startGLFW(void)
  	glfwMakeContextCurrent(win);
  
  	/* Init GLAD */
@@ -452,7 +733,7 @@ index 9df47ee..3feafdf 100644
  	if (!((gl3Caps.gles ? gladLoadGLES2Loader : gladLoadGLLoader) ((GLADloadproc) glfwGetProcAddress, gl3Caps.glversion)) ) {
  		RWERROR((ERR_GENERAL, "gladLoadGLLoader failed"));
  		glfwDestroyWindow(win);
-@@ -1786,14 +1935,22 @@ initOpenGL(void)
+@@ -1786,14 +2002,22 @@ initOpenGL(void)
  */
  	gl3Caps.dxtSupported = !!GLAD_GL_EXT_texture_compression_s3tc;
  	gl3Caps.astcSupported = !!GLAD_GL_KHR_texture_compression_astc_ldr;
@@ -475,11 +756,447 @@ index 9df47ee..3feafdf 100644
  	}else{
  		if(gl3Caps.glversion >= 30)
  			shaderDecl = shaderDecl330;
+@@ -1821,6 +2045,8 @@ initOpenGL(void)
+ #endif
+ 	u_matColor = registerUniform("u_matColor", UNIFORM_VEC4);
+ 	u_surfProps = registerUniform("u_surfProps", UNIFORM_VEC4);
++	u_specularPower = registerUniform("u_odSpecularPower", UNIFORM_VEC4);
++	u_specColor = registerUniform("u_odSpecColor", UNIFORM_VEC4);
+ 
+ 	// for im2d
+ 	registerUniform("u_xform", UNIFORM_VEC4);
+diff --git a/src/gl/gl3matfx.cpp b/src/gl/gl3matfx.cpp
+index 06b01c1..2edf68a 100644
+--- a/src/gl/gl3matfx.cpp
++++ b/src/gl/gl3matfx.cpp
+@@ -24,13 +24,63 @@ namespace gl3 {
+ 
+ #ifdef RW_OPENGL
+ 
+-static Shader *envShader, *envShader_noAT;
+-static Shader *envShader_fullLight, *envShader_fullLight_noAT;
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   src/matfx.cpp:584  ("_rpMatFXD3D8AtomicMatFXEnvRender_switch_shader")
++// Que se toma: los tres estilos de mezcla del env map (0 = PS2, 1 = PC, 2 = Mobile) y el modelo de luz PS2. Adaptacion: el motor escribe MatFX::envMapBlendStyle, MatFX::envMapTexgenStyle y MatFX::ps2Lighting; librw elige con ellos el fragment shader (un .frag por estilo) y el vertex shader (PS2 o PC) de cada material.
++enum {
++	MATFX_STYLE_PS2 = 0,
++	MATFX_STYLE_PC,
++	MATFX_STYLE_MOBILE,
++	MATFX_STYLE_COUNT
++};
++
++enum {
++	MATFX_LIGHT_NOLIGHT = 0,
++	MATFX_LIGHT_FULL,
++	MATFX_LIGHT_COUNT
++};
++
++enum {
++	MATFX_ALPHA_NOAT = 0,
++	MATFX_ALPHA_AT,
++	MATFX_ALPHA_COUNT
++};
++
++static Shader *envShader[MATFX_STYLE_COUNT][MATFX_LIGHT_COUNT][MATFX_ALPHA_COUNT];
++static Shader *envShaderPCLight[MATFX_STYLE_COUNT][MATFX_ALPHA_COUNT];
++static Shader *defaultShaderPCLight[MATFX_ALPHA_COUNT];
+ static int32 u_texMatrix;
+ static int32 u_fxparams;
+ static int32 u_colorClamp;
+ static int32 u_envColor;
+ 
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   src/matfx.cpp:435  ("_rpMatFXD3D8AtomicMatFXDefaultRender_shader")
++// Que se toma: el vertex shader de MatFX es el PS2 (ps2StandardVS) o el PC (pcStandardVS) segun ps2light, y el del env map es el PS2 o el PC segun el mismo interruptor. Adaptacion: el caso PS2 es el que ya hay (default.vert y matfx_env.vert, con el color de material despues del clamp), asi que el caso PC son dos vertex shader nuevos; como en el mod, el modelo PC solo se aplica a la geometria con luces, y la que no tiene luces sigue usando el color de vertice.
++static Shader *
++matfxDefaultShader(int32 vsBits, bool32 alphaTest)
++{
++	if((vsBits & VSLIGHT_MASK) == 0)
++		return alphaTest ? defaultShader : defaultShader_noAT;
++	if(!MatFX::ps2Lighting)
++		return defaultShaderPCLight[alphaTest ? MATFX_ALPHA_AT : MATFX_ALPHA_NOAT];
++	return alphaTest ? defaultShader_fullLight : defaultShader_fullLight_noAT;
++}
++
++static Shader *
++matfxEnvShader(int32 style, int32 vsBits, bool32 alphaTest)
++{
++	if((vsBits & VSLIGHT_MASK) == 0)
++		return envShader[style][MATFX_LIGHT_NOLIGHT][alphaTest ? MATFX_ALPHA_AT : MATFX_ALPHA_NOAT];
++	if(!MatFX::ps2Lighting)
++		return envShaderPCLight[style][alphaTest ? MATFX_ALPHA_AT : MATFX_ALPHA_NOAT];
++	return envShader[style][MATFX_LIGHT_FULL][alphaTest ? MATFX_ALPHA_AT : MATFX_ALPHA_NOAT];
++}
++
++static bool32 odMatfxBaseZwrite = true;
++
+ void
+ matfxDefaultRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uint32 flags)
+ {
+@@ -43,17 +93,17 @@ matfxDefaultRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits,
+ 
+ 	rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+ 
+-	if((vsBits & VSLIGHT_MASK) == 0){
+-		if(getAlphaTest())
+-			defaultShader->use();
+-		else
+-			defaultShader_noAT->use();
+-	}else{
+-		if(getAlphaTest())
+-			defaultShader_fullLight->use();
+-		else
+-			defaultShader_fullLight_noAT->use();
+-	}
++#ifdef __EMSCRIPTEN__
++	odMatTrace(m, inst);
++#endif
++
++	// 24/10 (sexta): misma regla que `defaultRenderCB` (gl3render.cpp): lo que se
++	// mezcla (cristal del coche) no escribe profundidad, o borra el habitaculo
++	// que se dibuja detras. Con el pase de env map hay que respetarla igual, o el
++	// coche se comporta distinto segun el pipeline activo.
++	rw::SetRenderState(rw::ZWRITEENABLE, m->color.alpha != 0xFF ? 0 : odMatfxBaseZwrite);
++
++	matfxDefaultShader(vsBits, getAlphaTest())->use();
+ 
+ 	drawInst(header, inst);
+ }
+@@ -82,12 +132,54 @@ uploadEnvMatrix(Frame *frame)
+ 	{
+ 
+ 		RawMatrix invMtx;
+-		Matrix::invert(&invMat, frame->getLTM());
+-		convMatrix(&invMtx, &invMat);
+-		invMtx.pos.set(0.0f, 0.0f, 0.0f);
++		RawMatrix scaleMtx = normal2texcoord;
+ 		float uscale = fabs(normal2texcoord.right.x);
+-		normal2texcoord.right.x = MatFX::envMapFlipU ? -uscale : uscale;
+-		RawMatrix::mult(&envMtx, &invMtx, &normal2texcoord);
++		scaleMtx.right.x = MatFX::envMapFlipU ? -uscale : uscale;
++
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   src/matfx.cpp:375  ("ApplyEnvMapTextureMatrix_world")
++// Que se toma: las tres matrices de UV del env map (PS2 = la inversa del LTM del frame del env map con la U negada; PC = esa inversa por el LTM de la camara y luego la matriz de vista; Mobile = el LTM de la camara con el origen en 0,5). Adaptacion: la matriz se sigue calculando en CPU y se sube por u_texMatrix; el signo de U lo sigue mandando MatFX::envMapFlipU, como en el resto del port.
++		switch(MatFX::envMapTexgenStyle){
++		case MATFX_STYLE_PC:
++			{
++				RawMatrix camMtx, tmpmat;
++				Matrix::invert(&invMat, frame->getLTM());
++				convMatrix(&invMtx, &invMat);
++				convMatrix(&camMtx, engine->currentCamera->getFrame()->getLTM());
++				RawMatrix::mult(&tmpmat, &invMtx, &camMtx);
++				tmpmat.right.x = -tmpmat.right.x;
++				tmpmat.right.y = -tmpmat.right.y;
++				tmpmat.right.z = -tmpmat.right.z;
++				tmpmat.pos.set(0.0f, 0.0f, 0.0f);
++				RawMatrix::mult(&envMtx, &tmpmat, &scaleMtx);
++				Matrix::invert(&invMat, engine->currentCamera->getFrame()->getLTM());
++				convMatrix(&invMtx, &invMat);
++				invMtx.right.x = -invMtx.right.x;
++				invMtx.up.x = -invMtx.up.x;
++				invMtx.at.x = -invMtx.at.x;
++				invMtx.pos.set(0.0f, 0.0f, 0.0f);
++				RawMatrix::mult(&tmpmat, &invMtx, &envMtx);
++				envMtx = tmpmat;
++			}
++			break;
++		case MATFX_STYLE_MOBILE:
++			{
++				RawMatrix camMtx;
++				convMatrix(&camMtx, engine->currentCamera->getFrame()->getLTM());
++				camMtx.pos.set(0.5f, 0.5f, 0.0f);
++				RawMatrix::mult(&envMtx, &camMtx, &scaleMtx);
++			}
++			break;
++		default:
++			{
++				Matrix::invert(&invMat, frame->getLTM());
++				convMatrix(&invMtx, &invMat);
++				invMtx.pos.set(0.0f, 0.0f, 0.0f);
++				RawMatrix::mult(&envMtx, &invMtx, &scaleMtx);
++			}
++			break;
++		}
+ 	}
+ 	setUniform(u_texMatrix, &envMtx);
+ }
+@@ -103,14 +195,32 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uin
+ 		return;
+ 	}
+ 
++	int32 style = MatFX::envMapBlendStyle;
++	if(style < 0 || style >= MATFX_STYLE_COUNT)
++		style = MATFX_STYLE_PS2;
++
+ 	setTexture(0, m->texture);
+ 	setTexture(1, env->tex);
+ 	uploadEnvMatrix(env->frame);
+ 
+ 	setMaterial(flags, m->color, m->surfaceProps);
+ 
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   src/matfx.cpp:584  ("_rpMatFXD3D8AtomicMatFXEnvRender_switch_shader")
++// Que se toma: el coeficiente del env map se escala por estilo de mezcla (PC: x0,25 en los coches; Mobile: 0,15 en los coches y x1,45 siempre). Adaptacion: el escalado se aplica al coeficiente que ya se sube en u_fxparams; "coche" se deduce del mismo flag de framebuffer alpha que usa el mod (envFBalpha == 0).
++	float coeff = env->coefficient;
++	if(style == MATFX_STYLE_PC){
++		if(!env->fbAlpha)
++			coeff *= 0.25f;
++	}else if(style == MATFX_STYLE_MOBILE){
++		if(!env->fbAlpha)
++			coeff = 0.15f;
++		coeff *= 1.45f;
++	}
++
+ 	float fxparams[4];
+-	fxparams[0] = env->coefficient;
++	fxparams[0] = coeff;
+ 	fxparams[1] = env->fbAlpha ? 0.0f : 1.0f;
+ 	fxparams[2] = fxparams[3] = 0.0f;
+ 
+@@ -132,17 +242,12 @@ matfxEnvRender(InstanceDataHeader *header, InstanceData *inst, int32 vsBits, uin
+ 	rw::SetRenderState(VERTEXALPHA, 1);
+ 	rw::SetRenderState(SRCBLEND, BLENDONE);
+ 
+-	if((vsBits & VSLIGHT_MASK) == 0){
+-		if(getAlphaTest())
+-			envShader->use();
+-		else
+-			envShader_noAT->use();
+-	}else{
+-		if(getAlphaTest())
+-			envShader_fullLight->use();
+-		else
+-			envShader_fullLight_noAT->use();
+-	}
++	// 24/10 (sexta): el pase de env map vuelve a dibujar los mismos triangulos.
++	// Si el cristal escribiera profundidad aqui volveria a borrar el habitaculo
++	// del coche que se dibuja detras, exactamente igual que en el pase difuso.
++	rw::SetRenderState(rw::ZWRITEENABLE, m->color.alpha != 0xFF ? 0 : odMatfxBaseZwrite);
++
++	matfxEnvShader(style, vsBits, getAlphaTest())->use();
+ 
+ 	drawInst(header, inst);
+ 
+@@ -160,6 +265,8 @@ matfxRenderCB(Atomic *atomic, InstanceDataHeader *header)
+ 
+ 	lastEnvFrame = nil;
+ 
++	odMatfxBaseZwrite = rw::GetRenderState(rw::ZWRITEENABLE) != 0;
++
+ 	InstanceData *inst = header->inst;
+ 	int32 n = header->numMeshes;
+ 
+@@ -178,6 +285,7 @@ matfxRenderCB(Atomic *atomic, InstanceDataHeader *header)
+ 		}
+ 		inst++;
+ 	}
++	rw::SetRenderState(rw::ZWRITEENABLE, odMatfxBaseZwrite);
+ 	teardownVertexInput(header);
+ }
+ 
+@@ -199,20 +307,62 @@ matfxOpen(void *o, int32, int32)
+ 	matFXGlobals.pipelines[PLATFORM_GL3] = makeMatFXPipeline();
+ 
+ #include "shaders/matfx_gl.inc"
++#include "shaders/simple_fs_gl.inc"
+ 	const char *vs[] = { shaderDecl, header_vert_src, matfx_env_vert_src, nil };
+ 	const char *vs_fullLight[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, matfx_env_vert_src, nil };
+-	const char *fs[] = { shaderDecl, header_frag_src, matfx_env_frag_src, nil };
+-	const char *fs_noAT[] = { shaderDecl, "#define NO_ALPHATEST\n", header_frag_src, matfx_env_frag_src, nil };
+ 
+-	envShader = Shader::create(vs, fs);
+-	assert(envShader);
+-	envShader_noAT = Shader::create(vs, fs_noAT);
+-	assert(envShader_noAT);
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   shaders/ps/pcEnvPS.hlsl:12  ("main")
++// Que se toma: el env map se suma al color difuso (t0*Color + t1*EnvCoeff). Adaptacion: shaders/ps/pcEnvPS.hlsl pasa a ser vendor/librw/src/gl/shaders/matfx_env_pc.frag, que mezcla el env map en el mismo fragment shader del difuso (librw hace un solo draw) y premultiplica el alfa a mano, porque el pase de env dibuja con SRCBLEND=ONE.
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   shaders/ps/mobileEnvPS.hlsl:12  ("main")
++// Que se toma: el env map multiplica al color difuso (t0*(Color + t1*EnvCoeff)). Adaptacion: shaders/ps/mobileEnvPS.hlsl pasa a ser vendor/librw/src/gl/shaders/matfx_env_mobile.frag, que mezcla el env map en el mismo fragment shader del difuso (librw hace un solo draw) y premultiplica el alfa a mano, porque el pase de env dibuja con SRCBLEND=ONE.
++	const char *fragSrc[MATFX_STYLE_COUNT] = {
++		matfx_env_frag_src,
++		matfx_env_pc_frag_src,
++		matfx_env_mobile_frag_src
++	};
++
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   shaders/vs/pcStandardEnvVS.hlsl:40  ("main")
++// Que se toma: el color de material se aplica antes del saturado y el alfa sale suelto del color de material (modelo de luz PC). Adaptacion: shaders/vs/pcStandardEnvVS.hlsl pasa a ser vendor/librw/src/gl/shaders/matfx_env_pc.vert; se conserva el color de vertice, porque en el port es la luz horneada del mapa.
++	const char *vs_pc[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, matfx_env_pc_vert_src, nil };
++
++	for(int32 style = 0; style < MATFX_STYLE_COUNT; style++){
++		const char *fs[] = { shaderDecl, header_frag_src, fragSrc[style], nil };
++		const char *fs_noAT[] = { shaderDecl, "#define NO_ALPHATEST\n", header_frag_src, fragSrc[style], nil };
++
++		envShader[style][MATFX_LIGHT_NOLIGHT][MATFX_ALPHA_NOAT] = Shader::create(vs, fs);
++		assert(envShader[style][MATFX_LIGHT_NOLIGHT][MATFX_ALPHA_NOAT]);
++		envShader[style][MATFX_LIGHT_NOLIGHT][MATFX_ALPHA_AT] = Shader::create(vs, fs_noAT);
++		assert(envShader[style][MATFX_LIGHT_NOLIGHT][MATFX_ALPHA_AT]);
++
++		envShader[style][MATFX_LIGHT_FULL][MATFX_ALPHA_NOAT] = Shader::create(vs_fullLight, fs);
++		assert(envShader[style][MATFX_LIGHT_FULL][MATFX_ALPHA_NOAT]);
++		envShader[style][MATFX_LIGHT_FULL][MATFX_ALPHA_AT] = Shader::create(vs_fullLight, fs_noAT);
++		assert(envShader[style][MATFX_LIGHT_FULL][MATFX_ALPHA_AT]);
++
++		envShaderPCLight[style][MATFX_ALPHA_NOAT] = Shader::create(vs_pc, fs);
++		assert(envShaderPCLight[style][MATFX_ALPHA_NOAT]);
++		envShaderPCLight[style][MATFX_ALPHA_AT] = Shader::create(vs_pc, fs_noAT);
++		assert(envShaderPCLight[style][MATFX_ALPHA_AT]);
++	}
++
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   shaders/vs/pcStandardVS.hlsl:37  ("main")
++// Que se toma: el color de material se aplica antes del saturado y el alfa sale suelto del color de material (modelo de luz PC). Adaptacion: shaders/vs/pcStandardVS.hlsl pasa a ser vendor/librw/src/gl/shaders/matfx_default_pc.vert, que solo usa el pipeline MatFX; se conserva el color de vertice, porque en el port es la luz horneada del mapa.
++	const char *vs_default_pc[] = { shaderDecl, "#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, matfx_default_pc_vert_src, nil };
++	const char *fs_simple[] = { shaderDecl, header_frag_src, simple_frag_src, nil };
++	const char *fs_simple_noAT[] = { shaderDecl, "#define NO_ALPHATEST\n", header_frag_src, simple_frag_src, nil };
+ 
+-	envShader_fullLight = Shader::create(vs_fullLight, fs);
+-	assert(envShader_fullLight);
+-	envShader_fullLight_noAT = Shader::create(vs_fullLight, fs_noAT);
+-	assert(envShader_fullLight_noAT);
++	defaultShaderPCLight[MATFX_ALPHA_NOAT] = Shader::create(vs_default_pc, fs_simple);
++	assert(defaultShaderPCLight[MATFX_ALPHA_NOAT]);
++	defaultShaderPCLight[MATFX_ALPHA_AT] = Shader::create(vs_default_pc, fs_simple_noAT);
++	assert(defaultShaderPCLight[MATFX_ALPHA_AT]);
+ 
+ 	return o;
+ }
+@@ -223,14 +373,22 @@ matfxClose(void *o, int32, int32)
+ 	((ObjPipeline*)matFXGlobals.pipelines[PLATFORM_GL3])->destroy();
+ 	matFXGlobals.pipelines[PLATFORM_GL3] = nil;
+ 
+-	envShader->destroy();
+-	envShader = nil;
+-	envShader_noAT->destroy();
+-	envShader_noAT = nil;
+-	envShader_fullLight->destroy();
+-	envShader_fullLight = nil;
+-	envShader_fullLight_noAT->destroy();
+-	envShader_fullLight_noAT = nil;
++	for(int32 style = 0; style < MATFX_STYLE_COUNT; style++){
++		for(int32 light = 0; light < MATFX_LIGHT_COUNT; light++){
++			for(int32 alpha = 0; alpha < MATFX_ALPHA_COUNT; alpha++){
++				envShader[style][light][alpha]->destroy();
++				envShader[style][light][alpha] = nil;
++			}
++		}
++		for(int32 alpha = 0; alpha < MATFX_ALPHA_COUNT; alpha++){
++			envShaderPCLight[style][alpha]->destroy();
++			envShaderPCLight[style][alpha] = nil;
++		}
++	}
++	defaultShaderPCLight[MATFX_ALPHA_NOAT]->destroy();
++	defaultShaderPCLight[MATFX_ALPHA_NOAT] = nil;
++	defaultShaderPCLight[MATFX_ALPHA_AT]->destroy();
++	defaultShaderPCLight[MATFX_ALPHA_AT] = nil;
+ 
+ 	return o;
+ }
+@@ -254,5 +412,10 @@ void initMatFX(void) { }
+ #endif
+ 
+ }
++
++int32 MatFX::envMapBlendStyle = 0;
++int32 MatFX::envMapTexgenStyle = 0;
++bool32 MatFX::ps2Lighting = true;
++
+ }
+ 
+diff --git a/src/gl/gl3pipe.cpp b/src/gl/gl3pipe.cpp
+index 4df0b7c..fbbfcb2 100644
+--- a/src/gl/gl3pipe.cpp
++++ b/src/gl/gl3pipe.cpp
+@@ -143,6 +143,8 @@ render(rw::ObjPipeline *rwpipe, Atomic *atomic)
+ 	pipe->instance(atomic);
+ 	assert(geo->instData != nil);
+ 	assert(geo->instData->platform == PLATFORM_GL3);
++	if(geo->instData == nil || geo->instData->platform != PLATFORM_GL3)
++		return;
+ 	if(pipe->renderCB)
+ 		pipe->renderCB(atomic, (InstanceDataHeader*)geo->instData);
+ }
 diff --git a/src/gl/gl3raster.cpp b/src/gl/gl3raster.cpp
-index b7c3941..2b4eb5f 100644
+index b7c3941..00068c8 100644
 --- a/src/gl/gl3raster.cpp
 +++ b/src/gl/gl3raster.cpp
-@@ -551,6 +551,34 @@ rasterUnlock(Raster *raster, int32 level)
+@@ -16,6 +16,28 @@
+ 
+ #define PLUGIN_ID ID_DRIVER
+ 
++// Texturas GL vivas (creadas menos destruidas). El heartbeat web la publica en
++// WEBHB: si un modelo descargado no libera sus texturas al desalojarse, este
++// numero solo sube y el renderer acaba muriendo por memoria de GPU, que es la
++// unica muerte que no deja marca en la traza (ni JSERR ni ENGERR ni WEBGL_LOST).
++int gOdTexLive = 0;
++
++static inline void
++odTexGen(GLuint *id)
++{
++	glGenTextures(1, id);
++	::gOdTexLive++;
++}
++
++static inline void
++odTexDel(GLuint *id)
++{
++	if(*id == 0)
++		return;
++	glDeleteTextures(1, id);
++	::gOdTexLive--;
++}
++
+ namespace rw {
+ namespace gl3 {
+ 
+@@ -120,7 +142,7 @@ rasterCreateTexture(Raster *raster)
+ 	if(natras->autogenMipmap)
+ 		natras->numLevels = 1;
+ 
+-	glGenTextures(1, &natras->texid);
++	odTexGen(&natras->texid);
+ 	uint32 prev = bindTexture(natras->texid);
+ 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
+ 	             raster->width, raster->height,
+@@ -184,7 +206,7 @@ rasterCreateCameraTexture(Raster *raster)
+ 
+ 	natras->autogenMipmap = (raster->format & (Raster::MIPMAP|Raster::AUTOMIPMAP)) == (Raster::MIPMAP|Raster::AUTOMIPMAP);
+ 
+-	glGenTextures(1, &natras->texid);
++	odTexGen(&natras->texid);
+ 	uint32 prev = bindTexture(natras->texid);
+ 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
+ 	             raster->width, raster->height,
+@@ -248,7 +270,7 @@ rasterCreateZbuffer(Raster *raster)
+ 
+ 		natras->autogenMipmap = 0;
+ 
+-		glGenTextures(1, &natras->texid);
++		odTexGen(&natras->texid);
+ 		uint32 prev = bindTexture(natras->texid);
+ 		glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
+ 			     raster->width, raster->height,
+@@ -317,7 +339,7 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
+ 	if(natras->autogenMipmap)
+ 		natras->numLevels = 1;
+ 
+-	glGenTextures(1, &natras->texid);
++	odTexGen(&natras->texid);
+ 	uint32 prev = bindTexture(natras->texid);
+ 	glTexImage2D(GL_TEXTURE_2D, 0, natras->internalFormat,
+ 	             raster->width, raster->height,
+@@ -551,6 +573,34 @@ rasterUnlock(Raster *raster, int32 level)
  				}
  			}else{
  				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -514,7 +1231,7 @@ index b7c3941..2b4eb5f 100644
  				glTexImage2D(GL_TEXTURE_2D, level, natras->internalFormat,
  					     raster->width, raster->height,
  					     0, natras->format, natras->type, raster->pixels);
-@@ -695,7 +723,16 @@ rasterFromImage(Raster *raster, Image *image)
+@@ -695,7 +745,16 @@ rasterFromImage(Raster *raster, Image *image)
  		return 0;
  	}
  
@@ -532,7 +1249,34 @@ index b7c3941..2b4eb5f 100644
  
  	bool unlock = false;
  	if(raster->pixels == nil){
-@@ -889,6 +926,114 @@ copyNativeRaster(void *dst, void *, int32 offset, int32)
+@@ -830,7 +889,7 @@ destroyNativeRaster(void *object, int32 offset, int32)
+ 	switch(raster->type){
+ 	case Raster::NORMAL:
+ 	case Raster::TEXTURE:
+-		glDeleteTextures(1, &natras->texid);
++		odTexDel(&natras->texid);
+ 		break;
+ 
+ 	case Raster::CAMERATEXTURE:
+@@ -841,7 +900,7 @@ destroyNativeRaster(void *object, int32 offset, int32)
+ 			natras->fboMate = nil;
+ 		}
+ 		glDeleteFramebuffers(1, &natras->fbo);
+-		glDeleteTextures(1, &natras->texid);
++		odTexDel(&natras->texid);
+ 		break;
+ 
+ 	case Raster::ZBUFFER:
+@@ -857,7 +916,7 @@ destroyNativeRaster(void *object, int32 offset, int32)
+ 		if(gl3Caps.gles)
+ 			glDeleteRenderbuffers(1, &natras->texid);
+ 		else
+-			glDeleteTextures(1, &natras->texid);
++			odTexDel(&natras->texid);
+ 		break;
+ 
+ 	case Raster::CAMERA:
+@@ -889,6 +948,114 @@ copyNativeRaster(void *dst, void *, int32 offset, int32)
  	return dst;
  }
  
@@ -647,7 +1391,7 @@ index b7c3941..2b4eb5f 100644
  Texture*
  readNativeTexture(Stream *stream)
  {
-@@ -931,14 +1076,26 @@ readNativeTexture(Stream *stream)
+@@ -931,14 +1098,26 @@ readNativeTexture(Stream *stream)
  
  	Raster *raster;
  	Gl3Raster *natras;
@@ -679,7 +1423,7 @@ index b7c3941..2b4eb5f 100644
  	}else{
  		raster = Raster::create(width, height, depth, format | Raster::TEXTURE, PLATFORM_GL3);
  	}
-@@ -948,11 +1105,109 @@ readNativeTexture(Stream *stream)
+@@ -948,11 +1127,109 @@ readNativeTexture(Stream *stream)
  
  	uint32 size;
  	uint8 *data;
@@ -794,6 +1538,980 @@ index b7c3941..2b4eb5f 100644
  	}
  	return tex;
  }
+diff --git a/src/gl/gl3render.cpp b/src/gl/gl3render.cpp
+index 4dd79ba..d2b605e 100644
+--- a/src/gl/gl3render.cpp
++++ b/src/gl/gl3render.cpp
+@@ -15,6 +15,8 @@
+ 
+ #include "rwgl3impl.h"
+ 
++int gRwDrawInstances = 0;
++
+ namespace rw {
+ namespace gl3 {
+ 
+@@ -26,6 +28,7 @@ drawInst_simple(InstanceDataHeader *header, InstanceData *inst)
+ 	flushCache();
+ 	glDrawElements(header->primType, inst->numIndex,
+ 	               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
++	::gRwDrawInstances++;
+ }
+ 
+ // Emulate PS2 GS alpha test FB_ONLY case: failed alpha writes to frame- but not to depth buffer
+@@ -70,12 +73,70 @@ drawInst(InstanceDataHeader *header, InstanceData *inst)
+ 		drawInst_simple(header, inst);
+ }
+ 
++// SkyGFX `dualPass`: parte el material transparente en dos draws por el alpha
++// test (>=128 escribe profundidad, <128 no) en vez de dibujarlo una sola vez.
++// Se usa solo desde el mundo; los vehiculos siguen por `defaultRenderCB`, que
++// conserva el arreglo de profundidad del cristal.
++void
++drawInstDualPass(InstanceDataHeader *header, InstanceData *inst)
++{
++	uint32 alphafunc = rw::GetRenderState(rw::ALPHATESTFUNC);
++	uint32 alpharef = rw::GetRenderState(rw::ALPHATESTREF);
++	uint32 gsalphatest = rw::GetRenderState(rw::GSALPHATEST);
++
++	rw::SetRenderState(rw::GSALPHATEST, 0);
++
++	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHAGREATEREQUAL);
++	rw::SetRenderState(rw::ALPHATESTREF, 128);
++	drawInst_simple(header, inst);
++
++	rw::SetRenderState(rw::ALPHATESTFUNC, rw::ALPHALESS);
++	rw::SetRenderState(rw::ALPHATESTREF, 128);
++	rw::SetRenderState(rw::ZWRITEENABLE, 0);
++	drawInst_simple(header, inst);
++
++	rw::SetRenderState(rw::ZWRITEENABLE, 1);
++	rw::SetRenderState(rw::ALPHATESTFUNC, alphafunc);
++	rw::SetRenderState(rw::ALPHATESTREF, alpharef);
++	rw::SetRenderState(rw::GSALPHATEST, gsalphatest);
++}
++
++
++#define MAX_ATTRIB_INDEX (ATTRIB_TEXCOORDS7 + 1)
++
++static bool
++validAttribHeader(AttribDesc *attribDescs, int32 numAttribs)
++{
++	if(attribDescs == nil || numAttribs <= 0 || numAttribs > MAX_ATTRIB_INDEX){
++#ifdef __EMSCRIPTEN__
++		static int reported = 0;
++		if(reported < 8){
++			reported++;
++			printf("[od] cabecera de atributos invalida: descs=%p num=%d\n", (void*)attribDescs, (int)numAttribs);
++		}
++#endif
++		return false;
++	}
++	return true;
++}
+ 
+ void
+ setAttribPointers(AttribDesc *attribDescs, int32 numAttribs)
+ {
+ 	AttribDesc *a;
++	if(!validAttribHeader(attribDescs, numAttribs))
++		return;
+ 	for(a = attribDescs; a != &attribDescs[numAttribs]; a++){
++		if(a->index < ATTRIB_POS || a->index >= MAX_ATTRIB_INDEX){
++#ifdef __EMSCRIPTEN__
++			static int reported = 0;
++			if(reported < 8){
++				reported++;
++				printf("[od] atributo fuera de rango: index=%d num=%d\n", (int)a->index, (int)numAttribs);
++			}
++#endif
++			continue;
++		}
+ 		glEnableVertexAttribArray(a->index);
+ 		glVertexAttribPointer(a->index, a->size, a->type, a->normalized,
+ 		                      a->stride, (void*)(uint64)a->offset);
+@@ -86,8 +147,11 @@ void
+ disableAttribPointers(AttribDesc *attribDescs, int32 numAttribs)
+ {
+ 	AttribDesc *a;
++	if(!validAttribHeader(attribDescs, numAttribs))
++		return;
+ 	for(a = attribDescs; a != &attribDescs[numAttribs]; a++)
+-		glDisableVertexAttribArray(a->index);
++		if(a->index >= ATTRIB_POS && a->index < MAX_ATTRIB_INDEX)
++			glDisableVertexAttribArray(a->index);
+ }
+ 
+ void
+@@ -135,8 +199,28 @@ lightingCB(Atomic *atomic)
+ 	}
+ }
+ 
+-void
+-defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
++// 24/10 (sexta): un material pensado para MEZCLARSE (cristal de vehiculo: alfa
++// 76/89/153 en el DFF) no puede escribir profundidad. Lo escribia, y con eso
++// borraba todo lo que se dibuja DESPUES y esta DETRAS suyo: el parabrisas
++// (`windscreen_hi_ok`) y las lunas de puerta (`door_*_hi_ok`) se dibujan como
++// atomics aparte, y el habitaculo del coche (asientos, salpicadero, paneles
++// interiores, volante) es opaco y vive en `chassis_hi`, que entra en el pase
++// transparente igual que ellas. Si la luna se resuelve primero, el interior
++// falla el z-test y desde fuera se ve la calle a traves de la ventanilla; si se
++// resuelve despues, se ve el interior. De ahi que el sintoma cambiara con el
++// angulo, que no se viera el volante por la ventanilla pero si al abrir la
++// puerta, y que ninguna regla por atomic lo arreglara: el reparto es por
++// MATERIAL y ese es el unico sitio donde se puede decidir.
++// 24/10 (septima): el criterio es "el material se mezcla", no un umbral. El
++// cristal roto (`windscreen_hi_dam`, `door_*_dam`) viene con alfa 250, y con un
++// umbral de 200 volvia a escribir profundidad: el habitaculo desaparecia otra
++// vez en cuanto una luna estaba dañada y seguia puesta. Cualquier material con
++// alfa distinto de 255 se dibuja mezclado (es el mismo criterio con el que
++// librw enciende el blend en `setVertexAlpha`), asi que ninguno escribe
++// profundidad. La chapa intacta (255) sigue escribiendo como siempre.
++
++static void
++defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
+ {
+ 	Material *m;
+ 
+@@ -144,6 +228,11 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
+ 	setWorldMatrix(atomic->getFrame()->getLTM());
+ 	int32 vsBits = lightingCB(atomic);
+ 
++	// Estado con el que llega el dibujo (`CSimpleModelInfo::m_noZwrite`, fundidos
++	// de aparicion, etc.). Lo opaco lo respeta tal cual; lo que se mezcla se
++	// aparta de el y al final se devuelve.
++	bool32 odBaseZwrite = rw::GetRenderState(rw::ZWRITEENABLE) != 0;
++
+ 	setupVertexInput(header);
+ 
+ 	InstanceData *inst = header->inst;
+@@ -158,6 +247,19 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
+ 
+ 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+ 
++		// En dualPass el material transparente conserva la escritura de
++		// profundidad: la primera pasada (alfa >= 128) la usa y la segunda
++		// (alfa < 128) la apaga dentro de `drawInstDualPass`. El arreglo del
++		// cristal (alfa != 255 => sin ZWRITE) queda solo en la ruta de vehiculos.
++		if(dualPass)
++			rw::SetRenderState(rw::ZWRITEENABLE, odBaseZwrite);
++		else
++			rw::SetRenderState(rw::ZWRITEENABLE, m->color.alpha != 0xFF ? 0 : odBaseZwrite);
++
++#ifdef __EMSCRIPTEN__
++		odMatTrace(m, inst);
++#endif
++
+ 		if((vsBits & VSLIGHT_MASK) == 0){
+ 			if(getAlphaTest())
+ 				defaultShader->use();
+@@ -170,12 +272,28 @@ defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
+ 				defaultShader_fullLight_noAT->use();
+ 		}
+ 
+-		drawInst(header, inst);
++		if(dualPass && getAlphaBlend() && rw::GetRenderState(rw::ZWRITEENABLE))
++			drawInstDualPass(header, inst);
++		else
++			drawInst(header, inst);
+ 		inst++;
+ 	}
++	rw::SetRenderState(rw::ZWRITEENABLE, odBaseZwrite);
+ 	teardownVertexInput(header);
+ }
+ 
++void
++defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
++{
++	defaultRenderCBImpl(atomic, header, false);
++}
++
++void
++defaultRenderCBDualPass(Atomic *atomic, InstanceDataHeader *header)
++{
++	defaultRenderCBImpl(atomic, header, true);
++}
++
+ 
+ }
+ }
+diff --git a/src/gl/gl3shader.cpp b/src/gl/gl3shader.cpp
+index 73c344e..6f0ad08 100644
+--- a/src/gl/gl3shader.cpp
++++ b/src/gl/gl3shader.cpp
+@@ -9,6 +9,9 @@
+ #include "../rwpipeline.h"
+ #include "../rwobjects.h"
+ #include "../rwengine.h"
++#ifdef __EMSCRIPTEN__
++#include <emscripten.h>
++#endif
+ #ifdef RW_OPENGL
+ #include "rwgl3.h"
+ #include "rwgl3shader.h"
+@@ -190,13 +193,24 @@ compileshader(GLenum type, const char **src, GLuint *shader)
+ 	glCompileShader(shdr);
+ 	glGetShaderiv(shdr, GL_COMPILE_STATUS, &success);
+ 	if(!success){
+-		printShaderSource(src);
+-		fprintf(stderr, "Error in %s shader\n",
+-		  type == GL_VERTEX_SHADER ? "vertex" : "fragment");
++		// 21/10: el error de GLSL va PRIMERO. El fuente del shader son
++		// 200 lineas y se comia el sitio en la traza (que se recorta), asi
++		// que el motivo de verdad se perdia. Ademas se manda a la cola de
++		// trazas del motor, que es donde se mira.
+ 		glGetShaderiv(shdr, GL_INFO_LOG_LENGTH, &len);
+ 		log = (char*)rwMalloc(len, MEMDUR_FUNCTION);
+ 		glGetShaderInfoLog(shdr, len, nil, log);
+ 		fprintf(stderr, "%s\n", log);
++#ifdef __EMSCRIPTEN__
++		{
++			char t[512];
++			snprintf(t, sizeof t, "GLSLERR %s", log);
++			EM_ASM({ try { (window.__odq = window.__odq || []).push(UTF8ToString($0)); } catch (e) {} }, t);
++		}
++#endif
++		printShaderSource(src);
++		fprintf(stderr, "Error in %s shader\n",
++		  type == GL_VERTEX_SHADER ? "vertex" : "fragment");
+ 		rwFree(log);
+ 		return 1;
+ 	}
+diff --git a/src/gl/rwgl3.h b/src/gl/rwgl3.h
+index 4b138ac..3ed78dc 100644
+--- a/src/gl/rwgl3.h
++++ b/src/gl/rwgl3.h
+@@ -199,6 +199,14 @@ bool32 getAlphaBlend(void);
+ 
+ bool32 getAlphaTest(void);
+ 
++// Traza de un material tal como se va a dibujar (17): color, textura, alfa de
++// vertice/textura, blending, alpha test y numero de indices del pase. La firma
++// del atomic que se esta dibujando la pone el que llama (SetOdTraceTag); los
++// materiales con textura y alfa < 255 no se trazan, para que la muestra de cada
++// material sea la del dibujo real y no la de un fundido de aparicion.
++void odMatTrace(Material *m, InstanceData *inst);
++void SetOdTraceTag(const char *tag);
++
+ void bindFramebuffer(uint32 fbo);
+ uint32 bindTexture(uint32 texid);
+ 
+@@ -220,6 +228,10 @@ public:
+ void defaultInstanceCB(Geometry *geo, InstanceDataHeader *header, bool32 reinstance);
+ void defaultUninstanceCB(Geometry *geo, InstanceDataHeader *header);
+ void defaultRenderCB(Atomic *atomic, InstanceDataHeader *header);
++// Variante SkyGFX `dualPass` para el mundo: el material transparente se dibuja
++// en dos pasadas (alfa >= 128 con ZWRITE, alfa < 128 sin ZWRITE). Los vehiculos
++// siguen usando `defaultRenderCB` para no romper el arreglo del cristal.
++void defaultRenderCBDualPass(Atomic *atomic, InstanceDataHeader *header);
+ int32 lightingCB(Atomic *atomic);
+ 
+ void drawInst_simple(InstanceDataHeader *header, InstanceData *inst);
+@@ -227,6 +239,8 @@ void drawInst_simple(InstanceDataHeader *header, InstanceData *inst);
+ void drawInst_GSemu(InstanceDataHeader *header, InstanceData *inst);
+ // This one switches between the above two depending on render state;
+ void drawInst(InstanceDataHeader *header, InstanceData *inst);
++// SkyGFX dualPass: dos draws por alpha test (>=128 con ZWRITE, <128 sin).
++void drawInstDualPass(InstanceDataHeader *header, InstanceData *inst);
+ 
+ 
+ void *destroyNativeData(void *object, int32, int32);
+diff --git a/src/gl/shaders/Makefile b/src/gl/shaders/Makefile
+index 6471f17..889646e 100644
+--- a/src/gl/shaders/Makefile
++++ b/src/gl/shaders/Makefile
+@@ -30,12 +30,24 @@ simple_fs_gl.inc: simple.frag
+ 	 sed 's/..*/"&\\n"/' simple.frag;\
+ 	 echo ';') >simple_fs_gl.inc
+ 
+-matfx_gl.inc: matfx_env.frag matfx_env.vert
++matfx_gl.inc: matfx_env.frag matfx_env.vert matfx_env_pc.frag matfx_env_mobile.frag matfx_env_pc.vert matfx_default_pc.vert
+ 	(echo 'const char *matfx_env_vert_src =';\
+ 	 sed 's/..*/"&\\n"/' matfx_env.vert;\
+ 	 echo ';';\
+ 	 echo 'const char *matfx_env_frag_src =';\
+ 	 sed 's/..*/"&\\n"/' matfx_env.frag;\
++	 echo ';';\
++	 echo 'const char *matfx_env_pc_frag_src =';\
++	 sed 's/..*/"&\\n"/' matfx_env_pc.frag;\
++	 echo ';';\
++	 echo 'const char *matfx_env_mobile_frag_src =';\
++	 sed 's/..*/"&\\n"/' matfx_env_mobile.frag;\
++	 echo ';';\
++	 echo 'const char *matfx_env_pc_vert_src =';\
++	 sed 's/..*/"&\\n"/' matfx_env_pc.vert;\
++	 echo ';';\
++	 echo 'const char *matfx_default_pc_vert_src =';\
++	 sed 's/..*/"&\\n"/' matfx_default_pc.vert;\
+ 	 echo ';') >matfx_gl.inc
+ 
+ skin_gl.inc: skin.vert
+diff --git a/src/gl/shaders/default.vert b/src/gl/shaders/default.vert
+index 8e3fad7..e9a1360 100644
+--- a/src/gl/shaders/default.vert
++++ b/src/gl/shaders/default.vert
+@@ -16,6 +16,8 @@ main(void)
+ 	v_color = in_color;
+ 	v_color.rgb += u_ambLight.rgb*surfAmbient;
+ 	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
++	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
++	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;
+ 	v_color = clamp(v_color, 0.0, 1.0);
+ 	v_color *= u_matColor;
+ 
+diff --git a/src/gl/shaders/default_vs_gl.inc b/src/gl/shaders/default_vs_gl.inc
+index 6e3d6c4..22ce544 100644
+--- a/src/gl/shaders/default_vs_gl.inc
++++ b/src/gl/shaders/default_vs_gl.inc
+@@ -1,25 +1,28 @@
+ const char *default_vert_src =
+ "VSIN(ATTRIB_POS)	vec3 in_pos;\n"
+-
++"\n"
+ "VSOUT vec4 v_color;\n"
+ "VSOUT vec2 v_tex0;\n"
+ "VSOUT float v_fog;\n"
+-
++"\n"
+ "void\n"
+ "main(void)\n"
+ "{\n"
+ "	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
+ "	gl_Position = u_proj * u_view * Vertex;\n"
+ "	vec3 Normal = mat3(u_world) * in_normal;\n"
+-
++"\n"
+ "	v_tex0 = in_tex0;\n"
+-
++"\n"
+ "	v_color = in_color;\n"
+ "	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
+ "	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
++"	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
++"	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;\n"
+ "	v_color = clamp(v_color, 0.0, 1.0);\n"
+ "	v_color *= u_matColor;\n"
+-
++"\n"
+ "	v_fog = DoFog(gl_Position.w);\n"
+ "}\n"
++"\n"
+ ;
+diff --git a/src/gl/shaders/header.vert b/src/gl/shaders/header.vert
+index bb9881f..a8ab2bc 100644
+--- a/src/gl/shaders/header.vert
++++ b/src/gl/shaders/header.vert
+@@ -72,6 +72,8 @@ uniform vec4 u_lightColor[MAX_LIGHTS];
+ 
+ uniform vec4 u_matColor;
+ uniform vec4 u_surfProps;	// amb, spec, diff, extra
++uniform vec4 u_odSpecularPower;	// .x Fresnel, .y exponente del especular Blinn (0 = sin especular)
++uniform vec4 u_odSpecColor;		// color del especular (el del SP)
+ 
+ #define surfAmbient (u_surfProps.x)
+ #define surfSpecular (u_surfProps.y)
+@@ -126,3 +128,60 @@ float DoFog(float w)
+ {
+ 	return clamp((w - u_fogEnd)*u_fogRange, u_fogDisable, 1.0);
+ }
++
++// PORTADO -- GTA VC original de PC (gta-vc.exe, pipeline D3D8)
++//   Que se toma: el retail hacia un ESPECULAR BLINN POR LUZ, coloreado con el color
++//   de la luz que ilumina (el brillo del semaforo en la chapa del coche). librw no lo
++//   implementaba: solo subida el "specular" del material (u_surfProps.y) y nunca lo
++//   usaba, asi que las superficies brillantes no brillaban.
++//   Adaptacion: el exponente llega en u_odSpecularPower (0 = apagado) y el color de la
++//   luz es el que ya viaja en u_lightColor[].
++vec3 DoSpecular(vec3 worldPos, vec3 N, vec3 eye)
++{
++	vec3 color = vec3(0.0, 0.0, 0.0);
++	if(u_odSpecularPower.y <= 0.0)
++		return color;
++	vec3 V = normalize(eye - worldPos);
++	// El termino de Fresnel del SP/neo (mix(b^5, 1, fresnel)): el brillo se
++	// refuerza en los angulos de vision rasantes.
++	float odB = 1.0 - clamp(dot(V, N), 0.0, 1.0);
++	float odFresnel = mix(odB*odB*odB*odB*odB, 1.0, u_odSpecularPower.x);
++	for(int i = 0; i < MAX_LIGHTS; i++){
++		if(u_lightParams[i].x == 0.0)
++			break;
++		vec3 L;
++		float atten = 1.0;
++#ifdef DIRECTIONALS
++		if(u_lightParams[i].x == 1.0){
++			L = -u_lightDirection[i].xyz;
++		}else
++#endif
++#ifdef POINTLIGHTS
++		if(u_lightParams[i].x == 2.0){
++			vec3 dir = u_lightPosition[i].xyz - V;
++			float dist = length(dir);
++			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));
++			L = dir / max(dist, 0.0001);
++		}else
++#endif
++#ifdef SPOTLIGHTS
++		if(u_lightParams[i].x == 3.0){
++			vec3 dir = u_lightPosition[i].xyz - V;
++			float dist = length(dir);
++			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));
++			L = dir / max(dist, 0.0001);
++			float pcos = dot(-L, u_lightDirection[i].xyz);
++			float ccos = -u_lightParams[i].z;
++			float falloff = (pcos-ccos)/(1.0-ccos);
++			if(falloff < 0.0)
++				continue;
++			atten *= max(falloff, u_lightParams[i].w);
++		}else
++#endif
++			continue;
++		vec3 H = normalize(L + V);
++		float s = max(0.0, dot(N, H));
++		color += pow(s, u_odSpecularPower.y) * u_lightColor[i].rgb * atten;
++	}
++	return color;
++}
+diff --git a/src/gl/shaders/header_vs.inc b/src/gl/shaders/header_vs.inc
+index ffa4683..bbcc205 100644
+--- a/src/gl/shaders/header_vs.inc
++++ b/src/gl/shaders/header_vs.inc
+@@ -1,9 +1,9 @@
+ const char *header_vert_src =
+-
++"\n"
+ "//#define DIRECTIONALS\n"
+ "//#define POINTLIGHTS\n"
+ "//#define SPOTLIGHTS\n"
+-
++"\n"
+ "#define ATTRIB_POS	0\n"
+ "#define ATTRIB_NORMAL	1\n"
+ "#define ATTRIB_COLOR	2\n"
+@@ -11,16 +11,16 @@ const char *header_vert_src =
+ "#define ATTRIB_INDICES	4\n"
+ "#define ATTRIB_TEXCOORDS0	5\n"
+ "#define ATTRIB_TEXCOORDS1	6\n"
+-
+-
++"\n"
++"\n"
+ "VSIN(ATTRIB_NORMAL)	vec3 in_normal;\n"
+ "VSIN(ATTRIB_COLOR)	vec4 in_color;\n"
+ "VSIN(ATTRIB_WEIGHTS)	vec4 in_weights;\n"
+ "VSIN(ATTRIB_INDICES)	vec4 in_indices;\n"
+ "VSIN(ATTRIB_TEXCOORDS0)	vec2 in_tex0;\n"
+ "VSIN(ATTRIB_TEXCOORDS1)	vec2 in_tex1;\n"
+-
+-
++"\n"
++"\n"
+ "#ifdef USE_UBOS\n"
+ "layout(std140) uniform State\n"
+ "{\n"
+@@ -33,12 +33,12 @@ const char *header_vert_src =
+ "uniform vec4  u_fogData;\n"
+ "uniform vec4  u_fogColor;\n"
+ "#endif\n"
+-
++"\n"
+ "#define u_fogStart (u_fogData.x)\n"
+ "#define u_fogEnd (u_fogData.y)\n"
+ "#define u_fogRange (u_fogData.z)\n"
+ "#define u_fogDisable (u_fogData.w)\n"
+-
++"\n"
+ "#ifdef USE_UBOS\n"
+ "layout(std140) uniform Scene\n"
+ "{\n"
+@@ -49,9 +49,9 @@ const char *header_vert_src =
+ "uniform mat4 u_proj;\n"
+ "uniform mat4 u_view;\n"
+ "#endif\n"
+-
++"\n"
+ "#define MAX_LIGHTS 8\n"
+-
++"\n"
+ "#ifdef USE_UBOS\n"
+ "layout(std140) uniform Object\n"
+ "{\n"
+@@ -70,14 +70,16 @@ const char *header_vert_src =
+ "uniform vec4 u_lightDirection[MAX_LIGHTS];\n"
+ "uniform vec4 u_lightColor[MAX_LIGHTS];\n"
+ "#endif\n"
+-
++"\n"
+ "uniform vec4 u_matColor;\n"
+ "uniform vec4 u_surfProps;	// amb, spec, diff, extra\n"
+-
++"uniform vec4 u_odSpecularPower;	// .x Fresnel, .y exponente del especular Blinn (0 = sin especular)\n"
++"uniform vec4 u_odSpecColor;		// color del especular (el del SP)\n"
++"\n"
+ "#define surfAmbient (u_surfProps.x)\n"
+ "#define surfSpecular (u_surfProps.y)\n"
+ "#define surfDiffuse (u_surfProps.z)\n"
+-
++"\n"
+ "vec3 DoDynamicLight(vec3 V, vec3 N)\n"
+ "{\n"
+ "	vec3 color = vec3(0.0, 0.0, 0.0);\n"
+@@ -122,9 +124,67 @@ const char *header_vert_src =
+ "	}\n"
+ "	return color;\n"
+ "}\n"
+-
++"\n"
+ "float DoFog(float w)\n"
+ "{\n"
+ "	return clamp((w - u_fogEnd)*u_fogRange, u_fogDisable, 1.0);\n"
+ "}\n"
++"\n"
++"// PORTADO -- GTA VC original de PC (gta-vc.exe, pipeline D3D8)\n"
++"//   Que se toma: el retail hacia un ESPECULAR BLINN POR LUZ, coloreado con el color\n"
++"//   de la luz que ilumina (el brillo del semaforo en la chapa del coche). librw no lo\n"
++"//   implementaba: solo subida el \"specular\" del material (u_surfProps.y) y nunca lo\n"
++"//   usaba, asi que las superficies brillantes no brillaban.\n"
++"//   Adaptacion: el exponente llega en u_odSpecularPower (0 = apagado) y el color de la\n"
++"//   luz es el que ya viaja en u_lightColor[].\n"
++"vec3 DoSpecular(vec3 worldPos, vec3 N, vec3 eye)\n"
++"{\n"
++"	vec3 color = vec3(0.0, 0.0, 0.0);\n"
++"	if(u_odSpecularPower.y <= 0.0)\n"
++"		return color;\n"
++"	vec3 V = normalize(eye - worldPos);\n"
++"	// El termino de Fresnel del SP/neo (mix(b^5, 1, fresnel)): el brillo se\n"
++"	// refuerza en los angulos de vision rasantes.\n"
++"	float odB = 1.0 - clamp(dot(V, N), 0.0, 1.0);\n"
++"	float odFresnel = mix(odB*odB*odB*odB*odB, 1.0, u_odSpecularPower.x);\n"
++"	for(int i = 0; i < MAX_LIGHTS; i++){\n"
++"		if(u_lightParams[i].x == 0.0)\n"
++"			break;\n"
++"		vec3 L;\n"
++"		float atten = 1.0;\n"
++"#ifdef DIRECTIONALS\n"
++"		if(u_lightParams[i].x == 1.0){\n"
++"			L = -u_lightDirection[i].xyz;\n"
++"		}else\n"
++"#endif\n"
++"#ifdef POINTLIGHTS\n"
++"		if(u_lightParams[i].x == 2.0){\n"
++"			vec3 dir = u_lightPosition[i].xyz - V;\n"
++"			float dist = length(dir);\n"
++"			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));\n"
++"			L = dir / max(dist, 0.0001);\n"
++"		}else\n"
++"#endif\n"
++"#ifdef SPOTLIGHTS\n"
++"		if(u_lightParams[i].x == 3.0){\n"
++"			vec3 dir = u_lightPosition[i].xyz - V;\n"
++"			float dist = length(dir);\n"
++"			atten = max(0.0, (1.0 - dist/u_lightParams[i].y));\n"
++"			L = dir / max(dist, 0.0001);\n"
++"			float pcos = dot(-L, u_lightDirection[i].xyz);\n"
++"			float ccos = -u_lightParams[i].z;\n"
++"			float falloff = (pcos-ccos)/(1.0-ccos);\n"
++"			if(falloff < 0.0)\n"
++"				continue;\n"
++"			atten *= max(falloff, u_lightParams[i].w);\n"
++"		}else\n"
++"#endif\n"
++"			continue;\n"
++"		vec3 H = normalize(L + V);\n"
++"		float s = max(0.0, dot(N, H));\n"
++"		color += pow(s, u_odSpecularPower.y) * u_lightColor[i].rgb * atten;\n"
++"	}\n"
++"	return color;\n"
++"}\n"
++"\n"
+ ;
+diff --git a/src/gl/shaders/matfx_default_pc.vert b/src/gl/shaders/matfx_default_pc.vert
+new file mode 100644
+index 0000000..abb36f1
+--- /dev/null
++++ b/src/gl/shaders/matfx_default_pc.vert
+@@ -0,0 +1,25 @@
++VSIN(ATTRIB_POS)	vec3 in_pos;
++
++VSOUT vec4 v_color;
++VSOUT vec2 v_tex0;
++VSOUT float v_fog;
++
++void
++main(void)
++{
++	vec4 Vertex = u_world * vec4(in_pos, 1.0);
++	gl_Position = u_proj * u_view * Vertex;
++	vec3 Normal = mat3(u_world) * in_normal;
++
++	v_tex0 = in_tex0;
++
++	v_color = in_color;
++	v_color.rgb += u_ambLight.rgb*surfAmbient;
++	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
++	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
++	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;
++	v_color.rgb *= u_matColor.rgb;
++	v_color = vec4(clamp(v_color.rgb, 0.0, 1.0), u_matColor.a);
++
++	v_fog = DoFog(gl_Position.w);
++}
+diff --git a/src/gl/shaders/matfx_env.vert b/src/gl/shaders/matfx_env.vert
+index 580a49f..2bdc212 100644
+--- a/src/gl/shaders/matfx_env.vert
++++ b/src/gl/shaders/matfx_env.vert
+@@ -23,6 +23,8 @@ main(void)
+ 	v_color = in_color;
+ 	v_color.rgb += u_ambLight.rgb*surfAmbient;
+ 	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
++	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
++	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;
+ 	v_color = clamp(v_color, 0.0, 1.0);
+ 	v_envColor = max(v_color, u_colorClamp) * u_envColor;
+ 	v_color *= u_matColor;
+diff --git a/src/gl/shaders/matfx_env_mobile.frag b/src/gl/shaders/matfx_env_mobile.frag
+new file mode 100644
+index 0000000..33f474e
+--- /dev/null
++++ b/src/gl/shaders/matfx_env_mobile.frag
+@@ -0,0 +1,32 @@
++uniform sampler2D tex0;
++uniform sampler2D tex1;
++
++uniform vec4 u_fxparams;
++
++#define shininess (u_fxparams.x)
++
++FSIN vec4 v_color;
++FSIN vec4 v_envColor;
++FSIN vec2 v_tex0;
++FSIN vec2 v_tex1;
++FSIN float v_fog;
++
++void
++main(void)
++{
++	vec4 tex0c = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
++	vec4 pass1 = v_color*tex0c;
++
++	vec4 pass2 = v_envColor*shininess*texture(tex1, vec2(v_tex1.x, 1.0-v_tex1.y));
++
++	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);
++	pass2.rgb = mix(vec3(0.0, 0.0, 0.0), pass2.rgb, v_fog);
++
++	vec4 color;
++	color.rgb = (pass1.rgb + tex0c.rgb*pass2.rgb)*pass1.a;
++	color.a = pass1.a;
++
++	DoAlphaTest(color.a);
++
++	FRAGCOLOR(color);
++}
+diff --git a/src/gl/shaders/matfx_env_pc.frag b/src/gl/shaders/matfx_env_pc.frag
+new file mode 100644
+index 0000000..9c08c47
+--- /dev/null
++++ b/src/gl/shaders/matfx_env_pc.frag
+@@ -0,0 +1,32 @@
++uniform sampler2D tex0;
++uniform sampler2D tex1;
++
++uniform vec4 u_fxparams;
++
++#define shininess (u_fxparams.x)
++
++FSIN vec4 v_color;
++FSIN vec4 v_envColor;
++FSIN vec2 v_tex0;
++FSIN vec2 v_tex1;
++FSIN float v_fog;
++
++void
++main(void)
++{
++	vec4 tex0c = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));
++	vec4 pass1 = v_color*tex0c;
++
++	vec4 pass2 = v_envColor*shininess*texture(tex1, vec2(v_tex1.x, 1.0-v_tex1.y));
++
++	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);
++	pass2.rgb = mix(vec3(0.0, 0.0, 0.0), pass2.rgb, v_fog);
++
++	vec4 color;
++	color.rgb = (pass1.rgb + pass2.rgb)*pass1.a;
++	color.a = pass1.a;
++
++	DoAlphaTest(color.a);
++
++	FRAGCOLOR(color);
++}
+diff --git a/src/gl/shaders/matfx_env_pc.vert b/src/gl/shaders/matfx_env_pc.vert
+new file mode 100644
+index 0000000..e174344
+--- /dev/null
++++ b/src/gl/shaders/matfx_env_pc.vert
+@@ -0,0 +1,34 @@
++uniform mat4 u_texMatrix;
++uniform vec4 u_colorClamp;
++uniform vec4 u_envColor;
++
++VSIN(ATTRIB_POS)	vec3 in_pos;
++
++VSOUT vec4 v_color;
++VSOUT vec4 v_envColor;
++VSOUT vec2 v_tex0;
++VSOUT vec2 v_tex1;
++VSOUT float v_fog;
++
++void
++main(void)
++{
++	vec4 Vertex = u_world * vec4(in_pos, 1.0);
++	gl_Position = u_proj * u_view * Vertex;
++	vec3 Normal = mat3(u_world) * in_normal;
++
++	v_tex0 = in_tex0;
++	v_tex1 = (u_texMatrix * vec4(Normal, 1.0)).xy;
++
++	v_color = in_color;
++	v_color.rgb += u_ambLight.rgb*surfAmbient;
++	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;
++	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
++	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;
++	v_color.rgb *= u_matColor.rgb;
++	v_color = vec4(clamp(v_color.rgb, 0.0, 1.0), u_matColor.a);
++
++	v_envColor = max(v_color, u_colorClamp) * u_envColor;
++
++	v_fog = DoFog(gl_Position.w);
++}
+diff --git a/src/gl/shaders/matfx_gl.inc b/src/gl/shaders/matfx_gl.inc
+index a1dcaf8..b053c83 100644
+--- a/src/gl/shaders/matfx_gl.inc
++++ b/src/gl/shaders/matfx_gl.inc
+@@ -2,68 +2,207 @@ const char *matfx_env_vert_src =
+ "uniform mat4 u_texMatrix;\n"
+ "uniform vec4 u_colorClamp;\n"
+ "uniform vec4 u_envColor;\n"
+-
++"\n"
+ "VSIN(ATTRIB_POS)	vec3 in_pos;\n"
+-
++"\n"
+ "VSOUT vec4 v_color;\n"
+ "VSOUT vec4 v_envColor;\n"
+ "VSOUT vec2 v_tex0;\n"
+ "VSOUT vec2 v_tex1;\n"
+ "VSOUT float v_fog;\n"
+-
++"\n"
+ "void\n"
+ "main(void)\n"
+ "{\n"
+ "	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
+ "	gl_Position = u_proj * u_view * Vertex;\n"
+ "	vec3 Normal = mat3(u_world) * in_normal;\n"
+-
++"\n"
+ "	v_tex0 = in_tex0;\n"
+ "	v_tex1 = (u_texMatrix * vec4(Normal, 1.0)).xy;\n"
+-
++"\n"
+ "	v_color = in_color;\n"
+ "	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
+ "	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
++"	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
++"	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;\n"
+ "	v_color = clamp(v_color, 0.0, 1.0);\n"
+ "	v_envColor = max(v_color, u_colorClamp) * u_envColor;\n"
+ "	v_color *= u_matColor;\n"
+-
++"\n"
+ "	v_fog = DoFog(gl_Position.w);\n"
+ "}\n"
++"\n"
+ ;
+ const char *matfx_env_frag_src =
+ "uniform sampler2D tex0;\n"
+ "uniform sampler2D tex1;\n"
+-
++"\n"
+ "uniform vec4 u_fxparams;\n"
+-
++"\n"
+ "#define shininess (u_fxparams.x)\n"
+ "#define disableFBA (u_fxparams.y)\n"
+-
++"\n"
+ "FSIN vec4 v_color;\n"
+ "FSIN vec4 v_envColor;\n"
+ "FSIN vec2 v_tex0;\n"
+ "FSIN vec2 v_tex1;\n"
+ "FSIN float v_fog;\n"
+-
++"\n"
+ "void\n"
+ "main(void)\n"
+ "{\n"
+ "	vec4 pass1 = v_color;\n"
+ "	pass1 *= texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
+-
++"\n"
+ "	vec4 pass2 = v_envColor*shininess*texture(tex1, vec2(v_tex1.x, 1.0-v_tex1.y));\n"
+-
++"\n"
+ "	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);\n"
+ "	pass2.rgb = mix(vec3(0.0, 0.0, 0.0), pass2.rgb, v_fog);\n"
+-
++"\n"
+ "	float fba = max(pass1.a, disableFBA);\n"
+ "	vec4 color;\n"
+ "	color.rgb = pass1.rgb*pass1.a + pass2.rgb*fba;\n"
+ "	color.a = pass1.a;\n"
+-
++"\n"
+ "	DoAlphaTest(color.a);\n"
+-
++"\n"
+ "	FRAGCOLOR(color);\n"
+ "}\n"
++"\n"
++;
++const char *matfx_env_pc_frag_src =
++"uniform sampler2D tex0;\n"
++"uniform sampler2D tex1;\n"
++"\n"
++"uniform vec4 u_fxparams;\n"
++"\n"
++"#define shininess (u_fxparams.x)\n"
++"\n"
++"FSIN vec4 v_color;\n"
++"FSIN vec4 v_envColor;\n"
++"FSIN vec2 v_tex0;\n"
++"FSIN vec2 v_tex1;\n"
++"FSIN float v_fog;\n"
++"\n"
++"void\n"
++"main(void)\n"
++"{\n"
++"	vec4 tex0c = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
++"	vec4 pass1 = v_color*tex0c;\n"
++"\n"
++"	vec4 pass2 = v_envColor*shininess*texture(tex1, vec2(v_tex1.x, 1.0-v_tex1.y));\n"
++"\n"
++"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);\n"
++"	pass2.rgb = mix(vec3(0.0, 0.0, 0.0), pass2.rgb, v_fog);\n"
++"\n"
++"	vec4 color;\n"
++"	color.rgb = (pass1.rgb + pass2.rgb)*pass1.a;\n"
++"	color.a = pass1.a;\n"
++"\n"
++"	DoAlphaTest(color.a);\n"
++"\n"
++"	FRAGCOLOR(color);\n"
++"}\n"
++"\n"
++;
++const char *matfx_env_mobile_frag_src =
++"uniform sampler2D tex0;\n"
++"uniform sampler2D tex1;\n"
++"\n"
++"uniform vec4 u_fxparams;\n"
++"\n"
++"#define shininess (u_fxparams.x)\n"
++"\n"
++"FSIN vec4 v_color;\n"
++"FSIN vec4 v_envColor;\n"
++"FSIN vec2 v_tex0;\n"
++"FSIN vec2 v_tex1;\n"
++"FSIN float v_fog;\n"
++"\n"
++"void\n"
++"main(void)\n"
++"{\n"
++"	vec4 tex0c = texture(tex0, vec2(v_tex0.x, 1.0-v_tex0.y));\n"
++"	vec4 pass1 = v_color*tex0c;\n"
++"\n"
++"	vec4 pass2 = v_envColor*shininess*texture(tex1, vec2(v_tex1.x, 1.0-v_tex1.y));\n"
++"\n"
++"	pass1.rgb = mix(u_fogColor.rgb, pass1.rgb, v_fog);\n"
++"	pass2.rgb = mix(vec3(0.0, 0.0, 0.0), pass2.rgb, v_fog);\n"
++"\n"
++"	vec4 color;\n"
++"	color.rgb = (pass1.rgb + tex0c.rgb*pass2.rgb)*pass1.a;\n"
++"	color.a = pass1.a;\n"
++"\n"
++"	DoAlphaTest(color.a);\n"
++"\n"
++"	FRAGCOLOR(color);\n"
++"}\n"
++"\n"
++;
++const char *matfx_env_pc_vert_src =
++"uniform mat4 u_texMatrix;\n"
++"uniform vec4 u_colorClamp;\n"
++"uniform vec4 u_envColor;\n"
++"\n"
++"VSIN(ATTRIB_POS)	vec3 in_pos;\n"
++"\n"
++"VSOUT vec4 v_color;\n"
++"VSOUT vec4 v_envColor;\n"
++"VSOUT vec2 v_tex0;\n"
++"VSOUT vec2 v_tex1;\n"
++"VSOUT float v_fog;\n"
++"\n"
++"void\n"
++"main(void)\n"
++"{\n"
++"	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
++"	gl_Position = u_proj * u_view * Vertex;\n"
++"	vec3 Normal = mat3(u_world) * in_normal;\n"
++"\n"
++"	v_tex0 = in_tex0;\n"
++"	v_tex1 = (u_texMatrix * vec4(Normal, 1.0)).xy;\n"
++"\n"
++"	v_color = in_color;\n"
++"	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
++"	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
++"	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
++"	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;\n"
++"	v_color.rgb *= u_matColor.rgb;\n"
++"	v_color = vec4(clamp(v_color.rgb, 0.0, 1.0), u_matColor.a);\n"
++"\n"
++"	v_envColor = max(v_color, u_colorClamp) * u_envColor;\n"
++"\n"
++"	v_fog = DoFog(gl_Position.w);\n"
++"}\n"
++"\n"
++;
++const char *matfx_default_pc_vert_src =
++"VSIN(ATTRIB_POS)	vec3 in_pos;\n"
++"\n"
++"VSOUT vec4 v_color;\n"
++"VSOUT vec2 v_tex0;\n"
++"VSOUT float v_fog;\n"
++"\n"
++"void\n"
++"main(void)\n"
++"{\n"
++"	vec4 Vertex = u_world * vec4(in_pos, 1.0);\n"
++"	gl_Position = u_proj * u_view * Vertex;\n"
++"	vec3 Normal = mat3(u_world) * in_normal;\n"
++"\n"
++"	v_tex0 = in_tex0;\n"
++"\n"
++"	v_color = in_color;\n"
++"	v_color.rgb += u_ambLight.rgb*surfAmbient;\n"
++"	v_color.rgb += DoDynamicLight(Vertex.xyz, Normal)*surfDiffuse;\n"
++"	vec3 odEye = (inverse(u_view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;\n"
++"	v_color.rgb += DoSpecular(Vertex.xyz, Normal, odEye)*surfSpecular;\n"
++"	v_color.rgb *= u_matColor.rgb;\n"
++"	v_color = vec4(clamp(v_color.rgb, 0.0, 1.0), u_matColor.a);\n"
++"\n"
++"	v_fog = DoFog(gl_Position.w);\n"
++"}\n"
++"\n"
+ ;
 diff --git a/src/gl/shaders/skin.vert b/src/gl/shaders/skin.vert
 index 7408542..339b4fa 100644
 --- a/src/gl/shaders/skin.vert
@@ -805,8 +2523,24 @@ index 7408542..339b4fa 100644
 -	v_fog = DoFog(gl_Position.z);
 +	v_fog = DoFog(gl_Position.w);
  }
+diff --git a/src/matfx.cpp b/src/matfx.cpp
+index c143fc1..66ef9cb 100644
+--- a/src/matfx.cpp
++++ b/src/matfx.cpp
+@@ -26,6 +26,11 @@ namespace rw {
+ 
+ bool32 MatFX::envMapFlipU;
+ bool32 MatFX::envMapApplyLight;
++// PORTADO -- GTA VC original de PC: el exponente del especular Blinn por luz
++// (0 = sin especular). Lo escribe el motor.
++float MatFX::specularPower;
++float MatFX::specularFresnel;
++RGBA MatFX::specularColor = { 255, 255, 255, 255 };
+ bool32 MatFX::envMapUseMatColor;
+ RGBA MatFX::envMapColor = { 255, 255, 255, 255 };
+ 
 diff --git a/src/raster.cpp b/src/raster.cpp
-index c7ebffe..a2b16bf 100644
+index c7ebffe..09d5145 100644
 --- a/src/raster.cpp
 +++ b/src/raster.cpp
 @@ -2,6 +2,84 @@
@@ -921,7 +2655,21 @@ index c7ebffe..a2b16bf 100644
  	for(int i = 0; i < numLevels; i++){
  		uint8 *srcpx = ras->lock(i, Raster::LOCKREAD);
  		uint8 *dstpx = newras->lock(i, Raster::LOCKWRITE | Raster::LOCKNOFETCH);
-@@ -531,25 +621,132 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
+@@ -508,6 +598,13 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
+ 	   (ras->platform == PLATFORM_D3D9 && rw::platform == PLATFORM_D3D8))
+ 		return ras;
+ 
++	if(ras->width <= 0 || ras->height <= 0 || ras->width > 4096 || ras->height > 4096){
++#ifdef __EMSCRIPTEN__
++		convTrace("RASGARBAGE %dx%d fmt=0x%x levels=%d", ras->width, ras->height, ras->format, ras->getNumLevels());
++#endif
++		return nil;
++	}
++
+ 	// special cased conversion for DXT
+ 	if((ras->platform == PLATFORM_D3D8 || ras->platform == PLATFORM_D3D9) && rw::platform == PLATFORM_GL3){
+ 		Raster *newras = d3d_to_gl3(ras);
+@@ -531,25 +628,132 @@ Raster::convertTexToCurrentPlatform(rw::Raster *ras)
  
  	// fall back to going through Image directly
  	int32 width, height, depth, format;
@@ -1080,6 +2828,32 @@ index 5cd833f..6e82ffb 100644
  };
  
  void registerAtomicRightsPlugin(void);
+diff --git a/src/rwplugins.h b/src/rwplugins.h
+index 51696b6..a66263d 100644
+--- a/src/rwplugins.h
++++ b/src/rwplugins.h
+@@ -162,8 +162,21 @@ struct MatFX
+ 
+ 	static bool32 envMapFlipU;	// PS2 does this for some reason
+ 	static bool32 envMapApplyLight;	// modulate env map by lighting
++	// PORTADO -- GTA VC original de PC: exponente del especular Blinn por luz
++	// (0 = sin especular). Lo escribe el motor.
++	static float specularPower;
++	// El Fresnel y el color del especular (los del SP: neo/carTweakingTable.dat)
++	static float specularFresnel;
++	static RGBA specularColor;
+ 	static bool32 envMapUseMatColor;	// modulate env map by material color
+ 	static RGBA envMapColor;	// if !envMapUseMatColor, use this
++// PORTADO -- SkyGfx (MIT, aap "The Hero")
++//   https://github.com/aap/skygfx_vc
++//   src/matfx.cpp:584  ("_rpMatFXD3D8AtomicMatFXEnvRender_switch_shader")
++// Que se toma: los tres estilos de mezcla del env map (0 = PS2, 1 = PC, 2 = Mobile) y el modelo de luz PS2. Adaptacion: el motor escribe MatFX::envMapBlendStyle, MatFX::envMapTexgenStyle y MatFX::ps2Lighting; librw elige con ellos el fragment shader (un .frag por estilo) y el vertex shader (PS2 o PC) de cada material.
++	static int32 envMapBlendStyle;
++	static int32 envMapTexgenStyle;
++	static bool32 ps2Lighting;
+ };
+ 
+ struct MatFXGlobals
 diff --git a/src/texture.cpp b/src/texture.cpp
 index 958ae08..7b8e7dc 100644
 --- a/src/texture.cpp

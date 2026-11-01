@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "Weapon.h"
+#include "TimeCycle.h"	// CTimeCycle, para el codigo del mod
 #include "AnimBlendAssociation.h"
 #include "AudioManager.h"
 #include "BulletInfo.h"
@@ -23,10 +24,12 @@
 #include "ondemand.h" // web: ODTRACES -> odtrace.log (sección 3, C3.3)
 #include "ShotInfo.h"
 #include "SpecialFX.h"
+#include "Wanted.h"
 #include "Stats.h"
 #include "TempColModels.h"
 #include "Timer.h"
 #include "Automobile.h"
+#include "VehicleModelInfo.h" // 6.02: m_positions[CAR_POS_PETROLCAP] del mod
 #include "Boat.h"
 #include "WaterLevel.h"
 #include "WeaponInfo.h"
@@ -39,6 +42,9 @@
 #include "SaveBuf.h"
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 #include "Frontend.h"
+#ifdef SCREEN_DROPLETS
+#include "screendroplets.h"
+#endif
 #endif
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
@@ -48,6 +54,7 @@ float fPlayerAimScaleDist = 5.0f;
 float fPlayerAimScale = 2.5f;
 
 bool CWeapon::bPhotographHasBeenTaken;
+bool CWeapon::bTakePhoto;
 
 #ifdef SECUROM
 int32 sniperPirateCheck = 0x00797743; // 'Cwy\0' ???
@@ -317,6 +324,13 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				{
 					fired = FireProjectile(shooter, source, ((CPlayerPed*)shooter)->m_fAttackButtonCounter*0.0375f);
 				}
+				else if ( shooter->IsPed() && ((CPed*)shooter)->m_nPedType == PEDTYPE_COP && !FindPlayerPed()->m_pWanted->IsPlayerHides())
+				{
+					float distToTarget = (shooter->GetPosition() - FindPlayerCoors()).Magnitude();
+					float power = Clamp(distToTarget * 0.04f, 0.3f, 1.0f);
+
+					fired = FireProjectile(shooter, source, power);
+				}
 				else if ( shooter->IsPed() && ((CPed*)shooter)->m_pSeekTarget != nil )
 				{
 					float distToTarget = (shooter->GetPosition() - ((CPed*)shooter)->m_pSeekTarget->GetPosition()).Magnitude();
@@ -460,7 +474,21 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			if (m_eWeaponState == WEAPONSTATE_READY && m_eWeaponType == WEAPONTYPE_FLAMETHROWER)
 				DMAudio.PlayOneShot(((CPhysical*)shooter)->m_audioEntityId, SOUND_WEAPON_FLAMETHROWER_FIRE, 0.0f);
 
+			int odEstadoAntes = m_eWeaponState;
 			m_eWeaponState = WEAPONSTATE_FIRING;
+
+#ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_WEAPON_UZIOLD
+			if (shooter == FindPlayerPed() && m_eWeaponType == WEAPONTYPE_UZIOLD) {
+				char t[180];
+				snprintf(t, sizeof t, "P4 kind=uzi schema=1 gen=1 frame=%u sim=%.4f case=5 id=0 ev=%s estado=%d clip=%d total=%d ok=1",
+					(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+					odEstadoAntes == WEAPONSTATE_FIRING ? "ih_enter" : "enter",
+					(int)m_eWeaponState, m_nAmmoInClip, m_nAmmoTotal);
+				ODTRACES(t);
+			}
+#endif
+#endif
 
 			if (m_nAmmoInClip == 0)
 			{
@@ -590,7 +618,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 		ASSERT(victimPed!=nil);
 
 		if ( (victimPed->m_nPedType != shooterPed->m_nPedType || victimPed == shooterPed->m_pSeekTarget)
-				&& victimPed != shooterPed->m_leader || !(CGeneral::GetRandomNumber() & 31)
+				&& victimPed != shooterPed->m_leader || CGeneral::ChancePerTick(32)
 				&& (!shooterPed->IsGangMember() || victimPed->CanBeDamagedByThisGangMember(shooterPed)) )
 		{
 			bool collided = false;
@@ -723,8 +751,8 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 
 								if (m_eWeaponType == WEAPONTYPE_CHAINSAW)
 								{
-									if (victimPed->m_nPedState != PED_DEAD && !((CTimer::GetFrameCounter() + 17) & 1)
-										|| victimPed->m_nPedState == PED_DEAD && !((CTimer::GetFrameCounter() + 17) & 3))
+									if (victimPed->m_nPedState != PED_DEAD && !((CTimer::GetLogicalFrameCounter() + 17) & 1)
+										|| victimPed->m_nPedState == PED_DEAD && !((CTimer::GetLogicalFrameCounter() + 17) & 3))
 									{
 										CParticle::AddParticle(PARTICLE_TEST, bloodPos, CVector(0.0f, 0.0f, 0.0f), nil, 0.2f);
 									}
@@ -744,6 +772,12 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 										CGeneral::GetRandomNumberInRange(SCREEN_STRETCH_Y(50.0f), SCREEN_STRETCH_FROM_BOTTOM(50.0f)), 1.f);
 									CParticle::AddParticle(PARTICLE_BLOODDROP, dropPos, dropDir, nil, CGeneral::GetRandomNumberInRange(0.1f, 0.15f),
 										CRGBA(0, 0, 0, 0), 0, 0, CGeneral::GetRandomNumber() & 1, 0);
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#ifdef SCREEN_DROPLETS
+									ScreenDroplets::FillScreenMoving(1.0f, true);
+#endif
+#endif
 
 								}
 								if (info->m_AnimToPlay == ASSOCGRP_KNIFE)
@@ -930,152 +964,70 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 	return true;
 }
 
-#ifdef VICEEXT_GAS_TANK
-
-// Sección 3 (Vice Extended v2.5, "Gas tank. When shot, the car explodes").
-//
-// El mod marca el depósito con un dummy llamado `petrolcap` colgado del root
-// del vehículo (ver AdaptingVehiclesEN.txt, punto 1) y sus modelos adaptados ya
-// lo traen (premier, admiral, pcj600...). Aquí se busca ese frame
-// (CVehicle::FindDummyFrame) y, si el punto de impacto cae en su radio, el
-// vehículo **explota**. Si el modelo no lo trae, hay respaldo por caja de
-// colisión (ver ViceExtGasTankPoint).
-//
-// C3.3b (20/09): antes se dejaba la salud en el umbral del motor (250) para que
-// ardiera y explotara solo a los ~5 s, pero el mod dice "explodes" y el jugador
-// lo vio como un fallo: disparó 10 veces al mismo depósito (`VICEEXT gastank hit
-// hp=250→25`) y el coche sólo ardía. Ahora se llama a `CVehicle::BlowUpCar`
-// (virtual: CAutomobile, CBike y CBoat tienen la suya), que es el camino de
-// serie de la explosión: onda, fuego, destrozo y conductor muerto. No se toca
-// el daño de chapa normal.
-// C3.3c (20/09, 4ª partida): sólo **25 de ~100** `.dff` de vehículos traen el
-// dummy `petrolcap` (los ocho del mod sí; de serie, casi ninguno: el jugador
-// disparó a un `bobcat` y no pasó nada). El reparto de la 4ª partida decidió que
-// el respaldo va en CÓDIGO y no añadiendo dummies a los `.dff` (eso es binario y
-// de la sección 1). Así que cuando el modelo no trae el dummy se usa la **caja
-// de colisión** del vehículo: en este motor el eje local Y es el morro, de modo
-// que el depósito cae en la parte TRASERA (y = min.y), centrado y a media altura
-// baja (x = 0, z = min.z + 30 % de la altura). Un pelín más de radio que el
-// dummy porque la caja es más gruesa que la boca del tapón.
-#define VICEEXT_GAS_TANK_RADIUS_DUMMY	0.22f
-#define VICEEXT_GAS_TANK_RADIUS_BOX		0.30f
-
-// Devuelve el punto del depósito en coordenadas de mundo. `desdeCaja` distingue
-// el dummy del respaldo (para la traza).
-static bool
-ViceExtGasTankPoint(CVehicle *victim, CVector &point, bool &desdeCaja)
-{
-	RwFrame *cap = victim->FindDummyFrame("petrolcap");
-	if (cap != nil) {
-		CMatrix capMatrix(RwFrameGetLTM(cap));
-		point = capMatrix.GetPosition();
-		desdeCaja = false;
-		return true;
-	}
-
-	// C3.3d (21/09, 7ª partida): "a las MOTOS sólo si se les dispara a su
-	// depósito, a ninguna parte más". Los modelos adaptados del mod sí traen el
-	// dummy `petrolcap`; el respaldo por caja está pensado para coches de serie,
-	// donde el tanque es un rectángulo cómodo de acertar. En una moto la caja es
-	// casi toda la moto, así que ahí el respaldo se descarta: o hay dummy, o no
-	// hay depósito.
-	if (victim->IsBike())
-		return false;
-
-	CColModel *col = victim->GetModelInfo()->GetColModel();
-	if (col == nil)
-		return false;
-	const CBox &bb = col->boundingBox;
-	float odLocalY = bb.min.y + (bb.max.y - bb.min.y) * 0.06f;
-	float odLocalZ = bb.min.z + (bb.max.z - bb.min.z) * 0.30f;
-	point = victim->GetPosition() + victim->GetForward() * odLocalY + victim->GetUp() * odLocalZ;
-	desdeCaja = true;
-	return true;
-}
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 
 static bool ViceExtBulletHitGasTank(CVehicle *victim, const CVector &hitPoint, CEntity *shooter)
 {
-	if (victim == nil || victim->GetStatus() == STATUS_WRECKED)
+	if (victim->bRenderScorched)
+		return false;
+	if (victim == FindPlayerVehicle())
+		return false;
+	if (!victim->IsCar() && !victim->IsBike())
 		return false;
 
-	CVector capPos;
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(victim->GetModelIndex());
+	CVector capPos(0.0f, 0.0f, 0.0f);
 	bool desdeCaja = false;
-	if (!ViceExtGasTankPoint(victim, capPos, desdeCaja))
-		return false;
-
-#ifdef __EMSCRIPTEN__
-	// DIAG: un modelo sin el dummy (una línea por modelo) — el respaldo por caja
-	// tarda un poco más en acertar, así que interesa saber cuál se está usando.
-	if (desdeCaja) {
-		static int32 alreadyReported[200];
-		if (alreadyReported[victim->GetModelIndex() % 200] != victim->GetModelIndex()) {
-			alreadyReported[victim->GetModelIndex() % 200] = victim->GetModelIndex();
-			char t[112];
-			snprintf(t, sizeof t, "VICEEXT gastank reserva model=%d (sin dummy petrolcap)", (int)victim->GetModelIndex());
-			ODTRACES(t);
+	bool haveCapPos = false;
+	if (mi) {
+		CVector localCap = mi->m_positions[CAR_POS_PETROLCAP];
+		if (localCap.MagnitudeSqr() > 0.0f) {
+			capPos = victim->GetMatrix() * localCap;
+			haveCapPos = true;
 		}
 	}
-#endif
-
-	// C3.3d (21/09, 7ª partida): antes el radio era de 0,6/0,75 m y el jugador lo
-	// notó enseguida: "es demasiado impreciso, basta con disparar alrededor del
-	// depósito y explota". Ahora hay que darle al tapón (0,22 m). El respaldo por
-	// caja no se comprueba como esfera sino como CUADRO en el sistema local del
-	// vehículo, que es lo que pidió el jugador ("el cuadro del tanque, nada más").
-	if (desdeCaja) {
-		CVector odDelta = hitPoint - capPos;
-		CVector odRight = CrossProduct(victim->GetUp(), victim->GetForward());
-		float odX = DotProduct(odDelta, odRight);
-		float odY = DotProduct(odDelta, victim->GetForward());
-		float odZ = DotProduct(odDelta, victim->GetUp());
-		if (Abs(odX) > VICEEXT_GAS_TANK_RADIUS_BOX
-		    || Abs(odY) > VICEEXT_GAS_TANK_RADIUS_BOX * 1.5f
-		    || Abs(odZ) > VICEEXT_GAS_TANK_RADIUS_BOX)
+	if (!haveCapPos) {
+		RwFrame *capFrame = victim->FindDummyFrame("petrolcap");
+		if (capFrame != nil) {
+			CMatrix capMatrix(RwFrameGetLTM(capFrame));
+			capPos = capMatrix.GetPosition();
+			haveCapPos = true;
+		}
+	}
+	if (!haveCapPos) {
+		if (victim->IsBike())
 			return false;
-	} else if ((hitPoint - capPos).Magnitude() > VICEEXT_GAS_TANK_RADIUS_DUMMY) {
-		return false;
+		CColModel *col = victim->GetModelInfo()->GetColModel();
+		if (col == nil)
+			return false;
+		const CBox &bb = col->boundingBox;
+		float odLocalY = bb.min.y + (bb.max.y - bb.min.y) * 0.06f;
+		float odLocalZ = bb.min.z + (bb.max.z - bb.min.z) * 0.30f;
+		capPos = victim->GetPosition() + victim->GetForward() * odLocalY + victim->GetUp() * odLocalZ;
+		desdeCaja = true;
 	}
 
-	// Explosión inmediata por el camino de serie. `BlowUpCar` ya se ocupa del
-	// estado (si el coche está siniestrado no vuelve a explotar) y de quién lo
-	// voló (`m_pBlowUpEntity`), así que el jugador que dispara cobra la baja.
+	float radio = desdeCaja ? 0.30f : 0.22f;
+	if ((hitPoint - capPos).MagnitudeSqr() > radio * radio)
+		return false;
+
 	victim->BlowUpCar(shooter);
 #ifdef __EMSCRIPTEN__
 	{
 		char t[144];
-		snprintf(t, sizeof t, "VICEEXT gastank hit model=%d explota=1 reserva=%d hp=%.0f pos=%.1f,%.1f,%.1f",
-			(int)victim->GetModelIndex(), (int)desdeCaja, victim->m_fHealth, hitPoint.x, hitPoint.y, hitPoint.z);
+		snprintf(t, sizeof t, "VICEEXT gastank hit model=%d explota=1 hp=%.0f pos=%.1f,%.1f,%.1f",
+			(int)victim->GetModelIndex(), victim->m_fHealth, hitPoint.x, hitPoint.y, hitPoint.z);
 		ODTRACES(t);
 	}
 #endif
 	return true;
 }
-#endif
-
-#ifdef VICEEXT_BREAKABLE_LIGHTS
-// Sección 3 (C3.5, v2.5 "Car lights can break on impact" y su experimental
-// "Vehicle lights can break when shot at"): las luces se rompen al dispararles.
-//
-// Ancla en el motor: los modelos adaptados del mod traen los faros como objetos
-// con nombre propio (`headlight_l/r`, `taillight_l/r` — ver
-// AdaptingVehiclesEN.txt, puntos 6.1/6.2), y el port YA sabe dibujar una luz
-// rota: `CAutomobile::Render` decide el resplandor con
-// `Damage.GetLightStatus(VEHLIGHT_*)` (Automobile.cpp ~2350-2530). Lo que falta
-// es el camino del DISPARO: en chapa, `DamageManager` rompe la luz por
-// componente al recibir daño fuerte (`COMPGROUP_PANEL`), y eso ya es de serie.
-//
-// Lo que NO se copia del mod: él cambia la textura del faro a la de "apagado"
-// y muestra el hueco del modelo. Aquí no hay intercambio de material por
-// objeto, así que el resultado visible es que la luz deja de alumbrar (y el
-// faro sigue ahí): se documenta en el plan y el historial.
-#define VICEEXT_LIGHT_HIT_RADIUS (0.5f)
 
 static bool ViceExtBulletHitCarLight(CVehicle *victim, const CVector &hitPoint)
 {
-	if (victim == nil || !victim->IsCar())
+	if (!victim->IsCar())
 		return false;
 
-	CAutomobile *car = (CAutomobile*)victim;
 	struct SLightDummy { const char *name; eLights light; };
 	static const SLightDummy lights[4] = {
 		{ "headlight_l", VEHLIGHT_FRONT_LEFT },
@@ -1084,17 +1036,19 @@ static bool ViceExtBulletHitCarLight(CVehicle *victim, const CVector &hitPoint)
 		{ "taillight_r", VEHLIGHT_REAR_RIGHT },
 	};
 
+	CDamageManager *damage = &((CAutomobile*)victim)->Damage;
+
 	for (int i = 0; i < 4; i++) {
-		RwFrame *frame = car->FindDummyFrame(lights[i].name);
+		RwFrame *frame = victim->FindDummyFrame(lights[i].name);
 		if (frame == nil)
-			continue;	            // modelo sin ese faro como objeto (de serie) o ya roto antes
-		if (car->Damage.GetLightStatus(lights[i].light) == LIGHT_STATUS_BROKEN)
-			continue;	            // ya estaba rota: no se repite
+			continue;
+		if (damage->GetLightStatus(lights[i].light) == LIGHT_STATUS_BROKEN)
+			continue;
 		CMatrix lightMatrix(RwFrameGetLTM(frame));
-		if ((hitPoint - lightMatrix.GetPosition()).Magnitude() > VICEEXT_LIGHT_HIT_RADIUS)
+		if ((hitPoint - lightMatrix.GetPosition()).MagnitudeSqr() > 0.035f)
 			continue;
 
-		car->Damage.SetLightStatus(lights[i].light, LIGHT_STATUS_BROKEN);
+		damage->SetLightStatus(lights[i].light, LIGHT_STATUS_BROKEN);
 #ifdef __EMSCRIPTEN__
 		{
 			char t[128];
@@ -1107,26 +1061,14 @@ static bool ViceExtBulletHitCarLight(CVehicle *victim, const CVector &hitPoint)
 	}
 	return false;
 }
-#endif
 
-#if defined(VICEEXT_GAS_TANK) || defined(VICEEXT_BREAKABLE_LIGHTS)
-// Sección 3: punto de entrada ÚNICO de las mecánicas de impacto de bala en
-// vehículos (depósito C3.3 y luces C3.5). Los tres caminos de bala del arma
-// (DoBulletImpact, FireShotgun, FireFromCar) lo llaman igual, así que añadir una
-// mecánica nueva no obliga a tocar tres sitios otra vez.
 static void ViceExtBulletHitVehicle(CEntity *victimEntity, const CVector &hitPoint, CEntity *shooter)
 {
 	if (victimEntity == nil || !victimEntity->IsVehicle())
 		return;
 	CVehicle *victim = (CVehicle*)victimEntity;
-#ifdef VICEEXT_GAS_TANK
 	ViceExtBulletHitGasTank(victim, hitPoint, shooter);
-#else
-	(void)shooter;
-#endif
-#ifdef VICEEXT_BREAKABLE_LIGHTS
 	ViceExtBulletHitCarLight(victim, hitPoint);
-#endif
 }
 #endif
 
@@ -1266,8 +1208,19 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 				if (shooterPed->bIsDucking)
 					recoilMult -= 0.5f;
 
-				TheCamera.Cams[TheCamera.ActiveCam].Alpha += CGeneral::GetRandomNumberInRange(0.001f * recoilMult, 0.005f * recoilMult);
-				TheCamera.Cams[TheCamera.ActiveCam].Beta += CGeneral::GetRandomNumberInRange(-0.005f * recoilMult, 0.005f * recoilMult);
+				float odDa = CGeneral::GetRandomNumberInRange(0.001f * recoilMult, 0.005f * recoilMult);
+				float odDb = CGeneral::GetRandomNumberInRange(-0.005f * recoilMult, 0.005f * recoilMult);
+				TheCamera.Cams[TheCamera.ActiveCam].Alpha += odDa;
+				TheCamera.Cams[TheCamera.ActiveCam].Beta += odDb;
+#ifdef __EMSCRIPTEN__
+				{
+					char t[130];
+					snprintf(t, sizeof t, "VICEEXT recoil via=1 arma=%d mult=%.2f da=%.4f db=%.4f modo=%d agachado=%d",
+						(int)m_eWeaponType, recoilMult, odDa, odDb,
+						(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, shooterPed->bIsDucking ? 1 : 0);
+					ODTRACES(t);
+				}
+#endif
 			}
 #endif
 
@@ -1338,7 +1291,11 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			rotSpeed = 4;
 
 		CVector bulletPos;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+		if ( CHeli::TestBulletCollision(&source, &target, &bulletPos, info->m_nDamage / 4) )
+#else
 		if ( CHeli::TestBulletCollision(&source, &target, &bulletPos, 4) )
+#endif
 		{
 			for ( int32 i = 0; i < 16; i++ )
 				CParticle::AddParticle(PARTICLE_SPARK, bulletPos, CVector(0.0f, 0.0f, 0.0f), nil, 0.0f, rotSpeed);
@@ -1389,7 +1346,11 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 				rotSpeed = 4;
 
 			CVector bulletPos;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if (CHeli::TestBulletCollision(fireSource, &target, &bulletPos, info->m_nDamage / 4))
+#else
 			if (CHeli::TestBulletCollision(fireSource, &target, &bulletPos, 4))
+#endif
 			{
 				for (int32 i = 0; i < 16; i++)
 					CParticle::AddParticle(PARTICLE_SPARK, bulletPos, CVector(0.0f, 0.0f, 0.0f), nil, 0.0f, rotSpeed);
@@ -1432,7 +1393,11 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 				rotSpeed = 4;
 
 			CVector bulletPos;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if (CHeli::TestBulletCollision(fireSource, &target, &bulletPos, info->m_nDamage / 4))
+#else
 			if (CHeli::TestBulletCollision(fireSource, &target, &bulletPos, 4))
+#endif
 			{
 				for (int32 i = 0; i < 16; i++)
 					CParticle::AddParticle(PARTICLE_SPARK, bulletPos, CVector(0.0f, 0.0f, 0.0f), nil, 0.0f, rotSpeed);
@@ -1456,7 +1421,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 
 	if ( shooter == FindPlayerPed() )
 	{
-		if ( !(CTimer::GetFrameCounter() & 3) )
+		if ( !(CTimer::GetLogicalFrameCounter() & 3) )
 			MakePedsJumpAtShot((CPhysical*)shooter, fireSource, &target);
 	}
 
@@ -1576,12 +1541,6 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			gunshellPos -= CVector(0.2f*ahead.x, 0.2f*ahead.y, 0.0f);
 			CVector dir = CrossProduct(CVector(ahead.x, ahead.y, 0.0f), CVector(0.0f, 0.0f, 5.0f));
 			dir.Normalise2D();
-			// PORTADO -- SilentPatch (MIT, (c) 2024 Adrian Zdanowicz "Silent", contrib. CanerKaraca)
-			//   https://github.com/CookiePLMonster/SilentPatch
-			//   SilentPatchVC/SilentPatchVC.cpp ("Fix shell casings being ejected from weapons that don't eject them", RevolverShellCasingFix)
-			// Que se toma: Python(18), Sniper(28) y Laser(29) no expulsan casquillo; el fogonazo/humo se quedan.
-			// Adaptacion: el enum ya coincide (PYTHON=18, SNIPERRIFLE=28, LASERSCOPE=29); guardia en el unico AddGunshell del caso.
-			// Medible: criterio PASS = disparar Python/francotirador/laser no deja casquillo; la Colt45 si.
 #ifdef VICEEXT_FIX_SILENTPATCH
 			if (m_eWeaponType != WEAPONTYPE_PYTHON && m_eWeaponType != WEAPONTYPE_SNIPERRIFLE && m_eWeaponType != WEAPONTYPE_LASERSCOPE)
 #endif
@@ -1888,7 +1847,14 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 							CParticle::AddParticle(PARTICLE_BLOOD_SMALL, point->point + CVector(0.0f, 0.0f, 0.15f), dir);
 					}
 
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+					// Un muerto dentro del coche conserva su animacion de asiento:
+					// la de suelo lo sacaba del vehiculo visualmente. El guard cubre
+					// tambien la rama frontal, que antes se colaba.
+					if ( victimPed->Dead() && !victimPed->InVehicle() )
+#else
 					if ( victimPed->Dead() )
+#endif
 					{
 						CAnimBlendAssociation *asoc;
 						if ( RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL) )
@@ -1941,8 +1907,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 					}
 					else
 					{
-#if defined(VICEEXT_GAS_TANK) || defined(VICEEXT_BREAKABLE_LIGHTS)
-						// Sección 3 (C3.3 depósito + C3.5 luces): antes del daño de chapa.
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 						ViceExtBulletHitVehicle(victim, point->point, shooter);
 #endif
 						((CVehicle*)victim)->InflictDamage(shooter, m_eWeaponType, info->m_nDamage);
@@ -2333,7 +2298,11 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 							for (uint8 i = 0; i < 8; i++)
 								CParticle::AddParticle(PARTICLE_BLOOD_SMALL, point.point + CVector(0.0f, 0.0f, 0.15f), dir);
 						}
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+						if (victimPed->Dead() && !victimPed->InVehicle())
+#else
 						if (victimPed->Dead())
+#endif
 						{
 							CAnimBlendAssociation *hitAssoc;
 							if (RpAnimBlendClumpGetFirstAssociation(victimPed->GetClump(), ASSOC_FRONTAL))
@@ -2368,8 +2337,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 						}
 						else
 						{
-#if defined(VICEEXT_GAS_TANK) || defined(VICEEXT_BREAKABLE_LIGHTS)
-						// Sección 3 (C3.3 depósito + C3.5 luces): antes del daño de chapa.
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 						ViceExtBulletHitVehicle(victim, point.point, shooter);
 #endif
 						((CVehicle*)victim)->InflictDamage(shooter, m_eWeaponType, info->m_nDamage);
@@ -2495,8 +2463,19 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 	if ( shooter == FindPlayerPed() ) {
 #ifdef VICEEXT_FEATURES_INI
 		if (bRecoilWhenFiring) {
-			TheCamera.Cams[TheCamera.ActiveCam].Alpha += CGeneral::GetRandomNumberInRange(0.005f, 0.01f);
-			TheCamera.Cams[TheCamera.ActiveCam].Beta += CGeneral::GetRandomNumberInRange(-0.01f, 0.01f);
+			float odDa = CGeneral::GetRandomNumberInRange(0.005f, 0.01f);
+			float odDb = CGeneral::GetRandomNumberInRange(-0.01f, 0.01f);
+			TheCamera.Cams[TheCamera.ActiveCam].Alpha += odDa;
+			TheCamera.Cams[TheCamera.ActiveCam].Beta += odDb;
+#ifdef __EMSCRIPTEN__
+			{
+				char t[130];
+				snprintf(t, sizeof t, "VICEEXT recoil via=2 arma=%d mult=%.2f da=%.4f db=%.4f modo=%d agachado=%d",
+					(int)m_eWeaponType, 1.0f, odDa, odDb,
+					(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, shooter->IsPed() && ((CPed *)shooter)->bIsDucking ? 1 : 0);
+				ODTRACES(t);
+			}
+#endif
 		}
 #endif
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
@@ -2750,7 +2729,12 @@ CWeapon::FireSniper(CEntity *shooter)
 	CVector source = cam->Source;
 	CVector dir    = cam->Front;
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	CVector moonDirection = -CTimeCycle::GetSunDirection();
+	if ( DotProduct(dir, CVector(moonDirection.x, moonDirection.y, moonDirection.z)) > 0.997f )
+#else
 	if ( DotProduct(dir, CVector(0.0f, -0.9894f, 0.145f)) > 0.997f )
+#endif
 		CCoronas::MoonSize = (CCoronas::MoonSize+1) & 7;
 
 	dir.Normalise();
@@ -2807,12 +2791,8 @@ CWeapon::TakePhotograph(CEntity *shooter)
 		CSpecialFX::SnapShotFrames = 0;
 		CStats::PhotosTaken++;
 		bPhotographHasBeenTaken = true;
-#ifdef VICEEXT_PHOTO_SAVE
-		{
-			char odFotoSave[208];
-			snprintf(odFotoSave, sizeof odFotoSave, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=19 id=0 fotos=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)CStats::PhotosTaken);
-			ODTRACES(odFotoSave);
-		}
+#ifdef VICEEXT_AUTOSAVE
+		bTakePhoto = FrontEndMenuManager.m_PrefsStoreGalleryPhotos;
 #endif
 		
 		for ( int32 i = CPools::GetPedPool()->GetSize() - 1; i >= 0; i--)
@@ -3068,7 +3048,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	CWorld::pIgnoreEntity = NULL;
 	CWorld::bIncludeBikers = false;
 
-	if ( !(CTimer::GetFrameCounter() & 3) )
+	if ( !(CTimer::GetLogicalFrameCounter() & 3) )
 		MakePedsJumpAtShot(shooter, &source, &target);
 
 	if ( victim )
@@ -3123,8 +3103,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 		}
 		else if ( victim->IsVehicle() )
 		{
-#if defined(VICEEXT_GAS_TANK) || defined(VICEEXT_BREAKABLE_LIGHTS)
-			// Sección 3 (C3.3 depósito + C3.5 luces).
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
 			ViceExtBulletHitVehicle(victim, point.point, FindPlayerPed());
 #endif
 			((CVehicle *)victim)->InflictDamage(FindPlayerPed(), WEAPONTYPE_UZI_DRIVEBY, info->m_nDamage);
@@ -3811,7 +3790,7 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 	if (!(*victim)->IsVehicle())
 		return;
 
-	CColSphere headSphere;
+	CColSphere sphere;
 
 	CVehicle *veh = (CVehicle*)*victim;
 	CColPoint origPoint(*point);
@@ -3819,13 +3798,43 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 	bool found = false;
 	CColLine shootLine(source, target);
 
+	// El disparo solo alcanza el torso si atraviesa un cristal: la chapa
+	// sigue parando balas, como en el juego original.
+	bool passesGlass = false;
+	CVector distVec = target - source;
+	if (veh->IsCar()) {
+		if (DotProduct(distVec, veh->GetForward()) < 0.0f && DotProduct(distVec, veh->GetUp()) <= 0.0f) {
+			CColModel *colModel = veh->GetColModel();
+			if (colModel->numTriangles > 0) {
+				CMatrix invVehMat;
+				Invert(veh->GetMatrix(), invVehMat);
+				CColLine localLine(invVehMat * shootLine.p0, invVehMat * shootLine.p1);
+				CCollision::CalculateTrianglePlanes(colModel);
+				for (int i = 0; i < colModel->numTriangles; i++) {
+					if (colModel->triangles[i].surface == SURFACE_GLASS &&
+						CCollision::TestLineTriangle(localLine, colModel->vertices, colModel->triangles[i], colModel->trianglePlanes[i])) {
+						passesGlass = true;
+						break;
+					}
+				}
+			}
+		}
+	}
+
 	if (veh->pDriver && veh->pDriver->bCanBeShotInVehicle) {
 		CVector pos(0.f, 0.f, 0.f);
 		veh->pDriver->TransformToNode(pos, PED_HEAD);
-		headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
-		if (CCollision::ProcessLineSphere(shootLine, headSphere, *point, radius)) {
+		sphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
+		if (CCollision::ProcessLineSphere(shootLine, sphere, *point, radius)) {
 			*victim = veh->pDriver;
 			found = true;
+		} else if (passesGlass) {
+			veh->pDriver->TransformToNode(pos, PED_MID);
+			sphere.Set(0.25f, pos, 0, PEDPIECE_TORSO);
+			if (CCollision::ProcessLineSphere(shootLine, sphere, *point, radius)) {
+				*victim = veh->pDriver;
+				found = true;
+			}
 		}
 	}
 	
@@ -3834,43 +3843,30 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 		if (passenger && passenger->bCanBeShotInVehicle) {
 			CVector pos(0.f, 0.f, 0.f);
 			passenger->TransformToNode(pos, PED_HEAD);
-			headSphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
-			if (CCollision::ProcessLineSphere(shootLine, headSphere, *point, radius)) {
+			sphere.Set(0.2f, pos + CVector(0.f, 0.f, 0.1f), 0, PEDPIECE_HEAD);
+			if (CCollision::ProcessLineSphere(shootLine, sphere, *point, radius)) {
 				*victim = passenger;
 				found = true;
+			} else if (passesGlass) {
+				passenger->TransformToNode(pos, PED_MID);
+				sphere.Set(0.25f, pos, 0, PEDPIECE_TORSO);
+				if (CCollision::ProcessLineSphere(shootLine, sphere, *point, radius)) {
+					*victim = passenger;
+					found = true;
+				}
 			}
 		}
 	}
-	if (veh->IsCar()) {
-		CVector distVec = target - source;
-		if (DotProduct(distVec, veh->GetForward()) < 0.0f && DotProduct(distVec, veh->GetUp()) <= 0.0f) {
-			CColModel *colModel = veh->GetColModel();
-			if (colModel->numTriangles > 0) {
-				bool passesGlass = false;
-				CMatrix invVehMat;
-				Invert(veh->GetMatrix(), invVehMat);
-				shootLine.p0 = invVehMat * shootLine.p0;
-				shootLine.p1 = invVehMat * shootLine.p1;
-				CCollision::CalculateTrianglePlanes(colModel);
-				for (int i = 0; i < colModel->numTriangles; i++) {
-					if (colModel->triangles[i].surface == SURFACE_GLASS &&
-						CCollision::TestLineTriangle(shootLine, colModel->vertices, colModel->triangles[i], colModel->trianglePlanes[i])) {
-						passesGlass = true;
-						break;
-					}
-				}
-				CAutomobile *car = (CAutomobile*)veh;
 
-				// No need to damage windscreen if there isn't one.
-				if (passesGlass && car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN)) {
-					if (car->Damage.GetPanelStatus(VEHPANEL_WINDSCREEN) == PANEL_STATUS_SMASHED2)
-						car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN);
+	CAutomobile *car = (CAutomobile*)veh;
 
-					car->SetPanelDamage(CAR_WINDSCREEN, VEHPANEL_WINDSCREEN, true);
-					DMAudio.PlayOneShot(veh->m_audioEntityId, SOUND_CAR_WINDSHIELD_CRACK, 0.f);
-				}
-			}
-		}
+	// No need to damage windscreen if there isn't one.
+	if (passesGlass && car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN)) {
+		if (car->Damage.GetPanelStatus(VEHPANEL_WINDSCREEN) == PANEL_STATUS_SMASHED2)
+			car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN);
+
+		car->SetPanelDamage(CAR_WINDSCREEN, VEHPANEL_WINDSCREEN, true);
+		DMAudio.PlayOneShot(veh->m_audioEntityId, SOUND_CAR_WINDSHIELD_CRACK, 0.f);
 	}
 
 	if (!found) {

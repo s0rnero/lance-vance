@@ -138,7 +138,13 @@
 	X("blimp_night",	MI_BLIMP_NIGHT) \
 	X("blimp_day",		MI_BLIMP_DAY) \
 	X("yt_main_body",	MI_YT_MAIN_BODY) \
-	X("yt_main_body2",	MI_YT_MAIN_BODY2)
+	X("yt_main_body2",	MI_YT_MAIN_BODY2) \
+	X("od_chariot_lghts01",	MI_OD_CHARIOT_LGHTS01) \
+	X("od_chariot_lghts02",	MI_OD_CHARIOT_LGHTS02) \
+	X("lodchariot_lghts01",	MI_LODCHARIOT_LGHTS01) \
+	X("lodchariot_lghts02",	MI_LODCHARIOT_LGHTS02) \
+	X("bryx_lights",	MI_BRYX_LIGHTS) \
+	X("lodbryx_lights",	MI_LODBRYX_LIGHTS)
 
 #define X(name, var) extern int16 var;
 	MODELINDICES
@@ -500,8 +506,6 @@ enum
 	NUM_NEW_WEAPONS,
 #endif
 
-	// Vice Extended: vehículos nuevos (sus IDs en newVehicles.ide,
-	// 6500-6507). Tampoco son consecutivos con los vanilla.
 	MI_VEEXT_FIRST_VEHICLE = 6500,
 	MI_VEEXT_STREETFI = MI_VEEXT_FIRST_VEHICLE,
 	MI_VEEXT_PEREN2,

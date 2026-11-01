@@ -24,6 +24,9 @@
 #include "Streaming.h"
 #include "Camera.h"
 #include "Stats.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 #include "Garages.h"
 #include "Wanted.h"
 #include "SurfaceTable.h"
@@ -44,6 +47,9 @@ bool CVehicle::bCheat8;
 bool CVehicle::bCheat9;
 bool CVehicle::bCheat10;
 bool CVehicle::bHoverCheat;
+#ifdef VICEEXT_CHEAT_EFFECTS
+bool CVehicle::bAirWaysCheat;
+#endif
 bool CVehicle::bAllTaxisHaveNitro;
 bool CVehicle::m_bDisableMouseSteering = true;
 bool CVehicle::bDisableRemoteDetonation;
@@ -1315,9 +1321,17 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 								AutoPilot.m_nCruiseSpeed *= 1.5f;
 							AutoPilot.m_nDrivingStyle = DRIVINGSTYLE_PLOUGH_THROUGH;
 						}
+					}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+					else if (pDriver && pDriver->m_nPedType != PEDTYPE_COP){
+#else
 					}else{
+#endif
 						// Leave vehicle
 						if (pDriver && pDriver->CharCreatedBy != MISSION_CHAR) {
+							#ifdef VICEEXT_SP_VEHICLE_EXPLODE_ONCE
+							if (GetStatus() != STATUS_WRECKED)
+							#endif
 							SetStatus(STATUS_ABANDONED);
 							pDriver->bFleeAfterExitingCar = true;
 							pDriver->SetObjective(OBJECTIVE_LEAVE_CAR, this);
@@ -1477,9 +1491,6 @@ CVehicle::ExtinguishCarFire(void)
 	}
 }
 
-// Sección 3: busca recursivamente un frame por nombre en el clump del vehículo
-// (mismo patrón que CClumpModelInfo::FindFrameFromNameWithoutIdCB, pero
-// público). Lo usan el depósito de gasolina (C3.3) y los intermitentes (C3.4).
 struct ViceExtFrameSearch {
 	const char *name;
 	RwFrame *found;
@@ -1659,7 +1670,7 @@ CVehicle::IsLawEnforcementVehicle(void)
 	case MI_BARRACKS:
 	case MI_FBIRANCH:
 	case MI_VICECHEE:
-#ifdef VICEEXT_POLICE_BIKE
+#ifdef VICEEXT_EX_VCPD_WINTERGREEN
 	case MI_VEEXT_POLWINTERG:
 #endif
 		return true;
@@ -1681,10 +1692,7 @@ CVehicle::UsesSiren(void)
 	case MI_PREDATOR:
 	case MI_FBIRANCH:
 	case MI_VICECHEE:
-#ifdef VICEEXT_POLICE_BIKE_LIGHTS
-	// Vice Extended: la moto policial (6507) del mod. Sin esta entrada la
-	// moto no tiene sirena: ni se conmuta con el claxon, ni suena, ni entra
-	// en el camino de las coronas (CarCtrl/CarAI también se guían por aquí).
+#ifdef VICEEXT_EX_VCPD_WINTERGREEN
 	case MI_VEEXT_POLWINTERG:
 #endif
 		return true;
@@ -1863,6 +1871,16 @@ CVehicle::ChangeLawEnforcerState(uint8 enable)
 		}
 	} else {
 		if (bIsLawEnforcer) {
+#ifdef __EMSCRIPTEN__
+			/* Quien apaga la marca decide si una patrulla persigue o no. */
+			if (VehicleCreatedBy == RANDOM_VEHICLE) {
+				char odT[128];
+				snprintf(odT, sizeof odT, "COPLOST m=%d st=%d drv=%d mi=%d on=%d",
+					GetModelIndex(), (int)GetStatus(), pDriver ? 1 : 0,
+					(int)AutoPilot.m_nCarMission, GetIsOnScreen() ? 1 : 0);
+				ODTRACES(odT);
+			}
+#endif
 			bIsLawEnforcer = false;
 			CCarCtrl::NumLawEnforcerCars--;
 		}
@@ -2192,7 +2210,7 @@ CVehicle::HeliDustGenerate(CEntity *heli, float radius, float ground, int rnd)
 		return;
 
 	uint8 surface = SURFACE_TARMAC;
-	int frm = CTimer::GetFrameCounter() & 7;
+	int frm = CTimer::GetLogicalFrameCounter() & 7;
 	float testLowZ = ground - 10.0f;
 	float dustSize = 0.0f;
 	float baseSize = 1.0f;
@@ -2411,8 +2429,13 @@ CVehicle::KillPedsInVehicle(void)
 			pDriver->SetDead();
 			if(!pDriver->IsPlayer())
 				pDriver->FlagToDestroyWhenNextProcessed();
-		}else
+		}else{
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+			if (pDriver->GetPedState() == PED_DEAD)
+				pDriver->bRenderScorched = true;
+#endif
 			pDriver->SetDie();
+		}
 	}
 	for(i = 0; i < m_nNumMaxPassengers; i++){
 		if(pPassengers[i]){
@@ -2421,11 +2444,23 @@ CVehicle::KillPedsInVehicle(void)
 				pPassengers[i]->SetDead();
 				if(!pPassengers[i]->IsPlayer())
 					pPassengers[i]->FlagToDestroyWhenNextProcessed();
-			}else
+			}else{
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+				if (pPassengers[i]->GetPedState() == PED_DEAD)
+					pPassengers[i]->bRenderScorched = true;
+#endif
 				pPassengers[i]->SetDie();
+			}
 		}
 	}
 }
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+bool CVehicle::IsHighVehicle(void)
+{
+	return Abs(GetColModel()->boundingBox.min.z) + Abs(GetColModel()->boundingBox.max.z) > 2.2f;
+}
+#endif
 
 #ifdef VICEEXT_FIRST_PERSON
 bool CVehicle::IsOpenTopVehicle(void)

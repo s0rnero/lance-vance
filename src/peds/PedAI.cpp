@@ -1,6 +1,8 @@
 #include "common.h"
 #include "ondemand.h"
 
+extern void OdWebMark(int);
+
 #include "main.h"
 #include "Particle.h"
 #include "RpAnimBlend.h"
@@ -780,6 +782,7 @@ CPed::RestorePreviousObjective(void)
 void
 CPed::ProcessObjective(void)
 {
+	OdWebMark(215);
 	if (bClearObjective && (IsPedInControl() || m_nPedState == PED_DRIVING)) {
 		ClearObjective();
 		bClearObjective = false;
@@ -1625,7 +1628,12 @@ CPed::ProcessObjective(void)
 			}
 			// fall through
 			case OBJECTIVE_WANDER:
-				if (CTimer::GetTimeInMilliseconds() > m_leaveCarTimer && !bInVehicle) {
+#ifdef VICEEXT_SP_MUG_OBJECTIVE
+				if (m_objective != OBJECTIVE_MUG_CHAR &&
+#else
+				if (
+#endif
+					CTimer::GetTimeInMilliseconds() > m_leaveCarTimer && !bInVehicle) {
 					m_leaveCarTimer = 0;
 					m_objective = OBJECTIVE_NONE;
 					SetWanderPath(m_nPathDir);
@@ -2700,7 +2708,11 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 		if (ped->m_vehDoor != CAR_DOOR_LF && ped->m_vehDoor != CAR_DOOR_LR) {
 
 			if (pedToDragOut && !pedToDragOut->bDontDragMeOutCar) {
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+				if (pedToDragOut->m_nPedState != PED_DRIVING && pedToDragOut->m_nPedState != PED_DEAD) {
+#else
 				if (pedToDragOut->m_nPedState != PED_DRIVING) {
+#endif
 					ped->QuitEnteringCar();
 					pedToDragOut = nil;
 				} else {
@@ -2736,7 +2748,11 @@ CPed::PedAnimDoorOpenCB(CAnimBlendAssociation* animAssoc, void* arg)
 			}
 		} else if (pedToDragOut) {
 
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+			if (pedToDragOut->m_nPedState != PED_DRIVING && pedToDragOut->m_nPedState != PED_DEAD || pedToDragOut->bDontDragMeOutCar) {
+#else
 			if (pedToDragOut->m_nPedState != PED_DRIVING || pedToDragOut->bDontDragMeOutCar) {
+#endif
 				ped->QuitEnteringCar();
 				pedToDragOut = nil;
 			} else {
@@ -3060,6 +3076,9 @@ CPed::PedAnimDoorCloseCB(CAnimBlendAssociation *animAssoc, void *arg)
 					(veh->pDriver != nil && 
 						(veh->pDriver->m_objective != OBJECTIVE_LEAVE_CAR
 							&& veh->pDriver->m_objective != OBJECTIVE_LEAVE_CAR_AND_DIE
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+							&& veh->pDriver->m_nPedState != PED_DEAD
+#endif
 							|| !veh->IsRoomForPedToLeaveCar(CAR_DOOR_LF, nil))))) {
 
 			if (ped->m_objective == OBJECTIVE_ENTER_CAR_AS_DRIVER || ped->m_nPedState == PED_CARJACK)
@@ -3083,6 +3102,17 @@ CPed::PedAnimDoorCloseCB(CAnimBlendAssociation *animAssoc, void *arg)
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SHUFFLE_LO_RHS);
 			else
 				ped->m_pVehicleAnim = CAnimManager::AddAnimation(ped->GetClump(), ASSOCGRP_STD, ANIM_STD_CAR_SHUFFLE_RHS);
+
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+			if (veh->pDriver && veh->pDriver->m_nPedState == PED_DEAD) {
+				veh->pDriver->SetBeingDraggedFromCar(veh, veh->pDriver->m_vehDoor, false);
+
+				if (veh->IsCar())
+					((CAutomobile*)veh)->Damage.SetDoorStatus(DOOR_FRONT_LEFT, DOOR_STATUS_SWINGING);
+
+				ped->m_pVehicleAnim->speed = 0.5f;
+			}
+#endif
 
 			ped->m_pVehicleAnim->SetFinishCallback(PedSetInCarCB, ped);
 		}
@@ -3723,7 +3753,11 @@ CPed::SetCarJack(CVehicle* car)
 
 	if (m_fHealth > 0.0f && (IsPlayer() || m_objective == OBJECTIVE_KILL_CHAR_ON_FOOT || m_objective == OBJECTIVE_KILL_CHAR_ANY_MEANS ||
 					CharCreatedBy == MISSION_CHAR ||  (car->VehicleCreatedBy != MISSION_VEHICLE && car->GetModelIndex() != MI_DODO)))
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+		if (pedInSeat && !pedInSeat->IsPedDoingDriveByShooting() && (pedInSeat->m_nPedState == PED_DRIVING || pedInSeat->m_nPedState == PED_DEAD))
+#else
 		if (pedInSeat && !pedInSeat->IsPedDoingDriveByShooting() && pedInSeat->m_nPedState == PED_DRIVING)
+#endif
 			if (m_nPedState != PED_CARJACK && !m_pVehicleAnim)
 				if ((car->IsDoorReady(door) || car->IsDoorFullyOpen(door)))
 					if (!car->bIsBeingCarJacked && !(doorFlag & car->m_nGettingInFlags) && !(doorFlag & car->m_nGettingOutFlags))
@@ -3805,13 +3839,23 @@ CPed::SetBeingDraggedFromCar(CVehicle *veh, uint32 vehEnterType, bool quickJack)
 	SetMoveState(PEDMOVE_NONE);
 	LineUpPedWithCar(veh->IsBike() ? LINE_UP_TO_CAR_FALL : LINE_UP_TO_CAR_START);
 	m_pVehicleAnim = nil;
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	if (DyingOrDead()) {
+		m_nLastPedState = PED_DEAD;
+	}
+#endif
 	SetPedState(PED_DRAG_FROM_CAR);
 	bChangedSeat = false;
 	bWillBeQuickJacked = quickJack;
 
 	SetHeading(m_fRotationCur);
 
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	if (m_nLastPedState != PED_DEAD)
+		Say(SOUND_PED_CAR_JACKED);
+#else
 	Say(SOUND_PED_CAR_JACKED);
+#endif
 	SetRadioStation();
 
 	if(veh->IsBike())
@@ -3876,6 +3920,14 @@ CPed::BeingDraggedFromCar(void)
 	} else {
 		LineUpPedWithCar(LINE_UP_TO_CAR_2);
 	}
+
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	if (m_nLastPedState == PED_DEAD) {
+		if (m_pMyVehicle && m_pMyVehicle->m_nGettingInFlags & CAR_DOOR_FLAG_RF) {
+			m_pMyVehicle->ProcessOpenDoor(m_vehDoor, m_pVehicleAnim->animId, m_pVehicleAnim->currentTime);
+		}
+	}
+#endif
 
 	static float mult = 5.f;
 	if (m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE) {
@@ -4497,6 +4549,14 @@ CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 				}
 
 			} else {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+				if (canJumpOut) {
+					if (m_vehDoor == CAR_DOOR_LF || m_vehDoor == CAR_DOOR_LR)
+						veh->ProcessOpenDoor(m_vehDoor, ANIM_STD_ROLLOUT_LHS, 1.0f);
+					else if (m_vehDoor == CAR_DOOR_RF || m_vehDoor == CAR_DOOR_RR)
+						veh->ProcessOpenDoor(m_vehDoor, ANIM_STD_ROLLOUT_RHS, 1.0f);
+				}
+#endif
 				switch (m_vehDoor) {
 					case CAR_DOOR_RF:
 						if (canJumpOut) {
@@ -4930,11 +4990,6 @@ CPed::SetAnimOffsetForEnterOrExitVehicle(void)
 	CStreaming::RequestAnim(bikehBlock, STREAMFLAGS_DEPENDENCY);
 	CStreaming::RequestAnim(bikedBlock, STREAMFLAGS_DEPENDENCY);
 #ifdef __EMSCRIPTEN__
-	// Punto de sincronía: justo debajo se USAN estos bloques (jerarquías de los
-	// anims de entrar/salir de coche). Aquí la carga va SIN tope: un corte deja
-	// las tablas a medio inicializar y la lectura revienta (era el OOB del init,
-	// builds ram4 y lag2). Si aun así faltara algo, se avisa y se dejan los
-	// offsets por defecto en vez de leer basura.
 	{
 		int odSaveBudget = CStreaming::gWebLoadBudget;
 		CStreaming::gWebLoadBudget = 0;
@@ -5674,8 +5729,10 @@ CPed::DuckAndCover(void)
 	bool justDucked = false;
 	CVehicle *foundVeh = nil;
 	float maxDist = 225.0f;
+#ifndef VICEEXT_CROUCH
 	if (bIsDucking)
 		ClearDuck(true);
+#endif
 
 	bCrouchWhenShooting = false;
 	bool duckingWithoutVeh = false;
@@ -5698,22 +5755,6 @@ CPed::DuckAndCover(void)
 					duckingWithoutVeh = true;
 					m_attackTimer = CTimer::GetTimeInMilliseconds() + 6000;
 					bDuckAndCover = true;
-#ifdef VICEEXT_COP_COVER
-					bCrouchWhenShooting = true;
-					SetDuck(CGeneral::GetRandomNumberInRange(2000, 5000), true);
-#ifdef __EMSCRIPTEN__
-					{
-						static uint32 s_odCopCoverMs = 0;
-						uint32 odCopNow = CTimer::GetTimeInMilliseconds();
-						if (odCopNow >= s_odCopCoverMs + 1000 || odCopNow + 60000 < s_odCopCoverMs) {
-							s_odCopCoverMs = odCopNow;
-							char odCop[160];
-							snprintf(odCop, sizeof odCop, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=16 id=0 a=%d val=%d", (unsigned)CTimer::GetFrameCounter(), odCopNow * 0.001f, 1, (int)bIsDucking);
-							ODTRACES(odCop);
-						}
-					}
-#endif
-#endif
 				}
 				break;
 			}
@@ -5788,6 +5829,13 @@ CPed::DuckAndCover(void)
 				duckPos = duckAtRightSide;
 
 			if (CWorld::TestSphereAgainstWorld(duckPos, 0.5f, nil, true, true, true, false, false, false)) {
+#ifdef VICEEXT_CROUCH
+				if (!bIsDucking) {
+					bCrouchWhenShooting = true;
+					SetDuck(10000, true);
+				}
+#endif
+
 				SetSeek(duckPos, 1.0f);
 				m_headingRate = 15.0f;
 				bIsRunning = true;
@@ -5801,22 +5849,6 @@ CPed::DuckAndCover(void)
 				m_pSeekTarget = foundVeh;
 				m_pSeekTarget->RegisterReference((CEntity**)&m_pSeekTarget);
 				ClearPointGunAt();
-#ifdef VICEEXT_COP_COVER
-				bCrouchWhenShooting = true;
-				SetDuck(CGeneral::GetRandomNumberInRange(2000, 5000), true);
-#ifdef __EMSCRIPTEN__
-				{
-					static uint32 s_odCopCoverVehMs = 0;
-					uint32 odCopVehNow = CTimer::GetTimeInMilliseconds();
-					if (odCopVehNow >= s_odCopCoverVehMs + 1000 || odCopVehNow + 60000 < s_odCopCoverVehMs) {
-						s_odCopCoverVehMs = odCopVehNow;
-						char odCopV[160];
-						snprintf(odCopV, sizeof odCopV, "P4 kind=ini schema=1 gen=1 frame=%u sim=%.4f case=0 opt=16 id=0 a=%d val=%d", (unsigned)CTimer::GetFrameCounter(), odCopVehNow * 0.001f, 2, (int)bIsDucking);
-						ODTRACES(odCopV);
-					}
-				}
-#endif
-#endif
 			} else {
 				m_duckAndCoverTimer = CTimer::GetTimeInMilliseconds() + CGeneral::GetRandomNumberInRange(10000, 15000);
 				bDuckAndCover = false;
@@ -6026,7 +6058,8 @@ CPed::SetDuck(uint32 time, bool sth)
 #else
 		duckAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_STD, ANIM_STD_DUCK_WEAPON, 4.0f);
 #endif
-		duckAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
+		if (duckAssoc != nil)
+			duckAssoc->flags &= ~ASSOC_FADEOUTWHENDONE;
 		bIsDucking = true;
 		m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 	} else {
@@ -6037,6 +6070,14 @@ CPed::SetDuck(uint32 time, bool sth)
 			m_duckTimer = CTimer::GetTimeInMilliseconds() + time;
 		}
 	}
+#ifdef __EMSCRIPTEN__
+	if (IsPlayer() && bIsDucking) {
+		char t[80];
+		snprintf(t, sizeof t, "VICEEXT crouch on arma=%d estado=%d",
+			(int)GetWeapon()->m_eWeaponType, (int)m_nPedState);
+		ODTRACES(t);
+	}
+#endif
 
 #ifdef VICEEXT_CROUCH
 	if (IsPlayer())
@@ -6092,6 +6133,8 @@ CPed::ClearDuck(bool clearTimer)
 
 	CAnimBlendAssociation* crouchForwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_FORWARD);
 	CAnimBlendAssociation* curCrouchBackwardAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_BACKWARD);
+	CAnimBlendAssociation* curCrouchRollLeftAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_L);
+	CAnimBlendAssociation* curCrouchRollRightAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CROUCH_ROLL_R);
 #endif
 	CAnimBlendAssociation *animAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_DUCK_DOWN);
 	if (!animAssoc) {
@@ -6121,7 +6164,22 @@ CPed::ClearDuck(bool clearTimer)
 	}
 #endif
 	bIsDucking = false;
-
+#if defined __EMSCRIPTEN__ && defined VICEEXT_CROUCH
+	if (IsPlayer()) {
+		int odClips = 0;
+		if (crouchForwardAssoc) odClips++;
+		if (curCrouchBackwardAssoc) odClips++;
+		if (curCrouchRollLeftAssoc) odClips++;
+		if (curCrouchRollRightAssoc) odClips++;
+		if (animAssoc) odClips++;
+		char t[110];
+		snprintf(t, sizeof t, "VICEEXT crouch off arma=%d estado=%d clips=%d",
+			(int)GetWeapon()->m_eWeaponType, (int)m_nPedState, odClips);
+		ODTRACES(t);
+		snprintf(t, sizeof t, "VICEEXT crouch pose off clips=%d", odClips);
+		ODTRACES(t);
+	}
+#endif
 	if (clearTimer) {
 		m_duckTimer = 0;
 	}
@@ -6610,7 +6668,11 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 		CPlayerPed *player = FindPlayerPed();
 		if (m_nPedType == PEDTYPE_COP && player->m_pWanted->m_bIgnoredByCops
 			|| player->m_pWanted->m_bIgnoredByEveryone
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			|| (m_pedInObjective->bIsInWater && m_nPedType != PEDTYPE_COP)
+#else
 			|| m_pedInObjective->bIsInWater
+#endif
 			|| m_pedInObjective->m_nPedState == PED_ARRESTED) {
 
 			if (m_nPedState != PED_ARREST_PLAYER)
@@ -6635,7 +6697,12 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 	float wepRangeAdjusted = wepRange / 3.f;
 
 	float distWithTargetSc = distWithTarget.Magnitude();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_pedInObjective->bInVehicle && m_pedInObjective->m_nPedState != PED_DRAG_FROM_CAR && !m_pedInObjective->IsPlayer()
+		|| (m_pedInObjective->bInVehicle && m_pedInObjective->m_nPedState != PED_DRAG_FROM_CAR && m_pedInObjective == FindPlayerPed() && !FindPlayerPed()->m_pWanted->IsPlayerHides())) {
+#else
 	if (m_pedInObjective->bInVehicle && m_pedInObjective->m_nPedState != PED_DRAG_FROM_CAR) {
+#endif
 		CVehicle *vehOfTarget = m_pedInObjective->m_pMyVehicle;
 		if (vehOfTarget->bIsInWater || vehOfTarget->GetStatus() == STATUS_PLAYER_DISABLED
 			|| m_pedInObjective->IsPlayer() && CPad::GetPad(0)->ArePlayerControlsDisabled()) {
@@ -6698,7 +6765,13 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 		}
 		return ATTACK_IN_PROGRESS;
 	}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	bool isCopAndPlayerHides = m_nPedType == PEDTYPE_COP && m_pedInObjective == FindPlayerPed() && FindPlayerPed()->m_pWanted->IsPlayerHides();
+
+	if (m_nMoveState == PEDMOVE_STILL && IsPedInControl() && !isCopAndPlayerHides) {
+#else
 	if (m_nMoveState == PEDMOVE_STILL && IsPedInControl()) {
+#endif
 		SetLookFlag(m_pedInObjective, false);
 		TurnBody();
 	}
@@ -6735,14 +6808,34 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 		}
 	}
 
-	if (!bKindaStayInSamePlace && !bStopAndShoot && m_nPedState != PED_ATTACK && !bDuckAndCover && !killPlayerInNoPoliceZone) {
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+	CEntity* hitEntity;
+	CColPoint hitPoint;
+	bool obstacle = CWorld::ProcessLineOfSight(m_pedInObjective->GetPosition(), GetPosition(), hitPoint, hitEntity, true, true, false, true, false, true);
+
+	CVehicle* hitVehicle = (CVehicle*)hitEntity;
+	bool bShootIsDangerous = hitVehicle && hitVehicle->IsHighVehicle();
+#endif
+
+	if (!bKindaStayInSamePlace && !bStopAndShoot && m_nPedState != PED_ATTACK && !bDuckAndCover && !killPlayerInNoPoliceZone
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+		|| (obstacle && isCopAndPlayerHides || obstacle && !bShootIsDangerous)
+#endif
+		) {
 		if (distWithTargetSc > wepRange
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+			|| (obstacle && isCopAndPlayerHides || obstacle && bShootIsDangerous)
+#endif
 			|| m_pedInObjective->m_getUpTimer > CTimer::GetTimeInMilliseconds()
 			|| m_pedInObjective->m_nPedState == PED_ARRESTED
 			|| m_pedInObjective->EnteringCar() && distWithTargetSc < 3.0f) {
 
 			if (m_pedInObjective->EnteringCar())
 				wepRangeAdjusted = 2.0f;
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+			else if (obstacle && isCopAndPlayerHides || obstacle && bShootIsDangerous)
+				wepRangeAdjusted = 1.0f;
+#endif
 
 			if (bUsePedNodeSeek) {
 				CVector bestCoords(0.0f, 0.0f, 0.0f);
@@ -6758,7 +6851,11 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 			} else {
 				SetSeek(m_pedInObjective, wepRangeAdjusted);
 			}
+#ifdef VICEEXT_IS_HIGH_VEHICLE
+			if (m_pedInObjective->m_pCurrentPhysSurface && distWithTargetSc < 5.0f && (!obstacle && isCopAndPlayerHides || obstacle && bShootIsDangerous)) {
+#else
 			if (m_pedInObjective->m_pCurrentPhysSurface && distWithTargetSc < 5.0f) {
+#endif
 				bStopAndShoot = true;
 				b158_8 = true;
 				SetMoveState(PEDMOVE_STILL);
@@ -6769,7 +6866,11 @@ CPed::KillCharOnFootArmed(CVector &ourPos, CVector &targetPos, CVector &distWith
 			return ATTACK_IN_PROGRESS;
 		}
 	}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_attackTimer < CTimer::GetTimeInMilliseconds() && (!FindPlayerPed()->m_pWanted->IsPlayerHides() || CharCreatedBy == MISSION_CHAR)
+#else
 	if (m_attackTimer < CTimer::GetTimeInMilliseconds()
+#endif
 		&& distWithTargetSc < wepRange && m_pedInObjective->m_nPedState != PED_GETUP && m_pedInObjective->m_nPedState != PED_DRAG_FROM_CAR) {
 
 		if (bIsDucking && !bCrouchWhenShooting) {
@@ -6927,7 +7028,15 @@ CPed::KillCharOnFootMelee(CVector &ourPos, CVector &targetPos, CVector &distWith
 	if (GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED && !IsPlayer() && !(m_pedStats->m_flags & STAT_CAN_KICK))
 		wepRange -= 0.3f;
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	bool isCopAndPlayerHides = false;
+	if (m_nPedType == PEDTYPE_COP && victimPlayer && victimPlayer->m_pWanted->IsPlayerHides())
+		isCopAndPlayerHides = true;
+
+	if (distWithTargetSc <= 5.f && victimPlayer && !victimPlayer->m_bNoPosForMeleeAttack && !isCopAndPlayerHides) {
+#else
 	if (distWithTargetSc <= 5.f && victimPlayer && !victimPlayer->m_bNoPosForMeleeAttack) {
+#endif
 	
 		if (m_pedInObjective->EnteringCar() && wepRange > 2.f) {
 			m_vecSeekPos = m_pedInObjective->GetPosition();
@@ -6991,7 +7100,11 @@ CPed::KillCharOnFootMelee(CVector &ourPos, CVector &targetPos, CVector &distWith
 		}
 		return ATTACK_IN_PROGRESS;
 	}
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (m_nMoveState == PEDMOVE_STILL && IsPedInControl() && !isCopAndPlayerHides) {
+#else
 	if (m_nMoveState == PEDMOVE_STILL && IsPedInControl()) {
+#endif
 		SetLookFlag(m_pedInObjective, false);
 		if(m_nPedState == PED_IDLE || m_nPedState == PED_ATTACK || m_nPedState == PED_FIGHT)
 			TurnBody();

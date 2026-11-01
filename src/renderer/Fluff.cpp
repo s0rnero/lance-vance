@@ -445,7 +445,7 @@ void CMovingThings::Update()
 
 	int16 i;
 
-	int block = CTimer::GetFrameCounter() % TIME_SPAN;
+	int block = CTimer::GetLogicalFrameCounter() % TIME_SPAN;
 
 	for (i = (block * NUMMOVINGTHINGS) / TIME_SPAN; i < ((block + 1) * NUMMOVINGTHINGS) / TIME_SPAN; i++) {
 		if (aMovingThings[i].m_farAway == 1)
@@ -459,7 +459,7 @@ void CMovingThings::Update()
 
 	for (i = 0; i < ARRAY_SIZE(aScrollBars); ++i)
 	{
-		if (aScrollBars[i].IsVisible() || (CTimer::GetFrameCounter() + i) % 8 == 0)
+		if (aScrollBars[i].IsVisible() || (CTimer::GetLogicalFrameCounter() + i) % 8 == 0)
 			aScrollBars[i].Update();
 	}
 }

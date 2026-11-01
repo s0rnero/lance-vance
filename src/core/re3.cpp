@@ -40,6 +40,8 @@
 #include "MBlur.h"
 #include "postfx.h"
 #include "custompipes.h"
+#include <rpmatfx.h>
+#include "screendroplets.h"
 #include "MemoryHeap.h"
 #include "FileMgr.h"
 #include "Camera.h"
@@ -49,6 +51,10 @@
 #include "Population.h"
 #include "IniFile.h"
 #include "Zones.h"
+#include "Specular.h"
+#include "SilentPatchOptions.h"
+#include "PointlightTexture.h"
+#include "WidescreenFixOptions.h"
 
 #include "crossplatform.h"
 
@@ -135,7 +141,8 @@ CustomFrontendOptionsPopulate(void)
 	int fd;
 	// These work only if we have neo folder, so they're dynamically added
 #ifdef EXTENDED_PIPELINES
-	const char *vehPipelineNames[] = { "FED_MFX", "FED_NEO" };
+	const char *vehPipelineNames[] = { "FED_MFX", "FED_NEO", "FED_LDS" };
+	const char *worldPipeNames[] = { "FED_MFX", "FED_NEO", "FED_LDS" };
 	const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 	fd = CFileMgr::OpenFile("neo/neo.txd","r");
 	if (fd) {
@@ -143,13 +150,13 @@ CustomFrontendOptionsPopulate(void)
 		FrontendOptionSetCursor(MENUPAGE_GRAPHICS_SETTINGS, -3, false);
 		FrontendOptionAddSelect("FED_VPL", 0, 0, MENUALIGN_LEFT, vehPipelineNames, ARRAY_SIZE(vehPipelineNames), (int8*)&CustomPipes::VehiclePipeSwitch, false, nil, "Graphics", "VehiclePipeline");
 		FrontendOptionAddSelect("FED_PRM", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::RimlightEnable, false, nil, "Graphics", "NeoRimLight");
-		FrontendOptionAddSelect("FED_WLM", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::LightmapEnable, false, nil, "Graphics", "NeoLightMaps");
+		FrontendOptionAddSelect("FED_WPP", 0, 0, MENUALIGN_LEFT, worldPipeNames, ARRAY_SIZE(worldPipeNames), (int8*)&g_nSkyWorldPipe, false, nil, "Graphics", "WorldPipe");
 		FrontendOptionAddSelect("FED_RGL", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::GlossEnable, false, nil, "Graphics", "NeoRoadGloss");
 #else
 		FrontendOptionSetCursor(MENUPAGE_DISPLAY_SETTINGS, -3, false);
 		FrontendOptionAddSelect("FED_VPL", 0, 0, MENUALIGN_LEFT, vehPipelineNames, ARRAY_SIZE(vehPipelineNames), (int8*)&CustomPipes::VehiclePipeSwitch, false, nil, "Graphics", "VehiclePipeline");
 		FrontendOptionAddSelect("FED_PRM", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::RimlightEnable, false, nil, "Graphics", "NeoRimLight");
-		FrontendOptionAddSelect("FED_WLM", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::LightmapEnable, false, nil, "Graphics", "NeoLightMaps");
+		FrontendOptionAddSelect("FED_WPP", 0, 0, MENUALIGN_LEFT, worldPipeNames, ARRAY_SIZE(worldPipeNames), (int8*)&g_nSkyWorldPipe, false, nil, "Graphics", "WorldPipe");
 		FrontendOptionAddSelect("FED_RGL", 0, 0, MENUALIGN_LEFT, off_on, 2, (int8*)&CustomPipes::GlossEnable, false, nil, "Graphics", "NeoRoadGloss");
 #endif
 		CFileMgr::CloseFile(fd);
@@ -197,8 +204,6 @@ CustomFrontendOptionsPopulate(void)
 
 mINI::INIFile ini(
 #ifdef __EMSCRIPTEN__
-	// Absolute: mINI reopens per read/write and the game's CWD changes all
-	// the time; /userfiles is IDBFS-persisted (see gta_vc_browser).
 	"/userfiles/reVC.ini"
 #else
 	"reVC.ini"
@@ -292,9 +297,7 @@ bool bCameraShakeInVehicleAtHighSpeed;
 bool bMilitaryFiringFromTankAtPlayer;
 bool bDisableBulletTraces;
 CRGBA WaypointColor = CRGBA(180, 24, 24, 255);
-#ifdef VICEEXT_DISTANT_LIGHTS
 bool bEnableDistantLights;
-#endif
 bool bRecoilWhenFiring;
 #ifdef VICEEXT_CLIMBING
 bool bEnableClimbing;
@@ -306,6 +309,10 @@ bool bEnableSwimming;
 bool bRocketLauncherThirdPersonAiming;
 #endif
 bool bMirrorModeByDefault;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+int32 gMaxFPSIni;
+#endif
 
 void ReadFeatures(void)
 {
@@ -320,9 +327,7 @@ void ReadFeatures(void)
 	bMilitaryFiringFromTankAtPlayer = ReadAndGetFeature("MilitaryFiringFromTankAtPlayer");
 	bDisableBulletTraces = ReadAndGetFeature("DisableBulletTraces");
 	WaypointColor = ReadAndGetWaypointColor("WaypointColorRGB");
-#ifdef VICEEXT_DISTANT_LIGHTS
 	bEnableDistantLights = ReadAndGetFeature("EnableDistantLights");
-#endif
 	bRecoilWhenFiring = ReadAndGetFeature("RecoilWhenFiring");
 #ifdef VICEEXT_CLIMBING
 	bEnableClimbing = ReadAndGetFeature("EnableClimbing");
@@ -650,6 +655,43 @@ bool LoadINISettings()
 	if (!ini.read(cfg))
 		return false;
 
+	ReadSilentPatchOptions();
+
+#ifdef VICEEXT_WFP_OPTIONS
+	ReadWidescreenFixOptions();
+#endif
+#ifdef __EMSCRIPTEN__
+	char spOpts[192];
+	snprintf(spOpts, sizeof spOpts, "VEX sp opts units=%d chat=%d hud=%d mision=%d oddjob=%d blips=%d radar=%d sprites=%d",
+		g_nSPOptionUnits, g_nSPOptionSpeechDelay, g_bSPOptionMinimalHUD ? 1 : 0, g_bSPOptionSlidingMissionTitle ? 1 : 0,
+		g_bSPOptionSlidingOddJob ? 1 : 0, g_bSPOptionShowPropertyBlips ? 1 : 0, g_bSPOptionDontShrinkRadardisc ? 1 : 0,
+		g_bSPOptionScaleScriptSprites ? 1 : 0);
+	ODTRACES(spOpts);
+#endif
+#ifdef VICEEXT_WFP_OPTIONS
+	char wsOpts[256];
+	snprintf(wsOpts, sizeof wsOpts, "VEX ws opts hud=%.2f hudh=%.2f radar=%.2f sub=%.2f radarw=%.1f radarh=%.1f hudasp=%d menusp=%d outline=%d speed=%d notouch=%d borders=%d anim=%d cross=%d small=%d corona=%d square=%d far=%d particles=%d fade=%d shake=%d traffic=%d map=%d emerg=%d skipcol=%d invfov=%d wheel=%d cutfov=%d",
+		g_fWSPOptionHudWidthScale, g_fWSPOptionHudHeightScale, g_fWSPOptionRadarWidthScale, g_fWSPOptionSubtitlesScale,
+		g_fWSPOptionRadarWidth, g_fWSPOptionRadarHeight, g_nWSPOptionHudAspectRatio, g_nWSPOptionMenuAspectRatio,
+		g_nWSPOptionTextShadowMode, g_bWSPOptionCarSpeedDependantFOV ? 1 : 0, g_bWSPOptionDontTouchFOV ? 1 : 0,
+		g_bWSPOptionSmartCutsceneBorders ? 1 : 0, g_bWSPOptionNoCutsceneBorderAnimation ? 1 : 0, g_bWSPOptionCrosshairAspect ? 1 : 0,
+		g_bWSPOptionSmallerTextShadows ? 1 : 0, g_bWSPOptionSmallerVehicleCorona ? 1 : 0, g_bWSPOptionNoLightSquare ? 1 : 0,
+		g_bWSPOptionBrightLightsOnlyFar ? 1 : 0, g_bWSPOptionParticleAspect ? 1 : 0, g_bWSPOptionFadeScreenRect ? 1 : 0,
+		g_bWSPOptionVCSCamShake ? 1 : 0, g_bWSPOptionMapAnchor ? 1 : 0,
+		g_bWSPOptionEmergencyFOV ? 1 : 0, g_bWSPOptionSkipCameraCollision ? 1 : 0, g_bWSPOptionInverseFOVCollision ? 1 : 0,
+		g_bWSPOptionWheelCamFOV ? 1 : 0, g_bWSPOptionCutsceneFOV ? 1 : 0);
+	ODTRACES(wsOpts);
+#endif
+#ifdef EXTENDED_PIPELINES
+	char skyOpts[192];
+	snprintf(skyOpts, sizeof skyOpts, "VEX sky opts envmap=%d worldpipe=%d carpipe=%d dual=%d overlay=%d blur=%d motionblur=%d alpha=%.1f offset=%.1f drops=%d seam=%d leedsenv=%.2f prelight=%.2f/%.2f seamfix=%d",
+		g_nSkyEnvMapSize, g_nSkyWorldPipe, CustomPipes::VehiclePipeSwitch, g_bSkyDualPass ? 1 : 0,
+		g_bSkyDisableColourOverlay ? 1 : 0, g_bSkyTrailsBlur ? 1 : 0, g_bSkyTrailsMotionBlur ? 1 : 0,
+		g_fSkyCurrentBlurAlpha, g_fSkyCurrentBlurOffset, g_nSkyNeoWaterDrops, g_nSkySeamOffsetX,
+		CustomPipes::LeedsEnvMult, CustomPipes::LeedsWorldPrelightTweakMult, CustomPipes::LeedsWorldPrelightTweakAdd, g_bSkySeamFix ? 1 : 0);
+	ODTRACES(skyOpts);
+#endif
+
 #ifdef IMPROVED_VIDEOMODE
 	ReadIniIfExists("VideoMode", "Width", &FrontEndMenuManager.m_nPrefsWidth);
 	ReadIniIfExists("VideoMode", "Height", &FrontEndMenuManager.m_nPrefsHeight);
@@ -706,6 +748,14 @@ bool LoadINISettings()
 	ReadIniIfExists("Display", "Subtitles", &FrontEndMenuManager.m_PrefsShowSubtitles);
 	ReadIniIfExists("Graphics", "AspectRatio", &FrontEndMenuManager.m_PrefsUseWideScreen);
 	ReadIniIfExists("Graphics", "FrameLimiter", &FrontEndMenuManager.m_PrefsFrameLimiter);
+	ReadIniIfExists("Graphics", "HeadlightTexture", &g_odHeadlightTextureMode);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	gMaxFPSIni = 0;
+	ReadIniIfExists("Rendering", "MaxFPS", &gMaxFPSIni);
+	if (gMaxFPSIni > 60)
+		gMaxFPSIni = 60;
+	RsGlobal.maxFPS = 60;
+#endif
 #ifdef LEGACY_MENU_OPTIONS
 	ReadIniIfExists("Graphics", "VSync", &FrontEndMenuManager.m_PrefsVsyncDisp);
 	ReadIniIfExists("Graphics", "Trails", &CMBlur::BlurOn);
@@ -715,12 +765,41 @@ bool LoadINISettings()
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
 #endif
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
+#ifdef VICEEXT_LOAD_SAVE_ON_STARTUP
+	ReadIniIfExists("General", "GameSaveOnStartup", &gbGameSaveOnStartup);
+#endif
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
 	ReadIniIfExists("Display", "RadarMode", &FrontEndMenuManager.m_PrefsRadarMode);
 	ReadIniIfExists("Display", "ShowLegends", &FrontEndMenuManager.m_PrefsShowLegends);
+#ifdef VICEEXT_AUTOSAVE
+	ReadIniIfExists("Other", "Autosave", &FrontEndMenuManager.m_PrefsAutosave);
+	ReadIniIfExists("Other", "StoreGalleryPhotos", &FrontEndMenuManager.m_PrefsStoreGalleryPhotos);
+	ReadIniIfExists("Other", "Specular", &g_bViceExtSpecular);
+#endif
 
 #ifdef EXTENDED_COLOURFILTER
 	ReadIniIfExists("CustomPipesValues", "PostFXIntensity", &CPostFX::Intensity);
+	ReadIniIfExists("Rendering", "YCbCrCorrection", &CPostFX::m_bYCbCrFilter);
+	ReadIniIfExists("Rendering", "lumaScale", &CPostFX::m_lumaScale);
+	ReadIniIfExists("Rendering", "lumaOffset", &CPostFX::m_lumaOffset);
+	ReadIniIfExists("Rendering", "CbScale", &CPostFX::m_cbScale);
+	ReadIniIfExists("Rendering", "CbOffset", &CPostFX::m_cbOffset);
+	ReadIniIfExists("Rendering", "CrScale", &CPostFX::m_crScale);
+	ReadIniIfExists("Rendering", "CrOffset", &CPostFX::m_crOffset);
+#endif
+#ifdef VICEEXT_SKY_DISABLE_COLOUR_OVERLAY
+	ReadIniIfExists("CustomPipesValues", "disableColourOverlay", &g_bSkyDisableColourOverlay);
+#endif
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	ReadIniIfExists("CustomPipesValues", "trailsBlur", &g_bSkyTrailsBlur);
+	ReadIniIfExists("CustomPipesValues", "trailsMotionBlur", &g_bSkyTrailsMotionBlur);
+	ReadIniIfExists("CustomPipesValues", "currentBlurAlpha", &g_fSkyCurrentBlurAlpha);
+	ReadIniIfExists("CustomPipesValues", "currentBlurOffset", &g_fSkyCurrentBlurOffset);
+#endif
+#ifdef VICEEXT_SKY_SEAM_FIX
+	ReadIniIfExists("CustomPipesValues", "seamOffsetX", &g_nSkySeamOffsetX);
+	ReadIniIfExists("CustomPipesValues", "seamFix", &g_bSkySeamFix);
+	ReadIniIfExists("CustomPipesValues", "seamOffsetY", &g_nSkySeamOffsetY);
 #endif
 #ifdef EXTENDED_PIPELINES
 	ReadIniIfExists("CustomPipesValues", "NeoVehicleShininess", &CustomPipes::VehicleShininess);
@@ -728,6 +807,50 @@ bool LoadINISettings()
 	ReadIniIfExists("CustomPipesValues", "RimlightMult", &CustomPipes::RimlightMult);
 	ReadIniIfExists("CustomPipesValues", "LightmapMult", &CustomPipes::LightmapMult);
 	ReadIniIfExists("CustomPipesValues", "GlossMult", &CustomPipes::GlossMult);
+#endif
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	ReadIniIfExists("CustomPipesValues", "carPipe", &CustomPipes::VehiclePipeSwitch);
+#endif
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	ReadIniIfExists("CustomPipesValues", "leedsEnvMult", &CustomPipes::LeedsEnvMult);
+	ReadIniIfExists("CustomPipesValues", "leedsWorldPrelightTweakMult", &CustomPipes::LeedsWorldPrelightTweakMult);
+	ReadIniIfExists("CustomPipesValues", "leedsWorldPrelightTweakAdd", &CustomPipes::LeedsWorldPrelightTweakAdd);
+#endif
+#ifdef VICEEXT_SKY_ENVMAP_SIZE
+	ReadIniIfExists("CustomPipesValues", "envMapSize", &g_nSkyEnvMapSize);
+#endif
+#ifdef VICEEXT_SKY_WORLD_PIPE
+	ReadIniIfExists("CustomPipesValues", "worldPipe", &g_nSkyWorldPipe);
+#endif
+#ifdef VICEEXT_SKY_DUAL_PASS
+	ReadIniIfExists("CustomPipesValues", "dualPass", &g_bSkyDualPass);
+#endif
+#ifdef VICEEXT_SKY_MATFX_BLEND
+	ReadIniIfExists("CustomPipesValues", "texblendSwitch", &g_nSkyMatFXBlendStyle);
+	if (g_nSkyMatFXBlendStyle < 0) g_nSkyMatFXBlendStyle = 0;
+	if (g_nSkyMatFXBlendStyle > 2) g_nSkyMatFXBlendStyle = 2;
+#endif
+#ifdef VICEEXT_SKY_MATFX_TEXGEN
+	ReadIniIfExists("CustomPipesValues", "texgenSwitch", &g_nSkyMatFXTexgenStyle);
+	if (g_nSkyMatFXTexgenStyle < 0) g_nSkyMatFXTexgenStyle = 0;
+	if (g_nSkyMatFXTexgenStyle > 2) g_nSkyMatFXTexgenStyle = 2;
+#endif
+#ifdef VICEEXT_SKY_MATFX_PS2LIGHT
+	ReadIniIfExists("CustomPipesValues", "ps2light", &g_bSkyMatFXPS2Light);
+#endif
+#ifdef VICEEXT_SKY_MATFX_BLEND
+	rw::MatFX::envMapBlendStyle = g_nSkyMatFXBlendStyle;
+#endif
+#ifdef VICEEXT_SKY_MATFX_TEXGEN
+	rw::MatFX::envMapTexgenStyle = g_nSkyMatFXTexgenStyle;
+#endif
+#ifdef VICEEXT_SKY_MATFX_PS2LIGHT
+	rw::MatFX::ps2Lighting = g_bSkyMatFXPS2Light;
+#endif
+#ifdef SCREEN_DROPLETS
+#ifdef VICEEXT_SKY_WATERDROPS_EXTENDED
+	ReadIniIfExists("CustomPipesValues", "neoWaterDrops", &g_nSkyNeoWaterDrops);
+#endif
 #endif
 	ReadIniIfExists("Rendering", "BackfaceCulling", &gBackfaceCulling);
 #ifdef NEW_RENDERER
@@ -789,6 +912,38 @@ bool LoadINISettings()
 
 void SaveINISettings()
 {
+#ifdef VICEEXT_WFP_OPTIONS
+	StoreIni("WidescreenFix", "CarSpeedDependantFOV", (int8)g_bWSPOptionCarSpeedDependantFOV);
+	StoreIni("WidescreenFix", "DontTouchFOV", (int8)g_bWSPOptionDontTouchFOV);
+	StoreIni("WidescreenFix", "EmergencyFOV", (int8)g_bWSPOptionEmergencyFOV);
+	StoreIni("WidescreenFix", "SkipCameraCollision", (int8)g_bWSPOptionSkipCameraCollision);
+	StoreIni("WidescreenFix", "InverseFOVCollision", (int8)g_bWSPOptionInverseFOVCollision);
+	StoreIni("WidescreenFix", "CutsceneFOV", (int8)g_bWSPOptionCutsceneFOV);
+	StoreIni("WidescreenFix", "WheelCamFOV", (int8)g_bWSPOptionWheelCamFOV);
+	StoreIni("WidescreenFix", "HudWidthScale", g_fWSPOptionHudWidthScale);
+	StoreIni("WidescreenFix", "HudHeightScale", g_fWSPOptionHudHeightScale);
+	StoreIni("WidescreenFix", "RadarWidthScale", g_fWSPOptionRadarWidthScale);
+	StoreIni("WidescreenFix", "RadarWidth", g_fWSPOptionRadarWidth);
+	StoreIni("WidescreenFix", "RadarHeight", g_fWSPOptionRadarHeight);
+	StoreIni("WidescreenFix", "SubtitlesScale", g_fWSPOptionSubtitlesScale);
+	StoreIni("WidescreenFix", "HudAspectRatioConstraint", g_szWSPOptionHudAspectRatio, 16);
+	StoreIni("WidescreenFix", "MenuAspectRatioConstraint", g_szWSPOptionMenuAspectRatio, 16);
+	StoreIni("WidescreenFix", "CrosshairAspect", (int8)g_bWSPOptionCrosshairAspect);
+	StoreIni("WidescreenFix", "IVRadarScaling", (int8)g_bWSPOptionIVRadarScaling);
+	StoreIni("WidescreenFix", "ReplaceTextShadowWithOutline", g_nWSPOptionTextShadowMode);
+	StoreIni("WidescreenFix", "SmallerTextShadows", (int8)g_bWSPOptionSmallerTextShadows);
+	StoreIni("WidescreenFix", "SmallerVehicleCorona", (int8)g_bWSPOptionSmallerVehicleCorona);
+	StoreIni("WidescreenFix", "NoLightSquare", (int8)g_bWSPOptionNoLightSquare);
+	StoreIni("WidescreenFix", "BrightLightsOnlyFar", (int8)g_bWSPOptionBrightLightsOnlyFar);
+	StoreIni("WidescreenFix", "SmartCutsceneBorders", (int8)g_bWSPOptionSmartCutsceneBorders);
+	StoreIni("WidescreenFix", "NoCutsceneBorderAnimation", (int8)g_bWSPOptionNoCutsceneBorderAnimation);
+	StoreIni("WidescreenFix", "ParticleAspect", (int8)g_bWSPOptionParticleAspect);
+	StoreIni("WidescreenFix", "FadeScreenRect", (int8)g_bWSPOptionFadeScreenRect);
+	StoreIni("WidescreenFix", "VCSCamShake", (int8)g_bWSPOptionVCSCamShake);
+	StoreIni("WidescreenFix", "MapAnchor", (int8)g_bWSPOptionMapAnchor);
+	StoreIni("WidescreenFix", "ForceAspectRatio", g_szWSPOptionForceAspectRatio, 32);
+	StoreIni("WidescreenFix", "FrontendAspectRatio", g_szWSPOptionFrontendAspectRatio, 32);
+#endif
 #ifdef IMPROVED_VIDEOMODE
 	StoreIni("VideoMode", "Width", FrontEndMenuManager.m_nPrefsWidth);
 	StoreIni("VideoMode", "Height", FrontEndMenuManager.m_nPrefsHeight);
@@ -849,17 +1004,50 @@ void SaveINISettings()
 	StoreIni("Graphics", "Trails", CMBlur::BlurOn);
 #endif
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
+	StoreIni("Graphics", "HeadlightTexture", g_odHeadlightTextureMode);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	StoreIni("Rendering", "MaxFPS", RsGlobal.maxFPS);
+#endif
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
 #ifndef VICEEXT_IMPROVED_MENU_AND_INPUT
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 #endif
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
+#ifdef VICEEXT_LOAD_SAVE_ON_STARTUP
+	StoreIni("General", "GameSaveOnStartup", gbGameSaveOnStartup);
+#endif
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);
 	StoreIni("Display", "RadarMode", FrontEndMenuManager.m_PrefsRadarMode);
 	StoreIni("Display", "ShowLegends", FrontEndMenuManager.m_PrefsShowLegends);
+#ifdef VICEEXT_AUTOSAVE
+	StoreIni("Other", "Autosave", FrontEndMenuManager.m_PrefsAutosave);
+	StoreIni("Other", "StoreGalleryPhotos", FrontEndMenuManager.m_PrefsStoreGalleryPhotos);
+	StoreIni("Other", "Specular", g_bViceExtSpecular);
+#endif
 
 #ifdef EXTENDED_COLOURFILTER
 	StoreIni("CustomPipesValues", "PostFXIntensity", CPostFX::Intensity);
+	StoreIni("Rendering", "YCbCrCorrection", CPostFX::m_bYCbCrFilter);
+	StoreIni("Rendering", "lumaScale", CPostFX::m_lumaScale);
+	StoreIni("Rendering", "lumaOffset", CPostFX::m_lumaOffset);
+	StoreIni("Rendering", "CbScale", CPostFX::m_cbScale);
+	StoreIni("Rendering", "CbOffset", CPostFX::m_cbOffset);
+	StoreIni("Rendering", "CrScale", CPostFX::m_crScale);
+	StoreIni("Rendering", "CrOffset", CPostFX::m_crOffset);
+#endif
+#ifdef VICEEXT_SKY_DISABLE_COLOUR_OVERLAY
+	StoreIni("CustomPipesValues", "disableColourOverlay", (int8)g_bSkyDisableColourOverlay);
+#endif
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+	StoreIni("CustomPipesValues", "trailsBlur", (int8)g_bSkyTrailsBlur);
+	StoreIni("CustomPipesValues", "trailsMotionBlur", (int8)g_bSkyTrailsMotionBlur);
+	StoreIni("CustomPipesValues", "currentBlurAlpha", g_fSkyCurrentBlurAlpha);
+	StoreIni("CustomPipesValues", "currentBlurOffset", g_fSkyCurrentBlurOffset);
+#endif
+#ifdef VICEEXT_SKY_SEAM_FIX
+	StoreIni("CustomPipesValues", "seamOffsetX", g_nSkySeamOffsetX);
+	StoreIni("CustomPipesValues", "seamFix", (int8)g_bSkySeamFix);
+	StoreIni("CustomPipesValues", "seamOffsetY", g_nSkySeamOffsetY);
 #endif
 #ifdef EXTENDED_PIPELINES
 	StoreIni("CustomPipesValues", "NeoVehicleShininess", CustomPipes::VehicleShininess);
@@ -867,6 +1055,37 @@ void SaveINISettings()
 	StoreIni("CustomPipesValues", "RimlightMult", CustomPipes::RimlightMult);
 	StoreIni("CustomPipesValues", "LightmapMult", CustomPipes::LightmapMult);
 	StoreIni("CustomPipesValues", "GlossMult", CustomPipes::GlossMult);
+#endif
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	StoreIni("CustomPipesValues", "carPipe", CustomPipes::VehiclePipeSwitch);
+#endif
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	StoreIni("CustomPipesValues", "leedsEnvMult", CustomPipes::LeedsEnvMult);
+	StoreIni("CustomPipesValues", "leedsWorldPrelightTweakMult", CustomPipes::LeedsWorldPrelightTweakMult);
+	StoreIni("CustomPipesValues", "leedsWorldPrelightTweakAdd", CustomPipes::LeedsWorldPrelightTweakAdd);
+#endif
+#ifdef VICEEXT_SKY_ENVMAP_SIZE
+	StoreIni("CustomPipesValues", "envMapSize", g_nSkyEnvMapSize);
+#endif
+#ifdef VICEEXT_SKY_WORLD_PIPE
+	StoreIni("CustomPipesValues", "worldPipe", g_nSkyWorldPipe);
+#endif
+#ifdef VICEEXT_SKY_DUAL_PASS
+	StoreIni("CustomPipesValues", "dualPass", (int8)g_bSkyDualPass);
+#endif
+#ifdef VICEEXT_SKY_MATFX_BLEND
+	StoreIni("CustomPipesValues", "texblendSwitch", g_nSkyMatFXBlendStyle);
+#endif
+#ifdef VICEEXT_SKY_MATFX_TEXGEN
+	StoreIni("CustomPipesValues", "texgenSwitch", g_nSkyMatFXTexgenStyle);
+#endif
+#ifdef VICEEXT_SKY_MATFX_PS2LIGHT
+	StoreIni("CustomPipesValues", "ps2light", (int8)g_bSkyMatFXPS2Light);
+#endif
+#ifdef SCREEN_DROPLETS
+#ifdef VICEEXT_SKY_WATERDROPS_EXTENDED
+	StoreIni("CustomPipesValues", "neoWaterDrops", g_nSkyNeoWaterDrops);
+#endif
 #endif
 	StoreIni("Rendering", "BackfaceCulling", gBackfaceCulling);
 #ifdef NEW_RENDERER
@@ -914,6 +1133,16 @@ void SaveINISettings()
 void WeaponCheat1();
 void WeaponCheat2();
 void WeaponCheat3();
+void WeaponCheat4();
+void InvincibleCheat();
+void TeargasCheat();
+void NeverWantedCheat();
+void PhotographerCheat();
+#ifdef VICEEXT_CHEAT_EFFECTS
+void AirWaysCheat();
+void RCRocketCheat();
+void BigHeadsCheat();
+#endif
 void HealthCheat();
 void VehicleCheat(int model);
 void BlowUpCarsCheat();
@@ -949,12 +1178,14 @@ SpawnCar(int id)
 	CStreaming::LoadAllRequestedModels(false);
 	if(CStreaming::HasModelLoaded(id)){
 		playerpos = FindPlayerCoors();
+#ifndef VICEEXT_IMPROVED_TECH_PART // spawn vehicle via cheat codes
 		int node;
 		if(!CModelInfo::IsBoatModel(id)){
 			node = ThePaths.FindNodeClosestToCoors(playerpos, 0, 100.0f, false, false);
 			if(node < 0)
 				return;
 		}
+#endif
 
 		CVehicle *v;
 		if(CModelInfo::IsBoatModel(id))
@@ -970,6 +1201,11 @@ SpawnCar(int id)
 		if(carCol2)
 			DebugMenuEntrySetAddress(carCol2, &v->m_currentColour2);
 
+#ifdef VICEEXT_IMPROVED_TECH_PART // spawn vehicle via cheat codes
+		v->SetPosition(FindPlayerPed()->GetPosition() + CVector(0.0f, 0.0f, 2.5f) + FindPlayerPed()->GetForward() * 5.0f);
+		CVector leftVector = -FindPlayerPed()->GetRight();
+		v->SetOrientation(0.0f, 0.0f, leftVector.Heading());
+#else
 		if(CModelInfo::IsBoatModel(id))
 			v->SetPosition(TheCamera.GetPosition() + TheCamera.GetForward()*15.0f);
 		else
@@ -977,6 +1213,7 @@ SpawnCar(int id)
 
 		v->GetMatrix().GetPosition().z += 4.0f;
 		v->SetOrientation(0.0f, 0.0f, 3.49f);
+#endif
 		v->SetStatus(STATUS_ABANDONED);
 		v->m_nDoorLock = CARLOCK_UNLOCKED;
 		CWorld::Add(v);
@@ -1175,6 +1412,20 @@ DebugMenuPopulate(void)
 		DebugMenuAddCmd("Cheats", "Weapon set 1", WeaponCheat1);
 		DebugMenuAddCmd("Cheats", "Weapon set 2", WeaponCheat2);
 		DebugMenuAddCmd("Cheats", "Weapon set 3", WeaponCheat3);
+		DebugMenuAddCmd("Cheats", "Weapon set 4", WeaponCheat4);
+		DebugMenuAddCmd("Cheats", "Invincible", InvincibleCheat);
+#ifdef VICEEXT_CHEAT_EFFECTS
+		DebugMenuAddCmd("Cheats", "AirWays", AirWaysCheat);
+#endif
+		DebugMenuAddCmd("Cheats", "Give teargas", TeargasCheat);
+#ifdef VICEEXT_EXTRA_CHEATS
+		DebugMenuAddCmd("Cheats", "No wanted", NeverWantedCheat);
+#endif
+		DebugMenuAddCmd("Cheats", "Give camera", PhotographerCheat);
+#ifdef VICEEXT_CHEAT_EFFECTS
+		DebugMenuAddCmd("Cheats", "RC Rocket", RCRocketCheat);
+		DebugMenuAddCmd("Cheats", "Big heads", BigHeadsCheat);
+#endif
 		DebugMenuAddCmd("Cheats", "Money", MoneyCheat);
 		DebugMenuAddCmd("Cheats", "Health", HealthCheat);
 		DebugMenuAddCmd("Cheats", "Wanted level up", WantedLevelUpCheat);
@@ -1209,8 +1460,6 @@ DebugMenuPopulate(void)
 				return;
 			SpawnCar(spawnCarId);
 		});
-		// Vice Extended: sus vehículos van después del rango vanilla, así que el
-		// selector de arriba no llega a ellos.
 		static const char *veextCarnames[] = {
 			"Streetfighter", "Perennial", "Trashmaster", "Hellenbach",
 			"Premier", "Manchez", "WinterGreen", "VCPD WinterGreen"
@@ -1265,6 +1514,8 @@ DebugMenuPopulate(void)
 		DebugMenuAddVarBool8("Render", "Backface Culling", &gBackfaceCulling, nil);
 		DebugMenuAddVarBool8("Render", "PS2 Alpha test Emu", &gPS2alphaTest, nil);
 		DebugMenuAddVarBool8("Render", "Frame limiter", &FrontEndMenuManager.m_PrefsFrameLimiter, nil);
+	DebugMenuAddVar("Render", "Headlight texture", &g_odHeadlightTextureMode, nil, 1, 0, 3, nil);
+	DebugMenuAddVarBool8("Render", "Specular Blinn", &g_bViceExtSpecular, nil);
 		DebugMenuAddVarBool8("Render", "VSynch", &FrontEndMenuManager.m_PrefsVsync, nil);
 		DebugMenuAddVar("Render", "Max FPS", &RsGlobal.maxFPS, nil, 1, 1, 1000, nil);
 #ifdef NEW_RENDERER
@@ -1296,6 +1547,13 @@ extern bool gbRenderWorld2;
 		e = DebugMenuAddVar("Render", "Colourfilter", &CPostFX::EffectSwitch, nil, 1, CPostFX::POSTFX_OFF, CPostFX::POSTFX_MOBILE, filternames);
 		DebugMenuEntrySetWrap(e, true);
 		DebugMenuAddVar("Render", "Intensity", &CPostFX::Intensity, nil, 0.05f, 0, 10.0f);
+		DebugMenuAddVarBool8("Render", "YCbCrCorrection", &CPostFX::m_bYCbCrFilter, nil);
+		DebugMenuAddVar("Render", "LumaScale", &CPostFX::m_lumaScale, nil, 0.004f, 0.0f, 10.0f);
+		DebugMenuAddVar("Render", "LumaOffset", &CPostFX::m_lumaOffset, nil, 0.004f, -1.0f, 1.0f);
+		DebugMenuAddVar("Render", "CbScale", &CPostFX::m_cbScale, nil, 0.004f, 0.0f, 10.0f);
+		DebugMenuAddVar("Render", "CbOffset", &CPostFX::m_cbOffset, nil, 0.004f, -1.0f, 1.0f);
+		DebugMenuAddVar("Render", "CrScale", &CPostFX::m_crScale, nil, 0.004f, 0.0f, 10.0f);
+		DebugMenuAddVar("Render", "CrOffset", &CPostFX::m_crOffset, nil, 0.004f, -1.0f, 1.0f);
 		DebugMenuAddVarBool8("Render", "Blur", &CPostFX::BlurOn, nil);
 		DebugMenuAddVarBool8("Render", "Motion Blur", &CPostFX::MotionBlurOn, nil);
 #endif
@@ -1307,6 +1565,12 @@ extern bool gbRenderWorld2;
 		DebugMenuAddVarBool32("Render", "MatFX env map apply light", &rw::MatFX::envMapApplyLight, nil);
 		DebugMenuAddVarBool32("Render", "MatFX env map flip U", &rw::MatFX::envMapFlipU, nil);
 		DebugMenuAddVarBool32("Render", "MatFX env map use matcolor", &rw::MatFX::envMapUseMatColor, nil);
+#endif
+#ifdef VICEEXT_ENV_MAP_COEF
+		DebugMenuAddVar("Render", "MatFX env map strength", (int32_t *)&g_nEnvMapStrength, nil, 1, 0, 255, nil);
+#endif
+#ifdef VICEEXT_NO_BRIGHT_LIGHT_CUBES
+		DebugMenuAddVarBool32("Render", "Bright light cubes", &g_bWSPOptionNoLightSquare, nil);
 #endif
 #ifdef EXTENDED_PIPELINES
 		static const char *vehpipenames[] = { "MatFX", "Neo" };
@@ -1321,6 +1585,36 @@ extern bool gbRenderWorld2;
 		DebugMenuAddVar("Render", "Mult", &CustomPipes::LightmapMult, nil, 0.1f, 0, 1.0f);
 		DebugMenuAddVarBool8("Render", "Neo Road Gloss enable", &CustomPipes::GlossEnable, nil);
 		DebugMenuAddVar("Render", "Mult", &CustomPipes::GlossMult, nil, 0.1f, 0, 1.0f);
+#endif
+#ifdef VICEEXT_SKY_ENVMAP_SIZE
+		DebugMenuAddVar("Render", "Env map size", &g_nSkyEnvMapSize, nil, 1, 32, 1024, nil);
+#endif
+#ifdef VICEEXT_SKY_WORLD_PIPE
+		static const char *worldpipenames[] = { "Default", "Neo", "Leeds" };
+		e = DebugMenuAddVar("Render", "World pipe", &g_nSkyWorldPipe, nil, 1, 0, 2, worldpipenames);
+		DebugMenuEntrySetWrap(e, true);
+#endif
+#ifdef VICEEXT_SKY_DUAL_PASS
+		DebugMenuAddVarBool8("Render", "Dual pass", &g_bSkyDualPass, nil);
+#endif
+#ifdef VICEEXT_SKY_DISABLE_COLOUR_OVERLAY
+		DebugMenuAddVarBool8("Render", "Disable colour overlay", &g_bSkyDisableColourOverlay, nil);
+#endif
+#ifdef VICEEXT_SKY_TRAILS_PARAMS
+		DebugMenuAddVarBool8("Render", "Trails blur", &g_bSkyTrailsBlur, nil);
+		DebugMenuAddVarBool8("Render", "Trails motion blur", &g_bSkyTrailsMotionBlur, nil);
+		DebugMenuAddVar("Render", "Blur alpha", &g_fSkyCurrentBlurAlpha, nil, 1.0f, 0.0f, 255.0f);
+		DebugMenuAddVar("Render", "Blur offset", &g_fSkyCurrentBlurOffset, nil, 0.1f, 0.0f, 16.0f);
+#endif
+#ifdef VICEEXT_SKY_SEAM_FIX
+		DebugMenuAddVar("Render", "Seam offset X", &g_nSkySeamOffsetX, nil, 1, -10, 10, nil);
+		DebugMenuAddVar("Render", "Seam offset Y", &g_nSkySeamOffsetY, nil, 1, -10, 10, nil);
+#endif
+#ifdef SCREEN_DROPLETS
+#ifdef VICEEXT_SKY_WATERDROPS_EXTENDED
+		static const char *dropnames[] = { "None", "Neo", "Extended", "Extended+Blood" };
+		DebugMenuAddVar("Render", "Neo water drops", &g_nSkyNeoWaterDrops, nil, 1, 0, 3, dropnames);
+#endif
 #endif
 		DebugMenuAddVarBool8("Debug Render", "Show Ped Paths", &gbShowPedPaths, nil);
 		DebugMenuAddVarBool8("Debug Render", "Show Car Paths", &gbShowCarPaths, nil);
@@ -1498,9 +1792,6 @@ void re3_assert(const char *expr, const char *filename, unsigned int lineno, con
 	abort();
 #else
 #ifdef __EMSCRIPTEN__
-	// Web: un assert en ruta caliente (p. ej. reintento de carga por frame)
-	// inundaba consola + gamelog hasta matar la pestaña. Primeros 30
-	// completos, luego silencio (el juego sigue).
 	static int odAssertCount = 0;
 	if (odAssertCount < 30) {
 		odAssertCount++;
@@ -1520,6 +1811,10 @@ void re3_assert(const char *expr, const char *filename, unsigned int lineno, con
 void re3_debug(const char *format, ...)
 {
 #ifndef MASTER
+#ifdef __EMSCRIPTEN__
+	if(strstr(format, "%s") == nil)
+#endif
+	{
 	va_list va;
 	va_start(va, format);
 #ifdef _WIN32
@@ -1531,6 +1826,7 @@ void re3_debug(const char *format, ...)
 
 	printf("%s", re3_buff);
 	CDebug::DebugAddText(re3_buff);
+	}
 #endif
 }
 
@@ -1538,6 +1834,10 @@ void re3_debug(const char *format, ...)
 void re3_trace(const char *filename, unsigned int lineno, const char *func, const char *format, ...)
 {
 	char buff[re3_buffsize *2];
+#ifdef __EMSCRIPTEN__
+	if(strstr(format, "%s") != nil)
+		return;
+#endif
 	va_list va;
 	va_start(va, format);
 #ifdef _WIN32

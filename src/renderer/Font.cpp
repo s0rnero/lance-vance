@@ -3,6 +3,7 @@
 #include "Sprite2d.h"
 #include "TxdStore.h"
 #include "Font.h"
+#include "WidescreenFixOptions.h"
 #ifdef BUTTON_ICONS
 #include "FileMgr.h"
 #endif
@@ -480,6 +481,13 @@ void CFont::LoadPCKeys(const char* txdPath)
 			PCKeySlot = -1;
 		}
 	}
+#ifdef __EMSCRIPTEN__
+	{
+		char t[64];
+		snprintf(t, sizeof t, "KEYICONS txd=pcbtns cargado=%d", PCKeySlot != -1 ? 1 : 0);
+		ODTRACES(t);
+	}
+#endif
 }
 #endif
 
@@ -900,17 +908,50 @@ CFont::PrintString(float x, float y, uint32, wchar *start, wchar *end, float spw
 	float dropShadowPosition = Details.dropShadowPosition;
 	if (dropShadowPosition != 0.0f && (Details.style == FONT_BANK || Details.style == FONT_STANDARD)) {
 		CRGBA color = Details.color;
-		Details.color = Details.dropColor;
 		Details.dropShadowPosition = 0;
-		Details.bIsShadow = true;
-		if (Details.slant != 0.0f) {
-			Details.slantRefX += SCREEN_SCALE_X(dropShadowPosition);
-			Details.slantRefY += SCREEN_SCALE_Y(dropShadowPosition);
-			PrintString(SCREEN_SCALE_X(dropShadowPosition) + x, SCREEN_SCALE_Y(dropShadowPosition) + y, Details.anonymous_25, start, end, spwidth);
-			Details.slantRefX -= SCREEN_SCALE_X(dropShadowPosition);
-			Details.slantRefY -= SCREEN_SCALE_Y(dropShadowPosition);
-		} else {
-			PrintString(SCREEN_SCALE_X(dropShadowPosition) + x, SCREEN_SCALE_Y(dropShadowPosition) + y, Details.anonymous_25, start, end, spwidth);
+#ifdef VICEEXT_WFP_TEXT_OUTLINE
+		if (g_nWSPOptionTextShadowMode > 0) {
+			static const float fDirs16[16][2] = {
+				{ 1.0000f, 0.0000f}, { 0.9239f, 0.3827f}, { 0.7071f, 0.7071f}, { 0.3827f, 0.9239f},
+				{ 0.0000f, 1.0000f}, { -0.3827f, 0.9239f}, { -0.7071f, 0.7071f}, { -0.9239f, 0.3827f},
+				{ -1.0000f, 0.0000f}, { -0.9239f, -0.3827f}, { -0.7071f, -0.7071f}, { -0.3827f, -0.9239f},
+				{ 0.0000f, -1.0000f}, { 0.3827f, -0.9239f}, { 0.7071f, -0.7071f}, { 0.9239f, -0.3827f}
+			};
+			const float fStrength = (g_nWSPOptionTextShadowMode > 1) ? 0.5f : 0.25f;
+			const float fTargetAlpha = (float)color.a / 255.0f;
+			const float fPerPassAlpha = 1.0f - Pow(1.0f - fTargetAlpha, 1.0f / 16.0f);
+			const uint8 nOutlineAlpha = (uint8)Clamp(fPerPassAlpha * 255.0f * 2.0f, 0.0f, (float)color.a);
+			Details.bIsShadow = true;
+			for (int i = 0; i < 16; i++) {
+				CRGBA outlineColor = Details.dropColor;
+				outlineColor.a = nOutlineAlpha;
+				Details.color = outlineColor;
+				float ox = SCREEN_SCALE_X(dropShadowPosition * fDirs16[i][0] * fStrength);
+				float oy = SCREEN_SCALE_Y(dropShadowPosition * fDirs16[i][1] * fStrength);
+				if (Details.slant != 0.0f) {
+					Details.slantRefX += ox;
+					Details.slantRefY += oy;
+					PrintString(x + ox, y + oy, Details.anonymous_25, start, end, spwidth);
+					Details.slantRefX -= ox;
+					Details.slantRefY -= oy;
+				} else {
+					PrintString(x + ox, y + oy, Details.anonymous_25, start, end, spwidth);
+				}
+			}
+		} else
+#endif
+		{
+			Details.color = Details.dropColor;
+			Details.bIsShadow = true;
+			if (Details.slant != 0.0f) {
+				Details.slantRefX += SCREEN_SCALE_X(dropShadowPosition);
+				Details.slantRefY += SCREEN_SCALE_Y(dropShadowPosition);
+				PrintString(SCREEN_SCALE_X(dropShadowPosition) + x, SCREEN_SCALE_Y(dropShadowPosition) + y, Details.anonymous_25, start, end, spwidth);
+				Details.slantRefX -= SCREEN_SCALE_X(dropShadowPosition);
+				Details.slantRefY -= SCREEN_SCALE_Y(dropShadowPosition);
+			} else {
+				PrintString(SCREEN_SCALE_X(dropShadowPosition) + x, SCREEN_SCALE_Y(dropShadowPosition) + y, Details.anonymous_25, start, end, spwidth);
+			}
 		}
 		Details.color = color;
 		Details.dropShadowPosition = dropShadowPosition;
@@ -964,19 +1005,6 @@ CFont::PrintStringFromBottom(float x, float y, wchar *str)
 }
 
 #ifdef __EMSCRIPTEN__
-// R3b (21/09, 7ª partida): "textos al azar abajo, en blanco, como los de una
-// misión, salen unos fotogramas y desaparecen".
-//
-// La traza de encolado (SCRTXT, Messages.cpp) sólo cubre cuatro funciones y en
-// la partida del jugador todas sus líneas eran de trucos y de `^ELIMINADO!`, así
-// que los textos de abajo vienen por OTRO camino (las variantes con número o con
-// cadena, el *brief* de misión, o un `CFont::PrintString` directo de cualquier
-// bloque) y encima el HUD repinta cada frame.
-//
-// Éste es el punto FINAL del dibujo: todo texto de la mitad inferior de la
-// pantalla queda registrado con su contenido literal, así que el próximo log
-// nombra al culpable sin adivinar. El ruido se contiene con dedupe (texto +
-// banda de 16 px) y como mucho dos líneas por segundo.
 static void
 ViceExtTraceBottomText(float x, float y, wchar *s)
 {
@@ -2104,6 +2132,14 @@ CFont::SetDropColor(CRGBA col)
 void
 CFont::SetDropShadowPosition(int16 pos)
 {
+#ifdef VICEEXT_WFP_TEXT_OUTLINE
+	if (g_nWSPOptionTextShadowMode > 0 && pos > 1)
+		pos = 1;
+#endif
+#ifdef VICEEXT_WFP_SMALLER_TEXT_SHADOWS
+	if (g_bWSPOptionSmallerTextShadows && pos > 1)
+		pos = 1;
+#endif
 	Details.dropShadowPosition = pos;
 }
 

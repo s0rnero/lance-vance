@@ -6,9 +6,7 @@
 #define WITHD3D
 #endif
 #include "common.h"
-#ifdef __EMSCRIPTEN__
 #include "ondemand.h"
-#endif
 #ifdef ANISOTROPIC_FILTERING
 #include "rpanisot.h"
 #endif
@@ -82,9 +80,20 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 	RwTexDictionary *texDict;
 	RwTexture *tex;
 
+	if(stream == nil)
+		return nil;
 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
 		return nil;
-	if(RwStreamRead(stream, &numTextures, size) != size)
+	// El chunk STRUCT es un unico int32 con el numero de texturas. El tamano hay
+	// que comprobarlo antes de leer: si viene mal (buffer desalineado o datos
+	// corruptos) RwStreamRead copiaria "size" bytes sobre un entero de 4 y
+	// reventaria la pila; el sintoma es una llamada a funcion nula dentro del
+	// propio parser, no este punto.
+	if(size != sizeof(numTextures)){
+		ODTRACES("TXDBAD struct size != 4 (dict corrupto o desalineado)");
+		return nil;
+	}
+	if(RwStreamRead(stream, &numTextures, sizeof(numTextures)) != sizeof(numTextures))
 		return nil;
 
 	texDict = RwTexDictionaryCreate();
@@ -94,26 +103,21 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 	while(numTextures--){
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
-#ifdef __EMSCRIPTEN__
-			// Web: no destruir todo el diccionario por una textura DXT sin
-			// soporte S3TC u otro fallo aislado. Saltar y conservar el resto
-			// evita peds/mundo enteros en negro por un solo fallo.
-			// DIAG: registrar el hueco (pos en stream) para mapearlo al visual.
+			// Un diccionario incompleto no es un diccionario: si una textura no
+			// se puede leer el stream queda descolocado y seguir leyendo solo
+			// sirve para sacar basura. Se descarta, como hacen el base y el mod.
 			{
 				static int n = 0;
-				if (n < 80) {
+				if (n < 20) {
 					n++;
 					char t[128];
-					snprintf(t, sizeof t, "SKIP tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					snprintf(t, sizeof t, "TXDDROP textura ilegible dictpos=%u", (unsigned)STREAMPOS(stream));
 					ODTRACES(t);
 				}
 			}
-			continue;
-#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
-#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}
@@ -121,89 +125,89 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 	return texDict;
 }
 
-static int32 numberTextures = -1;
-static int32 streamPosition;
-
 RwTexDictionary*
-RwTexDictionaryGtaStreamRead1(RwStream *stream)
+RwTexDictionaryGtaStreamRead1(RwStream *stream, int32 *numTexturesOut, uint32 *streamPosOut)
 {
 	RwUInt32 size, version;
 	RwInt32 numTextures;
+	RwInt32 firstPart, secondPart;
 	RwTexDictionary *texDict;
 	RwTexture *tex;
 
-	numberTextures = 0;
+	if(numTexturesOut) *numTexturesOut = 0;
+	if(streamPosOut) *streamPosOut = 0;
+
+	if(stream == nil)
+		return nil;
 	if(!RwStreamFindChunk(stream, rwID_STRUCT, &size, &version))
 		return nil;
-	assert(size == 4);
-	if(RwStreamRead(stream, &numTextures, size) != size)
+	if(size != sizeof(numTextures)){
+		ODTRACES("TXDBAD struct size != 4 (split, dict corrupto o desalineado)");
+		return nil;
+	}
+	if(RwStreamRead(stream, &numTextures, sizeof(numTextures)) != sizeof(numTextures))
 		return nil;
 
 	texDict = RwTexDictionaryCreate();
 	if(texDict == nil)
 		return nil;
 
-	numberTextures = numTextures/2;
+	secondPart = numTextures/2;
+	firstPart = numTextures - secondPart;
 
-	while(numTextures > numberTextures){
-		numTextures--;
-
+	while(firstPart-- > 0){
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
-#ifdef __EMSCRIPTEN__
-			// Igual que la vía small (línea ~94): no tumbar medio diccionario
-			// por una textura aislada.
 			{
 				static int n = 0;
-				if (n < 40) {
+				if (n < 20) {
 					n++;
 					char t[128];
-					snprintf(t, sizeof t, "SKIP1 tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					snprintf(t, sizeof t, "TXDDROP textura ilegible (split) dictpos=%u", (unsigned)STREAMPOS(stream));
 					ODTRACES(t);
 				}
 			}
-			continue;
-#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
-#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}
 
-	numberTextures = numTextures;
-	streamPosition = STREAMPOS(stream);
+	// El estado de la carga partida vive en el slot del TXD, no en estaticas:
+	// con dos canales hay dos TXD grandes en vuelo a la vez y las estaticas se
+	// pisaban entre ellos (el segundo acababa leyendo en la posicion del otro).
+	if(numTexturesOut) *numTexturesOut = secondPart;
+	if(streamPosOut) *streamPosOut = STREAMPOS(stream);
 
 	return texDict;
 }
 
 RwTexDictionary*
-RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict)
+RwTexDictionaryGtaStreamRead2(RwStream *stream, RwTexDictionary *texDict, int32 numberTextures, uint32 streamPosition)
 {
 	RwTexture *tex;
 
+	if(stream == nil || texDict == nil)
+		return nil;
+
 	RwStreamSkip(stream, streamPosition - STREAMPOS(stream));
 
-	while(numberTextures--){
+	while(numberTextures-- > 0){
 		tex = RwTextureGtaStreamRead(stream);
 		if(tex == nil){
-#ifdef __EMSCRIPTEN__
 			{
 				static int n = 0;
-				if (n < 40) {
+				if (n < 20) {
 					n++;
 					char t[128];
-					snprintf(t, sizeof t, "SKIP2 tex dictpos=%u", (unsigned)STREAMPOS(stream));
+					snprintf(t, sizeof t, "TXDDROP textura ilegible (split 2) dictpos=%u", (unsigned)STREAMPOS(stream));
 					ODTRACES(t);
 				}
 			}
-			continue;
-#else
 			RwTexDictionaryForAllTextures(texDict, destroyTexture, nil);
 			RwTexDictionaryDestroy(texDict);
 			return nil;
-#endif
 		}
 		RwTexDictionaryAddTexture(texDict, tex);
 	}

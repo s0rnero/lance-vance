@@ -11,6 +11,24 @@ public:
 	void operator delete(void *p, size_t);
 };
 
+// T19: un nodo NO se devuelve al pool mientras se recorre una lista.
+// CWorld::Remove() -> RemoveFromMovingList() borra el nodo en mitad del
+// recorrido de CWorld::Process (p.ej. un peaton que termina de morir), y el
+// pool recicla ese mismo hueco para el siguiente InsertItem; desde ahi el
+// recorrido salta a la cabeza de la lista y vuelve a procesar lo ya procesado
+// sin terminar nunca. Es el cuelgue con mark=137: hilo a tope, sin JSERR, sin
+// OOM y con el perro guardian vivo (14 s de silencio en la traza). Con esto el
+// nodo se desengancha en el acto y su memoria se suelta al salir del ultimo
+// recorrido, asi que ningun `next` ya leido puede cambiar de dueno.
+bool CPtrListDeferDelete(CPtrNode *node);
+
+class CPtrListWalk
+{
+public:
+	CPtrListWalk(void);
+	~CPtrListWalk(void);
+};
+
 class CPtrList
 {
 public:
@@ -49,6 +67,8 @@ public:
 	}
 	void DeleteNode(CPtrNode *node){
 		RemoveNode(node);
+		if(CPtrListDeferDelete(node))
+			return;
 		delete node;
 	}
 	void RemoveItem(void *item){

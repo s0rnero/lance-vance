@@ -127,7 +127,7 @@ void
 CTheZones::Update(void)
 {
 #ifdef SQUEEZE_PERFORMANCE
-	if (CTimer::GetFrameCounter() % 5 != 0)
+	if (CTimer::GetLogicalFrameCounter() % 5 != 0)
 		return;
 #endif
 	CVector pos;

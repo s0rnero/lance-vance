@@ -55,6 +55,10 @@ public:
 	bool m_bSkipPhoneCall;
 #endif
 
+#ifdef VICEEXT_FEATURES_INI
+	int m_nHealthRegenerationTime;
+#endif
+
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 	bool bIsAutoAiming;
 #endif
@@ -63,7 +67,14 @@ public:
 	bool bIsPlayerAiming;
 #endif
 
+#ifdef VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT
+	CPed *m_pThirdPersonMouseTarget;
+#endif
+
 	static bool bDontAllowWeaponChange;
+#ifdef VICEEXT_EXTRA_CHEATS
+	static bool bNoWantedCheat;
+#endif
 #ifndef MASTER
 	static bool bDebugPlayerInfo;
 #endif
@@ -133,6 +144,11 @@ public:
 	void StopAimingAnims(void);
 	bool CanUseDriveBy(void);
 	bool IsDoomMode(void);
+#endif
+
+#ifdef VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT
+	void Find3rdPersonMouseTarget(void);
+	void DrawTriangleForMouseRecruitPed(void);
 #endif
 
 	static void SetupPlayerPed(int32);

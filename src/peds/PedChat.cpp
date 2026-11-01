@@ -3,6 +3,10 @@
 #include "DMAudio.h"
 #include "General.h"
 #include "Ped.h"
+#include "ondemand.h"
+#ifdef VICEEXT_SP_SPEECH_DELAY
+#include "SilentPatchOptions.h"
+#endif
 
 // Corresponds to ped sounds (from SOUND_PED_DEATH to SOUND_PED_TAXI_CALL)
 PedAudioData CommentWaitTime[56] = {
@@ -94,6 +98,24 @@ CPed::ServiceTalking(void)
 			if (m_queuedSound == SOUND_PED_PLAYER_BEFORESEX && IsPlayer())
 				m_soundStart += 2000;
 
+#ifdef VICEEXT_SP_SPEECH_DELAY
+			const uint32 spSpeechDelay = g_nSPOptionSpeechDelay > 0 ? (uint32)g_nSPOptionSpeechDelay : 0;
+			if (spSpeechDelay > 0 && m_soundStart < m_lastSoundStart + spSpeechDelay) {
+				m_soundStart = m_lastSoundStart + spSpeechDelay;
+#if defined __EMSCRIPTEN__
+				{
+					static uint32 s_odLastChatTrace = 0;
+					const uint32 nNow = CTimer::GetTimeInMilliseconds();
+					if (nNow - s_odLastChatTrace > 5000) {
+						s_odLastChatTrace = nNow;
+						char t[96];
+						snprintf(t, sizeof t, "VEX sp chat espera=%u", (unsigned)(m_soundStart - m_lastSoundStart));
+						ODTRACES(t);
+					}
+				}
+#endif
+			}
+#endif
 			m_lastQueuedSound = m_queuedSound;
 			m_queuedSound = SOUND_NO_SOUND;
 		}
@@ -103,6 +125,11 @@ CPed::ServiceTalking(void)
 void
 CPed::Say(uint16 audio)
 {
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if (Dead())
+		return;
+#endif
+
 	if (3.0f + TheCamera.GetPosition().z < GetPosition().z)
 		return;
 

@@ -744,7 +744,17 @@ int8 CRunningScript::ProcessCommands300To399(int32 command)
 		CollectParameters(&m_nIp, 1);
 		cAudioScriptObject* obj = CPools::GetAudioScriptObjectPool()->GetAt(ScriptParams[0]);
 		if (!obj){
-			debug("REMOVE_SOUND - Sound doesn't exist\n");
+			// Un script puede pedir esto en cada frame (sonido que nunca existio):
+			// una linea por llamada son ~55 escrituras por segundo en consola y cola
+			// de traza, y la informacion es la misma resumida.
+			static uint32 odRsLast = 0, odRsRepes = 0;
+			uint32 odRsNow = CTimer::GetTimeInMilliseconds();
+			odRsRepes++;
+			if (odRsLast == 0 || odRsNow < odRsLast || odRsNow - odRsLast >= 5000) {
+				debug("REMOVE_SOUND - Sound doesn't exist (x%u desde la ultima linea)\n", odRsRepes);
+				odRsLast = odRsNow;
+				odRsRepes = 0;
+			}
 			return 0;
 		}
 		DMAudio.DestroyLoopingScriptObject(obj->AudioEntity);
@@ -889,7 +899,11 @@ int8 CRunningScript::ProcessCommands400To499(int32 command)
 		CollectParameters(&m_nIp, 3);
 		CPlayerPed* pPed = CWorld::Players[ScriptParams[0]].m_pPed;
 		script_assert(pPed);
+		#ifdef VICEEXT_SP_ZERO_AMMO
+		pPed->m_nSelectedWepSlot = pPed->GiveWeapon((eWeaponType)ScriptParams[1], Max(1u, (uint32)ScriptParams[2]));
+#else
 		pPed->m_nSelectedWepSlot = pPed->GiveWeapon((eWeaponType)ScriptParams[1], ScriptParams[2]);
+#endif
 		return 0;
 	}
 	case COMMAND_GIVE_WEAPON_TO_CHAR:
@@ -897,7 +911,11 @@ int8 CRunningScript::ProcessCommands400To499(int32 command)
 		CollectParameters(&m_nIp, 3);
 		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
 		script_assert(pPed);
+		#ifdef VICEEXT_SP_ZERO_AMMO
+		pPed->SetCurrentWeapon(pPed->GiveWeapon((eWeaponType)ScriptParams[1], Max(1u, (uint32)ScriptParams[2])));
+#else
 		pPed->SetCurrentWeapon(pPed->GiveWeapon((eWeaponType)ScriptParams[1], ScriptParams[2]));
+#endif
 		if (pPed->bInVehicle && pPed->m_pMyVehicle)
 			pPed->RemoveWeaponModel(CWeaponInfo::GetWeaponInfo(pPed->m_weapons[pPed->m_currentWeapon].m_eWeaponType)->m_nModelId);
 		return 0;

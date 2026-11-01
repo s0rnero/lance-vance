@@ -33,6 +33,8 @@
 #include "Debug.h"
 #include "GenericGameStorage.h"
 #include "Camera.h"
+#include "ondemand.h" // VICEEXT 1p key/set: estado de la 1ª persona (R5)
+#include "WidescreenFixOptions.h"
 
 enum
 {
@@ -252,6 +254,29 @@ CCamera::Init(void)
 	m_nAvoidTheGeometryProbsDirn = 0;
 }
 
+#ifdef __EMSCRIPTEN__
+static void
+OdTraceFirstPerson(void)
+{
+	static int s_od1pTog = -1;
+	static uint32 s_od1pTick = 0;
+	int tog = (TheCamera.PedZoomIndicator == CAM_ZOOM_REAL_1ST_PERSON) ? 1 : 0;
+	uint32 ahora = CTimer::GetTimeInMilliseconds();
+	if (tog == s_od1pTog && !(tog && ahora - s_od1pTick >= 1000))
+		return;
+	s_od1pTog = tog;
+	s_od1pTick = ahora;
+	float spd = 0.0f;
+	CEntity *odPed = TheCamera.pTargetEntity;
+	if (odPed && odPed->IsPed())
+		spd = ((CPlayerPed *)odPed)->m_fMoveSpeed;
+	char t[120];
+	snprintf(t, sizeof t, "VICEEXT 1p set tog=%d modo=%d zoom=%d spd=%.2f",
+		tog, TheCamera.Cams[TheCamera.ActiveCam].Mode, (int)TheCamera.PedZoomIndicator, spd);
+	ODTRACES(t);
+}
+#endif
+
 void
 CCamera::Process(void)
 {
@@ -278,6 +303,9 @@ CCamera::Process(void)
 		Cams[(ActiveCam+1)%2].CamTargetEntity = pTargetEntity;
 
 	CamControl();
+#ifdef __EMSCRIPTEN__
+	OdTraceFirstPerson();
+#endif
 	if(m_bFading)
 		ProcessFade();
 	if(m_bMusicFading)
@@ -522,7 +550,7 @@ CCamera::Process(void)
 		static float DrunkAngle;
 
 		int tableIndex = (int)(DEGTORAD(DrunkAngle)/TWOPI * CParticle::SIN_COS_TABLE_SIZE) & CParticle::SIN_COS_TABLE_SIZE-1;
-		DrunkAngle += 5.0f;
+		DrunkAngle += 5.0f * CTimer::GetTimeStep();
 #ifndef FIX_BUGS
 		// This just messes up interpolation, probably not what they intended
 		// and multiplying the interpolated FOV is also a bit extreme
@@ -616,7 +644,7 @@ CCamera::Process(void)
 
 	UpdateSoundDistances();
 
-	if((CTimer::GetFrameCounter()&0xF) == 3)
+	if((CTimer::GetLogicalFrameCounter()&0xF) == 3)
 		DistanceToWater = CWaterLevel::CalcDistanceToWater(GetPosition().x, GetPosition().y);
 
 	// LOD dist
@@ -634,7 +662,11 @@ CCamera::Process(void)
 	}else
 		LODDistMultiplier = 1.0f;
 	GenerationDistMultiplier = LODDistMultiplier;
+	#ifdef VICEEXT_IMPROVED_TECH_PART
+	LODDistMultiplier *= CRenderer::ms_lodDistScale * 2.5f;
+#else
 	LODDistMultiplier *= CRenderer::ms_lodDistScale;
+#endif
 
 	CDraw::SetNearClipZ(RwCameraGetNearClipPlane(m_pRwCamera));
 	CDraw::SetFarClipZ(RwCameraGetFarClipPlane(m_pRwCamera));
@@ -1052,6 +1084,14 @@ CCamera::CamControl(void)
 			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
+#ifdef __EMSCRIPTEN__
+				{
+					char t[80];
+					snprintf(t, sizeof t, "VICEEXT 1p key vk=%d dir=1",
+						ControlsManager.GetControllerKeyAssociatedWithAction(CAMERA_CHANGE_VIEW_ALL_SITUATIONS, KEYBOARD));
+					ODTRACES(t);
+				}
+#endif
 #if defined VICEEXT_FIRST_PERSON && defined VICEEXT_IMPROVED_MENU_AND_INPUT
 				if (PedZoomIndicator == CAM_ZOOM_3) {
 					PedZoomIndicator = CAM_ZOOM_REAL_1ST_PERSON;
@@ -1085,6 +1125,14 @@ CCamera::CamControl(void)
 			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
+#ifdef __EMSCRIPTEN__
+				{
+					char t[80];
+					snprintf(t, sizeof t, "VICEEXT 1p key vk=%d dir=-1",
+						ControlsManager.GetControllerKeyAssociatedWithAction(CAMERA_CHANGE_VIEW_ALL_SITUATIONS, KEYBOARD));
+					ODTRACES(t);
+				}
+#endif
 #if defined VICEEXT_FIRST_PERSON && defined VICEEXT_IMPROVED_MENU_AND_INPUT
 				if (PedZoomIndicator == CAM_ZOOM_3) {
 					PedZoomIndicator = CAM_ZOOM_REAL_1ST_PERSON;
@@ -1774,6 +1822,13 @@ CCamera::CamControl(void)
 #endif
 
 #ifdef VICEEXT_FIRST_PERSON
+		if(ReqMode == CCam::MODE_REAL_1ST_PERSON &&
+		   (Cams[ActiveCam].Mode != CCam::MODE_REAL_1ST_PERSON ||
+		    Cams[ActiveCam].CamTargetEntity != pTargetEntity))
+			Cams[ActiveCam].m_bViceExtFpEntered = true;
+#endif
+
+#ifdef VICEEXT_FIRST_PERSON
 		if((m_uiTransitionState == 0 || switchByJumpCut) && ReqMode != Cams[ActiveCam].Mode || ReqMode == CCam::MODE_REAL_1ST_PERSON) {
 #else
 		if((m_uiTransitionState == 0 || switchByJumpCut) && ReqMode != Cams[ActiveCam].Mode){
@@ -1787,6 +1842,8 @@ CCamera::CamControl(void)
 					   !m_bUseMouse3rdPerson)
 						SetCameraDirectlyBehindForFollowPed_CamOnAString();
 				}
+				if(ReqMode != Cams[ActiveCam].Mode)
+					Cams[ActiveCam].m_bViceExtFpEntered = (ReqMode == CCam::MODE_REAL_1ST_PERSON);
 				Cams[ActiveCam].Mode = ReqMode;
 				m_bJust_Switched = true;
 				Cams[ActiveCam].m_cvecCamFixedModeVector = m_vecFixedModeVector;
@@ -2038,7 +2095,7 @@ CCamera::UpdateSoundDistances(void)
 		center = GetPosition() + 5.0f*GetForward();
 
 	// check up
-	n = CTimer::GetFrameCounter() % 12;
+	n = CTimer::GetLogicalFrameCounter() % 12;
 	if(n == 0){
 		SoundDistUpAsReadOld = SoundDistUpAsRead;
 		if(CWorld::ProcessVerticalLine(center, center.z+SOUND_DIST, colPoint, entity, true, false, false, false, true, false, nil))
@@ -2154,11 +2211,21 @@ CCamera::AvoidTheGeometry(const CVector &Source, const CVector &TargetPos, CVect
 	static float fClearGeomAmount;
 	static float fClearGeomAmountSpeed;
 	float Near = RwCameraGetNearClipPlane(Scene.camera);
-	float ViewPlaneHeight = Tan(DEGTORAD(FOV) / 2.0f);
+	float fCollisionFOV = FOV;
+#ifdef VICEEXT_WFP_INVERSE_FOV_COLLISION
+	if (g_bWSPOptionInverseFOVCollision)
+		fCollisionFOV = CDraw::ConvertFOVInverse(FOV);
+#endif
+	float ViewPlaneHeight = Tan(DEGTORAD(fCollisionFOV) / 2.0f);
 	float ViewPlaneWidth = ViewPlaneHeight * CDraw::CalculateAspectRatio() * fAvoidTweakFOV;
 	CVector Center = NewSource + Front*Near;
 	float fClearGeomTarget = 0.0f;
-	if(CWorld::TestSphereAgainstWorld(Center, ViewPlaneWidth, nil, true, false, false, true, false, true)){
+	bool bTestCollision = true;
+#ifdef VICEEXT_WFP_SKIP_CAMERA_COLLISION
+	if (g_bWSPOptionSkipCameraCollision && CDraw::GetAspectRatio() >= 2.0f)
+		bTestCollision = false;
+#endif
+	if(bTestCollision && CWorld::TestSphereAgainstWorld(Center, ViewPlaneWidth, nil, true, false, false, true, false, true)){
 		CVector CamToCol = gaTempSphereColPoints[0].point - NewSource;
 		float FrontDist = DotProduct(CamToCol, Front);
 		CVector CenterToCol = gaTempSphereColPoints[0].point - Center;
@@ -2220,11 +2287,25 @@ CCamera::GetArrPosForVehicleType(int apperance, int &index)
 	}
 }
 
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+static void GetAdaptiveCutsceneContentRect(CRect &rect);
+#endif
+
 void
 CCamera::GetScreenRect(CRect &rect)
 {
 	rect.left = 0.0f;
 	rect.right = SCREEN_WIDTH;
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+		if (g_bWSPOptionSmartCutsceneBorders && m_WideScreenOn
+#ifdef CUTSCENE_BORDERS_SWITCH
+		&& CMenuManager::m_PrefsCutsceneBorders
+#endif
+		) {
+		GetAdaptiveCutsceneContentRect(rect);
+		return;
+	}
+#endif
 	if(m_WideScreenOn
 #ifdef CUTSCENE_BORDERS_SWITCH
 		&& CMenuManager::m_PrefsCutsceneBorders
@@ -2716,6 +2797,86 @@ CCamera::SetWideScreenOff(void)
 	m_bWantsToSwitchWidescreenOff = m_WideScreenOn;
 }
 
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+static const float VANILLA_WINDOW_FRACTION = 0.7f + 8.0f / 480.0f;
+static const float VANILLA_CENTER_FUDGE_Y = 18.0f;
+static const float MIN_TOP_BAR_BOTTOM_RATIO = 0.2f;
+
+static float s_fCutsceneTopBar = 0.0f;
+static float s_fCutsceneBottomBar = 0.0f;
+static float s_fCutscenePillarWidth = 0.0f;
+static float s_fCutsceneCameraZoom = 1.0f;
+static bool s_bCutsceneHasLetterbox = false;
+static bool s_bCutsceneHasPillar = false;
+
+static void
+CalculateCutsceneBorderGeometry(void)
+{
+	const float fScreenAspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+	const float fContentAspect = DEFAULT_ASPECT_RATIO / VANILLA_WINDOW_FRACTION;
+
+	s_fCutsceneTopBar = 0.0f;
+	s_fCutsceneBottomBar = 0.0f;
+	s_fCutscenePillarWidth = 0.0f;
+	s_fCutsceneCameraZoom = 1.0f;
+	s_bCutsceneHasLetterbox = false;
+	s_bCutsceneHasPillar = false;
+
+	if (fScreenAspect > fContentAspect) {
+		s_bCutsceneHasPillar = true;
+		s_fCutscenePillarWidth = (SCREEN_WIDTH - SCREEN_HEIGHT * fContentAspect) * 0.5f;
+		s_fCutsceneCameraZoom = VANILLA_WINDOW_FRACTION * fScreenAspect / DEFAULT_ASPECT_RATIO;
+	} else {
+		s_bCutsceneHasLetterbox = true;
+		float fContentFractionTarget = fScreenAspect / fContentAspect;
+		s_fCutsceneCameraZoom = Max(1.0f, fContentFractionTarget + 1.5f * VANILLA_CENTER_FUDGE_Y * fScreenAspect / 480.0f
+			* (1.0f + MIN_TOP_BAR_BOTTOM_RATIO) / (1.0f - MIN_TOP_BAR_BOTTOM_RATIO));
+		float fContentFraction = fContentFractionTarget / s_fCutsceneCameraZoom;
+		float fWindowCenter = 0.5f - 0.75f * VANILLA_CENTER_FUDGE_Y * fScreenAspect / (480.0f * s_fCutsceneCameraZoom);
+		s_fCutsceneTopBar = Max(fWindowCenter - fContentFraction * 0.5f, 0.0f) * SCREEN_HEIGHT;
+		s_fCutsceneBottomBar = Max(1.0f - fWindowCenter - fContentFraction * 0.5f, 0.0f) * SCREEN_HEIGHT;
+	}
+}
+#endif
+
+#ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
+static const float CUTSCENE_BORDER_ANIM_SECS = 0.35f;
+static float s_fCutsceneBordersMult = 0.0f;
+static uint32 s_uiCutsceneBordersLastTick = 0;
+#endif
+
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+static void
+GetAdaptiveCutsceneContentRect(CRect &rect)
+{
+	CalculateCutsceneBorderGeometry();
+
+	float fMult = 1.0f;
+#ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
+	fMult = g_bWSPOptionNoCutsceneBorderAnimation ? 1.0f : s_fCutsceneBordersMult;
+#endif
+
+	float fLeft = 0.0f;
+	float fRight = SCREEN_WIDTH;
+	if (s_bCutsceneHasPillar) {
+		fLeft = s_fCutscenePillarWidth * fMult;
+		fRight = SCREEN_WIDTH - fLeft;
+	}
+
+	float fTop = 0.0f;
+	float fBottom = SCREEN_HEIGHT;
+	if (s_bCutsceneHasLetterbox) {
+		fTop = s_fCutsceneTopBar * fMult;
+		fBottom = SCREEN_HEIGHT - s_fCutsceneBottomBar * fMult;
+	}
+
+	rect.left = fLeft;
+	rect.right = fRight;
+	rect.top = fTop;
+	rect.bottom = fBottom;
+}
+#endif
+
 void
 CCamera::ProcessWideScreenOn(void)
 {
@@ -2725,16 +2886,58 @@ CCamera::ProcessWideScreenOn(void)
 		m_ScreenReductionPercentage = 0.0f;
 		m_fFOV_Wide_Screen = 0.0f;
 		m_fWideScreenReductionAmount = 0.0f;
+#ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
+		s_fCutsceneBordersMult = 0.0f;
+		s_uiCutsceneBordersLastTick = 0;
+#endif
 	}else{
 		m_fFOV_Wide_Screen = 0.3f*Cams[ActiveCam].FOV;
 		m_fWideScreenReductionAmount = 1.0f;
 		m_ScreenReductionPercentage = 30.0f;
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+		if (g_bWSPOptionSmartCutsceneBorders) {
+			CalculateCutsceneBorderGeometry();
+			CDraw::SetCutsceneCameraZoom(s_fCutsceneCameraZoom);
+		}
+#endif
+#ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
+		uint32 uiNow = CTimer::GetTimeInMilliseconds();
+		if (s_uiCutsceneBordersLastTick == 0) {
+			s_uiCutsceneBordersLastTick = uiNow;
+		} else {
+			float fDelta = Min((float)(uiNow - s_uiCutsceneBordersLastTick) / 1000.0f, 0.1f);
+			s_uiCutsceneBordersLastTick = uiNow;
+			s_fCutsceneBordersMult = Min(s_fCutsceneBordersMult + fDelta / CUTSCENE_BORDER_ANIM_SECS, 1.0f);
+		}
+#endif
 	}
 }
 
 void
 CCamera::DrawBordersForWideScreen(void)
 {
+#ifdef VICEEXT_WFP_CUTSCENE_BORDERS
+	if (g_bWSPOptionSmartCutsceneBorders) {
+		if (!m_WideScreenOn)
+			return;
+		float fMult = 1.0f;
+#ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
+		fMult = g_bWSPOptionNoCutsceneBorderAnimation ? 1.0f : s_fCutsceneBordersMult;
+#endif
+		if (m_BlurType == MOTION_BLUR_NONE || m_BlurType == MOTION_BLUR_LIGHT_SCENE)
+			SetMotionBlurAlpha(80);
+		if (s_bCutsceneHasLetterbox) {
+			CSprite2d::DrawRect(CRect(0.0f, 0.0f, SCREEN_WIDTH, s_fCutsceneTopBar * fMult), CRGBA(0, 0, 0, 255));
+			CSprite2d::DrawRect(CRect(0.0f, SCREEN_HEIGHT - s_fCutsceneBottomBar * fMult, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+		}
+		if (s_bCutsceneHasPillar) {
+			float fPillarWidth = s_fCutscenePillarWidth * fMult;
+			CSprite2d::DrawRect(CRect(0.0f, 0.0f, fPillarWidth, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+			CSprite2d::DrawRect(CRect(SCREEN_WIDTH - fPillarWidth, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), CRGBA(0, 0, 0, 255));
+		}
+		return;
+	}
+#endif
 	float bottom, top;
 	if (m_WideScreenOn) {
 		float borderSize = (SCREEN_HEIGHT / 2) * (m_ScreenReductionPercentage / 100.f);
@@ -4197,6 +4400,24 @@ CCamera::SetRwCamera(RwCamera *cam)
 void
 CCamera::CalculateDerivedValues(void)
 {
+#ifdef VICEEXT_WFP_CAM_SHAKE_VCS
+		if (g_bWSPOptionVCSCamShake) {
+		CVehicle *playerVehicle = FindPlayerVehicle();
+		if (pTargetEntity && pTargetEntity->IsVehicle()
+			&& Cams[ActiveCam].Mode == CCam::MODE_CAM_ON_A_STRING
+			&& playerVehicle && playerVehicle->IsCar() && playerVehicle->pHandling
+			&& !playerVehicle->IsRealHeli() && !playerVehicle->IsRealPlane()) {
+			float fSpeed = playerVehicle->GetMoveSpeed().Magnitude();
+			if (fSpeed > 0.65f) {
+				fSpeed = ((Min(1.0f, fSpeed) - 0.65f) / (1.0f - 0.65f)) / 200.0f;
+				int32 shakeRand = CGeneral::GetRandomNumber();
+				GetMatrix().GetPosition().x += fSpeed * ((shakeRand & 0xF) - 7);
+				GetMatrix().GetPosition().y += fSpeed * (((shakeRand & 0xF0) >> 4) - 7);
+				GetMatrix().GetPosition().z += fSpeed * (((shakeRand & 0xF00) >> 8) - 7);
+			}
+		}
+	}
+#endif
 	m_cameraMatrix = Invert(GetMatrix());
 
 	float hfov = DEGTORAD(CDraw::GetScaledFOV()/2.0f);

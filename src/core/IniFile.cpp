@@ -7,8 +7,13 @@
 #include "main.h"
 #include "Population.h"
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+float CIniFile::PedNumberMultiplier = 1.5f;
+float CIniFile::CarNumberMultiplier = 1.5f;
+#else
 float CIniFile::PedNumberMultiplier = 0.6f;
 float CIniFile::CarNumberMultiplier = 0.6f;
+#endif
 
 void CIniFile::LoadIniFile()
 {

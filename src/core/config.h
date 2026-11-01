@@ -485,75 +485,119 @@ enum Config {
 #define BIND_VEHICLE_FIREWEAPON // Adds ability to rebind fire key for 'in vehicle' controls
 #define BUTTON_ICONS // use textures to show controller buttons
 
-// Vice Extended: paridad con su `features.ini` (el mod lo trae con esto puesto).
-// Cada define replica un toggle SUYO que se puede reproducir con código local;
-// los que están en 0 en su ini no se portan y los que piden su renderer o el
-// taller de tuning quedan fuera (ver .agents/plans/vice-extended-inclusion.md).
 #define VICEEXT_SWIMMING		// EnableSwimming=1: nadar sin morir (el jugador no se ahoga)
-#define VICEEXT_POLICE_BIKE_LIGHTS // 6507: sirena (coronas rojo/azul) en la moto policial
-#define VICEEXT_HIDE_COPS		// v1.0 "Changed wanted system": esconderse de la policía (sección 2, bloque P1)
 #define VICEEXT_AUTOSAVE		// v2.5 "Autosave after completing a mission": guarda solo al superar una misión (ranura 9, la del menú de carga) (sección 3, bloque C2)
 #define VICEEXT_SAVE_ANYWHERE	// v2.5 "Saving anywhere. You must not be on a mission, not have a search level and not move": opción en el menú de pausa (sección 3, bloque C2)
-#define VICEEXT_GAS_TANK		// v2.5 "Gas tank. When shot, the car explodes": el disparo en el dummy `petrolcap` prende el vehículo (sección 3, bloque C3.3)
-#define VICEEXT_BREAKABLE_LIGHTS // v2.5 "Car lights can break on impact" + el experimental "Vehicle lights can break when shot at": el disparo en un faro (objetos `headlight_*`/`taillight_*` del mod) lo apaga (sección 3, bloque C3.5)
-#define VICEEXT_TURN_SIGNALS	// v2.5 "Turners..." — APAGADO por defecto a propósito: su features.ini trae StandardCarsUseTurnSignals=0 (sección 3, bloque C3.4)
+#if defined VICEEXT_AUTOSAVE && defined VICEEXT_SAVE_ANYWHERE
+#define VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+#endif
+#define VICEEXT_LOAD_SAVE_ON_STARTUP
 
+#define VICEEXT_CAMERA_FP_INIT			// 1a persona: al entrar la camara mira a donde mira la cara del
+#define VICEEXT_ENV_LIGHT_TINT			// el env map se modula con el color de la luz (el reflejo del semaforo sale rojo)
+#define VICEEXT_NO_BRIGHT_LIGHT_CUBES		// los "cubos" de luz (CBrightLights) son los cuadros blancos del faro
+#define VICEEXT_ENV_MAP_COEF			// el reflejo de la chapa usa el coeficiente del material (como el retail) y no el 0,25 del reVC
+#define VICEEXT_SPECULAR				// especular Blinn por luz, coloreado con el color de la luz (como el retail de D3D8)
 #define VICEEXT_FIX_SILENTPATCH
 #define VICEEXT_FIX_WFP
 #define VICEEXT_FIX_FV
 #define VICEEXT_FIX_FV_ROTOR
-#define VICEEXT_POLICE_BIKE
-#define VICEEXT_NO_WHEEL_PIERCE
-#define VICEEXT_PARTICLE_NAMES	// familia 3/5: `particle.cfg` resuelve el tipo por NOMBRE (su fichero añade 5 tipos y el orden posicional los desplaza todos)
 
-// D10 (sección 1, 21/09): metros EXTRA de modelo "bueno" antes de que entre el
-// LOD (petición del jugador: "que el LOD sea de más metros, +20"). Se suma a la
-// distancia de dibujado de cada modelo, así que son 20 m reales en todas.
-#define VICEEXT_LOD_EXTRA 20.0f
-// v2.5 "Remove zeros in the money in the HUD" (su features.ini:
-// `RemoveMoneyZerosInTheHud`). El HUD de reVC/VC pinta el dinero con ancho fijo
-// de 8 digitos y ceros a la izquierda (`$00001234`); con esto sale `$1234`.
+#define VICEEXT_SP_STINGER_FIXES		// puas: ctor a cero, Remove idempotente, Init que libera al fallar el pool
+#define VICEEXT_SP_ROADBLOCK_POOL		// crash de la barricada cuando el pool de objetos esta lleno
+#define VICEEXT_SP_BOAT_EXTRAS		// extras en barcos (capota de Rio) y el typo boat_moving_high de Tropic
+#define VICEEXT_SP_BOAT_MOVING_RADAR		// el radar del Tropic se anima
+#define VICEEXT_SP_VEHICLE_EXPLODE_ONCE		// el coche no explota dos veces si el conductor se baja mientras explode
+#define VICEEXT_SP_PANEL_DAMAGE		// los paneles del coche se separan al explotar
+#define VICEEXT_SP_SECURICAR_DAMAGE		// los Securicars resisten mas el dano del jugador
+#define VICEEXT_SP_COMPS_TO_USE_RESET		// si el coche creado no tiene extras, se reinician los pedidos
+#define VICEEXT_SP_HANDLING_NAMES		// handling.cfg: comparacion exacta de nombres, sin prefijo unico
+#define VICEEXT_SP_TAXI_CORONA		// la luz del taxi va en su sitio
+#define VICEEXT_SP_BIKE_EXTRAS_FRAME		// los extras de las motos siguen la inclinacion de la bici
+#define VICEEXT_SP_MUG_OBJECTIVE		// el objetivo de atraco no se cancela al instante
+#define VICEEXT_SP_FIST_SHAKE		// Tommy agita el puño con nudillos y con las armas post-III
+#define VICEEXT_SP_SCREWDRIVER_SOUND		// el destornillador hace sonido de impacto
+#define VICEEXT_SP_TEARGAS_DAMAGE		// el gas lacrimigeno daña tambien a los personajes de mision
+#define VICEEXT_SP_SPEECH_DELAY		// minimo global entre comentarios de los pedestrians
+#define VICEEXT_SP_NPC_RPG			// los NPCs disparan el RPG en su sitio
+#define VICEEXT_SP_TARGETTING_CHAR		// IS_PLAYER_TARGETTING_CHAR no da positivo sin apuntar
+#define VICEEXT_SP_ROSENBERG_RAND		// el chat de los peds usa el azar de 15 bits del PC
+#define VICEEXT_SP_ZERO_AMMO			// un arma con 0 balas se queda con 1
+#define VICEEXT_SP_ENV_MAP_EXTRAS		// env map y pipe en los componentes extra del coche
+#define VICEEXT_SP_CORONA_LINES		// las lineas de corona llevan recipZ (GPUs no NVIDIA)
+#define VICEEXT_SP_SCRIPT_SPRITE_BILINEAR	// filtrado bilineal en los sprites de script
+#define VICEEXT_SP_BLIP_BILINEAR		// filtrado bilineal en los blips con el radar apagado
+#define VICEEXT_SP_HEAT_HAZE_SCALE		// el heat haze no escala dos veces
+#define VICEEXT_SP_MINIMAL_HUD		// el HUD se atenua cuando no se usa
+#define VICEEXT_SP_NEW_GAME_RESET		// reset de variables al empezar partida nueva
+#define VICEEXT_SP_MOUSE_SENS_RESET		// la sensibilidad del raton no se reinicia en partida nueva
+#define VICEEXT_SP_BUSTED_WEAPONS		// al ser arrestado, las armas no se quitan dos veces
+#define VICEEXT_SP_METRIC_UNITS		// unidades metricas o imperiales segun el locale
+#define VICEEXT_SP_PICKUP_EFFECTS		// el texto de los pickups de dinero es rojo generico y el minigun no brilla en rosa
+#define VICEEXT_SP_PROPERTY_BLIPS		// los iconos de propiedades en venta salen en el radar de juego
+#define VICEEXT_SP_RADAR_DISC		// el disco del radar se encoge 2 px y su posicion escala
+#define VICEEXT_SP_OPTIONS			// las opciones del mod (features.ini): MinimalHUD, sliding texts, property blips, sprites a escala, retardo del chat
+
+#define VICEEXT_WFP_OPTIONS			// interruptor maestro de las opciones del WFP
+// 30/10 (29.0): la pantalla "Ajustes de pantalla" del WFP se invento en el port
+// y el jugador pidio quitarla del menu. Las opciones se siguen leyendo del INI
+// (VICEEXT_WFP_OPTIONS), solo desaparece la fila y su pantalla.
+//#define VICEEXT_WFP_MENU
+#define VICEEXT_WFP_CAR_SPEED_FOV		// FOV por velocidad en la camara VC (CarSpeedDependantFOV)
+#define VICEEXT_WFP_FOV_MULTIPLIERS		// API de multiplicadores de FOV por hash (SetFOVMultiplier/RemoveFOVMultiplier/GetCurrentFOV)
+#define VICEEXT_WFP_EMERGENCY_FOV		// FOV de las camaras de emergencia: el estandar, no uno fijo (70/factor)
+#define VICEEXT_WFP_SKIP_CAMERA_COLLISION	// con aspecto >= 2 la camara no choca con la geometria
+#define VICEEXT_WFP_INVERSE_FOV_COLLISION	// el FOV de la colision de camara se convierte a la inversa (4:3) antes de usarse
+#define VICEEXT_WFP_DONT_TOUCH_FOV		// DontTouchFOV: el FOV no se estira por aspecto
+#define VICEEXT_WFP_CUTSCENE_FOV		// el FOV de cinematica sigue el zoom del borde
+#define VICEEXT_WFP_WHEELCAM_FOV		// el FOV de la camara de rueda se mantiene en 70 grados horizontales
+#define VICEEXT_WFP_HUD_SCALE			// multiplicador de escala del HUD en X e Y (HudWidthScale/HudHeightScale)
+#define VICEEXT_WFP_RADAR_SIZE			// tamano del disco del radar (RadarWidth/RadarHeight/IVRadarScaling)
+#define VICEEXT_WFP_HUD_ANCHOR			// el HUD se ancla a la izquierda o a la derecha segun el ancho (HudAspectRatioConstraint)
+#define VICEEXT_WFP_SUBTITLES			// escala, reserva del radar y posicion de los subtitulos (SubtitlesScale)
+#define VICEEXT_WFP_CROSSHAIR_ASPECT	// la reticula se escala con el aspecto de pantalla
+#define VICEEXT_WFP_TEXT_OUTLINE		// el contorno de 16 direcciones sustituye a la sombra difusa (ReplaceTextShadowWithOutline)
+#define VICEEXT_WFP_SMALLER_TEXT_SHADOWS	// la sombra del texto se dibuja en la posicion pequena
+#define VICEEXT_WFP_SMALLER_VEHICLE_CORONA	// las luces de vehiculo se dibujan mas pequenas (SmallerVehicleCorona)
+#define VICEEXT_WFP_NO_LIGHT_SQUARE		// no se dibuja el cuadrado de la luz (NoLightSquare)
+#define VICEEXT_WFP_BRIGHT_LIGHTS_FAR		// las luces brillantes solo se dibujan a distancia
+#define VICEEXT_WFP_PARTICLE_ASPECT		// las particulas se escalan con el ancho de la pantalla
+#define VICEEXT_WFP_FADE_SCREEN_RECT		// el fundido usa el rectangulo de contenido de la cinematica
+#define VICEEXT_WFP_CUTSCENE_BORDERS		// los bordes de cinematica se adaptan al aspecto (SmartCutsceneBorders)
+#define VICEEXT_WFP_CUTSCENE_BORDER_ANIM	// los bordes de cinematica se animan y publican el zoom de la camara
+#define VICEEXT_WFP_ASPECT_RATIO		// el aspecto de pantalla admite W:H libre (ForceAspectRatio)
+#define VICEEXT_WFP_FRONTEND_ASPECT	// el aspecto del frontend se puede fijar (FrontendAspectRatio)
+#define VICEEXT_WFP_CAM_SHAKE_VCS		// sacudida de camara proporcional a la velocidad (VCSCamShake)
+#define VICEEXT_WFP_MAP_ANCHOR		// el mapa del menu conserva la fraccion de scroll al cambiar de resolucion
+#define VICEEXT_WFP_MENU_CANVAS		// el menu se dibuja en un lienzo centrado con el aspecto pedido
+
+
+#define VICEEXT_SKY_ENVMAP_SIZE			// el tamano del env map del coche es configurable (envMapSize)
+#define VICEEXT_SKY_WORLD_PIPE			// conmutador del pipe de mundo (worldPipe)
+#define VICEEXT_SKY_DISABLE_COLOUR_OVERLAY	// el overlay de color de las trails se puede desactivar
+#define VICEEXT_SKY_TRAILS_PARAMS		// trailsBlur/trailsMotionBlur/currentBlurAlpha/currentBlurOffset como parametros
+#define VICEEXT_SKY_WATERDROPS_EXTENDED	// las gotas de agua de pantalla tienen los modos Extended y Extended+Blood
+#define VICEEXT_SKY_MATFX_BLEND		// el blend del env map de MatFX admite PS2, PC y Mobile (texblendSwitch)
+#define VICEEXT_SKY_MATFX_TEXGEN		// la generacion de UV del env map de MatFX admite PS2, PC y Mobile (texgenSwitch)
+#define VICEEXT_SKY_MATFX_PS2LIGHT		// la iluminacion de MatFX admite el caso PC ademas del PS2 (ps2light)
+#define VICEEXT_SKY_LEEDS_CAR_PIPE		// pipe de coche Leeds: el reflejo usa la CarReflectionMask (carPipe=2)
+#define VICEEXT_SKY_LEEDS_WORLD_PIPE		// pipe de mundo Leeds con el tweak de prelight (worldPipe=2)
+#define VICEEXT_SKY_SEAM_FIX			// se redibuja el front buffer desplazado para tapar las costuras (seamFix)
+#define VICEEXT_SKY_DUAL_PASS			// la geometria transparente se dibuja en dos pasadas (dualPass)
+
 #define VICEEXT_MONEY_NO_ZEROS
 
 #define VICEEXT_PEDARBITER
 #define VICEEXT_RADIO_ICONS
 #define VICEEXT_EXTRA_CHEATS
-#define VICEEXT_CAR_DEATH
-#define VICEEXT_CAR_LIGHTS
-#define VICEEXT_GANG_AIM
-#define VICEEXT_MOON			// v1.5 "Moving Moon. Its position depends on the position of the Sun":
-							// la luna se coloca en `-sunDir*150` (portado de su `Clouds.cpp`,
-							// bloque "moving Moon"); el brillo y la hora de salida son suyos
-#define VICEEXT_MAPDATA
-#define VICEEXT_POLISH
-#define VICEEXT_WHEEL_DETACH
 
-// 9.2 / features.ini del mod (jugador: se implementan los 7 que faltaban).
-// Grupo: cada opcion con su bandera propia, todas hijas de esta.
 #define VICEEXT_FEATURES_INI
-#define VICEEXT_NO_FLIP_BURN		// features.ini "Vehicles do not light up when flipped"
-#define VICEEXT_HEALTH_REGEN	// features.ini "Restores health to half (when player is not moving)"
-#define VICEEXT_HIDE_STARS		// features.ini "Search stars are hidden on the screen when there is no search"
-#define VICEEXT_STD_TURN_SIGNALS	// features.ini "Standard cars use turn signals"
-#define VICEEXT_TANK_FIRE		// features.ini "Military firing from a tank at the player"
 #define VICEEXT_GPS_COLOR		// features.ini "Change the color of the GPS by RGB"
 #define VICEEXT_GPS_COLOR_R 255
 #define VICEEXT_GPS_COLOR_G 0
 #define VICEEXT_GPS_COLOR_B 255
 
-// 9.2 / detalles del coche y 9.1 / mundo
-#define VICEEXT_CAR_ROTATE_WHEEL	// v2.5 "Rotating steering wheel"
-#define VICEEXT_CAR_WHEEL_KEEP	// v2.0 "The front wheels of the car retain their current rotation after exiting the car"
-#define VICEEXT_CAR_FOUR_COLORS	// v2.5 "Support for four colors for added vehicles"
-#define VICEEXT_GAS_STATION_BLOW	// v2.6 "A gas station will explode if a vehicle crashes into it"
-#define VICEEXT_DISTANT_LIGHTS	// v2.6 "Distant lights. Can be disabled in features.ini": portado de
-							// su `CBuilding/CDummy::ProcessDistantLights` (Project2DFX): los dos
-							// pools enteros, coronas hasta 530 m / el far clip
-#define VICEEXT_COP_COVER		// v2.6 "Cops can crouch down first and then go to cover during the wanted"
-#define VICEEXT_HELI_HEALTH		// v2.0 "Reduced health of police helicopter"
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
-#define VICEEXT_PHOTO_SAVE		// v2.5 "Ability to save photos from the camera"
-#define VICEEXT_SPAWN_RADIUS_MULT 1.5f
 
 #ifdef VICEEXT_VICE_EXTENDED
 #define VICEEXT_UTILS
@@ -585,8 +629,24 @@ enum Config {
 #endif
 #define VICEEXT_FIRING_AND_AIMING
 #define VICEEXT_FIRST_PERSON
+#define VICEEXT_PED_VARIATIONS
 #define VICEEXT_WEAPON_SIGHT
+#define VICEEXT_TRIANGLE_FOR_MOUSE_RECRUIT
+#define VICEEXT_GPS
 #endif
+#define VICEEXT_IMPROVED_VEHICLES_2
+#define VICEEXT_VOLANTE_GAIN		2.0f
+#define VICEEXT_IMPROVED_VEHICLES
+#define VICEEXT_EX_VCPD_WINTERGREEN
+#define VICEEXT_NEW_VEHICLE_LOADER
+#define VICEEXT_POLICE_BIKE	VICEEXT_EX_VCPD_WINTERGREEN	 // alias 6.20 CarAI/CarCtrl/Population.cpp
+#define VICEEXT_PED_ANIMS_IN_CAR
+#define VICEEXT_SKIN_FAILSAFE
+#define VICEEXT_VOLANTE 1
+
+#define VICEEXT_WANTED_PATHS
+
+#define VICEEXT_IS_HIGH_VEHICLE
 
 // Hud, frontend and radar
 #define PC_MENU
@@ -607,9 +667,6 @@ enum Config {
 #	define TRIANGLE_BACK_BUTTON
 #endif
 #define LEGACY_MENU_OPTIONS			// i.e. frame sync(vsync)
-// PORTADO (SilentPatch :4086, ver CMenuManager::DrawQuitGameScreen): el outro
-// dura ≈2,5 s legibles (75 ticks × 33 ms) en vez de 750 ms.
-//#define MUCH_SHORTER_OUTRO_SCREEN
 // #define XBOX_MESSAGE_SCREEN			// Blue background, no "saved successfully press OK" screen etc.
 #	define CUSTOM_FRONTEND_OPTIONS
 
@@ -690,7 +747,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 #define PS2_AUDIO_CHANNELS // increases the maximum number of audio channels to PS2 value of 43 (PC has 28 originally)
 #define PS2_AUDIO_PATHS // changes audio paths for cutscenes and radio to PS2 paths (needs vbdec on MSS builds)
 #ifdef __EMSCRIPTEN__
-	// PC retail assets ship .mp3/.wav (.adf radio), not PS2 .vb: use PC tables.
 	#undef PS2_AUDIO_PATHS
 #endif
 //#define AUDIO_OAL_USE_SNDFILE // use libsndfile to decode WAVs instead of our internal decoder
@@ -701,7 +757,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 #ifndef __EMSCRIPTEN__
 #define MULTITHREADED_AUDIO // for streams. requires C++11 or later
 #endif
-// Web monohilo (como dos.zone): audio sincrono, sin std::thread.
 
 #ifdef AUDIO_OPUS
 #define AUDIO_OAL_USE_OPUS // enable support of opus files
@@ -745,8 +800,6 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 
 #ifdef __EMSCRIPTEN__
 	#define USE_UNNAMED_SEM // sem_open() is unsupported under Emscripten/pthreads
-	// Web/MEMFS: no generar models/txd.img (1.2GB regenerados en RAM en cada arranque);
-	// las texturas se cargan sueltas con decode DXT por software (gl3raster).
 	#undef USE_TXD_CDIMAGE
 #endif
 

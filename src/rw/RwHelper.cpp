@@ -19,7 +19,11 @@ bool gPS2alphaTest = true;
 #else
 bool gPS2alphaTest = false;
 #endif
+#ifdef VICEEXT_VICE_EXTENDED
+bool gBackfaceCulling = false;
+#else
 bool gBackfaceCulling = true;
+#endif
 
 #if !defined(FINAL) || defined(DEBUGMENU)
 static bool charsetOpen;

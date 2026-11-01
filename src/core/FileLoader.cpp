@@ -789,6 +789,9 @@ CFileLoader::LoadTimeObject(const char *line)
 		break;
 	}
 
+	if (id == -1)
+		id = CModelInfo::GetFreeModelID();
+
 	mi = CModelInfo::AddTimeModel(id);
 	mi->SetModelName(model);
 	mi->SetNumAtomics(numObjs);
@@ -1100,6 +1103,18 @@ CFileLoader::Load2dEffect(const char *line)
 	CTxdStore::PopCurrentTxd();
 }
 
+#ifdef VICEEXT_WANTED_PATHS
+void
+CFileLoader::LoadWantedPathNode(const char *line, int pathID, int pathNode)
+{
+	float x, y, z;
+
+	sscanf(line, "%f %f %f", &x, &y, &z);
+
+	ThePaths.StoreWantedNode(pathID, pathNode, x, y, z);
+}
+#endif
+
 void
 CFileLoader::LoadScene(const char *filename)
 {
@@ -1111,11 +1126,17 @@ CFileLoader::LoadScene(const char *filename)
 		OCCL,
 		PICK,
 		PATH,
+#ifdef VICEEXT_WANTED_PATHS
+		WANTED,
+#endif
 	};
 	char *line;
 	int fd;
 	int section;
 	int pathType, pathIndex;
+#ifdef VICEEXT_WANTED_PATHS
+	int wantedPathID, maxWantedPathNodes, currentWantedPathNode;
+#endif
 
 	section = NONE;
 	pathIndex = -1;
@@ -1134,6 +1155,9 @@ CFileLoader::LoadScene(const char *filename)
 			else if(isLine4(line, 'p','i','c','k')) section = PICK;
 			else if(isLine4(line, 'p','a','t','h')) section = PATH;
 			else if(isLine4(line, 'o','c','c','l')) section = OCCL;
+#ifdef VICEEXT_WANTED_PATHS
+			else if(strncmp(line, "wanted", 6) == 0) section = WANTED;
+#endif
 		}else if(isLine3(line, 'e','n','d')){
 			section = NONE;
 		}else switch(section){
@@ -1169,6 +1193,20 @@ CFileLoader::LoadScene(const char *filename)
 					pathIndex = -1;
 			}
 			break;
+#ifdef VICEEXT_WANTED_PATHS
+		case WANTED:
+			if (pathIndex == -1) {
+				sscanf(line, "%i %i", &wantedPathID, &maxWantedPathNodes);
+				currentWantedPathNode = 0;
+				pathIndex = 0;
+			} else {
+				LoadWantedPathNode(line, wantedPathID, currentWantedPathNode);
+				currentWantedPathNode++;
+				if (currentWantedPathNode == maxWantedPathNodes)
+					pathIndex = -1;
+			}
+			break;
+#endif
 		}
 	}
 	CFileMgr::CloseFile(fd);
@@ -1202,14 +1240,6 @@ CFileLoader::LoadObjectInstance(const char *line)
 		area = 0;
 	}
 
-	// La fila `inst` del IPL puede traer -1 en la columna del id: el IPL del mod
-	// (`maps/bryx/bryx.ipl`, el de la familia 7) lo usa en sus dos lineas y quiere
-	// decir «el modelo declarado con ESTE nombre», que es como lo resuelve su
-	// motor. Sin esto el -1 entra tal cual como indice del array de modelos
-	// —`CModelInfo::GetModelInfo` no comprueba el rango—, se lee la palabra que
-	// hay ANTE ese array y el arranque se cae llamando a la vtable que aparezca
-	// ahi (medido el 2026-10-14: `RuntimeError: null function` en
-	// `LoadObjectInstance`, y solo con el mundo del mod servido).
 	if (id < 0) {
 		int idPorNombre = -1;
 		if (CModelInfo::GetModelInfo(name, &idPorNombre) == nil)

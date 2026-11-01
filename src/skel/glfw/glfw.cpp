@@ -48,10 +48,13 @@ long _dwOperatingSystemVersion;
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "Camera.h"
-#include "CutsceneMgr.h"   // __vcInGame: una cinemática publica CARGANDO (ver EmscriptenTick)
+#include "CutsceneMgr.h"
 #include "Draw.h"
 #include "Game.h"
 #include "PCSave.h"
+#ifdef VICEEXT_LOAD_SAVE_ON_STARTUP
+#include "GenericGameStorage.h" // 10.03: validez de la ranura de arranque
+#endif
 #include "MemoryCard.h"
 #include "Sprite2d.h"
 #include "AnimViewer.h"
@@ -84,6 +87,23 @@ rw::EngineOpenParams openParams;
 
 static RwBool		  ForegroundApp = TRUE;
 static RwBool		  WindowIconified = FALSE;
+#ifdef __EMSCRIPTEN__
+int gWebFpsCap = 120;
+double gWebEngSum = 0.0, gWebEngMax = 0.0;
+int gWebEngN = 0;
+
+static void
+WebRunTick(void)
+{
+	double t0 = emscripten_get_now();
+	RsEventHandler(rsIDLE, (void *)TRUE);
+	double ms = emscripten_get_now() - t0;
+	gWebEngSum += ms;
+	if (ms > gWebEngMax)
+		gWebEngMax = ms;
+	gWebEngN++;
+}
+#endif
 static RwBool		  WindowFocused = TRUE;
 
 static RwBool		  RwInitialised = FALSE;
@@ -183,8 +203,6 @@ const char *_psGetUserFilesFolder()
 #else
 	static char szUserFiles[256];
 #ifdef __EMSCRIPTEN__
-	// Absoluta: el CWD del juego cambia (SetDir) y con ruta relativa los
-	// saves/sets caían en dirs MEMFS volátiles en vez del mount IDBFS.
 	strcpy(szUserFiles, "/userfiles");
 #else
 	strcpy(szUserFiles, "userfiles");
@@ -217,10 +235,24 @@ void
 psCameraShowRaster(RwCamera *camera)
 {
 #ifdef LEGACY_MENU_OPTIONS
-	if (FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive)
+	int odWait = FrontEndMenuManager.m_PrefsVsync || FrontEndMenuManager.m_bMenuActive;
 #else
-	if (FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive)
+	int odWait = FrontEndMenuManager.m_PrefsFrameLimiter || FrontEndMenuManager.m_bMenuActive;
 #endif
+#ifdef __EMSCRIPTEN__
+	{
+		static int odLoopEstado = -1;
+		if(odLoopEstado != odWait){
+			char t[160];
+			odLoopEstado = odWait;
+			snprintf(t, sizeof t, "WEBLOOP vsync=%d menu=%d cap=%d limit=%d wait=%d",
+				FrontEndMenuManager.m_PrefsVsync ? 1 : 0, FrontEndMenuManager.m_bMenuActive ? 1 : 0,
+				gWebFpsCap, FrontEndMenuManager.m_PrefsFrameLimiter ? 1 : 0, odWait);
+			ODTRACES(t);
+		}
+	}
+#endif
+	if(odWait)
 		RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPWAITVSYNC);
 	else
 		RwCameraShowRaster(camera, PSGLOBAL(window), rwRASTERFLIPDONTWAIT);
@@ -278,9 +310,6 @@ psTimer(void)
 {
 	struct timespec start; 
 #ifdef __EMSCRIPTEN__
-	// Emscripten only implements CLOCK_REALTIME/MONOTONIC(/PROCESS_CPUTIME):
-	// _RAW/_FAST would fail and leave `start` uninitialized (garbage clock
-	// -> CTimer::Update() spins billions of catch-up iterations).
 	clock_gettime(CLOCK_MONOTONIC, &start);
 #elif defined(CLOCK_MONOTONIC_RAW)
 	clock_gettime(CLOCK_MONOTONIC_RAW, &start);
@@ -432,9 +461,6 @@ psInitialize(void)
 	printf("[web] psInitialize entry\n");
 #endif
 #ifdef __EMSCRIPTEN__
-	// Browser canvas default: the Emscripten GLFW port reports no video modes,
-	// so librw synthesizes mode 0 from these dimensions (see psSelectDevice).
-	// Size it from the page layout (clamped) so it renders crisp, not 720p-upscaled.
 	RsGlobal.maximumWidth = RsGlobal.width = 1280;
 	RsGlobal.maximumHeight = RsGlobal.height = 720;
 	{
@@ -610,8 +636,6 @@ psInitialize(void)
 	debug("Physical memory size %llu\n", _dwMemAvailPhys);
 #else
 #ifdef __EMSCRIPTEN__
-	// Emscripten has <sys/sysinfo.h> but no sysinfo(): report a stub value,
-	// it's only used for debug prints.
 	_dwMemAvailPhys = 512ULL*1024*1024;
 	debug("Physical memory size %u\n", 512*1024*1024);
 	debug("Available physical memory %u\n", 512*1024*1024);
@@ -717,8 +741,6 @@ RwChar **_psGetVideoModeList()
 		RwEngineGetVideoModeInfo(&vm, i);
 		
 #ifdef __EMSCRIPTEN__
-		// All browser modes are windowed: list them all so the menu offers
-		// resolutions (changing one re-inits the canvas at that size).
 		_VMList[i] = (RwChar*)RwCalloc(100, sizeof(RwChar));
 		rwsprintf(_VMList[i],"%d X %d X %d", vm.width, vm.height, vm.depth);
 #else
@@ -903,9 +925,6 @@ psSelectDevice()
 	if ( !useDefault )
 	{
 #ifdef __EMSCRIPTEN__
-		// Browser canvas: librw synthesizes windowed modes (the port reports
-		// no exclusive modes and NULL current mode). Pick the largest mode
-		// fitting the saved prefs (1280x720 default on first boot).
 		RwInt32 wantW = FrontEndMenuManager.m_nPrefsWidth;
 		RwInt32 wantH = FrontEndMenuManager.m_nPrefsHeight;
 		if (wantW == 0 || wantH == 0) { wantW = 1280; wantH = 720; }
@@ -1063,8 +1082,6 @@ void joysChangeCB(int jid, int event);
 bool IsThisJoystickBlacklisted(int i)
 {
 #ifdef __EMSCRIPTEN__
-	// Emscripten's GLFW port has no glfwJoystickIsGamepad(): accept everything,
-	// CapturePad() already degrades to plain buttons/axes when not a gamepad.
 	return false;
 #else
 #ifndef DETECT_JOYSTICK_MENU
@@ -1090,8 +1107,6 @@ void _InputInitialiseJoys()
 	PSGLOBAL(joy2id) = -1;
 
 #ifdef __EMSCRIPTEN__
-	// No glfwUpdateGamepadMappings() in the Emscripten GLFW port:
-	// plain buttons/axes only (see CapturePad).
 #else
 	// Load our gamepad mappings.
 #define SDL_GAMEPAD_DB_PATH "gamecontrollerdb.txt"
@@ -1231,8 +1246,6 @@ RwBool _psSetVideoMode(RwInt32 subSystem, RwInt32 videoMode)
 	RsEventHandler(rsCAMERASIZE, &r);
 
 #ifdef __EMSCRIPTEN__
-	// Windowed canvas: match the element backing store to the new mode
-	// (re-init recreates the GL context but keeps CSS sizing to the page).
 	emscripten_set_canvas_element_size("#gamecanvas",
 		RsGlobal.maximumWidth, RsGlobal.maximumHeight);
 	printf("[web] canvas resized %dx%d for mode %d\n",
@@ -1548,6 +1561,10 @@ void scrollCB(GLFWwindow* window, double xoffset, double yoffset) {
 	PSGLOBAL(mouseWheel) = yoffset;
 }
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+extern int32 gMaxFPSIni;
+#endif
+
 bool lshiftStatus = false;
 bool rshiftStatus = false;
 
@@ -1695,9 +1712,6 @@ keypressCB(GLFWwindow* window, int key, int scancode, int action, int mods)
 			rshiftStatus = action != GLFW_RELEASE;
 
 #ifdef __EMSCRIPTEN__
-		// Web: Emscripten reenvía el auto-repeat como PRESS (sin REPEAT) y con
-		// lag el keyup llega tarde: una pulsación contaba N veces (taps
-		// fantasma de radio). Una tecla ya pulsada no repite DOWN.
 		static bool s_keyDown[GLFW_KEY_LAST+1] = { false };
 		if (action == GLFW_PRESS) {
 			if (s_keyDown[key]) return;
@@ -2009,11 +2023,6 @@ windowIconifyCB(GLFWwindow* window, int iconified) {
  *****************************************************************************
  */
 
-/*
- * Pieces of main() extracted so the browser can drive frames through
- * emscripten_set_main_loop() instead of the blocking while() loops.
- * Native behavior is unchanged.
- */
 
 static void
 OuterSetup(void)
@@ -2021,21 +2030,14 @@ OuterSetup(void)
 	RwV2d pos;
 	RwInitialised = TRUE;
 		
-	/* 
-	* Set the initial mouse position...
-	*/
 	pos.x = RsGlobal.maximumWidth * 0.5f;
 	pos.y = RsGlobal.maximumHeight * 0.5f;
 
 	RsMouseSetPos(&pos);
 		
-	/*
-	* Enter the message processing loop...
-	*/
 
 #ifndef MASTER
 	if (gbModelViewer) {
-		// This is TheModelViewer in LCS
 		LoadingScreen("Loading the ModelViewer", NULL, GetRandomSplashScreen());
 		CAnimViewer::Initialise();
 		CTimer::Update();
@@ -2074,7 +2076,6 @@ InnerFrame(void)
 #endif
 #ifndef MASTER
 	if (gbModelViewer) {
-		// This is TheModelViewerCore in LCS
 		TheModelViewer();
 	} else
 #endif
@@ -2095,8 +2096,6 @@ InnerFrame(void)
 
 		    case GS_INIT_LOGO_MPEG:
 			{
-			    //if (!startupDeactivate)
-				//    PlayMovieInWindow(cmdShow, "movies\\Logo.mpg");
 			    gGameState = GS_LOGO_MPEG;
 			    TRACE("gGameState = GS_LOGO_MPEG;");
 			    break;
@@ -2104,35 +2103,14 @@ InnerFrame(void)
 
 		    case GS_LOGO_MPEG:
 			{
-//					    CPad::UpdatePads();
 
-//					    if (startupDeactivate || ControlsManager.GetJoyButtonJustDown() != 0)
 				    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetLeftMouseJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetEnterJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetCharJustDown(' '))
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetAltJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetTabJustDown())
-//						    ++gGameState;
 
 			    break;
 		    }
 
 		    case GS_INIT_INTRO_MPEG:
 			{
-//#ifndef NO_MOVIES
-//					    CloseClip();
-//					    CoUninitialize();
-//#endif
-//
-//					    if (CMenuManager::OS_Language == LANG_FRENCH || CMenuManager::OS_Language == LANG_GERMAN)
-//						    PlayMovieInWindow(cmdShow, "movies\\GTAtitlesGER.mpg");
-//					    else
-//						    PlayMovieInWindow(cmdShow, "movies\\GTAtitles.mpg");
 
 			    gGameState = GS_INTRO_MPEG;
 			    TRACE("gGameState = GS_INTRO_MPEG;");
@@ -2141,27 +2119,13 @@ InnerFrame(void)
 
 		    case GS_INTRO_MPEG:
 			{
-//					    CPad::UpdatePads();
-//
-//					    if (startupDeactivate || ControlsManager.GetJoyButtonJustDown() != 0)
 				    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetLeftMouseJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetEnterJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetCharJustDown(' '))
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetAltJustDown())
-//						    ++gGameState;
-//					    else if (CPad::GetPad(0)->GetTabJustDown())
-//						    ++gGameState;
 
 			    break;
 		    }
 
 			case GS_INIT_ONCE:
 			{
-				//CoUninitialize();
 						
 #ifdef PS2_MENU
 				extern char version_name[64];
@@ -2176,7 +2140,6 @@ InnerFrame(void)
 #ifdef __EMSCRIPTEN__
 				printf("[web] init_once splash ok\n");
 #endif
-				// LoadingScreen(nil, nil, "loadsc0"); // duplicate
 #endif
 				if ( !CGame::InitialiseOnceAfterRW() )
 					RsGlobal.quit = TRUE;
@@ -2196,7 +2159,6 @@ InnerFrame(void)
 			case GS_INIT_FRONTEND:
 			{
 				LoadingScreen(nil, nil, "loadsc0");
-				// LoadingScreen(nil, nil, "loadsc0"); // duplicate
 						
 				FrontEndMenuManager.m_bGameNotLoaded = true;
 						
@@ -2214,10 +2176,30 @@ InnerFrame(void)
 				break;
 			}
 					
-			case GS_FRONTEND:
+		case GS_FRONTEND:
+		{
+			if(!WindowIconified)
+				RsEventHandler(rsFRONTENDIDLE, nil);
+
+#ifdef VICEEXT_LOAD_SAVE_ON_STARTUP
 			{
-				if(!WindowIconified)
-					RsEventHandler(rsFRONTENDIDLE, nil);
+				static bool s_checkedStartupSave = false;
+				if (!s_checkedStartupSave) {
+					s_checkedStartupSave = true;
+					if (gbGameSaveOnStartup > 0) {
+						int32 slot = gbGameSaveOnStartup - 1;
+						if (slot >= 0 && slot < SLOT_COUNT && CheckDataNotCorrupt(slot, ValidSaveName)) {
+							FrontEndMenuManager.m_nCurrSaveSlot = slot;
+							FrontEndMenuManager.DoSettingsBeforeStartingAGame();
+							FrontEndMenuManager.m_bWantToLoad = true;
+#ifdef __EMSCRIPTEN__
+							ODTRACES("VICEEXT load-on-startup");
+#endif
+						}
+					}
+				}
+			}
+#endif
 
 #ifdef PS2_MENU
 				if ( !FrontEndMenuManager.m_bMenuActive || TheMemoryCard.m_bWantToLoad )
@@ -2236,10 +2218,6 @@ InnerFrame(void)
 #endif
 				{
 #ifdef __EMSCRIPTEN__
-					// F1b-A2 (fluides-v2): el SÍ difiere el init al próximo
-					// tick (AfterInner lo corre monolítico con el splash YA
-					// en pantalla). Así el freeze ocurre mirando el splash,
-					// no el diálogo de confirmación.
 					gWebBootInitPending = 1;
 					FrontEndMenuManager.m_bGameNotLoaded = false;
 					gGameState = GS_PLAYING_GAME;
@@ -2261,7 +2239,6 @@ InnerFrame(void)
 #ifdef PS2_MENU
 				CGame::Initialise("DATA\\GTA3.DAT");
 						
-				//LoadingScreen("Starting Game", NULL, GetRandomSplashScreen());
 					
 				if (   TheMemoryCard.CheckCardInserted(CARD_ONE) == CMemoryCard::NO_ERR_SUCCESS
 					&& TheMemoryCard.ChangeDirectory(CARD_ONE, TheMemoryCard.Cards[CARD_ONE].dir)
@@ -2282,9 +2259,6 @@ InnerFrame(void)
 				}
 #else
 #ifdef __EMSCRIPTEN__
-				// Progressive loading: one Initialise section per tick so the
-				// tab never blocks (page shows progress). State stays put
-				// until the world is ready.
 				if (!InitialiseGameStep())
 					break;
 				FrontEndMenuManager.m_bGameNotLoaded = false;
@@ -2301,21 +2275,29 @@ InnerFrame(void)
 					
 			case GS_PLAYING_GAME:
 			{
-				float ms = (float)CTimer::GetCurrentTimeInCycles() / (float)CTimer::GetCyclesPerMillisecond();
 				if ( RwInitialised )
 				{
-					// Techo de fps, siempre activo. `ms` es el tiempo (en ms) desde el
-					// ultimo frame procesado, asi que "esperar a que pase 1000/cap"
-					// limita la tasa sin tocar nada mas del motor.
-					//   - Opcion "Limitar FPS" encendida: 35 fps (antes 30 pedidos y
-					//     ~27 reales por el redondeo a ms enteros).
-					//   - Apagada: tope duro de 120 fps. vSync sigue actuando por
-					//     debajo (si el monitor va a 60, el juego da 60), y si el
-					//     monitor va por encima de 120, este tope lo recorta a 120.
-					int fpsCap = FrontEndMenuManager.m_PrefsFrameLimiter ? 35 : 120;
-					RsGlobal.maxFPS = fpsCap;
-					if ((1000.0f / (float)fpsCap) < ms)
-						RsEventHandler(rsIDLE, (void *)TRUE);
+					gWebFpsCap = FrontEndMenuManager.m_PrefsFrameLimiter ? 30 : (FrontEndMenuManager.m_PrefsVsync ? 0 : 120);
+					RsGlobal.maxFPS = gWebFpsCap ? gWebFpsCap : 240;
+					static double odLastTickMs = 0.0;
+					double odNow = emscripten_get_now();
+					if (odLastTickMs == 0.0)
+						odLastTickMs = odNow;
+					float odDelta = (float)(odNow - odLastTickMs);
+					odLastTickMs = odNow;
+					if (gWebFpsCap == 0)
+						WebRunTick();
+					else {
+						static float odFrameDebt = 0.0f;
+						float odFrameTime = 1000.0f / (float)gWebFpsCap;
+						odFrameDebt += odDelta;
+						if (odFrameDebt >= odFrameTime - 0.25f) {
+							odFrameDebt -= odFrameTime;
+							if (odFrameDebt > odFrameTime)
+								odFrameDebt = odFrameTime;
+							WebRunTick();
+						}
+					}
 				}
 				break;
 			}
@@ -2338,22 +2320,12 @@ AfterInner(void)
 {
 
 #ifdef __EMSCRIPTEN__
-	// F1b-A2 (fluides-v2): init monolítico de partida DIFERIDO, ANTES de
-	// cualquier teardown (RW/texturas/reloj vivos — lección ram2) y con el
-	// splash YA pintado (lección UX: el freeze debe pillar al usuario
-	// mirando el splash, no el confirm). Un tick pinta el splash y presenta;
-	// el siguiente corre InitialiseGame() MONOLÍTICO (una sola cadena de
-	// suspensiones, como el flujo validado) con guardia anti re-entrada
-	// (lección ram3: los ticks nuevos ceden hasta el rewind).
 	if (FrontEndMenuManager.m_bWantToRestart && FrontEndMenuManager.m_bWantToLoad
 	    && gWebBootInitPending) {
 		static int s_bootSplashShown = 0;
 		static int s_bootInFlight = 0;
 		if (!s_bootSplashShown) {
 			s_bootSplashShown = 1;
-			// Abre la secuencia: splash1 una sola vez + barra monótona. Todo el
-			// init monolítico que corre después (InitialiseGame) delega su
-			// pantalla de carga aquí, así que no aparece portada aleatoria.
 			WebBeginLoadScreen();
 			WebDrawLoadScreen(0.0f);
 			ODTRACES("loadtick B splash visible");
@@ -2374,20 +2346,14 @@ AfterInner(void)
 	}
 #endif
 
-	/*
-	* About to shut down - block resize events again...
-	*/
 	RwInitialised = FALSE;
 		
 	FrontEndMenuManager.UnloadTextures();
 #ifdef __EMSCRIPTEN__
-	// Web/carga: pantalla ANTES que nada (ni el prólogo ni el shutdown deben
-	// congelar el confirm). Tick dedicado a pintar y presentar.
 	static int s_loadShown = 0;
 	if (!(FrontEndMenuManager.m_bWantToRestart && FrontEndMenuManager.m_bWantToLoad))
 		s_loadShown = 0;
 	else if (!s_loadShown) {
-		// (Idempotente si el arranque ya la abrió: no reinicia la barra.)
 		WebBeginLoadScreen();
 		WebDrawLoadScreen(0.0f);
 		s_loadShown = 1;
@@ -2437,14 +2403,9 @@ AfterInner(void)
 	if ( FrontEndMenuManager.m_bWantToLoad )
 	{
 #ifdef __EMSCRIPTEN__
-		// Web: reinicio troceado en varios ticks (ver Game::InitialiseRestartStep).
-		// AfterInner se invoca una vez por tick mientras WantToRestart siga
-		// activo, así la pestaña respira entre tramos.
 		static int s_restartStarted = 0;
 		if (!s_restartStarted) {
 #ifdef __EMSCRIPTEN__
-			// Web: shutdown troceado por ticks (ver ShutDownForRestartStep);
-			// la pantalla ya se mostró en el tick anterior.
 			{
 				static int s_sdReset = 0;
 				if (!s_sdReset) { CGame::ShutDownForRestartResetSteps(); s_sdReset = 1; }
@@ -2464,8 +2425,6 @@ AfterInner(void)
 			return true;
 		}
 		if (!CGame::InitialiseRestartStep()) {
-			// Pantalla de carga in-game (splash + barra): único escritor del
-			// canvas en estos ticks (InnerFrame no corre con WantToRestart).
 			WebDrawLoadScreen(gWebLoadFrac);
 #ifdef __EMSCRIPTEN__
 			{
@@ -2481,7 +2440,6 @@ AfterInner(void)
 		DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 		LoadSplash(GetLevelSplashScreen(CGame::currLevel));
 		FrontEndMenuManager.m_bWantToLoad = false;
-		// La pantalla lo tapa todo a partir de aquí (juego corriendo).
 		gWebLoadFrac = 0.0f;
 #else
 		CGame::ShutDownForRestart();
@@ -2494,8 +2452,6 @@ AfterInner(void)
 	else
 	{
 #ifdef __EMSCRIPTEN__
-		// No hay carga en curso (frontend / partida nueva): se cierra la secuencia
-		// de pantalla de carga para que el splash no quede fijado a splash1.
 		WebEndLoadScreen();
 #endif
 #ifndef MASTER
@@ -2519,7 +2475,6 @@ AfterInner(void)
 		TRACE("gGameState = GS_INIT_PLAYING_GAME;");
 	}
 #ifdef __EMSCRIPTEN__
-	// TRAZA FUSIONADA: el wipe 9->8 pasa por aquí (WantToRestart sin WantToLoad).
 	{
 		char t[160];
 		snprintf(t, sizeof t, "WR wipe state=%s screen=%d load=%d",
@@ -2554,20 +2509,11 @@ FinalCleanup(void)
 	_psFreeVideoModeList();
 
 
-	/*
-	 * Tidy up the 3D (RenderWare) components of the application...
-	 */
 	RsEventHandler(rsRWTERMINATE, nil);
 
-	/*
-	 * Free the platform dependent data...
-	 */
 	RsEventHandler(rsTERMINATE, nil);
 
 #ifdef _WIN32
-	/* 
-	 * Free the argv strings...
-	 */
 	free(argv);
 	
 	SystemParametersInfo(SPI_SETSTICKYKEYS, sizeof(STICKYKEYS), &SavedStickyKeys, SPIF_SENDCHANGE);
@@ -2581,26 +2527,22 @@ FinalCleanup(void)
 static void
 EmscriptenTick(void)
 {
-	// Web heartbeat: proves frames advance (or not) when no debugger can attach.
 	static int tickCount = 0;
 	static int lastState = -1;
 	static int lastInGame = -1;
-	// La página necesita distinguir JUGANDO de CARGANDO: solo en partida se
-	// puede aplazar un fichero a otro frame (el motor reintenta) sin tocar la
-	// ruta crítica de la carga, que exige los ficheros aquí y ahora.
-	//
-	// OJO: una CINEMÁTICA corre en estado "jugando" pero se comporta como una
-	// CARGA. Carga su escena de golpe (modelos, texturas y sonidos en un solo
-	// paso bloqueante, sin reintentos), así que si ahí se le contesta "no está"
-	// el resultado es la escena a medias: mundo negro, props que se caen y el
-	// texto de la escena impreso sobre la partida. Por eso, mientras corre una
-	// cinemática, se publica CARGANDO (nada se aplaza).
-	// OJO: la cinemática se PREPARA antes de "correr": el script pide los
-	// modelos (escena, actores, sala) y los carga en bloque cuando todavía
-	// IsRunning() es false: con solo mirar IsRunning() esa carga se aplazaba y
-	// la escena salía vacía (mundo negro, props vencidos, sin audio).
-	// IsCutsceneProcessing() cubre todo el ciclo (se enciende al empezar a
-	// preparar la cinemática y se apaga al borrarla), que es lo que hace falta.
+
+	static int odFtCount = 0;
+	static double odFtLast = 0.0;
+	static double odFtSum = 0.0, odFtMin = 1e9, odFtMax = 0.0;
+	double odFtNow = emscripten_get_now();
+	if(odFtLast > 0.0) {
+		double odFtMs = odFtNow - odFtLast;
+		odFtSum += odFtMs;
+		if(odFtMs < odFtMin) odFtMin = odFtMs;
+		if(odFtMs > odFtMax) odFtMax = odFtMs;
+		odFtCount++;
+	}
+	odFtLast = odFtNow;
 	int inGame = ((int)gGameState == GS_PLAYING_GAME &&
 	              !CCutsceneMgr::IsRunning() && !CCutsceneMgr::IsCutsceneProcessing()) ? 1 : 0;
 	if ( (int)gGameState != lastState ) {
@@ -2614,7 +2556,26 @@ EmscriptenTick(void)
 		}, (int)gGameState, inGame);
 	}
 	if ( (tickCount++ % 120) == 0 ) {
+		if(odFtCount > 0) {
+			char odft[160];
+			static uint32 odLfLast = 0;
+			uint32 odLfNow = CTimer::GetLogicalFrameCounter();
+			uint32 odLf = odLfNow >= odLfLast ? odLfNow - odLfLast : 0;
+			snprintf(odft, sizeof odft, "WEBFT n=%d min=%.1f avg=%.1f max=%.1f step=%.3f cap=%d lf=%u sim=%d eng=%.1f/%.1f", odFtCount,
+				odFtMin, odFtSum / odFtCount, odFtMax, CTimer::GetTimeStep(), gWebFpsCap, odLf, gWebEngN,
+				gWebEngN ? gWebEngSum / gWebEngN : 0.0, gWebEngMax);
+			odLfLast = odLfNow;
+			gWebEngSum = 0.0;
+			gWebEngMax = 0.0;
+			gWebEngN = 0;
+			ODTRACES(odft);
+			odFtCount = 0;
+			odFtSum = 0.0;
+			odFtMin = 1e9;
+			odFtMax = 0.0;
+		}
 #ifdef __EMSCRIPTEN__
+		extern int gOdTexLive;
 		struct mallinfo odmi = mallinfo();
 		int odFsN = EM_ASM_INT({ return OD.census().n; });
 		int odFsMB = EM_ASM_INT({ return OD.census().mb; });
@@ -2623,26 +2584,31 @@ EmscriptenTick(void)
 		int odEvMB = EM_ASM_INT({ return OD.census().evmb; });
 		int odFMB = EM_ASM_INT({ return OD.census().fmb; });
 		int odIdb = EM_ASM_INT({ return OD.census().idb; });
+		int odUfs = EM_ASM_INT({ return OD.census().ufs; });
+		// T20: cuantas entidades entran en el recorrido de cada frame. Si sube sin
+		// volver, ahi esta el coste que crece (el trabajo del frame se mide con
+		// FPHASE, no se adivina).
+		int odMoving = EM_ASM_INT({ return (typeof OD !== 'undefined' && OD.movingEnts) ? OD.movingEnts : -1; });
 		printf("[web] tick %d state %d fade %d cammode %d heap %u used %u memfs %d/%dMB live %d ev %d/%dMB f %dMB idb %d cutscene %d\n", tickCount, (int)gGameState,
 			(int)CDraw::FadeValue, (int)TheCamera.Cams[TheCamera.ActiveCam].Mode,
 			(unsigned)emscripten_get_heap_size(), (unsigned)odmi.uordblks,
 			odFsN, odFsMB, odLive, odEv, odEvMB, odFMB, odIdb, (int)CCutsceneMgr::IsRunning());
-		// Lo mismo, pero a las trazas del fichero: printf va solo a la consola
-		// del navegador y el latido con `state`/`cut` es lo que permite ver en
-		// el log si una cinemática estaba preparando/corriendo cuando algo
-		// falló (1 línea / 2 s; en pausa el bucle no llega aquí).
 		{
-			char odhb[220];
+			char odhb[240];
+			// `tex=` son las texturas GL vivas (creadas menos destruidas): si sube sin
+			// parar mientras se conduce, el motor no libera la GPU al descargar modelos.
 			snprintf(odhb, sizeof odhb,
-				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d heap=%uMB",
+				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d ufs=%dMB heap=%uMB fade=%d canvas=%dx%d tex=%d mov=%d",
 				(int)gGameState, inGame, (int)CCutsceneMgr::IsRunning(), (int)CCutsceneMgr::IsCutsceneProcessing(),
-				(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, odFsMB, odFsN, odEv, odEvMB, odFMB, odIdb,
-				(unsigned)(emscripten_get_heap_size() / 1048576));
+				(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, odFsMB, odFsN, odEv, odEvMB, odFMB, odIdb, odUfs,
+				(unsigned)(emscripten_get_heap_size() / 1048576), (int)CDraw::FadeValue,
+				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.width : -1; }),
+				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.height : -1; }),
+				gOdTexLive, odMoving);
 			ODTRACES(odhb);
 		}
 		EM_ASM({
 			try {
-				// Consola limpia: censo detallado solo con ?oddebug.
 				if (typeof location !== 'undefined' && /oddebug/.test(location.search)) {
 					var c = OD.census();
 					if (c.per) console.log('[od] perdir ' + c.per);
@@ -2656,12 +2622,6 @@ EmscriptenTick(void)
 #endif
 	}
 	if ( InnerShouldRun() ) {
-		// Aviso de "el motor ya está pintando" (una sola vez, justo antes del
-		// primer frame presentado). Es la única señal fiable para que la página
-		// retire su barra de preparación: __loadProgress solo llega cuando se
-		// inicializa el MUNDO (empezar o cargar partida), no al arrancar el
-		// motor, así que sin esto la barra se quedaba unos segundos encima del
-		// menú ya visible.
 		static int s_webFirstFrameSignalled = 0;
 		if ( !s_webFirstFrameSignalled ) {
 			s_webFirstFrameSignalled = 1;
@@ -2949,8 +2909,6 @@ void CapturePad(RwInt32 padID)
 	ControlsManager.m_NewState.numButtons = numButtons;
 	ControlsManager.m_NewState.id = glfwPad;
 #ifdef __EMSCRIPTEN__
-	// glfwGetGamepadState() is declared but not implemented in the Emscripten
-	// GLFW port: stick to plain buttons/axes, like with unmapped joysticks.
 	ControlsManager.m_NewState.isGamepad = false;
 #else
 	ControlsManager.m_NewState.isGamepad = glfwGetGamepadState(glfwPad, &gamepadState);

@@ -219,8 +219,6 @@ RsEventHandler(RsEvent event, void *param)
 	if (event == rsQUITAPP)
 	{
 #ifdef __EMSCRIPTEN__
-		// Web: no hay proceso que terminar; matar el loop deja la pestaña
-		// muerta. Flush de userfiles y vuelta al menú principal recargando.
 		EM_ASM({
 			try { window.__quitting = true; } catch (e) {}
 			try {

@@ -20,6 +20,9 @@
 #include "Fire.h"
 #include "PointLights.h"
 #include "Pools.h"
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+#include "Radar.h"
+#endif
 #ifdef FIX_BUGS
 #include "Replay.h"
 #endif
@@ -37,9 +40,6 @@
 #include "SaveBuf.h"
 
 #ifdef COMPATIBLE_SAVES
-#define PICKUPS_SAVE_SIZE 0x4440
-#else
-#define PICKUPS_SAVE_SIZE sizeof(aPickUps)
 #endif
 
 CPickup CPickups::aPickUps[NUMPICKUPS];
@@ -546,7 +546,13 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 						DMAudio.PlayFrontEndSound(SOUND_PICKUP_WEAPON_BOUGHT, m_pObject->GetModelIndex() - MI_GRENADE);
 					}
 					result = true;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+					m_nTimer = CTimer::GetTimeInMilliseconds() + 5000;
+					GetRidOfObjects();
+					m_bRemoved = true;
+#else
 					Remove();
+#endif
 				}
 				break;
 			case PICKUP_ON_STREET:
@@ -612,6 +618,14 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 100000;
 				} else
 					CGarages::TriggerMessage("CO_ONE", CWorld::Players[CWorld::PlayerInFocus].m_nCollectedPackages, 5000, CWorld::Players[CWorld::PlayerInFocus].m_nTotalPackages);
+
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES // Fila 9.03: el paquete recogido deja su blip en el mapa
+				{
+					int blipHandle = CRadar::SetCoordBlip(BLIP_COORD, m_vecPos, 6, BLIP_DISPLAY_BOTH);
+					CRadar::ChangeBlipScale(blipHandle, 2);
+					CRadar::SetBlipSprite(blipHandle, RADAR_SPRITE_PACKAGE);
+				}
+#endif
 
 				result = true;
 				Remove();
@@ -1089,9 +1103,9 @@ CPickups::Update()
 
 #define PICKUPS_FRAME_SPAN (6)
 #ifdef FIX_BUGS
-	for (uint32 i = NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN) / PICKUPS_FRAME_SPAN; i < NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1) / PICKUPS_FRAME_SPAN; i++) {
+	for (uint32 i = NUMGENERALPICKUPS * (CTimer::GetLogicalFrameCounter() % PICKUPS_FRAME_SPAN) / PICKUPS_FRAME_SPAN; i < NUMGENERALPICKUPS * (CTimer::GetLogicalFrameCounter() % PICKUPS_FRAME_SPAN + 1) / PICKUPS_FRAME_SPAN; i++) {
 #else // BUG: this code can only reach 318 out of 320 pickups
-	for (uint32 i = NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN); i < NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1); i++) {
+	for (uint32 i = NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetLogicalFrameCounter() % PICKUPS_FRAME_SPAN); i < NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetLogicalFrameCounter() % PICKUPS_FRAME_SPAN + 1); i++) {
 #endif
 		if (aPickUps[i].m_eType != PICKUP_NONE && aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus))
 			AddToCollectedPickupsArray(i);
@@ -1156,6 +1170,9 @@ CPickups::DoPickUpEffects(CEntity *entity)
 			doInnerGlow = true;
 			doOuterGlow = false;
 		} else if (entity->GetModelIndex() == MI_PICKUP_REVENUE) {
+#ifdef VICEEXT_SP_PICKUP_EFFECTS
+			colorId = WEAPONTYPE_TOTALWEAPONS;
+#endif
 			doInnerGlow = true;
 			doOuterGlow = false;
 		} else if (entity->GetModelIndex() == MI_PICKUP_SAVEGAME) {
@@ -1167,6 +1184,13 @@ CPickups::DoPickUpEffects(CEntity *entity)
 			doInnerGlow = true;
 		} else
 			colorId = WeaponForModel(entity->GetModelIndex());
+
+#ifdef VICEEXT_SP_PICKUP_EFFECTS
+		if (entity->GetModelIndex() == MI_MINIGUN2) {
+			colorId = 0;
+			doOuterGlow = false;
+		}
+#endif
 
 		const CVector& pos = pickup->m_vecPos;
 		if (doOuterGlow) {
@@ -1413,6 +1437,23 @@ CPickups::RenderPickUpText()
 					}
 				}
 				break;
+#ifdef VICEEXT_PED_VARIATIONS
+			case 1:
+			case 2:
+			case 3:
+			case 4:
+			case 5:
+			case 6:
+			case 7:
+			case 8:
+			case 9:
+			case 10:
+			case 11:
+			case 12:
+			case 13:
+				strToPrint = nil;
+				break;
+#else
 			case 1:
 				strToPrint = TheText.Get("OUTFT1");
 				break;
@@ -1452,6 +1493,7 @@ CPickups::RenderPickUpText()
 			case 13:
 				strToPrint = TheText.Get("OUTFT13");
 				break;
+#endif
 			default:
 				break;
 			}
@@ -1550,9 +1592,25 @@ CPickups::RemoveUnnecessaryPickups(const CVector& center, float radius)
 	}
 }
 
+static uint32
+PickupsSaveBlockSize(void)
+{
+	uint32 n = 0;
+#ifdef COMPATIBLE_SAVES
+	n += (uint32)NUMPICKUPS * (sizeof(CVector) + sizeof(float) + sizeof(int32) + sizeof(int32)
+		+ sizeof(uint32) + sizeof(uint32) + sizeof(uint16) + sizeof(int16) + sizeof(uint16)
+		+ sizeof(CPickups::aPickUps[0].m_sTextKey) + sizeof(uint8) + sizeof(bool) + sizeof(uint8) + 3);
+#else
+	n += (uint32)sizeof(CPickups::aPickUps[0]) * NUMPICKUPS;
+#endif
+	n += sizeof(uint16) + sizeof(uint16) + (uint32)NUMCOLLECTEDPICKUPS * sizeof(int32);
+	return n;
+}
 void
 CPickups::Load(uint8 *buf, uint32 size)
 {
+	if (size < PickupsSaveBlockSize())
+		return;
 INITSAVEBUF
 
 	for (int32 i = 0; i < NUMPICKUPS; i++) {
@@ -1602,11 +1660,11 @@ INITSAVEBUF
 VALIDATESAVEBUF(size)
 }
 
+
 void
 CPickups::Save(uint8 *buf, uint32 *size)
 {
-	*size = PICKUPS_SAVE_SIZE;
-	*size += sizeof(uint16) + sizeof(uint16) + sizeof(aPickUpsCollected);
+	uint8 *const bufStart = buf;
 
 INITSAVEBUF
 
@@ -1649,6 +1707,7 @@ INITSAVEBUF
 	for (uint16 i = 0; i < NUMCOLLECTEDPICKUPS; i++)
 		WriteSaveBuf(buf, aPickUpsCollected[i]);
 
+	*size = (uint32)(buf - bufStart);
 VALIDATESAVEBUF(*size)
 }
 

@@ -184,7 +184,7 @@ void CGarages::Update(void)
 		if (aGarages[i].IsUsed())
 			aGarages[i].Update();
 	}
-	if ((CTimer::GetFrameCounter() & 0xF) != 0xC)
+	if ((CTimer::GetLogicalFrameCounter() & 0xF) != 0xC)
 		return;
 #ifdef FIX_BUGS
 	if (++GarageToBeTidied >= NumGarages)
@@ -667,7 +667,7 @@ void CGarage::Update()
 		switch (m_eGarageState) {
 		case GS_OPENED:
 			if (((CVector2D)FindPlayerCoors() - CVector2D(GetGarageCenterX(), GetGarageCenterY())).MagnitudeSqr() > SQR(DISTANCE_TO_CLOSE_MISSION_GARAGE)) {
-				if ((CTimer::GetFrameCounter() & 0x1F) == 0 
+				if ((CTimer::GetLogicalFrameCounter() & 0x1F) == 0 
 #ifndef GTA_PS2
 					&& (!m_pTarget || IsEntityTouching3D(m_pTarget))
 #endif
@@ -2260,10 +2260,8 @@ void CGarages::SetAllDoorsBackToOriginalHeight()
 void CGarages::Save(uint8 * buf, uint32 * size)
 {
 //INITSAVEBUF
-	*size = 7876; // for some reason it's not actual size again
-	//*size = (6 * sizeof(uint32) + TOTAL_COLLECTCARS_GARAGES * sizeof(*CarTypesCollected) + sizeof(uint32) + TOTAL_HIDEOUT_GARAGES * NUM_GARAGE_STORED_CARS * sizeof(CStoredCar) + NUM_GARAGES * sizeof(CGarage));
+	uint8 *const bufStart = buf;
 #if !defined THIS_IS_STUPID && defined COMPATIBLE_SAVES
-	memset(buf + 7340, 0, *size - 7340); // garbage data is written otherwise
 #endif
 	CloseHideOutGaragesBeforeSave();
 	WriteSaveBuf(buf, NumGarages);
@@ -2328,6 +2326,7 @@ void CGarages::Save(uint8 * buf, uint32 * size)
 #endif
 	}
 //VALIDATESAVEBUF(*size);
+	*size = (uint32)(buf - bufStart);
 }
 
 const CStoredCar &CStoredCar::operator=(const CStoredCar & other)
@@ -2348,7 +2347,8 @@ const CStoredCar &CStoredCar::operator=(const CStoredCar & other)
 void CGarages::Load(uint8* buf, uint32 size)
 {
 //INITSAVEBUF
-	assert(size == 7876);
+	if (size < 7340)
+		return;
 	//assert(size == (6 * sizeof(uint32) + TOTAL_COLLECTCARS_GARAGES * sizeof(*CarTypesCollected) + sizeof(uint32) + TOTAL_HIDEOUT_GARAGES * NUM_GARAGE_STORED_CARS * sizeof(CStoredCar) + NUM_GARAGES * sizeof(CGarage)));
 	CloseHideOutGaragesBeforeSave();
 	ReadSaveBuf(&NumGarages, buf);

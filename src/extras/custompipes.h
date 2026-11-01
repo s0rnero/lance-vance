@@ -77,6 +77,7 @@ void SetTxdFindCallback(void);
 
 extern bool bRenderingEnvMap;
 extern int32 EnvMapSize;
+void SetEnvMapSize(int32 size);
 extern rw::Camera *EnvMapCam;
 extern rw::Texture *EnvMapTex;
 extern rw::Texture *EnvMaskTex;
@@ -84,7 +85,8 @@ void EnvMapRender(void);
 
 enum {
 	VEHICLEPIPE_MATFX,
-	VEHICLEPIPE_NEO
+	VEHICLEPIPE_NEO,
+	VEHICLEPIPE_LEEDS
 };
 extern int32 VehiclePipeSwitch;
 extern float VehicleShininess;
@@ -99,6 +101,18 @@ void DestroyVehiclePipe(void);
 void AttachVehiclePipe(rw::Atomic *atomic);
 void AttachVehiclePipe(rw::Clump *clump);
 
+extern float LeedsEnvMult;
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+void CreateLeedsVehiclePipe(void);
+void DestroyLeedsVehiclePipe(void);
+#endif
+bool LeedsCarPipeEnabled(void);
+
+enum {
+	WORLDPIPE_DEFAULT,
+	WORLDPIPE_NEO,
+	WORLDPIPE_LEEDS
+};
 extern bool LightmapEnable;
 extern float LightmapMult;
 extern InterpolatedFloat WorldLightmapBlend;
@@ -107,6 +121,14 @@ void CreateWorldPipe(void);
 void DestroyWorldPipe(void);
 void AttachWorldPipe(rw::Atomic *atomic);
 void AttachWorldPipe(rw::Clump *clump);
+
+extern float LeedsWorldPrelightTweakMult;
+extern float LeedsWorldPrelightTweakAdd;
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+void CreateLeedsWorldPipe(void);
+void DestroyLeedsWorldPipe(void);
+#endif
+bool LeedsWorldPipeEnabled(void);
 
 extern bool GlossEnable;
 extern float GlossMult;
@@ -132,6 +154,17 @@ void AttachRimPipe(rw::Atomic *atomic);
 void AttachRimPipe(rw::Clump *clump);
 
 }
+
+extern int32 g_nSkyEnvMapSize;
+extern int32 g_nSkyMatFXBlendStyle;
+extern int32 g_nSkyMatFXTexgenStyle;
+extern bool g_bSkyMatFXPS2Light;
+
+extern int32 g_nSkyWorldPipe;
+
+extern bool g_bSkyDualPass;
+
+
 
 #endif
 

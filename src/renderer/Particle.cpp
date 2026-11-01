@@ -18,12 +18,12 @@
 #include "AudioScriptObject.h"
 #include "ParticleObject.h"
 #include "Particle.h"
+#include "PointlightTexture.h"
+#include "ondemand.h" // web: ODTRACES -> odtrace.log (T0 plan 15.0: medida de la textura del halo)
 #include "soundlist.h"
 #include "SaveBuf.h"
 #include "debugmenu.h"
-#ifdef VICEEXT_POLISH
-#include "ondemand.h"
-#endif
+#include "screendroplets.h"
 
 #define MAX_PARTICLES_ON_SCREEN   (750)
 
@@ -456,8 +456,19 @@ void CParticle::Initialise()
 	gpGunShellTex = RwTextureRead("gunshell", nil);
 	gpGunShellRaster = RwTextureGetRaster(gpGunShellTex);
 
-	gpPointlightTex = RwTextureRead("pointlight", nil);
-	gpPointlightRaster = RwTextureGetRaster(gpPointlightTex);
+	gpPointlightTex = CreatePointlightTexture();
+	gpPointlightRaster = gpPointlightTex ? RwTextureGetRaster(gpPointlightTex) : nil;
+
+	{
+		RwRaster *ras = gpPointlightRaster;
+		char cb[160];
+		snprintf(cb, sizeof cb, "PART tex pointlight=%s %dx%d depth=%d fmt=0x%X flags=0x%X",
+			gpPointlightTex ? "ok" : "NIL",
+			ras ? ras->width : 0, ras ? ras->height : 0,
+			ras ? ras->depth : -1, ras ? ras->format : 0,
+			ras ? ras->flags : 0);
+		ODTRACES(cb);
+	}
 	
 	gpSparkTex = RwTextureRead("spark", nil);
 	gpSparkRaster = RwTextureGetRaster(gpSparkTex);
@@ -672,7 +683,6 @@ void CParticle::Initialise()
 				entry->m_ppRaster = &gpBeastieRaster;
 				break;
 			
-			// Los 5 tipos del mod (familia 3/5) reutilizan la textura de su hermano mayor.
 			case PARTICLE_ENGINE_SMOKE2_SMALL:
 			case PARTICLE_ENGINE_SMOKE_SMALL:
 			case PARTICLE_CARFLAME_SMOKE_SMALL32:
@@ -881,12 +891,6 @@ void CParticle::AddParticlesAlongLine(tParticleType type, CVector const &vecStar
 	}
 }
 
-#ifdef VICEEXT_POLISH
-static const float odPolishBloodLifeMult = 1.5f;
-static const float odPolishDustLifeMult = 2.0f;
-static bool odPolishTraced = false;
-#endif
-
 CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVector const &vecDir, CEntity *pEntity, float fSize, int32 nRotationSpeed, int32 nRotation, int32 nCurFrame, int32 nLifeSpan)
 {
 	CRGBA color(0, 0, 0, 0);
@@ -897,6 +901,11 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 {
 	if ( CTimer::GetIsPaused() )
 		return nil;
+#ifdef SCREEN_DROPLETS
+#ifdef VICEEXT_SKY_WATERDROPS_EXTENDED
+	ScreenDroplets::AddExtendedDroplet(type, vecPos);
+#endif
+#endif
 
 	if ( ( type == PARTICLE_ENGINE_SMOKE
 		|| type == PARTICLE_ENGINE_SMOKE2
@@ -906,7 +915,7 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 		|| type == PARTICLE_BURNINGRUBBER_SMOKE
 		|| type == PARTICLE_EXHAUST_FUMES
 		|| type == PARTICLE_CARCOLLISION_DUST )
-		&& nParticleCreationInterval & CTimer::GetFrameCounter() )
+		&& nParticleCreationInterval & CTimer::GetLogicalFrameCounter() )
 	{
 		return nil;
 	}
@@ -928,28 +937,10 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 	pParticle->m_fSize = psystem->m_fDefaultInitialRadius;
 	pParticle->m_fExpansionRate = psystem->m_fExpansionRate;
 
-#ifdef VICEEXT_POLISH
-	int32 odBaseLife = nLifeSpan != 0 ? nLifeSpan : psystem->m_nLifeSpan;
-	int32 odScaledLife = odBaseLife;
-	if (type == PARTICLE_BLOOD || type == PARTICLE_BLOOD_SMALL || type == PARTICLE_BLOOD_SPURT)
-		odScaledLife = int32(float(odBaseLife) * odPolishBloodLifeMult);
-	else if (type == PARTICLE_CAR_DUST || type == PARTICLE_CARCOLLISION_DUST)
-		odScaledLife = int32(float(odBaseLife) * odPolishDustLifeMult);
-	pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + odScaledLife;
-	if (!odPolishTraced && odScaledLife != odBaseLife) {
-		odPolishTraced = true;
-#ifdef __EMSCRIPTEN__
-		char odT[192];
-		snprintf(odT, sizeof odT, "P4 kind=particulas schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 type=%d base=%d scaled=%d", (unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f, (int)type, (int)odBaseLife, (int)odScaledLife);
-		ODTRACES(odT);
-#endif
-	}
-#else
 	if ( nLifeSpan != 0 )
 		pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + nLifeSpan;
 	else
 		pParticle->m_nTimeWhenWillBeDestroyed = CTimer::GetTimeInMilliseconds() + psystem->m_nLifeSpan;
-#endif
 
 	pParticle->m_nColorIntensity = psystem->m_nFadeToBlackInitialIntensity;
 	
@@ -990,8 +981,13 @@ CParticle *CParticle::AddParticle(tParticleType type, CVector const &vecPos, CVe
 			return nil;
 		
 		pParticle->m_vecPosition = screen;
+#ifdef VICEEXT_SP_HEAT_HAZE_SCALE
+		psystem->m_vecTextureStretch.x = w * DEFAULT_SCREEN_WIDTH / SCREEN_WIDTH;
+		psystem->m_vecTextureStretch.y = h * DEFAULT_SCREEN_HEIGHT / SCREEN_HEIGHT;
+#else
 		psystem->m_vecTextureStretch.x = w;
 		psystem->m_vecTextureStretch.y = h;
+#endif
 	}
 	
 	pParticle->m_vecVelocity = vecDir;
@@ -1177,6 +1173,7 @@ void CParticle::Update()
 	float fFricDeccel95 = pow(0.95f, CTimer::GetTimeStep());
 	float fFricDeccel96 = pow(0.96f, CTimer::GetTimeStep());
 	float fFricDeccel99 = pow(0.99f, CTimer::GetTimeStep());
+	uint32 nTicks30 = CTimer::GetLogicalFramesPassed();
 	
 	CParticleObject::UpdateAll();
 	
@@ -1274,9 +1271,9 @@ void CParticle::Update()
 				vecMoveStep.y = Sin(nSinCosIndex);
 				
 				if ( psystem->m_Type == PARTICLE_HEATHAZE_IN_DIST )
-					particle->m_nRotation = int16((float)particle->m_nRotation + 0.75f);
+					particle->m_nRotation = int16((float)particle->m_nRotation + 0.75f * nTicks30);
 				else
-					particle->m_nRotation = int16((float)particle->m_nRotation + 1.0f);
+					particle->m_nRotation = int16((float)particle->m_nRotation + 1.0f * nTicks30);
 			}
 			
 			if ( psystem->m_Type == PARTICLE_BEASTIE )
@@ -1310,7 +1307,7 @@ void CParticle::Update()
 			
 			if ( psystem->m_Type == PARTICLE_GUNSMOKE2 )
 			{
-				if ( CTimer::GetFrameCounter() & 10 )
+				if ( CTimer::GetLogicalFrameCounter() & 10 )
 				{
 #ifdef FIX_BUGS
 					if ( FindPlayerPed() && FindPlayerPed()->GetWeapon()->m_eWeaponType == WEAPONTYPE_MINIGUN )
@@ -1467,14 +1464,14 @@ void CParticle::Update()
 					if ( ( psystem->m_Type == PARTICLE_BOAT_SPLASH || psystem->m_Type == PARTICLE_CAR_SPLASH )
 							&& particle->m_fSize > 1.2f )
 					{
-						size = particle->m_fSize - (1.0f + speed) * particle->m_fExpansionRate;
-						particle->m_vecVelocity.z -= 0.15f;
+						size = particle->m_fSize - (1.0f + speed) * particle->m_fExpansionRate * CTimer::GetTimeStep();
+						particle->m_vecVelocity.z -= 0.15f * CTimer::GetTimeStep();
 					}
 					else
-						size = particle->m_fSize + (1.0f + speed) * particle->m_fExpansionRate;
+						size = particle->m_fSize + (1.0f + speed) * particle->m_fExpansionRate * CTimer::GetTimeStep();
 				}
 				else
-					size = particle->m_fSize + particle->m_fExpansionRate;
+					size = particle->m_fSize + particle->m_fExpansionRate * CTimer::GetTimeStep();
 				
 				if ( psystem->m_Type == PARTICLE_WATERDROP )
 					size = (size - Abs(vecMoveStep.x) * 0.000150000007f) + (Abs(vecMoveStep.z) * 0.0500000007f); //TODO:
@@ -1611,7 +1608,11 @@ void CParticle::Update()
 												0.1f, 0.0f, 0.0f, -0.1f,
 												255,
 												255, 0, 0,
+												#ifdef VICEEXT_IMPROVED_TECH_PART
+												4.0f, (CGeneral::GetRandomNumber() & 4095) + 20000, 1.0f);
+#else
 												4.0f, (CGeneral::GetRandomNumber() & 4095) + 2000, 1.0f);
+#endif
 									}
 									else if ( randVal == 2 )
 									{
@@ -1619,7 +1620,11 @@ void CParticle::Update()
 												0.2f, 0.0f, 0.0f, -0.2f,
 												255,
 												255, 0, 0,
+												#ifdef VICEEXT_IMPROVED_TECH_PART
+												4.0f, (CGeneral::GetRandomNumber() & 4095) + 25000, 1.0f);
+#else
 												4.0f, (CGeneral::GetRandomNumber() & 4095) + 8000, 1.0f);
+#endif
 									}
 									continue;
 								}
@@ -1745,14 +1750,19 @@ void CParticle::Update()
 
 			if ( particle->m_nFadeToBlackTimer != 0 )
 			{
-				particle->m_nColorIntensity = Clamp(particle->m_nColorIntensity - particle->m_nFadeToBlackTimer,
-														0, 255);
+				// El original resta el fundido una vez por actualizacion a 30 Hz.
+				// A 90/120 fps hay que restar solo en los frames logicos para que
+				// la llama dure lo mismo que a 30 Hz (nTicks30 vale 0/1).
+				particle->m_nColorIntensity = Clamp(particle->m_nColorIntensity -
+					particle->m_nFadeToBlackTimer * (int32)nTicks30, 0, 255);
 			}
 
 			if ( particle->m_nFadeAlphaTimer != 0 )
 			{
-				particle->m_nAlpha = Clamp(particle->m_nAlpha - particle->m_nFadeAlphaTimer,
-														0, 255);
+				particle->m_nAlpha = Clamp(particle->m_nAlpha -
+					particle->m_nFadeAlphaTimer * (int32)nTicks30, 0, 255);
+				// A 60/90/120 fps el fundido ya no avanza en los frames sin tick
+				// logico; no hay que borrar la particula hasta que el alfa llegue a 0.
 				if ( particle->m_nAlpha == 0 )
 				{
 					bRemoveParticle = true;
@@ -1762,28 +1772,35 @@ void CParticle::Update()
 			
 			if ( psystem->m_nZRotationAngleChangeAmount != 0 )
 			{
-				if ( particle->m_nZRotationTimer >= psystem->m_nZRotationChangeTime )
+				// Contadores en frames logicos de 30 Hz: el original avanza una
+				// vez por actualizacion, asi que a 120 fps iba cuatro veces mas
+				// rapido. nTicks30 vale 0/1 por frame a 30-120 fps.
+				if ( particle->m_nZRotationTimer > psystem->m_nZRotationChangeTime )
 				{
 					particle->m_nZRotationTimer = 0;
 					particle->m_nCurrentZRotation += psystem->m_nZRotationAngleChangeAmount;
 				}
 				else
-					++particle->m_nZRotationTimer;
+					particle->m_nZRotationTimer += nTicks30;
 			}
 			
 			if ( psystem->m_fZRadiusChangeAmount != 0.0f )
 			{
-				if ( particle->m_nZRadiusTimer >= psystem->m_nZRadiusChangeTime )
+				if ( particle->m_nZRadiusTimer > psystem->m_nZRadiusChangeTime )
 				{
 					particle->m_nZRadiusTimer = 0;
 					particle->m_fCurrentZRadius += psystem->m_fZRadiusChangeAmount;
 				}
 				else
-					++particle->m_nZRadiusTimer;
+					particle->m_nZRadiusTimer += nTicks30;
 			}
 
 			if ( psystem->m_nAnimationSpeed != 0 )
 			{
+				// El original avanza un frame de textura cuando el contador
+				// supera `speed`, una vez por actualizacion a 30 Hz. Aqui el
+				// contador suma solo frames logicos de 30 Hz, de modo que el
+				// fuego y el agua se animan igual a 30, 60 y 120 fps.
 				if ( particle->m_nAnimationSpeedTimer > psystem->m_nAnimationSpeed )
 				{
 					particle->m_nAnimationSpeedTimer = 0;
@@ -1797,14 +1814,14 @@ void CParticle::Update()
 					}	
 				}
 				else
-					++particle->m_nAnimationSpeedTimer;
+					particle->m_nAnimationSpeedTimer += nTicks30;
 			}
 			
 			if ( particle->m_nRotationStep != 0 )
 #ifdef FIX_BUGS
-				particle->m_nRotation = CGeneral::LimitAngle(particle->m_nRotation + particle->m_nRotationStep);
+				particle->m_nRotation = CGeneral::LimitAngle(particle->m_nRotation + particle->m_nRotationStep * (float)nTicks30);
 #else
-				particle->m_nRotation += particle->m_nRotationStep;
+				particle->m_nRotation += particle->m_nRotationStep * nTicks30;
 #endif
 			
 			if ( particle->m_fCurrentZRadius != 0.0f )
@@ -2098,6 +2115,10 @@ void CParticle::Render()
 
 				if ( CSprite::CalcScreenCoors(particle->m_vecPosition, &coors, &w, &h, true) )
 				{
+#ifdef VICEEXT_WFP_PARTICLE_ASPECT
+					if (g_bWSPOptionParticleAspect)
+						w = SCREEN_SCALE_AR(w);
+#endif
 					
 					if ( i == PARTICLE_ENGINE_STEAM
 						|| i == PARTICLE_ENGINE_SMOKE
@@ -2257,6 +2278,10 @@ void CParticle::Render()
 								
 								if ( CSprite::CalcScreenCoors(vecPrevPos, &vecScreenPosition, &fTrailLength, &fRotation, true) )
 								{
+#ifdef VICEEXT_WFP_PARTICLE_ASPECT
+									if (g_bWSPOptionParticleAspect)
+										fTrailLength = SCREEN_SCALE_AR(fTrailLength);
+#endif
 									CVector2D vecDist
 									(
 										coors.x - vecScreenPosition.x,

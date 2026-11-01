@@ -3,8 +3,8 @@
 #include "ClumpModelInfo.h"
 
 enum {
-	NUM_FIRST_MATERIALS = 24,
-	NUM_SECOND_MATERIALS = 20,
+	NUM_FIRST_MATERIALS = 50,
+	NUM_SECOND_MATERIALS = 50,
 	NUM_VEHICLE_COLOURS = 8,
 };
 
@@ -22,6 +22,9 @@ enum {
 	ATOMIC_FLAG_REARDOOR	= 0x200,
 	ATOMIC_FLAG_FRONTDOOR	= 0x400,
 	ATOMIC_FLAG_NOCULL	= 0x800,
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	ATOMIC_FLAG_DOORWINDOW	= 0x1000,	// el mod (fila 6.14): ventanilla de puerta
+#endif
 };
 
 enum eVehicleType {
@@ -40,7 +43,23 @@ enum eCarPositions
 	CAR_POS_TAILLIGHTS,
 	CAR_POS_FRONTSEAT,
 	CAR_POS_BACKSEAT,
-	CAR_POS_EXHAUST
+	CAR_POS_EXHAUST,
+	CAR_POS_ENGINE,
+	CAR_POS_OVERHEAT,
+	CAR_POS_OVERHEAT_2,
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	CAR_POS_HEADLIGHTS_2,
+	CAR_POS_TAILLIGHTS_2,
+	CAR_POS_REVERSINGLIGHTS,
+	CAR_POS_REVERSINGLIGHTS_2,
+	CAR_POS_BRAKELIGHTS,
+	CAR_POS_BRAKELIGHTS_2,
+	CAR_POS_INDICATORS_F,
+	CAR_POS_INDICATORS_R,
+	CAR_POS_INDICATORS_2_F,
+	CAR_POS_INDICATORS_2_R,
+	CAR_POS_PETROLCAP,
+#endif
 };
 
 enum eBoatPositions
@@ -65,8 +84,28 @@ enum ePlanePositions
 };
 
 enum {
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	NUM_VEHICLE_POSITIONS = 19	// 8 previas + 7 de la fila 6.04 + 4 indicadores
+#else
 	NUM_VEHICLE_POSITIONS = 5
+#endif
 };
+
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+struct tNewLightsData {
+	bool bBumperHeadlights;
+	bool bBumperForwardIndicators1;
+	bool bBumperForwardIndicators2;
+	bool bWingHeadlights;
+	bool bWingIndicators1;
+	bool bWingIndicators2;
+	bool bBumperRearIndicators1;
+	bool bBumperRearIndicators2;
+	bool bBumperTaillights;
+	bool bBumperReversinglights;
+	bool bBumperBrakelights;
+};
+#endif
 
 class CVehicleModelInfo : public CClumpModelInfo
 {
@@ -103,6 +142,15 @@ public:
 		int32 m_animFileIndex;
 		char *m_animFileName;
 	};
+
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	RwTexture *lightsOffTexture;
+	RwTexture *lightsOnTexture;
+	RwTexture *serviceLightsOffTexture;
+	RwTexture *serviceLightsOnTexture;
+	bool bNewLights;
+	tNewLightsData newLightsData;
+#endif
 
 	static int8 ms_compsToUse[2];
 	static int8 ms_compsUsed[2];

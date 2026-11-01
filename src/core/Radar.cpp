@@ -20,12 +20,16 @@
 #include "Streaming.h"
 #include "SpecialFX.h"
 #include "ViceExtFeatures.h"
+#include "SilentPatchOptions.h"
+#include "WidescreenFixOptions.h"
 #include "Font.h"
 #include "SaveBuf.h"
 #include "ondemand.h"
 #include "Timer.h"
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 #include "Pad.h"
+#include "PathFind.h"
+#include "ModelIndices.h"
 #endif
 
 float CRadar::m_radarRange;
@@ -161,6 +165,15 @@ static_assert(RADAR_TILE_SIZE == (RADAR_SIZE_Y / RADAR_NUM_TILES), "CRadar: not 
 #define RADAR_MIN_SPEED (0.3f)
 #define RADAR_MAX_SPEED (0.9f)
 
+#ifdef VICEEXT_SP_RADAR_DISC
+#define SP_RADARDISC_SHRINK_DEFAULT (2.0f)
+
+float GetSPRadarDiscShrink(void)
+{
+	return g_bSPOptionShrinkRadardisc ? SP_RADARDISC_SHRINK_DEFAULT : 0.0f;
+}
+#endif
+
 CRGBA CRadar::ArrowBlipColour1;
 CRGBA CRadar::ArrowBlipColour2;
 int16 CRadar::MapLegendCounter;
@@ -170,6 +183,9 @@ int32 CRadar::RadarZoomOutTimer;
 #endif
 #ifdef MAP_ENHANCEMENTS
 int CRadar::TargetMarkerId = -1;
+#ifdef VICEEXT_GPS
+int CRadar::RouteBlipId = -1;
+#endif
 CVector CRadar::TargetMarkerPos;
 #endif
 
@@ -274,6 +290,10 @@ void CRadar::ClearBlip(int32 i)
 		ms_RadarTrace[index].m_eBlipType = BLIP_NONE;
 		ms_RadarTrace[index].m_eBlipDisplay = BLIP_DISPLAY_NEITHER;
 		ms_RadarTrace[index].m_eRadarSprite = RADAR_SPRITE_NONE;
+#ifdef VICEEXT_GPS // el blip de ruta deja de serlo al borrarse
+		if (index == RouteBlipId)
+			RouteBlipId = -1;
+#endif
 	}
 }
 
@@ -571,6 +591,10 @@ void CRadar::DrawBlips()
 		RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 		RwRenderStateSet(rwRENDERSTATEFOGENABLE, (void*)FALSE);
+#ifdef VICEEXT_SP_BLIP_BILINEAR
+		if (g_bSPOptionBlipBilinear)
+			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+#endif
 
 		CVector2D out;
 		CVector2D in = CVector2D(0.0f, 0.0f);
@@ -598,16 +622,51 @@ void CRadar::DrawBlips()
 			DrawRadarSprite(RADAR_SPRITE_NORTH, out.x, out.y, 255);
 		}
 
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+		auto hideCollectible = [](int32 blipId) -> bool {
+			if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_PACKAGE &&
+				(FrontEndMenuManager.m_displayCollectiblesState != 1 || !FrontEndMenuManager.m_bMenuMapActive))
+				return true;
+
+			if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_STUNT &&
+				(FrontEndMenuManager.m_displayCollectiblesState != 2 || !FrontEndMenuManager.m_bMenuMapActive))
+				return true;
+
+			if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_RAMPAGE &&
+				(FrontEndMenuManager.m_displayCollectiblesState != 3 || !FrontEndMenuManager.m_bMenuMapActive))
+				return true;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_STORE &&
+				(FrontEndMenuManager.m_displayCollectiblesState != 4 || !FrontEndMenuManager.m_bMenuMapActive))
+				return true;
+#endif
+
+			return false;
+		};
+#endif
+
 		for(int blipId = 0; blipId < NUMRADARBLIPS; blipId++) {
 			if (!ms_RadarTrace[blipId].m_bInUse)
 				continue;
+
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+			if (hideCollectible(blipId))
+				continue;
+#endif
 
 			switch (ms_RadarTrace[blipId].m_eBlipType) {
 				case BLIP_CAR:
 				case BLIP_CHAR:
 				case BLIP_OBJECT:
+#ifdef VICEEXT_SP_PROPERTY_BLIPS
+					if (!g_bSPOptionShowPropertyBlips
+						&& ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_PROPERTY
+						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+#else
 					if (ms_RadarTrace[blipId].m_eRadarSprite == RADAR_SPRITE_PROPERTY
 						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
+#endif
 						DrawEntityBlip(blipId);
 
 					break;
@@ -627,6 +686,11 @@ void CRadar::DrawBlips()
 		for(int blipId = 0; blipId < NUMRADARBLIPS; blipId++) {
 			if (!ms_RadarTrace[blipId].m_bInUse)
 				continue;
+
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+			if (hideCollectible(blipId))
+				continue;
+#endif
 
 			if (ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SAVE && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_HARDWARE
 					&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_GUN)
@@ -655,12 +719,22 @@ void CRadar::DrawBlips()
 			if (!ms_RadarTrace[blipId].m_bInUse)
 				continue;
 
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+			if (hideCollectible(blipId))
+				continue;
+#endif
+
 			switch (ms_RadarTrace[blipId].m_eBlipType) {
 				case BLIP_CAR:
 				case BLIP_CHAR:
 				case BLIP_OBJECT:
 					if (ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SAVE && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_HARDWARE
-						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
+						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY
+#ifdef VICEEXT_SP_PROPERTY_BLIPS
+						&& (g_bSPOptionShowPropertyBlips || ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY)
+#else
+						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
+#endif
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_GUN
 						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
 
@@ -674,11 +748,21 @@ void CRadar::DrawBlips()
 			if (!ms_RadarTrace[blipId].m_bInUse)
 				continue;
 
+#ifdef VICEEXT_DISPLAYED_COLLECTIBLES
+			if (hideCollectible(blipId))
+				continue;
+#endif
+
 			switch (ms_RadarTrace[blipId].m_eBlipType) {
 				case BLIP_COORD:
 				case BLIP_CONTACT_POINT:
 					if (ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SAVE && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_HARDWARE
-						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
+						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_SPRAY
+#ifdef VICEEXT_SP_PROPERTY_BLIPS
+						&& (g_bSPOptionShowPropertyBlips || ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY)
+#else
+						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PROPERTY
+#endif
 						&& ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_GUN && ms_RadarTrace[blipId].m_eRadarSprite != RADAR_SPRITE_PHONE
 						&& (!CTheScripts::bPlayerIsInTheStatium || !FrontEndMenuManager.m_bMenuMapActive))
 
@@ -704,6 +788,9 @@ void CRadar::DrawBlips()
 
 void CRadar::DrawMap()
 {
+	if (TheCamera.GetPosition().z >= 70000.0f)
+		return;
+
 	if (!TheCamera.m_WideScreenOn && CHud::m_Wants_To_Draw_Hud) {
 		CalculateCachedSinCos();
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
@@ -995,6 +1082,34 @@ const char* gRadarTexNames[] = {
 	"radar56", "radar57", "radar58", "radar59", "radar60", "radar61", "radar62", "radar63",
 };
 
+#ifdef VICEEXT_WFP_RADAR_SIZE
+#define WSP_RADAR_WIDTH_FACTOR    (0.9333333f)
+
+float WSPGetRadarWidth(void)
+{
+#ifdef FIX_RADAR
+	float fWidth = (CDraw::ms_bFixRadar) ? (82.0f) : (94.0f);
+#else
+	float fWidth = 94.0f;
+#endif
+	if (g_bWSPOptionRadarSizeSet && g_fWSPOptionRadarWidth > 0.0f)
+		fWidth = g_fWSPOptionRadarWidth * WSP_RADAR_WIDTH_FACTOR;
+	return fWidth * g_fWSPOptionRadarWidthScale;
+}
+
+float WSPGetRadarHeight(void)
+{
+#ifdef FIX_RADAR
+	float fHeight = (CDraw::ms_bFixRadar) ? (82.0f) : (76.0f);
+#else
+	float fHeight = 76.0f;
+#endif
+	if (g_bWSPOptionRadarSizeSet && g_fWSPOptionRadarHeight > 0.0f)
+		fHeight = g_fWSPOptionRadarHeight;
+	return fHeight;
+}
+#endif
+
 void
 CRadar::Initialise()
 {
@@ -1157,8 +1272,6 @@ CRadar::LoadTextures()
 	WaypointSprite.SetTexture("radar_waypoint");
 	if(!WaypointSprite.m_pTexture) {
 		// create the texture if it's missing in TXD
-		// Familia 11: manda `WaypointColorRGB` del `features.ini` servido; sin la
-		// clave vale el color que el port ya construía (`VICEEXT_GPS_COLOR_*`).
 		int odWaypointR = ViceExtFeatures::Waypoint(0, VICEEXT_GPS_COLOR_R);
 		int odWaypointG = ViceExtFeatures::Waypoint(1, VICEEXT_GPS_COLOR_G);
 		int odWaypointB = ViceExtFeatures::Waypoint(2, VICEEXT_GPS_COLOR_B);
@@ -1468,9 +1581,9 @@ void CRadar::TransformRadarPointToScreenSpace(CVector2D &out, const CVector2D &i
 		out.y = (FrontEndMenuManager.m_fMapCenterY - FrontEndMenuManager.m_fMapSize) + (MENU_MAP_LENGTH / 2 - MENU_MAP_TOP_OFFSET - in.y) * FrontEndMenuManager.m_fMapSize * MENU_MAP_HEIGHT_SCALE * 2.0f / MENU_MAP_LENGTH;
 	} else {
 #ifdef FIX_BUGS
-		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + SCREEN_SCALE_X(RADAR_LEFT);
+		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + SCREEN_SCALE_X(RADAR_LEFT) + HUD_ANCHOR_OFFSET;
 #else
-		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + RADAR_LEFT;
+		out.x = (in.x + 1.0f) * 0.5f * SCREEN_SCALE_X(RADAR_WIDTH) + RADAR_LEFT + HUD_ANCHOR_OFFSET;
 #endif
 		out.y = (1.0f - in.y) * 0.5f * SCREEN_SCALE_Y(RADAR_HEIGHT) + SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT);
 	}
@@ -1926,3 +2039,152 @@ CRadar::DrawLegend(int32 x, int32 y, int32 sprite)
 	}
 	CFont::PrintString(SCREEN_SCALE_X(20.f) + x, SCREEN_SCALE_Y(3.0f) + y, text);
 }
+
+#ifdef VICEEXT_GPS
+void
+CRadar::DrawGPS(bool onRadar)
+{
+	if (!FrontEndMenuManager.m_PrefsGPS)
+		return;
+
+	if (!FrontEndMenuManager.m_bMenuMapActive && CWorld::Players[CWorld::PlayerInFocus].m_pRemoteVehicle)
+		return;
+
+	CVehicle *vehicle = FindPlayerVehicle();
+	if (!FrontEndMenuManager.m_bMenuMapActive && vehicle &&
+		(vehicle->IsBoat() || vehicle->IsRealHeli() || vehicle->IsPlane() ||
+		 vehicle->GetModelIndex() == MI_RCBANDIT || vehicle->GetModelIndex() == MI_RCBARON ||
+		 vehicle->GetModelIndex() == MI_RCGOBLIN || vehicle->GetModelIndex() == MI_RCRAIDER))
+		return;
+
+	CPlayerPed *player = FindPlayerPed();
+	if (!player || !((player->m_pMyVehicle && player->InVehicle() && onRadar) || FrontEndMenuManager.m_bMenuMapActive))
+		return;
+
+	const uint16 maxNodePoints = 500;
+	static CPathNode *resultNodes[maxNodePoints];
+	static CVector2D nodePoints[maxNodePoints];
+	static RwIm2DVertex lineVerts[maxNodePoints * 4];
+
+	auto drawPath = [&](const CVector &dest, const CRGBA &color) {
+		CVector destPosn = dest;
+		destPosn.z = CWorld::FindGroundZForCoord(destPosn.x, destPosn.y);
+
+		short nodesCount = 0;
+		ThePaths.DoPathSearch(0, FindPlayerCoors(), -1, destPosn, resultNodes, &nodesCount, maxNodePoints, nil, nil, 500.0f, -1);
+		if (nodesCount <= 0)
+			return;
+
+		int nodesCountDeleted = 0;
+		for (short i = 0; i < nodesCount; i++) {
+			CVector nodePosn = resultNodes[i]->GetPosition();
+			CVector2D tmpPoint;
+			TransformRealWorldPointToRadarSpace(tmpPoint, CVector2D(nodePosn.x, nodePosn.y));
+			if (!onRadar && !FrontEndMenuManager.m_bMenuMapActive)
+				TransformRadarPointToScreenSpace(nodePoints[i], tmpPoint);
+			else {
+				if (LimitRadarPoint(tmpPoint) >= 1.0f)
+					nodesCountDeleted++;
+
+				TransformRadarPointToScreenSpace(nodePoints[i], tmpPoint);
+			}
+		}
+
+		if (onRadar && nodesCountDeleted != 0)
+			nodesCount -= nodesCountDeleted - 1;
+
+		RwRenderStateSet(rwRENDERSTATETEXTURERASTER, NULL);
+
+		unsigned int vertIndex = 0;
+		for (short i = 0; i < (nodesCount - 1); i++) {
+			CVector2D shift[2];
+			CVector2D dir = nodePoints[i + 1] - nodePoints[i];
+			float angle = atan2(dir.y, dir.x);
+			float mp = 1.0f;
+			if (!onRadar) {
+				mp = FrontEndMenuManager.m_fMapSize - 140.0f;
+				if (mp < 140.0f)
+					mp = 140.0f;
+				else if (mp > 960.0f)
+					mp = 960.0f;
+				mp = mp / 960.0f + 0.4f;
+			}
+			shift[0].x = cosf(angle - 1.5707963f) * 4.0f * mp;
+			shift[0].y = sinf(angle - 1.5707963f) * 4.0f * mp;
+			shift[1].x = cosf(angle + 1.5707963f) * 4.0f * mp;
+			shift[1].y = sinf(angle + 1.5707963f) * 4.0f * mp;
+
+			Setup2dVertex(lineVerts[vertIndex + 0], nodePoints[i].x + shift[0].x, nodePoints[i].y + shift[0].y, color);
+			Setup2dVertex(lineVerts[vertIndex + 1], nodePoints[i + 1].x + shift[0].x, nodePoints[i + 1].y + shift[0].y, color);
+			Setup2dVertex(lineVerts[vertIndex + 2], nodePoints[i].x + shift[1].x, nodePoints[i].y + shift[1].y, color);
+			Setup2dVertex(lineVerts[vertIndex + 3], nodePoints[i + 1].x + shift[1].x, nodePoints[i + 1].y + shift[1].y, color);
+			vertIndex += 4;
+		}
+
+		RwIm2DRenderPrimitive(rwPRIMTYPETRISTRIP, lineVerts, 4 * (nodesCount - 1));
+	};
+
+	if (RouteBlipId != -1 && ms_RadarTrace[RouteBlipId].m_bInUse) {
+		CVector destPosn = ms_RadarTrace[RouteBlipId].m_vecPos;
+
+		switch (ms_RadarTrace[RouteBlipId].m_eBlipType) {
+		case BLIP_CAR: {
+			CEntity *entity = CPools::GetVehiclePool()->GetAt(ms_RadarTrace[RouteBlipId].m_nEntityHandle);
+			if (entity) destPosn = entity->GetPosition();
+			break;
+		}
+		case BLIP_CHAR: {
+			CEntity *entity = CPools::GetPedPool()->GetAt(ms_RadarTrace[RouteBlipId].m_nEntityHandle);
+			if (entity) destPosn = entity->GetPosition();
+			break;
+		}
+		case BLIP_OBJECT: {
+			CEntity *entity = CPools::GetObjectPool()->GetAt(ms_RadarTrace[RouteBlipId].m_nEntityHandle);
+			if (entity) destPosn = entity->GetPosition();
+			break;
+		}
+		default:
+			destPosn = ms_RadarTrace[RouteBlipId].m_vecPos;
+			break;
+		}
+
+		uint32 color = GetRadarTraceColour(ms_RadarTrace[RouteBlipId].m_nColor, ms_RadarTrace[RouteBlipId].m_bDim);
+		drawPath(destPosn, CRGBA((uint8)(color >> 24), (uint8)(color >> 16), (uint8)(color >> 8), 255));
+	}
+
+	if (TargetMarkerId != -1) {
+		if (Distance(FindPlayerCoors(), TargetMarkerPos) < 30.0f) {
+			CRadar::ClearBlip(TargetMarkerId);
+			TargetMarkerId = -1;
+		}
+
+		drawPath(TargetMarkerPos, WaypointColor);
+	}
+}
+
+void
+CRadar::Setup2dVertex(RwIm2DVertex &vertex, float x, float y, CRGBA color)
+{
+	RwIm2DVertexSetScreenX(&vertex, x);
+	RwIm2DVertexSetScreenY(&vertex, y);
+	RwIm2DVertexSetU(&vertex, 0.0f, 1.11111116f);
+	RwIm2DVertexSetV(&vertex, 0.0f, 1.11111116f);
+	RwIm2DVertexSetScreenZ(&vertex, RwIm2DGetNearScreenZ() + 0.0001f);
+	RwIm2DVertexSetRecipCameraZ(&vertex, 1.11111116f);
+	RwIm2DVertexSetIntRGBA(&vertex, color.r, color.g, color.b, color.a);
+}
+
+void
+CRadar::SetBlipRoute(int32 i, bool bEnable)
+{
+	if (bEnable) {
+		int index = GetActualBlipArrayIndex(i);
+		if (index == -1)
+			return;
+
+		RouteBlipId = index;
+	} else {
+		RouteBlipId = -1;
+	}
+}
+#endif

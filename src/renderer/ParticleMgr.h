@@ -133,7 +133,6 @@ public:
 	void RangeCheck(tParticleSystemData *pData) { }
 };
 
-// 88 tipos (los 83 de serie + los 5 del mod) x 0x94 bytes.
 VALIDATE_SIZE(cParticleSystemMgr, 0x32E0);
 
 extern cParticleSystemMgr mod_ParticleSystemManager;

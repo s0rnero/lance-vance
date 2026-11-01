@@ -131,6 +131,8 @@ public:
 			m_allocPtr = i;
 	}
 	T *GetSlot(int i){
+		if (i < 0 || i >= m_size)
+			return nil;
 		return GetIsFree(i) ? nil : (T*)&m_entries[i];
 	}
 	T *GetAt(int handle){
@@ -156,6 +158,21 @@ public:
 		// Please don't add unsafe assert here, because at least one func. use this to check if entity is ped or vehicle.
 		return index;
 	}
+	// T21: pertenece al pool y su hueco esta en uso. Solo hace aritmetica de
+	// punteros: no dereferencia `entry`, asi que es seguro con un puntero
+	// colgante (que es justo para lo que se usa).
+	bool Contains(const void *entry) const
+	{
+		if(m_entries == nil || m_size <= 0) return false;
+		uintptr base = (uintptr)m_entries;
+		uintptr x = (uintptr)entry;
+		uintptr bytes = (uintptr)sizeof(U)*m_size;
+		if(x < base || x >= base + bytes) return false;
+		uintptr off = x - base;
+		if(off % sizeof(U)) return false;
+		return !GetIsFree((int32)(off / sizeof(U)));
+	}
+
 	int32 GetNoOfUsedSpaces(void) const {
 		int i;
 		int n = 0;

@@ -99,6 +99,7 @@
 #include "WaterCreatures.h"
 #include "postfx.h"
 #include "custompipes.h"
+#include "Specular.h"
 #include "screendroplets.h"
 #include "VarConsole.h"
 #ifdef USE_TEXTURE_POOL
@@ -107,10 +108,7 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-// Web loading screen: the page shows progress per Initialise step
-// (see window.__loadProgress in gta_vc_browser/web/lib/index.js).
 #define WEB_LOAD_PROGRESS(step, total) EM_ASM({ if (window.__loadProgress) window.__loadProgress($0, $1); }, (step), (total))
-// Overlay DOM de carga de partida (portada + barra): el splash GL no sale en web.
 #define WEB_LOAD_OVERLAY(show, pct, label) EM_ASM({ if (window.__loadOverlay) window.__loadOverlay($0, $1, UTF8ToString($2)); }, (show), (pct), (label))
 #else
 #define WEB_LOAD_PROGRESS(step, total) ((void)0)
@@ -185,9 +183,6 @@ CGame::InitialiseOnceBeforeRW(void)
 {
 	CFileMgr::Initialise();
 #ifdef VICEEXT_FEATURES_INI
-	// Familia 11: el `features.ini` del mod se lee UNA vez, aqui, antes de que
-	// nadie consulte ninguna de sus claves (su lector lo hace en el arranque
-	// estatico del EXE; el port necesita el sistema de ficheros ya montado).
 	ViceExtFeatures::Load();
 #endif
 	CdStreamInit(MAX_CDCHANNELS);
@@ -277,12 +272,19 @@ CGame::InitialiseRenderWare(void)
 	rw::MatFX::envMapUseMatColor = true;
 	rw::MatFX::envMapFlipU = true;
 #else
+#ifdef VICEEXT_ENV_LIGHT_TINT
+	rw::MatFX::envMapApplyLight = true;
+#else
 	rw::MatFX::envMapApplyLight = false;
+#endif
 	rw::MatFX::envMapUseMatColor = false;
 	rw::MatFX::envMapFlipU = false;
 #endif
 	rw::RGBA envcol = { 64, 64, 64, 255 };
 	rw::MatFX::envMapColor = envcol;
+#ifdef VICEEXT_SPECULAR
+	ViceExtInitSpecularPower();
+#endif
 #else
 #ifdef PS2_MATFX
 	ReplaceMatFxCallback();
@@ -401,14 +403,10 @@ void CGame::InitialiseResetSteps(void)
 	s_initStep = 0;
 }
 
-// One loading section per call; returns true when finished.
-// Shared by native (loops in one frame) and web (one per tick).
 bool CGame::InitialiseStep(const char* datFile)
 {
 	(void)datFile;
 #ifdef __EMSCRIPTEN__
-	// Solo en el arranque (un puñado de líneas): el paso de carga por el que va
-	// y el heap, que es lo que se mira cuando el arranque se queda corto.
 	{ char ob[96]; snprintf(ob, sizeof(ob), "initstep %d heap %u", s_initStep, (unsigned)emscripten_get_heap_size()); ODTRACES(ob); }
 #endif
 	switch (s_initStep) {
@@ -418,14 +416,12 @@ bool CGame::InitialiseStep(const char* datFile)
 		strcpy(aDatFile, datFile);
 
 #ifdef GTA_PS2
-		// TODO: upload VU0 collision code here
 #endif
 
 		CPools::Initialise();
 
 #ifndef GTA_PS2
 #ifdef PED_CAR_DENSITY_SLIDERS
-		// Load density values from gta3.ini only if our reVC.ini have them 0.6f
 		if (CIniFile::PedNumberMultiplier == 0.6f && CIniFile::CarNumberMultiplier == 0.6f)
 #endif
 			CIniFile::LoadIniFile();
@@ -436,10 +432,8 @@ bool CGame::InitialiseStep(const char* datFile)
 		currLevel = LEVEL_BEACH;
 		currArea = AREA_MAIN_MAP;
 #ifdef __EMSCRIPTEN__
-		// F1 (fluides-v2): presupuesto de streaming también para partida
-		// nueva (6 ficheros por LoadAll durante gameplay; el mecanismo ya
-		// validado por la carga). Acota el peor frame al conducir.
-		CStreaming::gWebLoadBudget = 6;
+		CStreaming::gWebLoadBudget = 16;
+		CStreaming::gWebLoadTimeCapMs = 0.0f; // el init carga sin trocear por tiempo
 #endif
 
 		PUSH_MEMID(MEMID_TEXTURES);
@@ -453,7 +447,6 @@ bool CGame::InitialiseStep(const char* datFile)
 		CTxdStore::AddRef(gameTxdSlot);
 
 #ifdef EXTENDED_PIPELINES
-		// for generic fallback
 		CustomPipes::SetTxdFindCallback();
 #endif
 
@@ -528,8 +521,6 @@ bool CGame::InitialiseStep(const char* datFile)
 	}
 	case 4:
 	{
-		// Web: GTA_VC.DAT (IDE/IPL/TXD masivos) en su propio tick para no
-		// bloquear la pestaña 10-60 s junto al setup anterior.
 		CFileLoader::LoadLevel(aDatFile);
 		LoadingScreen("Loading the Game", "Add Particles", nil);
 		CWorld::AddParticles();
@@ -568,6 +559,15 @@ bool CGame::InitialiseStep(const char* datFile)
 		CStreaming::LoadInitialPeds();
 		CStreaming::RequestBigBuildings(LEVEL_GENERIC);
 		CStreaming::LoadAllRequestedModels(false);
+#ifdef __EMSCRIPTEN__
+		{
+			char ob[96];
+			snprintf(ob, sizeof(ob), "ODINIT7 pend=%d budget=%d cap=%.1f",
+				CStreaming::CountPendingRequests(), CStreaming::gWebLoadBudget,
+				(double)CStreaming::gWebLoadTimeCapMs);
+			ODTRACES(ob);
+		}
+#endif
 		CStreaming::RemoveIslandsNotUsed(currLevel);
 		printf("Streaming uses %zuK of its memory", CStreaming::ms_memoryUsed / 1024); // original modifier was %d
 
@@ -685,10 +685,6 @@ bool CGame::InitialiseStep(const char* datFile)
 #ifdef PS2_MENU
 		if ( !TheMemoryCard.m_bWantToLoad )
 #elif defined(__EMSCRIPTEN__)
-		// Web/carga: el save trae scripts, player y escena; no correr el
-		// script de test ni el primer tick del main (era la tormenta TXDIN
-		// duplicada: creaba player + escena por defecto que el restart
-		// destruía y reconstruía en la playa).
 		if ( !FrontEndMenuManager.m_bWantToLoad )
 #endif
 		{
@@ -726,6 +722,18 @@ bool CGame::InitialiseStep(const char* datFile)
 		break;
 	}
 	WEB_LOAD_PROGRESS(s_initStep + 1, NUM_INIT_STEPS);
+#ifdef __EMSCRIPTEN__
+	{
+		// Barra de carga de partida nueva: un tramo real por paso del init.
+		// Solo sube (el progreso de escena de LoadSceneStep ya escribe valores
+		// mas altos y los conserva) y se pinta aqui mismo, porque entre pasos
+		// el tick no vuelve a dibujar la pantalla de carga.
+		float f = (float)(s_initStep + 1) / (float)NUM_INIT_STEPS;
+		if (gWebLoadFrac < f)
+			gWebLoadFrac = f;
+		WebDrawLoadScreen(gWebLoadFrac);
+	}
+#endif
 	s_initStep++;
 	return s_initStep >= NUM_INIT_STEPS;
 }
@@ -734,22 +742,12 @@ bool CGame::Initialise(const char* datFile)
 {
 	CGame::InitialiseResetSteps();
 	while (!CGame::InitialiseStep(datFile)) { }
-#ifdef VICEEXT_MAPDATA
 #ifdef __EMSCRIPTEN__
 	{
-		// Familia 7 (mundo y datos): su mundo se sirve (`data/object.dat`,
-		// `data/occlu.ipl` y `data/maps/bryx/*`; `tools/viceext-world-check.py`
-		// vigila que sus referencias resuelvan) y esta es su prueba EN EL MOTOR:
-		// cuantas zonas de oclusion ha ingerido de los IPL servidos. El
-		// verificador las contrasta con las que lleva el `occlu.ipl` del mod
-		// (342, contadas del fichero servido), asi que un mundo que no llega se ve.
 		char t[200];
-		snprintf(t, sizeof t, "P4 kind=worlddata schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 zonas=%d",
-			(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-			CCullZones::ViceExtNumZones());
+		snprintf(t, sizeof t, "VEX mundo zonas=%d", CCullZones::NumZones());
 		ODTRACES(t);
 	}
-#endif
 #endif
 	return true;
 }
@@ -937,9 +935,6 @@ void CGame::ShutDownForRestartResetSteps(void)
 {
 	s_sdPhase = 0;
 }
-// Shutdown troceado: mismo orden y operaciones que ShutDownForRestart, un
-// tramo por tick del navegador (el shutdown monolítico congelaba el confirm).
-// 1 = terminado.
 bool CGame::ShutDownForRestartStep(void)
 {
 	int i;
@@ -995,7 +990,13 @@ void CGame::InitialiseWhenRestarting(void)
 
 	if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
 	{
+#ifdef __EMSCRIPTEN__
+		// En web la portada de partida es siempre una loadsc del mod; "splash1"
+		// es la caratula clasica de la base y no debe aparecer al empezar.
+		LoadSplash(GetLevelSplashScreen(CGame::currLevel));
+#else
 		LoadSplash("splash1");
+#endif
 #ifndef XBOX_MESSAGE_SCREEN
 		if (FrontEndMenuManager.m_bWantToLoad)
 			FrontEndMenuManager.MessageScreen("FELD_WR", true);
@@ -1062,8 +1063,6 @@ void CGame::InitialiseWhenRestarting(void)
 }
 
 #ifdef __EMSCRIPTEN__
-// Carga de partida troceada: un tramo por tick del navegador para que la
-// pestaña no muestre "esperar/salir". Mismo orden que InitialiseWhenRestarting.
 static int s_restartStep = 0;
 #ifdef __EMSCRIPTEN__
 static int s_loadSub = 0; // 0 = parse, 1 = drenado colisión, 2 = escena
@@ -1086,8 +1085,13 @@ bool CGame::InitialiseRestartStep(void)
 	{
 		CTimer::Initialise();
 		CSprite2d::SetRecipNearClip();
-		if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad)
+		if (b_FoundRecentSavedGameWantToLoad || FrontEndMenuManager.m_bWantToLoad) {
+#ifdef __EMSCRIPTEN__
+			LoadSplash(GetLevelSplashScreen(CGame::currLevel));
+#else
 			LoadSplash("splash1");
+#endif
+		}
 		b_FoundRecentSavedGameWantToLoad = false;
 		TheCamera.Init();
 		if (FrontEndMenuManager.m_bWantToLoad == true)
@@ -1096,11 +1100,8 @@ bool CGame::InitialiseRestartStep(void)
 		s_loadSub = 0;
 		if (FrontEndMenuManager.m_bWantToLoad == true) {
 			gWebLoadFrac = 0.01f;
-			// Presupuesto desde ya: todo LoadAll del flujo trocea (caso 1,
-			// cola de colisión, escena). 0 = monolítico (modo normal).
 			CStreaming::gWebLoadBudget = 10;
-			// Re-asegurar el splash (pudo desalojarse): IDB local, sin red.
-			EM_ASM({ try { OD.ensure('TXD/splash1.txd'); } catch (e) {} });
+			EM_ASM({ try { OD.ensure(UTF8ToString($0)); } catch (e) {} }, WebGetLoadSplashTxdPath());
 		}
 #endif
 		WEB_LOAD_PROGRESS(1, 4);
@@ -1116,13 +1117,7 @@ bool CGame::InitialiseRestartStep(void)
 	{
 		if (FrontEndMenuManager.m_bWantToLoad == true)
 		{
-			// NO limpiar aquí: los ticks restantes del restart troceado deben
-			// seguir entrando al if (wantToLoad). Antes se limpiaba aquí y los
-			// ticks siguientes caían al else (wipe INIT_PLAYING) pisando la
-			// partida recién cargada. Se limpia al completar (glfw) o en fallo.
 #ifdef __EMSCRIPTEN__
-			// Web: parse en un tick + escena troceada en los siguientes (un
-			// tramo por tick). Mismo orden que el tail vanilla.
 			if (s_loadSub == 0) {
 				InitRadioStationPositionList();
 				ODTRACES("webload: GenericLoad empieza");
@@ -1142,7 +1137,8 @@ bool CGame::InitialiseRestartStep(void)
 					printf("[save] webload: GenericLoad FAIL -> restart silencioso\n");
 					gWebDeferSceneLoad = false;
 					gWebDeferCollision = false;
-					CStreaming::gWebLoadBudget = 6; // F1: presupuesto de gameplay
+					CStreaming::gWebLoadBudget = 16; // F1: presupuesto de gameplay
+					CStreaming::gWebLoadTimeCapMs = 6.0f;
 					gWebLoadFrac = 0.0f;
 					TheCamera.SetFadeColour(0, 0, 0);
 					ShutDownForRestart();
@@ -1154,9 +1150,6 @@ bool CGame::InitialiseRestartStep(void)
 					CCollision::SortOutCollisionAfterLoad();
 				}
 			} else if (s_loadSub == 1) {
-				// Sub-paso 0b: colisión + resto pendiente, a rebanadas.
-				// (La purga de la escena dropearía estas peticiones, así que
-				// drenan ANTES de los pasos de escena.)
 				if (s_drainFirst) {
 					s_drainFirst = 0;
 					CColStore::LoadCollision(TheCamera.GetPosition());
@@ -1204,15 +1197,9 @@ bool CGame::InitialiseRestartStep(void)
 						ODTRACES(t);
 						printf("[save] %s\n", t);
 					}
-					// F2-load raíz: sin esto el estado quedaba en GS_FRONTEND y el
-					// siguiente tick lo secuestraba a GS_INIT_PLAYING_GAME (partida
-					// nueva pisando lo cargado).
 					gGameState = GS_PLAYING_GAME;
 					gWebLoadFrac = 1.0f;
 				} else {
-					// Escena a medias: repetir el case 2 en el próximo tick
-					// (sin esto s_restartStep avanzaría y el restart acabaría
-					// con la escena sin cargar).
 					s_restartStep--;
 				}
 			}
@@ -1258,11 +1245,8 @@ bool CGame::InitialiseRestartStep(void)
 }
 #endif
 
-// D13/D18 (sección 1, 21/09): marcas de tramo de CGame::Process. Sirvieron para
-// acotar el cuelgue de la pantalla negra y quedan como puntos de anclaje para
-// el depurador, sin coste: ya no imprimen nada (cada printf por fotograma
-// frenaba el motor y llenaba la consola).
-#define ODMARK(n) ((void)0)
+extern void OdWebMark(int);
+#define ODMARK(n) OdWebMark(100 + (n))
 
 void CGame::Process(void) 
 {
@@ -1320,9 +1304,11 @@ void CGame::Process(void)
 
 		CCollision::Update();
 		CScriptPaths::Update();
+		ODMARK(21);
 		CTrain::UpdateTrains();
 		CPlane::UpdatePlanes();
 		CHeli::UpdateHelis();
+		ODMARK(22);
 		CDarkel::Update();
 		CSkidmarks::Update();
 		CAntennas::Update();
@@ -1332,8 +1318,10 @@ void CGame::Process(void)
 #endif
 		CSetPieces::Update();
 		CEventList::Update();
+		ODMARK(23);
 		CParticle::Update();
 		gFireManager.Update();
+		ODMARK(24);
 
 		// Otherwise even on 30 fps most probably you won't see any peds around Ocean View Hospital
 #if defined FIX_BUGS && !defined SQUEEZE_PERFORMANCE
@@ -1347,6 +1335,7 @@ void CGame::Process(void)
 			CPopulation::Update(true);
 			processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 		}
+		ODMARK(25);
 		CWeapon::UpdateWeapons();
 		if (!CCutsceneMgr::IsRunning())
 			CTheCarGenerators::Process();
@@ -1357,6 +1346,7 @@ void CGame::Process(void)
 		CWaterCannons::Update();
 		CUserDisplay::Process();
 		CReplay::Update();
+		ODMARK(26);
 
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Process();

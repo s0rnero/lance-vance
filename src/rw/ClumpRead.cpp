@@ -20,6 +20,22 @@ static rpGeometryList gGeomList;
 static rwFrameList gFrameList;
 static RpClumpChunkInfo gClumpInfo;
 
+// 30/10 (30.0/T67): traza unica cuando la segunda fase del clump no cuadra.
+// Sin ella "FAILED" no dice ni donde se quedo el stream ni cuantas geometrias
+// esperaba, y no hay forma de saber si el fallo es del fichero o del salto a
+// `streamPosition`.
+static void
+OdClumpFail(const char *what, RwStream *stream)
+{
+	static int reported = 0;
+	if(reported >= 8)
+		return;
+	reported++;
+	printf("[rw] clump fase2: fallo en %s pos=%u base=%d numGeoms=%d leidas=%d atomics=%d\n",
+	       what, (uint32)STREAMPOS(stream), streamPosition,
+	       gGeomList.numGeoms, numberGeometrys, gClumpInfo.numAtomics);
+}
+
 rpGeometryList*
 GeometryListStreamRead1(RwStream *stream, rpGeometryList *geomlist)
 {
@@ -62,11 +78,15 @@ GeometryListStreamRead2(RwStream *stream, rpGeometryList *geomlist)
 	RwUInt32 version;
 
 	for(i = numberGeometrys; i < geomlist->numGeoms; i++){
-		if(!RwStreamFindChunk(stream, rwID_GEOMETRY, nil, &version))
+		if(!RwStreamFindChunk(stream, rwID_GEOMETRY, nil, &version)){
+			OdClumpFail("find-geometry", stream);
 			return nil;
+		}
 		geomlist->geometries[i] = RpGeometryStreamRead(stream);
-		if(geomlist->geometries[i] == nil)
+		if(geomlist->geometries[i] == nil){
+			OdClumpFail("read-geometry", stream);
 			return nil;
+		}
 	}
 
 	return geomlist;
@@ -179,9 +199,28 @@ RpClumpGtaStreamRead2(RwStream *stream)
 	if(clump == nil)
 		return nil;
 
+	// 30/10 (30.0/T68): el salto de la fase 2 es relativo y se calcula con la
+	// posicion actual; si no cae justo en la geometria `numberGeometrys` el
+	// `findChunk` siguiente lee un header basura y el stream acaba en EOF.
+	{
+		static int traced = 0;
+		if(traced < 10){
+			traced++;
+			printf("[rw] fase2 skip: base=%d pos=%u numGeoms=%d\n",
+			       streamPosition, (uint32)STREAMPOS(stream), gGeomList.numGeoms);
+		}
+	}
 	RwStreamSkip(stream, streamPosition - STREAMPOS(stream));
+	{
+		static int traced = 0;
+		if(traced < 10){
+			traced++;
+			printf("[rw] fase2 pos tras skip=%u\n", (uint32)STREAMPOS(stream));
+		}
+	}
 
 	if(GeometryListStreamRead2(stream, &gGeomList) == nil){
+		OdClumpFail("geomlist", stream);
 		GeometryListDeinitialize(&gGeomList);
 		rwFrameListDeinitialize(&gFrameList);
 		RpClumpDestroy(clump);
@@ -192,6 +231,7 @@ RpClumpGtaStreamRead2(RwStream *stream)
 
 	for(i = 0; i < gClumpInfo.numAtomics; i++){
 		if(!RwStreamFindChunk(stream, rwID_ATOMIC, nil, &version)){
+			OdClumpFail("find-atomic", stream);
 			GeometryListDeinitialize(&gGeomList);
 			rwFrameListDeinitialize(&gFrameList);
 			RpClumpDestroy(clump);
@@ -200,6 +240,7 @@ RpClumpGtaStreamRead2(RwStream *stream)
 
 		atomic = ClumpAtomicStreamRead(stream, &gFrameList, &gGeomList);
 		if(atomic == nil){
+			OdClumpFail("read-atomic", stream);
 			GeometryListDeinitialize(&gGeomList);
 			rwFrameListDeinitialize(&gFrameList);
 			RpClumpDestroy(clump);

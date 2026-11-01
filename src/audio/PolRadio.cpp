@@ -135,16 +135,18 @@ cAudioManager::ServicePoliceRadio()
 			wantedLevel = playerPed->m_pWanted->GetWantedLevel();
 			if (!crimeReport) {
 				if (wantedLevel != 0) {
-					if (nLastSeen != 0)
+					if (!FindPlayerPed()->m_pWanted->IsPlayerHides())
+						if (nLastSeen != 0)
 #ifdef FIX_BUGS
-						nLastSeen -= CTimer::GetLogicalFramesPassed();
+							nLastSeen -= CTimer::GetLogicalFramesPassed();
 #else
-						nLastSeen--;
+							nLastSeen--;
 #endif
-					else {
-						nLastSeen = m_anRandomTable[1] % 1000 + 2000;
-						SetupSuspectLastSeenReport();
-					}
+						else {
+							nLastSeen = m_anRandomTable[1] % 1000 + 500;
+							FindPlayerPed()->m_pWanted->m_bNextReportIsLastSeen ? PlaySuspectLastSeen(FindPlayerCoors().x, FindPlayerCoors().y, FindPlayerCoors().z) : SetupSuspectLastSeenReport();
+							FindPlayerPed()->m_pWanted->m_bNextReportIsLastSeen = !FindPlayerPed()->m_pWanted->m_bNextReportIsLastSeen;
+						}
 				}
 			}
 		}
@@ -160,6 +162,9 @@ cAudioManager::ServicePoliceRadioChannel(uint8 wantedLevel)
 	uint32 freq;
 
 	static int cWait = 0;
+	static uint32 nStreamStopped = 0;
+	static uint32 nStreamStartWait = 0;
+	static bool8 bMissionAudioStartRequested = FALSE;
 	static bool8 bChannelOpen = FALSE;
 	static uint8 bMissionAudioPhysicalPlayingStatus = PLAY_STATUS_STOPPED;
 	static uint32 PoliceChannelFreq = 22050;
@@ -191,22 +196,42 @@ cAudioManager::ServicePoliceRadioChannel(uint8 wantedLevel)
 				if (g_nMissionAudioPlayingStatus == PLAY_STATUS_PLAYING && bMissionAudioPhysicalPlayingStatus == PLAY_STATUS_STOPPED &&
 					SampleManager.IsStreamPlaying(1)) {
 					bMissionAudioPhysicalPlayingStatus = PLAY_STATUS_PLAYING;
+					bMissionAudioStartRequested = FALSE;
+					nStreamStartWait = 0;
 				}
 				if (bMissionAudioPhysicalPlayingStatus == PLAY_STATUS_PLAYING) {
 					if (SampleManager.IsStreamPlaying(1)) {
+						nStreamStopped = 0;
 						DoPoliceRadioCrackle();
 					} else {
+						nStreamStopped += CTimer::GetLogicalFramesPassed();
+						if (nStreamStopped < 15)
+							return;
 						bMissionAudioPhysicalPlayingStatus = PLAY_STATUS_FINISHED;
 						g_nMissionAudioPlayingStatus = PLAY_STATUS_FINISHED;
 						g_nMissionAudioSfx = NO_SAMPLE;
+						bMissionAudioStartRequested = FALSE;
 						cWait = 30;
 					}
 					return;
 				}
-			} else if (!SampleManager.GetChannelUsedFlag(CHANNEL_POLICE_RADIO)) {
+				nStreamStartWait += CTimer::GetLogicalFramesPassed();
+				if (nStreamStartWait < 45)
+					return;
+				bMissionAudioPhysicalPlayingStatus = PLAY_STATUS_FINISHED;
+				g_nMissionAudioPlayingStatus = PLAY_STATUS_FINISHED;
+				g_nMissionAudioSfx = NO_SAMPLE;
+				bMissionAudioStartRequested = FALSE;
+				nStreamStartWait = 0;
+				cWait = 30;
+				return;
+			} else if (!SampleManager.GetChannelUsedFlag(CHANNEL_POLICE_RADIO) && !bMissionAudioStartRequested) {
 				SampleManager.PreloadStreamedFile(g_nMissionAudioSfx, 1);
 				SampleManager.SetStreamedVolumeAndPan(MAX_VOLUME, 63, TRUE, 1);
 				SampleManager.StartPreloadedStreamedFile(1);
+				bMissionAudioStartRequested = TRUE;
+				nStreamStopped = 0;
+				nStreamStartWait = 0;
 				g_nMissionAudioPlayingStatus = PLAY_STATUS_PLAYING;
 				bMissionAudioPhysicalPlayingStatus = PLAY_STATUS_STOPPED;
 				return;
@@ -336,6 +361,7 @@ cAudioManager::SetupCrimeReport()
 				m_sPoliceRadioQueue.Add(sampleIndex);
 				m_sPoliceRadioQueue.Add(SFX_POLICE_RADIO_MESSAGE_NOISE_1);
 				m_sPoliceRadioQueue.Add(NO_SAMPLE);
+				FindPlayerPed()->m_pWanted->m_bNextReportIsLastSeen = false;
 				break;
 			}
 		}
@@ -695,6 +721,8 @@ cAudioManager::PlaySuspectLastSeen(float x, float y, float z)
 	CVector vec = CVector(x, y, z);
 
 	if (!m_bIsInitialised) return;
+
+	if (FindPlayerPed()->m_pWanted->IsPlayerHides()) return;
 
 	if (MusicManager.m_nMusicMode != MUSICMODE_CUTSCENE && POLICE_RADIO_QUEUE_MAX_SAMPLES - m_sPoliceRadioQueue.m_nSamplesInQueue > 9) {
 		audioZone = CTheZones::FindAudioZone(&vec);

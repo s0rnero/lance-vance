@@ -36,7 +36,7 @@ float FrameInitTime;
 void tbInit()
 {
 	TimerBar.count = 0;
-	uint32 i = CTimer::GetFrameCounter() & 0x7F;
+	uint32 i = CTimer::GetLogicalFrameCounter() & 0x7F;
 	if (i == 0) {
 		do
 			MaxTimes[i++] = 0.0f;

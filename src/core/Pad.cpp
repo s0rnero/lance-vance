@@ -324,9 +324,6 @@ void WeaponCheat3()
 #endif
 }
 
-// Vice Extended: cuarta tanda de armas (el mod la documenta como
-// CRAZYTOOLS). Es además la única forma práctica de probar las armas nuevas
-// sin su main.scm, que aquí no corre.
 void WeaponCheat4()
 {
 	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
@@ -339,6 +336,10 @@ void WeaponCheat4()
 	CStreaming::RequestModel(MI_M16, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_STEYR, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::RequestModel(MI_GR_LAUNCH, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_MACHETE, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_TEARGAS, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_M60, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::RequestModel(MI_CAMERA, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::LoadAllRequestedModels(false);
 
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_BERETTA, 100);
@@ -349,6 +350,10 @@ void WeaponCheat4()
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_M16, 150);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_STEYR, 150);
 	FindPlayerPed()->GiveWeapon(WEAPONTYPE_GRENADE_LAUNCHER, 30);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_MACHETE, 1);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_TEARGAS, 5);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_M60, 100);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_CAMERA, 50);
 
 	CStreaming::SetModelIsDeletable(MI_BERETTA);
 	CStreaming::SetModelIsDeletable(MI_DEAGLE);
@@ -358,6 +363,10 @@ void WeaponCheat4()
 	CStreaming::SetModelIsDeletable(MI_M16);
 	CStreaming::SetModelIsDeletable(MI_STEYR);
 	CStreaming::SetModelIsDeletable(MI_GR_LAUNCH);
+	CStreaming::SetModelIsDeletable(MI_MACHETE);
+	CStreaming::SetModelIsDeletable(MI_TEARGAS);
+	CStreaming::SetModelIsDeletable(MI_M60);
+	CStreaming::SetModelIsDeletable(MI_CAMERA);
 
 #ifdef MOBILE_IMPROVEMENTS
 	if (FindPlayerVehicle()) {
@@ -695,11 +704,14 @@ void TeargasCheat()
 }
 void NeverWantedCheat()
 {
-	CWanted *wanted = FindPlayerPed()->m_pWanted;
-	wanted->m_bIgnoredByCops = !wanted->m_bIgnoredByCops;
-	if (wanted->m_bIgnoredByCops)
-		wanted->CheatWantedLevel(0);
-	CHud::SetHelpMessage(TheText.Get(wanted->m_bIgnoredByCops ? "CHEAT1" : "CHEATOF"), true);
+	CPlayerPed *player = FindPlayerPed();
+	player->bNoWantedCheat = !player->bNoWantedCheat;
+	if (player->bNoWantedCheat) {
+		player->m_pWanted->CheatWantedLevel(0);
+		player->m_pWanted->ResetPolicePursuit();
+	}
+	CHud::SetHelpMessage(TheText.Get(player->bNoWantedCheat ? "CHEAT1" : "CHEATOF"), true);
+	CPad::bHasPlayerCheated = true;
 }
 void InvincibleCheat()
 {
@@ -712,9 +724,56 @@ void PhotographerCheat()
 	CHud::SetHelpMessage(TheText.Get("CHEAT2"), true);
 	CStreaming::RequestModel(MI_CAMERA, STREAMFLAGS_DONT_REMOVE);
 	CStreaming::LoadAllRequestedModels(false);
-	FindPlayerPed()->GiveWeapon(WEAPONTYPE_CAMERA, 1);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_CAMERA, 100);
 	CStreaming::SetModelIsDeletable(MI_CAMERA);
 }
+#ifdef VICEEXT_CHEAT_EFFECTS
+void RCRocketCheat()
+{
+	CPed::bViceExtRcRocket = !CPed::bViceExtRcRocket;
+	CHud::SetHelpMessage(TheText.Get(CPed::bViceExtRcRocket ? "CHEAT1" : "CHEATOF"), true);
+	CPad::bHasPlayerCheated = true;
+}
+void BigHeadsCheat()
+{
+	CPed::bViceExtBigHeads = !CPed::bViceExtBigHeads;
+	CHud::SetHelpMessage(TheText.Get(CPed::bViceExtBigHeads ? "CHEAT1" : "CHEATOF"), true);
+	CPad::bHasPlayerCheated = true;
+}
+void AirWaysCheat()
+{
+	wchar *string;
+	if (CVehicle::bAirWaysCheat) {
+		string = TheText.Get("CHEATOF");
+		for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--) {
+			CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
+			if (!vehicle)
+				continue;
+			vehicle->bAffectedByGravity = true;
+			vehicle->m_vecMoveSpeed.z += 0.01f;
+		}
+	} else {
+		string = TheText.Get("CHEAT1");
+	}
+	CHud::SetHelpMessage(string, true);
+	CVehicle::bAirWaysCheat = !CVehicle::bAirWaysCheat;
+	CPad::bHasPlayerCheated = true;
+}
+void Cowboy69Cheat()
+{
+	CStreaming::RequestModel(MI_PYTHON, STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	FindPlayerPed()->GiveWeapon(WEAPONTYPE_PYTHON, 69);
+	CStreaming::SetModelIsDeletable(MI_PYTHON);
+	FindPlayerPed()->SetCurrentWeapon(WEAPONTYPE_PYTHON);
+
+	FindPlayerPed()->DeleteRwObject();
+	CStreaming::RequestModel(MI_WMYPI, STREAMFLAGS_DEPENDENCY | STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+	FindPlayerPed()->m_modelIndex = -1;
+	FindPlayerPed()->SetModelIndex(MI_WMYPI);
+}
+#endif
 #endif
 
 //////////////////////////////////////////////////////////////////////////
@@ -1059,7 +1118,13 @@ void CPad::UpdateMouse()
 		}
 	}
 #else
-	if ( IsForegroundApp() && PSGLOBAL(cursorIsInWindow) )
+	// Con el puntero capturado el navegador deja de mandar mouseenter/leave y
+	// `cursorIsInWindow` puede quedarse en FALSE: el estado del raton se
+	// congelaba con el ultimo delta y `mouseChangesInput` quedaba en 1 para
+	// siempre (el autocentrado no volvia a correr). GLFW_CURSOR_DISABLED es la
+	// senal de captura. Si aun asi no se actualiza, se limpia el delta viejo.
+	bool odPointerLocked = glfwGetInputMode(PSGLOBAL(window), GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+	if ( IsForegroundApp() && (PSGLOBAL(cursorIsInWindow) || odPointerLocked) )
 	{
 		double xpos = 1.0f, ypos;
 		glfwGetCursorPos(PSGLOBAL(window), &xpos, &ypos);
@@ -1098,6 +1163,11 @@ void CPad::UpdateMouse()
 
 		OldMouseControllerState = NewMouseControllerState;
 		NewMouseControllerState = PCTempMouseControllerState;
+	}
+	else
+	{
+		OldMouseControllerState = NewMouseControllerState;
+		NewMouseControllerState.Clear();
 	}
 #endif
 }
@@ -1779,8 +1849,13 @@ void CPad::AddToPCCheatString(char c)
 #define VICEEXT_CHEATCMP(rev, len) (strncmp(CPad::KeyBoardCheatString, rev, len) == 0)
 	else if (VICEEXT_CHEATCMP("96YOBWOC", 8)) {
 		KeyBoardCheatString[0] = ' ';
+#ifdef VICEEXT_CHEAT_EFFECTS
+		Cowboy69Cheat();
+		ViceExtCheatTrace("COWBOY69", "python_69");
+#else
 		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 		ViceExtCheatTrace("COWBOY69", "sin_efecto");
+#endif
 	}
 	else if (VICEEXT_CHEATCMP("ELBICNIVNIMAI", 14)) {
 		KeyBoardCheatString[0] = ' ';
@@ -1789,8 +1864,13 @@ void CPad::AddToPCCheatString(char c)
 	}
 	else if (VICEEXT_CHEATCMP("SYAWRIA", 7)) {
 		KeyBoardCheatString[0] = ' ';
+#ifdef VICEEXT_CHEAT_EFFECTS
+		AirWaysCheat();
+		ViceExtCheatTrace("AIRWAYS", CVehicle::bAirWaysCheat ? "volar_1" : "volar_0");
+#else
 		ChittyChittyBangBangCheat();
 		ViceExtCheatTrace("AIRWAYS", CVehicle::bAllDodosCheat ? "volar_1" : "volar_0");
+#endif
 	}
 	else if (VICEEXT_CHEATCMP("EKOMSGIB", 8)) {
 		KeyBoardCheatString[0] = ' ';
@@ -1800,7 +1880,7 @@ void CPad::AddToPCCheatString(char c)
 	else if (VICEEXT_CHEATCMP("IMKAZEA", 7)) {
 		KeyBoardCheatString[0] = ' ';
 		NeverWantedCheat();
-		ViceExtCheatTrace("AEZAKMI", FindPlayerPed()->m_pWanted->m_bIgnoredByCops ? "never_wanted_1" : "never_wanted_0");
+		ViceExtCheatTrace("AEZAKMI", FindPlayerPed()->bNoWantedCheat ? "never_wanted_1" : "never_wanted_0");
 	}
 	else if (VICEEXT_CHEATCMP("REHPARGOTOHP", 12)) {
 		KeyBoardCheatString[0] = ' ';
@@ -1809,21 +1889,21 @@ void CPad::AddToPCCheatString(char c)
 	}
 	else if (VICEEXT_CHEATCMP("TEKCORCR", 8)) {
 		KeyBoardCheatString[0] = ' ';
-		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 #ifdef VICEEXT_CHEAT_EFFECTS
-		CPed::bViceExtRcRocket = !CPed::bViceExtRcRocket;
+		RCRocketCheat();
 		ViceExtCheatTrace("RCROCKET", CPed::bViceExtRcRocket ? "rc_rocket_1" : "rc_rocket_0");
 #else
+		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 		ViceExtCheatTrace("RCROCKET", "sin_efecto");
 #endif
 	}
 	else if (VICEEXT_CHEATCMP("SDAEHGIB", 8)) {
 		KeyBoardCheatString[0] = ' ';
-		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 #ifdef VICEEXT_CHEAT_EFFECTS
-		CPed::bViceExtBigHeads = !CPed::bViceExtBigHeads;
+		BigHeadsCheat();
 		ViceExtCheatTrace("BIGHEADS", CPed::bViceExtBigHeads ? "big_heads_1" : "big_heads_0");
 #else
+		CHud::SetHelpMessage(TheText.Get("CHEAT1"), true);
 		ViceExtCheatTrace("BIGHEADS", "sin_efecto");
 #endif
 	}
@@ -4479,6 +4559,9 @@ void CPad::ResetCheats(void)
 	CVehicle::bCheat5 = false;
 	CVehicle::bAllTaxisHaveNitro = false;
 	CVehicle::bHoverCheat = false;
+#ifdef VICEEXT_CHEAT_EFFECTS
+	CVehicle::bAirWaysCheat = false;
+#endif
 	CVehicle::bCheat8 = false;
 	CVehicle::bCheat9 = false;
 	CVehicle::bCheat10 = false;
@@ -4494,6 +4577,13 @@ void CPad::ResetCheats(void)
 	CPed::bNastyLimbsCheat = false;
 	CPed::bFannyMagnetCheat = false;
 	CPed::bPedCheat3 = false;
+#ifdef VICEEXT_EXTRA_CHEATS
+	CPlayerPed::bNoWantedCheat = false; // 11.05 AEZAKMI
+#endif
+#ifdef VICEEXT_CHEAT_EFFECTS
+	CPed::bViceExtRcRocket = false;
+	CPed::bViceExtBigHeads = false;
+#endif
 
 }
 

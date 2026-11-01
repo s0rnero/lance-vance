@@ -228,6 +228,11 @@ AnimAssocDesc aStdAnimDescs[] = {
 	{ ANIM_STD_BOAT_DRIVE_LEFT_DB, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL | ASSOC_DRIVING },
 	{ ANIM_STD_BOAT_DRIVE_RIGHT_DB, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL | ASSOC_DRIVING },
 #endif
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	{ ANIM_STD_CAR_DIE_HORN_DS, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+	{ ANIM_STD_CAR_DIE_DS, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+	{ ANIM_STD_CAR_DIE_PS, ASSOC_DELETEFADEDOUT | ASSOC_PARTIAL },
+#endif
 };
 AnimAssocDesc aVanAnimDescs[] = {
 	{ ANIM_STD_VAN_OPEN_DOOR_REAR_LHS, ASSOC_FADEOUTWHENDONE | ASSOC_PARTIAL },
@@ -544,6 +549,11 @@ char const* aStdAnimations[] = {
 	"DRIVE_BOAT_DB",
 	"DRIVE_BOAT_L_DB",
 	"DRIVE_BOAT_R_DB",
+#endif
+#ifdef VICEEXT_PED_ANIMS_IN_CAR
+	"CAR_die_horn_ds",
+	"CAR_die_ds",
+	"CAR_die_ps",
 #endif
 };
 char const* aVanAnimations[] = {
@@ -1052,36 +1062,12 @@ char const* aChainsawStrafeRightAnimations[] = {
 };
 #endif
 
-// Sección 3 (20/09): grupos para los clips que el `ped.ifp` del mod ya trae y
-// el port no usaba. Se declaran sueltos a propósito: los grupos de arriba
-// emparejan `animNames[j]` con `animDescs[j]` (arrays paralelos), así que
-// añadir un clip a uno de ellos obligaría a tocar también su desc con el mismo
-// índice. Con un grupo propio no se rompe nada de lo existente.
 char const* aSwimAnimations[] = {
 	"swim_tread",
 	"swim_crawl",
 	"swim_breast",
 	"swim_jumpout",
 };
-// R17 (22/09, 13ª partida): los clips de MOVIMIENTO del mod van con las claves
-// de `WALK`/`RUN`, no con `ASSOC_PARTIAL`.
-//
-// Qué pasaba: en III/VC el ped NO avanza por `m_fMoveSpeed`; avanza por la
-// TRASLACIÓN DE LA RAÍZ de la animación de movimiento. El camino entero es:
-//   FrameUpdate.cpp (`VELOCITY_EXTRACTION` en el hueso raíz) ->
-//   `m_vecAnimMoveDelta` -> `CPed::CalculateNewVelocity` (`m_moved`) ->
-//   `CPed::UpdatePosition` (sólo con `bIsStanding`) -> `m_vecMoveSpeed` ->
-//   `CPhysical::ApplyMoveSpeed` (translate).
-// Con `ASSOC_PARTIAL` el motor (a) NO extraía esa traslación (sólo mira los
-// clips con `ASSOC_HAS_TRANSLATION`) y (b) la APLICABA A LA POSE (`mat->pos =
-// pos - trans` no se ejecuta), o sea el cuerpo del ped se iba ~2,6 m delante de
-// su origen en cada ciclo y volvía de golpe al reiniciar: el jugador ve al
-// personaje "sin desplazamiento" mientras la cámara, que mira al ORIGEN del ped,
-// se queda quieta. Medido en el `ped.ifp` servido con
-// `tools/ifp_inspect.py` (raíz, metros por ciclo / duración):
-//   GunCrouchFwd    2,740 m / 0,731 s = 3,75 m/s   GunCrouchBwd -2,740 m / 0,731 s
-//   swim_breast     3,011 m / 1,300 s = 2,32 m/s   swim_crawl      2,505 m / 0,900 s = 2,78 m/s
-//   swim_tread      0 m (en el sitio)              walk (de serie) 1,13 m/s
 AnimAssocDesc aSwimAnimDescs[] = {
 	{ ANIM_STD_SWIM_TREAD, ASSOC_REPEAT },
 	{ ANIM_STD_SWIM_CRAWL, ASSOC_REPEAT | ASSOC_MOVEMENT | ASSOC_HAS_TRANSLATION },
@@ -1338,6 +1324,12 @@ CAnimManager::GetAnimAssociation(AssocGroupId groupId, AnimationId animId)
 }
 
 CAnimBlendAssociation*
+CAnimManager::FindAnimAssociation(AssocGroupId groupId, AnimationId animId)
+{
+	return ms_aAnimAssocGroups[groupId].FindAnimation(animId);
+}
+
+CAnimBlendAssociation*
 CAnimManager::GetAnimAssociation(AssocGroupId groupId, const char *name)
 {
 	return ms_aAnimAssocGroups[groupId].GetAnimation(name);
@@ -1389,6 +1381,8 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 	int removePrevAnim = 0;
 	CAnimBlendClumpData *clumpData = *RPANIMBLENDCLUMPDATA(clump);
 	CAnimBlendAssociation *anim = GetAnimAssociation(groupId, animId);
+	if(anim == nil)
+		return nil;
 	bool isMovement = anim->IsMovement();
 	bool isPartial = anim->IsPartial();
 	CAnimBlendLink *link;
@@ -1417,7 +1411,7 @@ CAnimManager::BlendAnimation(RpClump *clump, AssocGroupId groupId, AnimationId a
 		found->blendDelta = (1.0f - found->blendAmount)*delta;
 		if(!found->IsRunning() && found->currentTime == found->hierarchy->totalLength)
 			found->Start(0.0f);
-	}else{
+	} else {
 		found = AddAnimationAndSync(clump, movementAnim, groupId, animId);
 		if(!removePrevAnim && !isPartial){
 			found->blendAmount = 1.0f;
@@ -1443,17 +1437,36 @@ CAnimManager::CreateAnimAssocGroups(void)
 {
 	int i, j;
 
-	// D11/D18 (seccion 1, 21/09): el rastro por grupo (uno por cada una de las
-	// NUM_ANIM_ASSOC_GROUPS definiciones, en cada carga) se retiro al localizar
-	// el cuelgue real. Se queda el aviso de clip sin jerarquia, que es el dato
-	// que hace falta para asociar las animaciones que trae el ped.ifp del mod.
 	for(i = 0; i < NUM_ANIM_ASSOC_GROUPS; i++){
 		CAnimBlock *block = GetAnimationBlock(ms_aAnimAssocDefinitions[i].blockName);
 		if(block == nil || !block->isLoaded || ms_aAnimAssocGroups[i].assocList)
 			continue;
 
-		CBaseModelInfo *mi = CModelInfo::GetModelInfo(ms_aAnimAssocDefinitions[i].modelIndex);
-		RpClump *clump = (RpClump*)mi->CreateInstance();
+		int32 modelId = ms_aAnimAssocDefinitions[i].modelIndex;
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(modelId);
+		RpClump *clump = mi ? (RpClump*)mi->CreateInstance() : nil;
+#ifdef __EMSCRIPTEN__
+		if(clump == nil){
+			// El clump sale del modelo del grupo, que tiene que estar en memoria.
+			// Si el streaming se quedó a medias, CreateInstance devuelve nil y un
+			// clump nulo revienta en IsClumpSkinned; se fuerza la carga aquí.
+			int odSaveBudget = CStreaming::gWebLoadBudget;
+			float odSaveCap = CStreaming::gWebLoadTimeCapMs;
+			CStreaming::gWebLoadBudget = 0;
+			CStreaming::gWebLoadTimeCapMs = 0.0f;
+			CStreaming::RequestModel(modelId, STREAMFLAGS_DONT_REMOVE);
+			CStreaming::LoadAllRequestedModels(false);
+			CStreaming::gWebLoadBudget = odSaveBudget;
+			CStreaming::gWebLoadTimeCapMs = odSaveCap;
+			clump = mi ? (RpClump*)mi->CreateInstance() : nil;
+		}
+		if(clump == nil){
+			char ogn[96];
+			snprintf(ogn, sizeof ogn, "ANIMNOGROUP grupo=%d modelo=%d", i, modelId);
+			ODTRACES(ogn);
+			continue;
+		}
+#endif
 		RpAnimBlendClumpInit(clump);
 		CAnimBlendAssocGroup *group = &ms_aAnimAssocGroups[i];
 		const AnimAssocDefinition *def = &ms_aAnimAssocDefinitions[i];
@@ -1475,9 +1488,6 @@ CAnimManager::LoadAnimFile(const char *filename)
 	RwStream *stream;
 #ifdef __EMSCRIPTEN__
 	printf("[od] ifp-file %s\n", filename);
-	// D5 (sección 1): cuántos clips trae REALMENTE el fichero que se sirve. El
-	// `ped.ifp` del mod tiene 272 (el de serie 234), así que este número es la
-	// prueba de que se está cargando el suyo y no el original.
 	int32 odAnimsAntes = ms_numAnimations;
 #endif
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
@@ -1491,12 +1501,32 @@ CAnimManager::LoadAnimFile(const char *filename)
 		ODTRACES(t);
 	}
 #endif
+}// 30/10 (30.0/T67): los tamanos de bloque de un IFP vienen del propio fichero y
+// se leian en `buf[256]` sin comprobarlos. Con el stream desalineado (img
+// cortada, entrada desplazada) `info.size` era basura, el read desbordaba la
+// pila y el juego moria frames despues en RW (`Frame::cloneAndLink`) al clonar
+// un clump, sin relacion aparente con la causa. Se acota cada lectura al buffer
+// y se descarta el bloque entero cuando no cuadra, en vez de seguir leyendo.
+static bool
+IfpReadBlock(RwStream *stream, char *buf, uint32 bufsz, const char *what, uint32 size)
+{
+	if(size < 4 || size > bufsz - 1 || RwStreamRead(stream, buf, size) != size){
+		static int reported = 0;
+		if(reported < 6){
+			reported++;
+			printf("[od] IFP ilegible: %s size=%u pos=%u; se descarta el bloque\n",
+			       what, size, (uint32)STREAMPOS(stream));
+		}
+		return false;
+	}
+	buf[size] = '\0';
+	return true;
 }
 
 void
 CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedAnims)[32])
 {
-	#define ROUNDSIZE(x) if((x) & 3) (x) += 4 - ((x)&3)
+#define ROUNDSIZE(x) if((x) & 3) (x) += 4 - ((x)&3)
 	struct IfpHeader {
 		char ident[4];
 		uint32 size;
@@ -1505,13 +1535,23 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	char buf[256];
 	int j, k, l;
 	float *fbuf = (float*)buf;
+	bool corrupt = false;
 
 	// block name
 	RwStreamRead(stream, &anpk, sizeof(IfpHeader));
+	if(strncmp(anpk.ident, "ANPK", 4) != 0){
+		static int reported = 0;
+		if(reported < 6){
+			reported++;
+			printf("[od] IFP sin cabecera ANPK (pos=%u); se descarta\n", (uint32)STREAMPOS(stream));
+		}
+		return;
+	}
 	ROUNDSIZE(anpk.size);
 	RwStreamRead(stream, &info, sizeof(IfpHeader));
 	ROUNDSIZE(info.size);
-	RwStreamRead(stream, buf, info.size);
+	if(!IfpReadBlock(stream, buf, sizeof buf, "info", info.size))
+		return;
 	CAnimBlock *animBlock = GetAnimationBlock(buf+4);
 	if(animBlock){
 		if(animBlock->numAnims == 0){
@@ -1520,10 +1560,6 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		}
 	}else{
 #ifdef __EMSCRIPTEN__
-		// Web on-demand: tabla pequeña (35 bloques / 450 anims) y sin
-		// comprobación original. Se comprueba ANTES de consumir hueco: si
-		// no cabe se salta limpio (sin solapes, sin escrituras fuera, sin
-		// reintentos eternos que mataban la pestaña).
 		if (ms_numAnimBlocks >= NUMANIMBLOCKS) {
 			static bool odWarnedBlocks = false;
 			if (!odWarnedBlocks) { odWarnedBlocks = true; printf("[od] tabla bloques anim llena, salto %s\n", buf+4); }
@@ -1548,14 +1584,17 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 	animBlock->isLoaded = true;
 
 	int animIndex = animBlock->firstIndex;
-	for(j = 0; j < animBlock->numAnims; j++){
+	for(j = 0; j < animBlock->numAnims && !corrupt; j++){
 		assert(animIndex < ARRAY_SIZE(ms_aAnimations));
 		CAnimBlendHierarchy *hier = &ms_aAnimations[animIndex++];
 
 		// animation name
 		RwStreamRead(stream, &name, sizeof(IfpHeader));
 		ROUNDSIZE(name.size);
-		RwStreamRead(stream, buf, name.size);
+		if(!IfpReadBlock(stream, buf, sizeof buf, "name", name.size)){
+			corrupt = true;
+			break;
+		}
 		hier->SetName(buf);
 
 #ifdef ANIM_COMPRESSION
@@ -1580,19 +1619,35 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 		ROUNDSIZE(dgan.size);
 		RwStreamRead(stream, (char*)&info, sizeof(IfpHeader));
 		ROUNDSIZE(info.size);
-		RwStreamRead(stream, buf, info.size);
+		if(!IfpReadBlock(stream, buf, sizeof buf, "dgan-info", info.size)){
+			corrupt = true;
+			break;
+		}
+		if(*(int*)buf < 0 || *(int*)buf > 64){
+			printf("[od] IFP con numSequences=%d; se descarta el bloque\n", *(int*)buf);
+			corrupt = true;
+			break;
+		}
 		hier->numSequences = *(int*)buf;
 		hier->sequences = new CAnimBlendSequence[hier->numSequences];
 
 		CAnimBlendSequence *seq = hier->sequences;
-		for(k = 0; k < hier->numSequences; k++, seq++){
+		for(k = 0; k < hier->numSequences && !corrupt; k++, seq++){
 			// Each node has a name and key frames
 			RwStreamRead(stream, &cpan, sizeof(IfpHeader));
 			ROUNDSIZE(dgan.size);
 			RwStreamRead(stream, &anim, sizeof(IfpHeader));
 			ROUNDSIZE(anim.size);
-			RwStreamRead(stream, buf, anim.size);
+			if(anim.size < 32 || !IfpReadBlock(stream, buf, sizeof buf, "node", anim.size)){
+				corrupt = true;
+				break;
+			}
 			int numFrames = *(int*)(buf+28);
+			if(numFrames < 0 || numFrames > 10000){
+				printf("[od] IFP con numFrames=%d; se descarta el bloque\n", numFrames);
+				corrupt = true;
+				break;
+			}
 			seq->SetName(buf);
 			if(anim.size == 44)
 				seq->SetBoneTag(*(int*)(buf+40));
@@ -1674,6 +1729,14 @@ CAnimManager::LoadAnimFile(RwStream *stream, bool compress, char (*uncompressedA
 			hier->CalcTotalTime();
 		}
 	}
+	if(corrupt){
+		// Bloque incompleto: se saca de la tabla para no dejar jerarquias a
+		// medias que el juego usaria despues.
+		animBlock->isLoaded = false;
+		if(ms_numAnimBlocks > 0 && &ms_aAnimBlocks[ms_numAnimBlocks-1] == animBlock)
+			ms_numAnimBlocks--;
+		return;
+	}
 	if(animIndex > ms_numAnimations)
 		ms_numAnimations = animIndex;
 }
@@ -1683,9 +1746,6 @@ CAnimManager::RemoveLastAnimFile(void)
 {
 	int i;
 #ifdef __EMSCRIPTEN__
-	// Web: si la cima no es un rango válido (p. ej. otros bloques se
-	// registraron después), no tocar nada: soltar el contador y listo.
-	// Antes esto liberaba jerarquías ajenas (doble free = muerte).
 	if (ms_numAnimBlocks <= 0) return;
 	{
 		int bi = ms_numAnimBlocks - 1;

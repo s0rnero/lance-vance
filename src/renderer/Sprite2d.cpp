@@ -4,6 +4,7 @@
 #include "Draw.h"
 #include "Camera.h"
 #include "Sprite2d.h"
+#include "SilentPatchOptions.h"
 #include "Font.h"
 #include "RenderBuffer.h"
 
@@ -19,6 +20,18 @@ CSprite2d::SetScriptSpriteScale(bool on)
 {
 	s_odScaleScriptSprites = on;
 }
+
+#ifdef VICEEXT_SP_SCRIPT_SPRITE_BILINEAR
+static void SetScriptSpriteTextureFilter(void)
+{
+	if(s_odScaleScriptSprites && g_bSPOptionScriptSpriteBilinear)
+		RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
+}
+#else
+static void SetScriptSpriteTextureFilter(void)
+{
+}
+#endif
 
 void
 CSprite2d::SetRecipNearClip(void)
@@ -81,6 +94,7 @@ CSprite2d::SetRenderState(void)
 void
 CSprite2d::Draw(float x, float y, float w, float h, const CRGBA &col)
 {
+	SetScriptSpriteTextureFilter();
 	SetVertices(CRect(x, y, x + w, y + h), col, col, col, col);
 	SetRenderState();
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
@@ -89,6 +103,7 @@ CSprite2d::Draw(float x, float y, float w, float h, const CRGBA &col)
 void
 CSprite2d::Draw(const CRect &rect, const CRGBA &col)
 {
+	SetScriptSpriteTextureFilter();
 	CRect r(rect.left, rect.top, rect.right, rect.bottom);
 	if(s_odScaleScriptSprites)
 		r = CRect(rect.left * (float)SCREEN_WIDTH / 640.0f, rect.top * (float)SCREEN_HEIGHT / 448.0f, rect.right * (float)SCREEN_WIDTH / 640.0f, rect.bottom * (float)SCREEN_HEIGHT / 448.0f);
@@ -96,23 +111,41 @@ CSprite2d::Draw(const CRect &rect, const CRGBA &col)
 	else if(m_pTexture && r.left <= 0.5f && r.top <= 0.5f && r.right >= (float)SCREEN_WIDTH - 0.5f && r.bottom >= (float)SCREEN_HEIGHT - 0.5f){
 		float w = (float)SCREEN_WIDTH;
 		float h = (float)SCREEN_HEIGHT;
-		RwRaster *ras = RwTextureGetRaster(m_pTexture);
-		if(ras){
-			int32 tw = RwRasterGetWidth(ras);
-			int32 th = RwRasterGetHeight(ras);
-			if(tw > 0 && th > 0 && tw != th && (int64)tw != 2ll * th){
-				w = (float)tw;
-				h = (float)th;
+		bool bAspectFijado = false;
+		const char *szAspect = g_szWSPOptionFrontendAspectRatio;
+		if(szAspect && szAspect[0] && strncmp(szAspect, "auto", 4) != 0){
+			const char *pColon = strchr(szAspect, ':');
+			if(pColon){
+				int32 nW = atoi(szAspect);
+				int32 nH = atoi(pColon + 1);
+				if(nW > 0 && nH > 0){
+					w = (float)nW;
+					h = (float)nH;
+					bAspectFijado = true;
+				}
+			}
+		}
+		if(!bAspectFijado){
+			RwRaster *ras = RwTextureGetRaster(m_pTexture);
+			if(ras){
+				int32 tw = RwRasterGetWidth(ras);
+				int32 th = RwRasterGetHeight(ras);
+				if(tw > 0 && th > 0 && tw != th && (int64)tw != 2ll * th){
+					w = (float)tw;
+					h = (float)th;
+				}
 			}
 		}
 		float halfW = ((float)SCREEN_HEIGHT * (w / h)) * 0.5f;
 		float cx = (float)SCREEN_WIDTH * 0.5f;
 		if(cx - halfW > 0.0f){
+			r.left = cx - halfW;
+			r.right = cx + halfW;
 			SetVertices(r, col, col, col, col);
 			SetRenderState();
 			RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
-			DrawRect(CRect(0.0f, r.top, cx - halfW, r.bottom), CRGBA(0, 0, 0, 255));
-			DrawRect(CRect(cx + halfW, r.top, (float)SCREEN_WIDTH, r.bottom), CRGBA(0, 0, 0, 255));
+			DrawRect(CRect(0.0f, r.top, r.left, r.bottom), CRGBA(0, 0, 0, 255));
+			DrawRect(CRect(r.right, r.top, (float)SCREEN_WIDTH, r.bottom), CRGBA(0, 0, 0, 255));
 			return;
 		}
 	}
@@ -126,6 +159,7 @@ void
 CSprite2d::Draw(const CRect &rect, const CRGBA &col,
 	float u0, float v0, float u1, float v1, float u3, float v3, float u2, float v2)
 {
+	SetScriptSpriteTextureFilter();
 	SetVertices(rect, col, col, col, col, u0, v0, u1, v1, u3, v3, u2, v2);
 	SetRenderState();
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
@@ -134,6 +168,7 @@ CSprite2d::Draw(const CRect &rect, const CRGBA &col,
 void
 CSprite2d::Draw(const CRect &rect, const CRGBA &c0, const CRGBA &c1, const CRGBA &c2, const CRGBA &c3)
 {
+	SetScriptSpriteTextureFilter();
 	SetVertices(rect, c0, c1, c2, c3);
 	SetRenderState();
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);
@@ -142,6 +177,7 @@ CSprite2d::Draw(const CRect &rect, const CRGBA &c0, const CRGBA &c1, const CRGBA
 void
 CSprite2d::Draw(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, const CRGBA &col)
 {
+	SetScriptSpriteTextureFilter();
 	SetVertices(x1, y1, x2, y2, x3, y3, x4, y4, col, col, col, col);
 	SetRenderState();
 	RwIm2DRenderPrimitive(rwPRIMTYPETRIFAN, CSprite2d::maVertices, 4);

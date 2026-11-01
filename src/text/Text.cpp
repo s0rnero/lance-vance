@@ -23,14 +23,6 @@ CText::CText(void)
 	memset(WideErrorString, 0, sizeof(WideErrorString));
 }
 
-// D18 (sección 1, 21/09): nombre del fichero de textos segun el idioma.
-//
-// Antes esto era un switch que rellenaba `filename` sin case por defecto: si
-// m_PrefsLanguage no caia en ninguno (idioma no soportado, valor sin
-// inicializar) el buffer se usaba SIN INICIALIZAR, OpenFile fallaba, el
-// descriptor era 0 y el bucle de chunks -que nunca comprobaba ni la apertura
-// ni el fin de fichero- giraba para siempre sobre la misma cabecera: pantalla
-// negra y ni un solo error. Con el default siempre hay un nombre valido.
 static const char*
 OdTextFileName(void)
 {
@@ -49,8 +41,6 @@ OdTextFileName(void)
 	}
 }
 
-// D18: un GXT que falta (o al que le falta un chunk) no puede colgar el juego.
-// Deja constancia en la consola del navegador y en odtrace.log y sigue.
 static void
 OdTextFail(const char *who, const char *filename)
 {
@@ -88,17 +78,12 @@ CText::Load(void)
 
 	while (!tkey_loaded || !tdat_loaded) {
 		size_t got = ReadChunkHeader(&m_ChunkHeader, file, &offset);
-		// D18: fin de fichero o cabecera ilegible -> fuera del bucle. Sin esta
-		// salida, un GXT truncado o ausente giraba para siempre (el `size != 0`
-		// de abajo no protegia: con size 0 el cuerpo se saltaba y se releia la
-		// MISMA cabecera).
 		if (got != sizeof(ChunkHeader) || m_ChunkHeader.size == 0)
 			break;
 		if (strncmp(m_ChunkHeader.magic, "TABL", 4) == 0) {
 			MissionTextOffsets.Load(m_ChunkHeader.size, file, &offset, 0x58000);
 			bHasMissionTextOffsets = true;
 		} else if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
-			// D19: la tabla solo vale si se leyo ENTERA (si no, la cola es basura).
 			tkey_loaded = this->keyArray.Load(m_ChunkHeader.size, file, &offset) == (size_t)m_ChunkHeader.size;
 		} else if (strncmp(m_ChunkHeader.magic, "TDAT", 4) == 0) {
 			tdat_loaded = this->data.Load(m_ChunkHeader.size, file, &offset) == (size_t)m_ChunkHeader.size;
@@ -145,10 +130,6 @@ CText::Get(const char *key)
 		outstr = mission_keyArray.Search(key, &result);
 #endif
 #ifdef __EMSCRIPTEN__
-	// D2/D19 (seccion 1, 21/09): "missing" SOLO si la clave no existe en NINGUNA
-	// de las dos tablas. Antes se trazaba cada fallo de la global, y las claves
-	// de mision (INTRO1..INTRO4) viven en la tabla de mision: el log se llenaba
-	// de "missing" de claves que dos lineas despues si resolvian.
 	if (!result) {
 		static uint32 odMissing = 0;
 		if (odMissing++ < 300) {
@@ -250,9 +231,6 @@ CText::ReadChunkHeader(ChunkHeader *buf, int32 file, size_t *offset)
 	return got;
 #else
 	// original code loops 8 times to read 1 byte with CFileMgr::Read, that's retarded
-	// D18: devuelve los bytes leidos para que quien llama pueda distinguir una
-	// cabecera real de un fin de fichero (antes se ignoraba el resultado y se
-	// releia indefinidamente la cabecera anterior).
 	size_t got = CFileMgr::Read(file, (char*)buf, sizeof(ChunkHeader));
 	*offset += sizeof(ChunkHeader);
 	return got;
@@ -286,14 +264,6 @@ CText::LoadMissionText(char *MissionTableName)
 	const char *filename = OdTextFileName();
 	CTimer::Suspend();
 	int file = CFileMgr::OpenFile(filename, "rb");
-	// D18 (sección 1, 21/09): ESTE es el cuelgue de la pantalla negra.
-	//
-	// El SCM del mod llama a este opcode (COMMAND_LOAD_MISSION_TEXT, 1356) en
-	// cuanto arranca la partida. El original abre el GXT y lanza el bucle de
-	// chunks sin comprobar NADA: si el fichero no esta (o no esta todavia) el
-	// descriptor es 0, CFileMgr::Read no lee nada, la cabecera se queda con
-	// basura/size 0 y el `while` gira indefinidamente -> el motor no vuelve a
-	// dibujar y la pestaña se queda en negro sin un solo mensaje de error.
 	if (file == 0) {
 		OdTextFail("CText::LoadMissionText", filename);
 		CTimer::Resume();
@@ -313,12 +283,9 @@ CText::LoadMissionText(char *MissionTableName)
 	while (!tkey_loaded || !tdat_loaded) {
 		size_t bytes_read = 0;
 		size_t got = ReadChunkHeader(&m_ChunkHeader, file, &bytes_read);
-		// D18: se acabaron los datos o la cabecera no es legible -> salir.
-		// El guion sigue con los textos que haya: mejor sin texto que colgado.
 		if (got != sizeof(ChunkHeader) || m_ChunkHeader.size == 0)
 			break;
 		if (strncmp(m_ChunkHeader.magic, "TKEY", 4) == 0) {
-			// D19: exigir la lectura COMPLETA del chunk.
 			tkey_got = mission_keyArray.Load(m_ChunkHeader.size, file, &bytes_read);
 			tkey_size = (size_t)m_ChunkHeader.size;
 			tkey_loaded = tkey_got == tkey_size;
@@ -335,10 +302,6 @@ CText::LoadMissionText(char *MissionTableName)
 		strcpy(szMissionTableName, MissionTableName);
 		bIsMissionTextLoaded = true;
 #ifdef __EMSCRIPTEN__
-		// D19 (seccion 1, 21/09): una linea por tabla de mision cargada. Si el
-		// array se quedara corto (lectura corta del fichero), la ultima clave
-		// lo delata aqui: es el sintoma que se vio con INTRO4 (la ultima de la
-		// tabla) sin que el fichero le faltara nada.
 		{
 			char t[192];
 			snprintf(t, sizeof t, "MSGTABLE %s n=%d primera=%s ultima=%s tkey=%u/%u tdat=%u/%u", MissionTableName,
@@ -351,8 +314,6 @@ CText::LoadMissionText(char *MissionTableName)
 #endif
 	} else {
 #ifdef __EMSCRIPTEN__
-		// D19: si la causa es una lectura corta, se ve aqui (bytes leidos / bytes
-		// que declara la cabecera del chunk).
 		char t[192];
 		snprintf(t, sizeof t, "TXTGXTSHORT %s tkey=%u/%u tdat=%u/%u", filename,
 			(unsigned)tkey_got, (unsigned)tkey_size, (unsigned)tdat_got, (unsigned)tdat_size);
@@ -367,11 +328,6 @@ CText::LoadMissionText(char *MissionTableName)
 }
 
 
-// D19 (seccion 1, 21/09): Load devuelve los bytes leidos. Si son menos que
-// `length`, el array se queda con memoria SIN INICIALIZAR en la cola y el
-// motor busca claves en basura: sintoma tipico "la ULTIMA clave de la tabla
-// missing" (INTRO4) de forma intermitente, sin que al fichero le falte nada.
-// Con el valor devuelto, quien llama puede rechazar la tabla a medias.
 size_t
 CKeyArray::Load(size_t length, int file, size_t* offset)
 {
@@ -462,9 +418,6 @@ CKeyArray::Search(const char *key, uint8 *result)
 #ifdef MASTER
 	sprintf(errstr, "");
 #else
-	// D2: una clave que no existe se ve en pantalla como "<clave> missing". La
-	// traza del log vive ahora en CText::Get, DESPUES de mirar tambien la tabla
-	// de mision (aqui todavia puede resolverla la otra tabla).
 	sprintf(errstr, "%s missing", key);
 #endif // MASTER
 	for(i = 0; i < 25; i++)
@@ -472,8 +425,6 @@ CKeyArray::Search(const char *key, uint8 *result)
 	return WideErrorString;
 }
 
-// D19: igual que CKeyArray::Load, devuelve los bytes leidos (ver el comentario
-// de alli: un TDAT a medias deja textos basura o, peor, punteros sin inicializar).
 size_t
 CData::Load(size_t length, int file, size_t * offset)
 {

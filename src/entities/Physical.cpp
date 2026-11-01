@@ -20,6 +20,119 @@
 #include "Bike.h"
 #include "Pickups.h"
 #include "Physical.h"
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#include "Explosion.h"
+#endif
+
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+
+static const char *
+ViceExtPushModelName(CPhysical *e)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(e->GetModelIndex());
+	return mi ? mi->GetModelName() : "?";
+}
+
+// Traza del empujon peaton<->vehiculo. Se escribe como mucho una vez cada
+// 100 ms por `via` (y dos por frame como tope), para que una sesion normal no
+// llene el odtrace.log. Los campos permiten comparar masa efectiva, impulso y
+// cambio de velocidad por evento a 30 y 120 FPS.
+static void
+ViceExtPushTrace(const char *via, const char *caso, CPhysical *A, CPhysical *B,
+	float massFactorA, float massFactorB, float mA, float mB,
+	float speedA, float speedB, float speedSum,
+	float impulseA, float impulseB,
+	const CVector &fA, const CVector &fB,
+	float pushScale, bool ispedcontactA, bool ispedcontactB)
+{
+	static uint32 s_odPushLastMs = 0;
+	static uint32 s_odPushLastFrame = 0;
+	static uint8 s_odPushFrameCount = 0;
+	static const char *s_odPushLastVia = nil;
+
+	uint32 now = CTimer::GetTimeInMilliseconds();
+	uint32 frame = CTimer::GetFrameCounter();
+	if(frame != s_odPushLastFrame){
+		s_odPushLastFrame = frame;
+		s_odPushFrameCount = 0;
+	}
+	if(s_odPushFrameCount >= 2)
+		return;
+	if(s_odPushFrameCount > 0 && via == s_odPushLastVia && now - s_odPushLastMs < 100)
+		return;
+
+	s_odPushLastVia = via;
+	s_odPushLastMs = now;
+	s_odPushFrameCount++;
+
+	float dvAx = A->m_fMass > 0.0f ? fA.x / A->m_fMass : 0.0f;
+	float dvAy = A->m_fMass > 0.0f ? fA.y / A->m_fMass : 0.0f;
+	float dvAz = A->m_fMass > 0.0f ? fA.z / A->m_fMass : 0.0f;
+	float dvBx = B->m_fMass > 0.0f ? fB.x / B->m_fMass : 0.0f;
+	float dvBy = B->m_fMass > 0.0f ? fB.y / B->m_fMass : 0.0f;
+	float dvBz = B->m_fMass > 0.0f ? fB.z / B->m_fMass : 0.0f;
+
+	char t[640];
+	snprintf(t, sizeof t,
+		"VICEEXT push via=%s case=%s frame=%u t=%.2f dt=%.4f fix=%.3f "
+		"A=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f ped=%d player=%d "
+		"B=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f vehicle=%d "
+		"mfA=%.1f mfB=%.1f effA=%.0f effB=%.0f sA=%.3f sB=%.3f sSum=%.3f "
+		"impA=%.1f impB=%.1f fA=%.2f,%.2f,%.2f fB=%.2f,%.2f,%.2f "
+		"dvA=%.4f,%.4f,%.4f dvB=%.4f,%.4f,%.4f scale=%.3f "
+		"contactA=%d contactB=%d wallA=%d wallB=%d statusA=%d statusB=%d",
+		via, caso, (unsigned)frame, CTimer::GetTimeInMilliseconds() * 0.001f,
+		CTimer::GetTimeStep(), CTimer::GetTimeStepFix(),
+		ViceExtPushModelName(A), (int)A->GetModelIndex(), A->m_fMass, A->m_fTurnMass,
+		A->m_vecMoveSpeed.Magnitude(), A->IsPed() ? 1 : 0,
+		(A->IsPed() && ((CPed*)A)->IsPlayer()) ? 1 : 0,
+		ViceExtPushModelName(B), (int)B->GetModelIndex(), B->m_fMass, B->m_fTurnMass,
+		B->m_vecMoveSpeed.Magnitude(), B->IsVehicle() ? 1 : 0,
+		massFactorA, massFactorB, mA, mB, speedA, speedB, speedSum,
+		impulseA, impulseB, fA.x, fA.y, fA.z, fB.x, fB.y, fB.z,
+		dvAx, dvAy, dvAz, dvBx, dvBy, dvBz, pushScale,
+		ispedcontactA ? 1 : 0, ispedcontactB ? 1 : 0,
+		A->bHasHitWall ? 1 : 0, B->bHasHitWall ? 1 : 0,
+		(int)A->GetStatus(), (int)B->GetStatus());
+	ODTRACES(t);
+}
+
+// La correccion posicional de TestForCollision mueve al coche cuando el que
+// procesa la colision es el coche (A=vehiculo, B=peaton). Esta traza mide ese
+// desplazamiento aparte del impulso.
+static void
+ViceExtPushShiftTrace(CPhysical *car, CPhysical *ped, float shiftScale,
+	float depth, const CVector &shift, int numCollisions, bool secondShift)
+{
+	static uint32 s_odShiftLastMs = 0;
+	static const CPhysical *s_odShiftLastCar = nil;
+
+	uint32 now = CTimer::GetTimeInMilliseconds();
+	if(car == s_odShiftLastCar && now - s_odShiftLastMs < 100)
+		return;
+	s_odShiftLastCar = car;
+	s_odShiftLastMs = now;
+
+	float ratio = Min(1.0f, ped->m_fMass / Max(car->m_fMass, 1.0f));
+	char t[480];
+	snprintf(t, sizeof t,
+		"VICEEXT pushshift frame=%u t=%.2f dt=%.4f fix=%.3f "
+		"car=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f "
+		"ped=%s model=%d mass=%.0f speed=%.2f "
+		"ratio=%.4f scale=%.4f depth=%.3f shift=%.4f,%.4f,%.4f mag=%.4f "
+		"ncol=%d second=%d",
+		(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+		CTimer::GetTimeStep(), CTimer::GetTimeStepFix(),
+		ViceExtPushModelName(car), (int)car->GetModelIndex(), car->m_fMass,
+		car->m_fTurnMass, car->m_vecMoveSpeed.Magnitude(),
+		ViceExtPushModelName(ped), (int)ped->GetModelIndex(), ped->m_fMass,
+		ped->m_vecMoveSpeed.Magnitude(),
+		ratio, shiftScale, depth, shift.x, shift.y, shift.z, shift.Magnitude(),
+		numCollisions, secondShift ? 1 : 0);
+	ODTRACES(t);
+}
+#endif
 
 #ifdef WALLCLIMB_CHEAT
 bool gGravityCheat;
@@ -577,9 +690,12 @@ CPhysical::ApplyAirResistance(void)
 }
 
 bool
-CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, float &impulseB)
+CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, float &impulseB, const char *via)
 {
 	float eA, eB;
+#ifndef __EMSCRIPTEN__
+	(void)via;
+#endif
 	CPhysical *A = this;
 	CObject *Bobj = (CObject*)B;
 
@@ -683,8 +799,18 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 						}else if((model == MI_PARKINGMETER || model == MI_PARKINGMETER2) && !Bobj->bHasBeenDamaged){
 							CPickups::CreateSomeMoney(GetPosition(), CGeneral::GetRandomNumber()%100);
 							Bobj->bHasBeenDamaged = true;
+#ifdef VICEEXT_IMPROVED_TECH_PART
+						} else if (B->IsObject()) {
+							if (!Bobj->bHasBeenDamaged && impulseA > 200.0f && IsExplosiveThingModel(model)) {
+								CExplosion::AddExplosion(Bobj, A, EXPLOSION_BARREL, Bobj->GetPosition() + CVector(0.0f, 0.0f, 0.5f), 100);
+							} else {
+								Bobj->bHasBeenDamaged = true;
+							}
+						}
+#else
 						}else if(B->IsObject() && !IsExplosiveThingModel(model))
 							Bobj->bHasBeenDamaged = true;
+#endif
 					}else{
 						if(IsGlass(B->GetModelIndex()))
 							CGlass::WindowRespondsToSoftCollision(B, impulseA);
@@ -775,6 +901,26 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 			impulseB = -(eB - speedB) * mB;
 			CVector fA = colpoint.normal*(impulseA/massFactorA);
 			CVector fB = colpoint.normal*(-impulseB/massFactorB);
+			// El impulso se aplica una vez por actualizacion; a 120 fps se
+			// aplicaria cuatro veces por segundo mas que a la base de 30 Hz.
+			// GetTimeStepFix() vale 1.0 a 30 Hz y 0.25 a 120 Hz.
+			const float odPushScale = B->IsVehicle() ? CTimer::GetTimeStepFix() : 1.0f;
+			// Un peaton a pie que corre contra un coche parado no debe
+			// desplazarlo: el juego base ya le devolvia el golpe a el, pero la
+			// fuerza sobre B seguia entrando. Solo se corta si el peaton es el
+			// que se mueve y el coche no; si el coche arrolla al peaton, su
+			// respuesta sigue siendo la original.
+			const bool odPedIsMover = A->m_vecMoveSpeed.MagnitudeSqr() >
+				B->m_vecMoveSpeed.MagnitudeSqr() * 4.0f;
+			const bool odPedOnFootVsCar = B->IsVehicle() && !((CPed*)A)->bInVehicle && odPedIsMover;
+			fA *= odPushScale;
+			fB *= odPushScale;
+#ifdef __EMSCRIPTEN__
+			if(B->IsVehicle())
+				ViceExtPushTrace(via, "Aped_Bveh", A, B, massFactorA, massFactorB, mA, mB,
+					speedA, speedB, speedSum, impulseA, impulseB, fA, fB, odPushScale,
+					ispedcontactA, ispedcontactB);
+#endif
 			if(!A->bInfiniteMass){
 				if(fA.z < 0.0f) fA.z = 0.0f;
 				if(ispedcontactB){
@@ -783,7 +929,7 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 				}
 				A->ApplyMoveForce(fA);
 			}
-			if(!B->bInfiniteMass && !ispedcontactB){
+			if(!B->bInfiniteMass && !ispedcontactB && !odPedOnFootVsCar){
 				B->ApplyMoveForce(fB);
 				B->ApplyTurnForce(fB, pointposB);
 			}
@@ -810,7 +956,22 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 			impulseB = -(eB - speedB) * mB;
 			CVector fA = colpoint.normal*(impulseA/massFactorA);
 			CVector fB = colpoint.normal*(-impulseB/massFactorB);
-			if(!A->bInfiniteMass && !ispedcontactA){
+			// Simetrico al caso A=ped: aqui A es el vehiculo y B el ped. Sin
+			// esta escala el coche recibe el impulso completo una vez por
+			// frame y a 120 fps se mueve cuatro veces mas facil.
+			const float odPushScale = A->IsVehicle() ? CTimer::GetTimeStepFix() : 1.0f;
+			const bool odPedIsMover = B->m_vecMoveSpeed.MagnitudeSqr() >
+				A->m_vecMoveSpeed.MagnitudeSqr() * 4.0f;
+			const bool odCarVsPedOnFoot = A->IsVehicle() && !((CPed*)B)->bInVehicle && odPedIsMover;
+			fA *= odPushScale;
+			fB *= odPushScale;
+#ifdef __EMSCRIPTEN__
+			if(A->IsVehicle())
+				ViceExtPushTrace(via, "Aveh_Bped", A, B, massFactorA, massFactorB, mA, mB,
+					speedA, speedB, speedSum, impulseA, impulseB, fA, fB, odPushScale,
+					ispedcontactA, ispedcontactB);
+#endif
+			if(!A->bInfiniteMass && !ispedcontactA && !odCarVsPedOnFoot){
 				if(fA.z < 0.0f) fA.z = 0.0f;
 				A->ApplyMoveForce(fA);
 				A->ApplyTurnForce(fA, pointposA);
@@ -1347,17 +1508,36 @@ CPhysical::ProcessShiftSectorList(CPtrList *lists)
 			if(numCollisions <= 0)
 				continue;
 
+			// La correccion posicional se aplicaba una vez por frame. Un peaton
+			// no puede desplazar un coche de 1600 kg la misma fraccion de la
+			// penetracion que su propio cuerpo: se limita por la relacion de
+			// masas. La penetracion es un estado, no una velocidad, asi que no
+			// se reduce con el timestep: hay que escalar el desplazamiento con
+			// GetTimeStepFix() (1.0 a 30 Hz, 0.25 a 120 Hz) para que el coche
+			// reciba la misma cantidad por segundo. A=ped, B=coche no se toca:
+			// ahi el que se separa es el peaton, que es lo correcto.
+			float odShiftScale = 1.0f;
+			if (A->IsVehicle() && B->IsPed()) {
+				if (((CPed*)B)->bInVehicle)
+					odShiftScale = Min(1.0f, B->m_fMass / Max(A->m_fMass, 1.0f)) * CTimer::GetTimeStepFix();
+				else
+					odShiftScale = 0.0f;	// peaton a pie: no desplaza el coche
+			}
+
 			mostColliding = 0;
 			for(j = 1; j < numCollisions; j++)
 				if (colpoints[j].GetDepth() > colpoints[mostColliding].GetDepth())
 					mostColliding = j;
 
+#ifdef __EMSCRIPTEN__
+			CVector odShiftBefore = shift;
+#endif
+
 			if(CWorld::bSecondShift)
-				for(j = 0; j < numCollisions; j++)
-					shift += colpoints[j].GetNormal() * colpoints[j].GetDepth() * 1.5f / numCollisions;
-			else
-				for(j = 0; j < numCollisions; j++)
-					shift += colpoints[j].GetNormal() * colpoints[j].GetDepth() * 1.2f / numCollisions;
+				for(j = 0; j < numCollisions; j++)					shift += colpoints[j].GetNormal() * colpoints[j].GetDepth() * 1.5f * odShiftScale / numCollisions;
+				else
+					for(j = 0; j < numCollisions; j++)
+						shift += colpoints[j].GetNormal() * colpoints[j].GetDepth() * 1.2f * odShiftScale / numCollisions;
 
 			if(A->IsVehicle() && B->IsVehicle()){
 				CVector dir = A->GetPosition() - B->GetPosition();
@@ -1383,10 +1563,16 @@ CPhysical::ProcessShiftSectorList(CPtrList *lists)
 					B->ProcessEntityCollision(A, colpoints);
 			}else{
 				if(CWorld::bSecondShift)
-					shift += colpoints[mostColliding].GetNormal() * colpoints[mostColliding].GetDepth() * 0.4f;
+					shift += colpoints[mostColliding].GetNormal() * colpoints[mostColliding].GetDepth() * 0.4f * odShiftScale;
 				else
-					shift += colpoints[mostColliding].GetNormal() * colpoints[mostColliding].GetDepth() * 0.2f;
+					shift += colpoints[mostColliding].GetNormal() * colpoints[mostColliding].GetDepth() * 0.2f * odShiftScale;
 			}
+
+#ifdef __EMSCRIPTEN__
+			if(A->IsVehicle() && B->IsPed())
+				ViceExtPushShiftTrace(A, B, odShiftScale, colpoints[mostColliding].GetDepth(),
+					shift - odShiftBefore, numCollisions, CWorld::bSecondShift);
+#endif
 
 			doShift = true;
 		}
@@ -1454,7 +1640,7 @@ collision:
 
 	if(A->bHasContacted && B->bHasContacted){
 		for(i = 0; i < numCollisions; i++){
-			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "simplecar"))
 				continue;
 
 			if(impulseA > A->m_fDamageImpulse)
@@ -1476,7 +1662,7 @@ collision:
 		A->bHasContacted = false;
 
 		for(i = 0; i < numCollisions; i++){
-			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "simplecar"))
 				continue;
 
 			if(impulseA > A->m_fDamageImpulse)
@@ -1509,7 +1695,7 @@ collision:
 		B->bHasContacted = false;
 
 		for(i = 0; i < numCollisions; i++){
-			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "simplecar"))
 				continue;
 
 			if(impulseA > A->m_fDamageImpulse)
@@ -1536,7 +1722,7 @@ collision:
 		}
 	}else{
 		for(i = 0; i < numCollisions; i++){
-			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+			if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "simplecar"))
 				continue;
 
 			if(impulseA > A->m_fDamageImpulse)
@@ -1852,7 +2038,7 @@ CPhysical::ProcessCollisionSectorList(CPtrList *lists)
 				float maxImpulseB = 0.0f;
 				if(A->bHasContacted && B->bHasContacted){
 					for(i = 0; i < numCollisions; i++){
-						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "entity"))
 							continue;
 
 						if(impulseA > maxImpulseA) maxImpulseA = impulseA;
@@ -1877,7 +2063,7 @@ CPhysical::ProcessCollisionSectorList(CPtrList *lists)
 					A->bHasContacted = false;
 
 					for(i = 0; i < numCollisions; i++){
-						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "entity"))
 							continue;
 
 						if(impulseA > maxImpulseA) maxImpulseA = impulseA;
@@ -1913,7 +2099,7 @@ CPhysical::ProcessCollisionSectorList(CPtrList *lists)
 					B->bHasContacted = false;
 
 					for(i = 0; i < numCollisions; i++){
-						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "entity"))
 							continue;
 
 						if(impulseA > maxImpulseA) maxImpulseA = impulseA;
@@ -1943,7 +2129,7 @@ CPhysical::ProcessCollisionSectorList(CPtrList *lists)
 					}
 				}else{
 					for(i = 0; i < numCollisions; i++){
-						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB))
+						if(!A->ApplyCollision(B, aColPoints[i], impulseA, impulseB, "entity"))
 							continue;
 
 						if(impulseA > maxImpulseA) maxImpulseA = impulseA;

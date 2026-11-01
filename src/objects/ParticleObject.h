@@ -55,6 +55,7 @@ public:
 	uint8               m_nNumEffectCycles;
 	uint8               m_nSkipFrames;
 	uint16              m_nFrameCounter;
+	float               m_fFrameTimeCounter;
 	uint16              m_nState;
 	CVector             m_vecTarget;
 	float               m_fRandVal;

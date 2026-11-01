@@ -1,5 +1,8 @@
 #include "common.h"
 
+#include "common.h"
+#include "SilentPatchOptions.h"
+
 #include "Script.h"
 #include "ScriptCommands.h"
 
@@ -522,10 +525,14 @@ int8 CRunningScript::ProcessCommands1000To1099(int32 command)
 		return 0;
 	}
 	case COMMAND_ARE_MEASUREMENTS_IN_METRES:
+#ifdef VICEEXT_SP_METRIC_UNITS
+		UpdateCompareFlag(IsMetricUnits());
+#else
 #ifdef USE_MEASUREMENTS_IN_METERS
 		UpdateCompareFlag(true);
 #else
 		UpdateCompareFlag(false);
+#endif
 #endif
 		return 0;
 	case COMMAND_CONVERT_METRES_TO_FEET:
@@ -1004,7 +1011,11 @@ int8 CRunningScript::ProcessCommands1100To1199(int32 command)
 		// PC shit
 		static int nCounter = 0;
 		nCounter = Max(0, nCounter - 1);
+#ifdef VICEEXT_SP_TARGETTING_CHAR
 		bool bAimCam = TheCamera.Using1stPersonWeaponMode() || TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam();
+#else
+		bool bAimCam = true;
+#endif
 		bool bSwimAim = ViceExtPedOwns(PEDLANE_NADO, PEDCAP_APUNTAR);
 		if (!pPed->GetWeapon()->IsTypeMelee() && !bTargetting && bAimCam && !bSwimAim) {
 			if ((pTestedPed->GetPosition() - TheCamera.GetPosition()).Magnitude() < 10.0f) {

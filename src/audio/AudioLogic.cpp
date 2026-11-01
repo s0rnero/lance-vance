@@ -876,10 +876,6 @@ struct tVehicleSampleData {
 	uint8 m_bDoorType;
 };
 
-// Los vehículos de Vice Extended tienen IDs de modelo altos (6500+), fuera del
-// rango MI_FIRST_VEHICLE..MI_LAST_VEHICLE: sus filas van después de las vanilla
-// y se indexan con esta función (params.m_nIndex se usa en toda la lógica de
-// audio y como índice de la tabla, así que nunca puede salirse).
 static const int32 NUM_VEEXT_VEHICLE_SOUNDS = 8;
 
 const tVehicleSampleData aVehicleSettings[MAX_CARS + NUM_VEEXT_VEHICLE_SOUNDS] = {
@@ -994,12 +990,6 @@ const tVehicleSampleData aVehicleSettings[MAX_CARS + NUM_VEEXT_VEHICLE_SOUNDS] =
 	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9300, NEW_DOOR},
 	{SFX_CAR_REV_1, CAR_SFX_BANKS_OFFSET, SFX_CAR_HORN_JEEP, 26513, SFX_CAR_HORN_JEEP, 9400, NEW_DOOR},
 
-	// Vice Extended. Su `newVehicles.ide` trae línea `sounds` por vehículo, pero
-	// sus índices de muestra (p. ej. 2690 para la Streetfighter) no son los del
-	// banco de este port: sonarían como un sonido equivocado o no sonarían. Se
-	// usan las filas del vehículo de serie equivalente (entre paréntesis); la
-	// única excepción es la sirena de la moto policial, que sí es un índice
-	// válido y es el que el mod pide.
 	{SFX_CAR_REV_17, SFX_BANK_VTWIN, SFX_CAR_HORN_JEEP, 26313, SFX_CAR_HORN_JEEP, 10000, NEW_DOOR},      // 6500 streetfi (Angel)
 	{SFX_CAR_REV_11, SFX_BANK_PACARD, SFX_CAR_HORN_56CHEV, 12893, SFX_CAR_HORN_JEEP, 9500, OLD_DOOR},    // 6501 peren2 (Perennial)
 	{SFX_CAR_REV_5, SFX_BANK_TRUCK, SFX_CAR_HORN_TRUCK, 31478, SFX_CAR_HORN_JEEP, 9800, TRUCK_DOOR},     // 6502 trash2 (Trashmaster)
@@ -1010,8 +1000,6 @@ const tVehicleSampleData aVehicleSettings[MAX_CARS + NUM_VEEXT_VEHICLE_SOUNDS] =
 	{SFX_CAR_REV_17, SFX_BANK_VTWIN, SFX_CAR_HORN_PICKUP, 11000, SFX_POLICE_SIREN_SLOW, 11000, NEW_DOOR},// 6507 polwintergreen (Freeway + sirena)
 };
 
-// Índice en aVehicleSettings[]: dentro del rango vanilla es modelIndex-
-// MI_FIRST_VEHICLE; los modelos del mod van después, en el orden de sus IDs.
 static inline int32
 VehicleAudioIndex(int32 modelIndex)
 {
@@ -2904,12 +2892,6 @@ cAudioManager::ProcessVehicleSirenOrAlarm(cVehicleParams& params)
 						return TRUE;
 					if (veh->m_nCarHornTimer > 0 && params.m_nIndex != FIRETRUK && params.m_nIndex != MRWHOOP) {
 						m_sQueueSample.m_nSampleIndex = SFX_SIREN_FAST;
-						// PORTADO -- SilentPatch (MIT, (c) 2024 Adrian Zdanowicz "Silent")
-						//   https://github.com/CookiePLMonster/SilentPatch
-						//   SilentPatchVC/SilentPatchVC.cpp ("Corrected FBI Washington sirens sound", SirenSwitchingFix)
-						// Que se toma: fbiranch(90) y fbicar(17) usan la sirena aguda (al=0); el resto la normal.
-						// Adaptacion: el indice de audio ya es el mismo enum (FBICAR=17, FBIRANCH=90); se anade FBICAR a la rama aguda.
-						// Medible: criterio PASS = la sirena del FBI Washington suena aguda como la del FBI Rancher (oido del jugador).
 #ifdef VICEEXT_FIX_SILENTPATCH
 						if (params.m_nIndex == FBIRANCH || params.m_nIndex == FBICAR)
 							m_sQueueSample.m_nFrequency = 12668;
@@ -2941,11 +2923,6 @@ cAudioManager::ProcessVehicleSirenOrAlarm(cVehicleParams& params)
 				SET_SOUND_REVERB(TRUE);
 				SET_SOUND_REFLECTION(FALSE);
 #ifdef __EMSCRIPTEN__
-				// SIRENA (10ª partida): el jugador no oye las sirenas de las
-				// patrullas. Esta traza dice si el motor encola la muestra, cuál es
-				// (índice de banco 0) y con qué volumen. Si no aparece ni una vez
-				// con la policía cerca, el fallo está ANTES: `m_bSirenOrAlarm`
-				// nunca se enciende en las patrullas de la IA.
 				{
 					static uint32 odNextSiren = 0;
 					uint32 odNow = CTimer::GetTimeInMilliseconds();
@@ -5087,6 +5064,14 @@ cAudioManager::ProcessPedOneShots(cPedParams &params)
 			default:
 				continue;
 			}
+#ifdef __EMSCRIPTEN__
+			{
+				char t[80];
+				snprintf(t, sizeof t, "VICEEX sfx arma=%d sample=%d",
+					(int)weapon->m_eWeaponType, (int)m_sQueueSample.m_nSampleIndex);
+				ODTRACES(t);
+			}
+#endif
 			break;
 		case SOUND_WEAPON_RELOAD:
 			switch ((int32)m_asAudioEntities[m_sQueueSample.m_nEntityIndex].m_afVolume[i]) {
@@ -10413,11 +10398,6 @@ cAudioManager::ProcessMissionAudioSlot(uint8 slot)
 	if (m_nMissionAudioSampleIndex[slot] != NO_SAMPLE) {
 		switch (m_nMissionAudioLoadingStatus[slot]) {
 		case LOADING_STATUS_NOT_LOADED:
-			// Web: el fichero del dialogo se espera dentro de PreloadStreamedFile
-			// (slots 1-2). Se comprueba de verdad si quedo abierto: antes se
-			// declaraba CARGADO sin mirar, y un dialogo "cargado" sin fichero se
-			// termina solo en 30 frames: la voz no suena y el script corre en
-			// vacio (subtitulos que pasan volando y texto que sale de la nada).
 			SampleManager.PreloadStreamedFile(m_nMissionAudioSampleIndex[slot], slot + 1);
 			if (SampleManager.IsStreamedFileOpened(slot + 1)) {
 				m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADED;
@@ -10427,7 +10407,6 @@ cAudioManager::ProcessMissionAudioSlot(uint8 slot)
 			nFramesUntilFailedLoad[slot] = 0;
 			break;
 		case LOADING_STATUS_LOADING:
-			// Reintento (en web el fichero puede aterrizar un frame despues).
 			SampleManager.PreloadStreamedFile(m_nMissionAudioSampleIndex[slot], slot + 1);
 			if (SampleManager.IsStreamedFileOpened(slot + 1)) {
 				m_nMissionAudioLoadingStatus[slot] = LOADING_STATUS_LOADED;
@@ -10581,7 +10560,7 @@ cAudioManager::ProcessMissionAudio()
 
 	if (m_bIsMissionAudioPhoneCall[0] || m_bIsMissionAudioPhoneCall[1])
 		m_nGlobalSfxVolumeMultiplier = 64;
-	else if (m_nGlobalSfxVolumeMultiplier < 127) {
+	else if (m_nGlobalSfxVolumeMultiplier < 127 && CTimer::GetLogicalFramesPassed() != 0) {
 		m_nGlobalSfxVolumeMultiplier += 5;
 		if (m_nGlobalSfxVolumeMultiplier > 127)
 			m_nGlobalSfxVolumeMultiplier = 127;

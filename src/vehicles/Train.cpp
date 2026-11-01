@@ -90,7 +90,7 @@ void
 CTrain::ProcessControl(void)
 {
 #ifdef GTA_TRAIN
-	if(gbModelViewer || m_isFarAway && (CTimer::GetFrameCounter() + m_nWagonId) & 0xF)
+	if(gbModelViewer || m_isFarAway && (CTimer::GetLogicalFrameCounter() + m_nWagonId) & 0xF)
 		return;
 
 	CTrainNode *trackNodes;
@@ -127,7 +127,7 @@ CTrain::ProcessControl(void)
 		nextTrackNode = 0;
 		pos2 = totalLengthOfTrack;
 	}
-	while(trackPositionRear < pos1 || trackPositionRear > pos2){
+	for(int guard = numTrackNodes; guard > 0 && (trackPositionRear < pos1 || trackPositionRear > pos2); guard--){
 		m_nCurTrackNode = (m_nCurTrackNode+1) % numTrackNodes;
 		nextTrackNode = m_nCurTrackNode + 1;
 		pos1 = trackNodes[m_nCurTrackNode].t;
@@ -157,7 +157,7 @@ CTrain::ProcessControl(void)
 		nextTrackNodeFront = 0;
 		pos2 = totalLengthOfTrack;
 	}
-	while(trackPositionFront < pos1 || trackPositionFront > pos2){
+	for(int guard = numTrackNodes; guard > 0 && (trackPositionFront < pos1 || trackPositionFront > pos2); guard--){
 		curTrackNodeFront = (curTrackNodeFront+1) % numTrackNodes;
 		nextTrackNodeFront = curTrackNodeFront + 1;
 		pos1 = trackNodes[curTrackNodeFront].t;

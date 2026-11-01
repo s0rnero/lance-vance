@@ -50,7 +50,6 @@ LPALGETFILTERFV alGetFilterfv;
 using namespace re3_openal;
 
 #ifdef __EMSCRIPTEN__
-// Web: sin EFX. No-ops; nunca se llaman (ver oal_utils.h).
 void EFXInit() {}
 void SetEffectsLevel(ALuint, float) {}
 void EAX3_Set(ALuint, const EAXLISTENERPROPERTIES *) {}

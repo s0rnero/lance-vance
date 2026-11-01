@@ -21,9 +21,15 @@
 #include "PedAttractor.h"
 #include "Population.h"
 #include "Pools.h"
+#ifdef VICEEXT_GPS
+#include "Radar.h"
+#endif
 #include "RpAnimBlend.h"
 #include "Stats.h"
 #include "VisibilityPlugins.h"
+#ifdef VICEEXT_PED_VARIATIONS
+#include "TxdStore.h"
+#endif
 #include "Wanted.h"
 #include "WaterLevel.h"
 #include "World.h"
@@ -333,6 +339,9 @@ int8 CRunningScript::ProcessCommands1400To1499(int32 command)
 		CStats::CheckPointReachedSuccessfully();
 		CTheScripts::LastMissionPassedTime = CTimer::GetTimeInMilliseconds();
 		CGameLogic::RemoveShortCutDropOffPointForMission();
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+		DoAutoSave();
+#endif
 		return 0;
 	case COMMAND_IS_PLAYER_IN_SHORTCUT_TAXI:
 	{
@@ -619,14 +628,33 @@ int8 CRunningScript::ProcessCommands1400To1499(int32 command)
 }
 
 #ifdef VICEEXT_OPCODES
+static bool
+OdComandoModImplementado(int32 command)
+{
+	switch (command) {
+	case COMMAND_SET_CHAR_CLOTHING_VARIATION:
+	case COMMAND_GET_CHAR_CLOTHING_VARIATION:
+	case COMMAND_SET_BLIP_ROUTE:
+	case COMMAND_DO_AUTO_SAVE:
+	case COMMAND_IS_AUTO_SAVE_IN_PROGRESS:
+	case COMMAND_GET_IS_AUTOSAVE_OFF:
+	case COMMAND_REQUEST_AUTO_SAVE:
+	case COMMAND_IS_AUTO_SAVE_REQUESTED:
+	case COMMAND_SET_NEXT_NEWSPAPER:
+	case COMMAND_SET_CAR_STEER_ANGLE:
+		return true;
+	default:
+		return false;
+	}
+}
+
 int8 CRunningScript::ProcessCommands4000To4099(int32 command)
 {
 #ifdef __EMSCRIPTEN__
-	static bool seen[100];
-	if (command - 4000 >= 0 && command - 4000 < 100 && !seen[command - 4000]) {
-		seen[command - 4000] = true;
-		char t[64];
-		snprintf(t, sizeof t, "VEX scm op=%04X", command);
+	{
+		char t[80];
+		snprintf(t, sizeof t, "VEX scm op=%04X cmd=%d desconocido=%d",
+			command, command, OdComandoModImplementado(command) ? 0 : 1);
 		ODTRACES(t);
 	}
 #endif
@@ -638,6 +666,8 @@ int8 CRunningScript::ProcessCommands4000To4099(int32 command)
 		CPed* pPed = CPools::GetPedPool()->GetAt(ScriptParams[0]);
 		script_assert(pPed);
 		int curVariation = ScriptParams[1];
+		if (curVariation < 0 || curVariation >= MAX_VARIATIONS_TEXTURES)
+			curVariation = 0;
 
 		CPedModelInfo* modelInfo = (CPedModelInfo*)CModelInfo::GetModelInfo(pPed->GetModelIndex());
 		RwTexDictionary* playerTxd = CTxdStore::GetSlot(modelInfo->GetTxdSlot())->texDict;
@@ -678,7 +708,10 @@ int8 CRunningScript::ProcessCommands4000To4099(int32 command)
 #endif
 		return 0;
 	case COMMAND_DO_AUTO_SAVE:
-#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+#ifdef __EMSCRIPTEN__
+		ODTRACES("VICEEXT autosave opcode=0FA3");
+#endif
 		DoAutoSave();
 #endif
 		return 0;

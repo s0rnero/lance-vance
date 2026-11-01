@@ -23,6 +23,7 @@ public:
 	bool m_bAddRotOffset;
 	
 	static bool bPhotographHasBeenTaken;
+	static bool bTakePhoto;
 	
 	CWeapon() {
 		m_bAddRotOffset = false;

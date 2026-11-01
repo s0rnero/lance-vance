@@ -10,6 +10,7 @@
 #include "Sprite.h"
 #include "Timer.h"
 #include "PointLights.h"
+#include "ondemand.h"
 
 int16 CPointLights::NumLights;
 CRegisteredPointLight CPointLights::aLights[NUMPOINTLIGHTS];
@@ -155,17 +156,32 @@ CPointLights::RenderFogEffect(void)
 	int16 xi, yi;
 	CVector spriteCoors;
 	float spritew, spriteh;
+#ifdef __EMSCRIPTEN__
+	int odFogLights = 0;
+	int odFogNormal = 0;
+	int odFogAlways = 0;
+	int odFogQuads = 0;
+	float odFogMaxInt = 0.0f;
+	float odFogR = 0.0f, odFogG = 0.0f, odFogB = 0.0f;
+#endif
+	uint32 odPrevFilter = rwFILTERNEAREST;
 
 	if(CCutsceneMgr::IsRunning())
 		return;
 
+	if(gpPointlightRaster == nil)
+		return;
+
 	PUSH_RENDERGROUP("CPointLights::RenderFogEffect");
+
+	RwRenderStateGet(rwRENDERSTATETEXTUREFILTER, &odPrevFilter);
 
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 	RwRenderStateSet(rwRENDERSTATESRCBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDONE);
 	RwRenderStateSet(rwRENDERSTATETEXTURERASTER, gpPointlightRaster);
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERLINEAR);
 
 	CSprite::InitSpriteBuffer();
 
@@ -176,6 +192,13 @@ CPointLights::RenderFogEffect(void)
 		fogginess = aLights[i].fogType == FOG_NORMAL ? CWeather::Foggyness : 1.0f;
 		if(fogginess == 0.0f)
 			continue;
+#ifdef __EMSCRIPTEN__
+		odFogLights++;
+		if(aLights[i].fogType == FOG_ALWAYS)
+			odFogAlways++;
+		else
+			odFogNormal++;
+#endif
 
 		if(aLights[i].type == LIGHT_DIRECTIONAL){
 
@@ -290,6 +313,15 @@ CPointLights::RenderFogEffect(void)
 								if(CSprite::CalcScreenCoors(fogcoors, &spriteCoors, &spritew, &spriteh, true)) {
 									float rotation = (CTimer::GetTimeInMilliseconds()&0x3FFF) * 2*3.14f / 0x4000;
 									float size = FogSizes[r>>1];
+#ifdef __EMSCRIPTEN__
+									odFogQuads++;
+									if(intensity > odFogMaxInt){
+										odFogMaxInt = intensity;
+										odFogR = aLights[i].red;
+										odFogG = aLights[i].green;
+										odFogB = aLights[i].blue;
+									}
+#endif
 									CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(spriteCoors.x, spriteCoors.y, spriteCoors.z,
 										spritew * size, spriteh * size,
 										aLights[i].red * intensity, aLights[i].green * intensity, aLights[i].blue * intensity,
@@ -304,6 +336,18 @@ CPointLights::RenderFogEffect(void)
 	}
 
 	CSprite::FlushSpriteBuffer();
+
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)odPrevFilter);
+
+#ifdef __EMSCRIPTEN__
+	if((CTimer::GetLogicalFrameCounter() % 60) == 0){
+		char cb[192];
+		sprintf(cb, "FOG f=%u luces=%d (normal=%d always=%d) quads=%d foggyness=%.2f intMax=%.0f col=%.2f,%.2f,%.2f",
+			CTimer::GetFrameCounter(), odFogLights, odFogNormal, odFogAlways, odFogQuads,
+			CWeather::Foggyness, odFogMaxInt, odFogR, odFogG, odFogB);
+		ODTRACES(cb);
+	}
+#endif
 
 	POP_RENDERGROUP();
 }

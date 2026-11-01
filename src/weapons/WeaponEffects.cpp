@@ -150,7 +150,7 @@ CWeaponEffects::Render(void)
 #endif
 				recipz2, TWOPI - gCrossHair.m_fRotation, gCrossHair.m_nAlpha);
 						
-			gCrossHair.m_fRotation += 0.02f;
+			gCrossHair.m_fRotation += 0.02f * CTimer::GetTimeStepFix();
 			if ( gCrossHair.m_fRotation > TWOPI )
 				gCrossHair.m_fRotation = 0.0;
 

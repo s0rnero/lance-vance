@@ -26,7 +26,7 @@ enum
 	SWITCH_ON = 1,
 };
 
-enum 
+enum
 {
 	ROUTE_ADD_BLOCKADE = 0,
 	ROUTE_NO_BLOCKADE = 1
@@ -63,7 +63,7 @@ struct CPathNode
 	int16 x;
 	int16 y;
 	int16 z;
-	int16 distance;		// in path search
+	int16 distance;
 	int16 firstLink;
 	uint8 width;
 	int8 group;
@@ -78,9 +78,6 @@ struct CPathNode
 	uint8 bOnlySmallBoats : 1;
 	uint8 bSelected : 1;
 	uint8 speedLimit : 2;
-	//uint8 flagB20 : 1;
-	//uint8 flagB40 : 1;
-	//uint8 flagB80 : 1;
 
 	uint8 spawnRate : 4;
 	uint8 flagsC : 4;
@@ -119,7 +116,7 @@ struct CCarPathLink
 	int8 numRightLanes : 3;
 	uint8 trafficLightDirection : 1;
 	uint8 trafficLightType : 2;
-	uint8 bBridgeLights : 1;	// at least in LCS...
+	uint8 bBridgeLights : 1;
 	uint8 width;
 
 	CVector2D GetPosition(void) { return CVector2D(x/8.0f, y/8.0f); }
@@ -140,7 +137,6 @@ struct CCarPathLink
 	}
 };
 
-// This is what we're reading from the files, only temporary
 struct CPathInfoForObject
 {
 	float x;
@@ -171,7 +167,7 @@ extern CPathInfoForObject *InfoForTilePeds;
 struct CTempNode
 {
 	CVector pos;
-	int8 dirX;	// *100
+	int8 dirX;
 	int8 dirY;
 	int16 link1;
 	int16 link2;
@@ -182,7 +178,7 @@ struct CTempNode
 	int8 linkState;
 };
 
-struct CTempNodeExternal	// made up name
+struct CTempNodeExternal
 {
 	CVector pos;
 	int16 next;
@@ -192,13 +188,25 @@ struct CTempNodeExternal	// made up name
 	bool isCross;
 };
 
-// from mobile
 template<typename T>
 class CRoute
 {
 	T m_node[8];
 };
 
+#ifdef VICEEXT_WANTED_PATHS
+struct CWantedPathNode
+{
+	CVector pos = { 0.0f, 0.0f, 0.0f };
+
+	CVector GetPosition(void) { return CVector(pos); }
+};
+
+struct CWantedPaths
+{
+	CWantedPathNode wantedPathNode[NUM_WANTEDPATHNODES];
+};
+#endif
 
 class CPathFind
 {
@@ -206,9 +214,13 @@ public:
 	CPathNode m_pathNodes[NUM_PATHNODES];
 	CCarPathLink m_carPathLinks[NUM_CARPATHLINKS];
 	CTreadable *m_mapObjects[NUM_MAPOBJECTS];
-	uint16 m_connections[NUM_PATHCONNECTIONS];	// and flags
+	uint16 m_connections[NUM_PATHCONNECTIONS];
 	uint8 m_distances[NUM_PATHCONNECTIONS];
 	int16 m_carPathConnections[NUM_PATHCONNECTIONS];
+
+#ifdef VICEEXT_WANTED_PATHS
+	CWantedPaths m_wantedPaths[NUM_WANTEDPATHS];
+#endif
 
 	int32 m_numPathNodes;
 	int32 m_numCarPathNodes;
@@ -230,6 +242,10 @@ public:
 		bool disabled, bool betweenLevels, uint8 spawnRate);
 	void StoreDetachedNodeInfoCar(int32 node, int8 type, int32 next, float x, float y, float z, float width, int8 numLeft, int8 numRight,
 		bool disabled, bool betweenLevels, uint8 speedLimit, bool roadBlock, bool waterPath, uint8 spawnRate, bool unk);
+#ifdef VICEEXT_WANTED_PATHS
+	void StoreWantedNode(int pathID, int pathNode, float x, float y, float z);
+	CWantedPaths FindClosestWantedPathsToCoors(CVector coors);
+#endif
 	void CalcNodeCoors(float x, float y, float z, int32 id, CVector *out);
 	bool LoadPathFindData(void);
 	void PreparePathData(void);
@@ -281,7 +297,6 @@ public:
 
 	void DisplayPathData(void);
 
-	// Following methods are present on mobile but are unused. TODO: implement them
 	void SavePathFindData(void);
 	void ComputeRoute(uint8, const CVector&, const CVector&, CRoute<CPathNode*>&);
 	void RecordNodesClosestToCoors(CVector, uint8, int, CPathNode**, float, bool, bool, bool);

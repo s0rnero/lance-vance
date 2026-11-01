@@ -121,6 +121,7 @@ class CStream
 	
 	bool     m_bPaused;
 	bool     m_bActive;
+	bool     m_bStartPending;
 	
 public:
 #ifdef MULTITHREADED_AUDIO

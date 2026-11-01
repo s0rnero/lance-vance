@@ -137,7 +137,7 @@ CObject::ProcessControl(void)
 	}
 	int16 mi = GetModelIndex();
 	if ((mi == MI_EXPLODINGBARREL || mi == MI_PETROLPUMP || mi == MI_PETROLPUMP2) && bHasBeenDamaged && bIsVisible
-		&& (CGeneral::GetRandomNumber() & 0x1F) == 10) {
+		&& CGeneral::ChancePerTick(32)) {
 		bExplosionProof = true;
 		bIsVisible = false;
 		bUsesCollision = false;

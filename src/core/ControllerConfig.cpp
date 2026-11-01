@@ -16,6 +16,7 @@
 #include "ModelIndices.h"
 #include "Camera.h"
 #include "GenericGameStorage.h"
+#include "ondemand.h" // HINTKEY: que aviso resolvio su tecla (D7)
 
 CControllerConfigManager ControlsManager;
 
@@ -3546,8 +3547,9 @@ int CControllerConfigManager::GetCurrentPCKeyFromCurrentAction()
 	static uint8 currentAction = 0;
 
 	int key = -1;
+	int odAccion = ControlsManager.m_curActionsInMessage[currentAction];
 
-	key = GetControllerSettingNonJoystick((e_ControllerAction(ControlsManager.m_curActionsInMessage[currentAction])));
+	key = GetControllerSettingNonJoystick((e_ControllerAction(odAccion)));
 
 	if (currentAction == 3 || ControlsManager.m_curActionsInMessage[currentAction] == -1 || ControlsManager.m_curActionsInMessage[currentAction + 1] == -1)
 		currentAction = 0;
@@ -3558,6 +3560,7 @@ int CControllerConfigManager::GetCurrentPCKeyFromCurrentAction()
 		return -1;
 
 	int symbol = -1;
+	int odVk = 0;
 
 	if (key <= rsMOUSEX2BUTTON) {
 		switch (key)
@@ -3588,7 +3591,34 @@ int CControllerConfigManager::GetCurrentPCKeyFromCurrentAction()
 		int virtualKey = GetVirtualKeyFromPCKey(key);
 		if (virtualKey != 0)
 			symbol = virtualKey - 1;
+		odVk = virtualKey;
 	}
+
+#ifdef __EMSCRIPTEN__
+	{
+		char odNombre[64];
+		odNombre[0] = '\0';
+		if (odAccion >= 0 && odAccion < MAX_CONTROLLERACTIONS) {
+			int i = 0;
+			for (; i < ACTIONNAME_LENGTH - 1 && ControlsManager.m_aActionNames[odAccion][i]; i++)
+				odNombre[i] = (char)ControlsManager.m_aActionNames[odAccion][i];
+			odNombre[i] = '\0';
+		}
+		if (odNombre[0] == '\0')
+			strcpy(odNombre, "-");
+		static int s_odHintAccion = -1;
+		static int s_odHintVk = -1;
+		static int s_odHintIcono = -1;
+		if (s_odHintAccion != odAccion || s_odHintVk != odVk || s_odHintIcono != (symbol != -1 ? 1 : 0)) {
+			s_odHintAccion = odAccion;
+			s_odHintVk = odVk;
+			s_odHintIcono = symbol != -1 ? 1 : 0;
+			char t[140];
+			snprintf(t, sizeof t, "HINTKEY accion=%s vk=%d icono=%d", odNombre, odVk, s_odHintIcono);
+			ODTRACES(t);
+		}
+	}
+#endif
 
 	return symbol;
 }

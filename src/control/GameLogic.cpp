@@ -89,10 +89,14 @@ CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 	CStreaming::DeleteRwObjectsAfterDeath(pos);
 	CStreaming::RemoveUnusedModelsInLoadedList();
 	CGame::DrasticTidyUpMemory(true);
+#ifndef VICEEXT_IMPROVED_TECH_PART
 	CWorld::Players[CWorld::PlayerInFocus].m_pPed->Undress("player");
+#endif
 	CStreaming::LoadSceneCollision(pos);
 	CStreaming::LoadScene(pos);
+#ifndef VICEEXT_IMPROVED_TECH_PART
 	CWorld::Players[CWorld::PlayerInFocus].m_pPed->Dress();
+#endif
 	CTimer::Update();
 }
 
@@ -251,6 +255,11 @@ CGameLogic::Update()
 				takeMoney = 1500;
 				break;
 			}
+#ifdef VICEEXT_SP_BUSTED_WEAPONS
+			const bool bKeepWeaponsOnBust = pPlayerInfo.m_bGetOutOfJailFree;
+#else
+			const bool bKeepWeaponsOnBust = false;
+#endif
 			if (pPlayerInfo.m_bGetOutOfJailFree) {
 				pPlayerInfo.m_bGetOutOfJailFree = false;
 			} else {
@@ -283,6 +292,9 @@ CGameLogic::Update()
 			PassTime(720);
 			RestorePlayerStuffDuringResurrection(pPlayerInfo.m_pPed, vecRestartPos, fRestartFloat);
 			AfterDeathArrestSetUpShortCutTaxi();
+#ifdef VICEEXT_SP_BUSTED_WEAPONS
+			if (!bKeepWeaponsOnBust)
+#endif
 			pPlayerInfo.m_pPed->ClearWeapons();
 			SortOutStreamingAndMemory(pPlayerInfo.GetPos());
 			TheCamera.m_fCamShakeForce = 0.0f;

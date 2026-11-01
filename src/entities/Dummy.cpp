@@ -60,7 +60,6 @@ CDummy::Remove(void)
 	}
 }
 
-#ifdef VICEEXT_DISTANT_LIGHTS
 void CDummy::ProcessDistantLights()
 {
 	if (m_area != AREA_MAIN_MAP)
@@ -216,16 +215,13 @@ void CDummy::ProcessDistantLights()
 
 		float fDistSqr = (camPos.x - pos.x) * (camPos.x - pos.x) + (camPos.y - pos.y) * (camPos.y - pos.y) + (camPos.z - pos.z) * (camPos.z - pos.z);
 
-		//if ((fDistSqr <= 250.0f * 250.0f || fDistSqr >= CoronaFarClip * CoronaFarClip))
 		if ((fDistSqr <= effect->light.dist * effect->light.dist || fDistSqr >= CoronaFarClip * CoronaFarClip))
 			continue;
 
-		//fRadius = (fDistSqr < 300.0f * 300.0f) ? (0.07f) * sqrt(fDistSqr) - 17.5f : 3.5f;
 		fRadius = (fDistSqr < (effect->light.dist - 50.0f) * (effect->light.dist - 50.0f)) ? (0.07f) * sqrt(fDistSqr) - 17.5f : 3.5f;
 
 		fRadius *= Min((0.0025f) * sqrt(fDistSqr) + 0.25f, 4.0f); // http://goo.gl/3kDpnC
 
-		// Corona
 		if(lightOn)
 			CCoronas::RegisterCorona((uintptr)this + i + numEffects,
 				effect->col.r, effect->col.g, effect->col.b, bAlpha,
@@ -242,7 +238,6 @@ void CDummy::ProcessDistantLights()
 				!!(effect->light.flags&LIGHTFLAG_LONG_DIST));
 	}
 }
-#endif
 
 bool
 IsDummyPointerValid(CDummy* pDummy)

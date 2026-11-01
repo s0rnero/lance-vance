@@ -28,6 +28,7 @@
 #include "Debug.h"
 #include "Camera.h"
 #include "DMAudio.h"
+#include "WidescreenFixOptions.h"
 #include "Bike.h"
 #include "Pickups.h"
 #ifdef VICEEXT_FIRST_PERSON
@@ -99,6 +100,7 @@ CCam::Init(void)
 #if defined VICEEXT_FIRING_AND_AIMING && defined VICEEXT_FIRST_PERSON
 	m_bAimingWhileLookBehind = false;
 	m_bFixed1stPersonCamInVeh = false;
+	m_bViceExtFpEntered = false;
 #endif
 }
 
@@ -147,6 +149,27 @@ CCam::Process(void)
 
 		TheCamera.m_fMouseAccelHorzntl = curSenseX;
 		TheCamera.m_fMouseAccelVertical = curSenseY;
+
+#ifdef __EMSCRIPTEN__
+		{
+			int odAim = (ped->bIsPlayerAiming || ped->m_nPedState == PED_SNIPER_MODE) ? 1 : 0;
+			int odPad = CPad::GetPad(0)->IsAffectedByController ? 1 : 0;
+			static int s_odSensAim = -1;
+			static int s_odSensPad = -1;
+			uint32 odNow = CTimer::GetTimeInMilliseconds();
+			static uint32 s_odSensNext = 0;
+			if (odAim != s_odSensAim || odPad != s_odSensPad || odNow >= s_odSensNext || odNow + 60000 < s_odSensNext) {
+				s_odSensAim = odAim;
+				s_odSensPad = odPad;
+				s_odSensNext = odNow + 1000;
+				char t[200];
+				snprintf(t, sizeof t, "P4 kind=aimsens schema=1 gen=1 frame=%u sim=%.4f case=0 id=0 aim=%d sens=%.6f mfac=%.6f pfac=%.6f",
+					(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
+					odAim, curSenseX, odPad ? 0.0f : curSenseX, odPad ? curSenseX : 0.0f);
+				ODTRACES(t);
+			}
+		}
+#endif
 	}
 #endif
 
@@ -215,6 +238,19 @@ CCam::Process(void)
 		TargetSpeedVar = 0.0f;
 		SpeedVar = 0.0f;
 	}
+
+#ifdef VICEEXT_CAMERA_FP_INIT
+	// Entrada a primera persona vista desde esta camara. El flag que pone
+	// CCamera::Process no llega en el mismo frame que el cambio con V (se
+	// comprobo en odtrace.log: la sesion paso 76 s en FP sin un solo init y
+	// la camara conservaba el Beta de tercera persona, que en la convencion
+	// de mundo apunta exactamente al reves). Comparar el modo procesado en
+	// el frame anterior detecta la entrada siempre.
+	static bool s_odFpWasActive = false;
+	if (Mode == MODE_REAL_1ST_PERSON && !s_odFpWasActive)
+		m_bViceExtFpEntered = true;
+	s_odFpWasActive = (Mode == MODE_REAL_1ST_PERSON);
+#endif
 
 	switch(Mode){
 	case MODE_TOPDOWN:
@@ -342,6 +378,11 @@ CCam::Process(void)
 #ifdef VICEEXT_FIRST_PERSON
 	case MODE_REAL_1ST_PERSON:
 		Process_Real_1st_Person(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+		break;
+#endif
+#ifdef VICEEXT_CHEAT_EFFECTS
+	case MODE_FOLLOWPROJECTILE:
+		Process_FollowProjectile(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		break;
 #endif
 	default:
@@ -968,72 +1009,12 @@ bool
 CCam::IsTargetInWater(const CVector &CamCoors)
 {
 	if(CamTargetEntity){
-		// VICEEXT (12ª partida, 22/09): NADAR NO ES "CAER AL AGUA".
-		//
-		// Este predicado sólo decide si el motor pide `MODE_PLAYER_FALLEN_WATER`
-		// (Camera.cpp: "Fallen into water"), que es la cámara del jugador que se
-		// hunde: se queda clavada en `m_vecLastAboveWaterCamPosition` (la última
-		// posición de cámara por encima del agua) mirando hacia abajo. En el mod
-		// nadar es un estado normal: el ped flota CON la cabeza fuera, así que
-		// aquí nunca entraba... pero nuestro nado (VICEEXT_SWIMMING) lleva al ped
-		// unos centímetros por DEBAJO de la superficie (`pos.z < WaterZ`), o sea
-		// que cumplía la condición y la cámara saltaba al modo de ahogado.
-		//
-		// Medido en el log de las partidas del 22/09 (nado a z=5.4 con nivel 6.1):
-		// `SWIM2 ... camz=12.02` constante mientras el ped avanzaba 1.3 m/s y el
-		// vídeo del navegador mostrando la calzada desde arriba (el ped fuera de
-		// cuadro). Es exactamente lo que el jugador describe como "la cámara se
-		// queda fija y Tommy cae al vacío".
-		//
-		// Con el nado activo se devuelve false: la cámara sigue siendo la de
-		// seguir-al-ped (que ya lleva el objetivo a la superficie en
-		// Process_FollowPed / Process_FollowPedWithMouse).
 #ifdef VICEEXT_SWIMMING
-		// R17 (14ª partida, 22/09): el JUGADOR VIVO EN EL AGUA nunca usa esta
-		// cámara. Antes sólo se excluía con el nado activo (`ViceExtIsSwimming`),
-		// y eso dejaba dos agujeros por los que la cámara se quedaba fija:
-		//   - el nado se suelta al llegar a agua poco honda (`motivo=poco-hondo`)
-		//     con el ped TODAVÍA por debajo de la superficie -> el predicado de
-		//     serie (`bIsInWater && pos.z < WaterZ`) volvía a dar verdadero;
-		//   - justo al entrar al agua, antes de que el ped esté "nadando".
-		// Y el modo que pide es `MODE_PLAYER_FALLEN_WATER`, que fija la cámara 4 m
-		// sobre `m_vecLastAboveWaterCamPosition` y la deja CLAVADA mirando hacia
-		// abajo (Process_Player_Fallen_Water). En el vídeo del navegador de la
-		// sesión de las 14:38 se ve literal: la cámara sobre el agua, el ped
-		// nadando fuera de cuadro y `camz=12.79` constante (= última posición de
-		// cámara + 4) mientras avanzaba a 1,3 m/s. Eso es lo que el jugador
-		// describía como "la cámara se mantiene fija".
-		// El mod hace nadable al jugador (no se ahoga), así que este predicado
-		// sólo tiene sentido para él si de verdad se está ahogando o ha muerto.
 		if(CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->IsPlayer()){
 			CPed *odPed = (CPed*)CamTargetEntity;
-			// R18 (15ª partida, 22/09): la condición NO puede mirar `bIsDrowning`.
-			//
-			// `CPed::ProcessBuoyancy` marca `bIsDrowning = true` en cuanto el ped
-			// queda MÁS DE 0,6 m bajo la superficie
-			// (`mod_Buoyancy.m_waterlevel > GetPosition().z + 0.6f`), y con el
-			// mod el jugador nada flotando a ~0,5-0,9 m del nivel del agua: o sea
-			// que nadando normal el motor lo tiene por ahogado a ratos. Con esa
-			// condición, la cámara volvía al modo de ahogado
-			// (`MODE_PLAYER_FALLEN_WATER`) justo al entrar al agua —cuando el ped
-			// aún viene hundido de la caída— y cada vez que una ola lo bajaba de
-			// los 0,6 m, y se quedaba clavada 4 m sobre el agua mirando hacia
-			// abajo mientras el ped se alejaba (`camdist` hasta 11,6 m).
-			//
-			// Medido en la sonda `tools/crouch-swim-smoke-test.mjs` (build ve30)
-			// con capturas: al entrar al agua `modo=23` con `camz=10,91` fijo y
-			// `camdist` creciendo (6,86 → 9,22 → 11,59 m); al subir el ped a la
-			// superficie volvía a `modo=4`. El mod hace nadable al jugador
-			// (`bDrownsInWater = false`, no muere ahogado), así que la cámara de
-			// ahogado sólo tiene sentido si de verdad se muere: se excluye por
-			// "no está muriendo" y no por "no está ahogándose" (`ahogando=` en la
-			// traza dice si el motor lo tenía por ahogado en ese momento).
 			if(!odPed->DyingOrDead()){
 				m_vecLastAboveWaterCamPosition = Source;
 #ifdef __EMSCRIPTEN__
-				// Una vez por sesión: deja constancia en el log de que la cámara con
-				// el jugador vivo en el agua es la de seguir-al-ped (modo 4) y no la
-				// de ahogado (modo 23, clavada 4 m sobre el agua).
 				static bool odWarnedFallen = false;
 				if (!odWarnedFallen) {
 					odWarnedFallen = true;
@@ -1054,6 +1035,10 @@ CCam::IsTargetInWater(const CVector &CamCoors)
 			   ((CPed*)CamTargetEntity)->bIsInWater && CamTargetEntity->GetPosition().z < WaterZ)
 				return true;
 		}else{
+#ifdef VICEEXT_CHEAT_EFFECTS
+			if (FindPlayerPed()->bViceExtRcRocket)
+				return false;
+#endif
 			assert(CamTargetEntity->IsVehicle());
 			if(((CVehicle*)CamTargetEntity)->bIsDrowning ||
 			   ((CVehicle*)CamTargetEntity)->bIsInWater && CamTargetEntity->GetPosition().z < WaterZ)
@@ -1573,9 +1558,6 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	TargetCoors.z -= m_fCurrentCameraOffsetZ;
 #endif
 #ifdef VICEEXT_SWIMMING
-	// H2 (7ª partida, t=176: cámara clavada en el plano del agua): nadando, el
-	// objetivo va a la superficie (no al ped sumergido), para que la cámara lo
-	// siga detrás por encima del agua en vez de mirar desde dentro.
 	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->IsPlayer()
 	    && CPlayerPed::ViceExtIsSwimming()) {
 		float odWl = 0.0f;
@@ -1583,9 +1565,6 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	    	&& TargetCoors.z < odWl + 0.5f)
 			TargetCoors.z = odWl + 0.5f;
 #ifdef __EMSCRIPTEN__
-		// R14: una línea por segundo mientras se nada. Junto con `SWIM2 camz`
-		// cierra el diagnóstico de la cámara de nado: dice que el objetivo está en
-		// la superficie (nivel+0,5) y dónde está la cámara.
 		{
 			static uint32 s_odNextSwim = 0;
 			uint32 odNow = CTimer::GetTimeInMilliseconds();
@@ -2094,7 +2073,21 @@ CCam::Process_Cam_On_A_String(const CVector &CameraTarget, float TargetOrientati
 	// unused
 	// ((CVehicle*)CamTargetEntity)->GetVehicleAppearance();
 
-	FOV = DefaultFOV;
+#ifdef VICEEXT_WFP_CAR_SPEED_FOV
+	if (g_bWSPOptionCarSpeedDependantFOV) {
+		if (ResetStatics) {
+			FOV = DefaultFOV;
+		} else {
+			float forwardSpeed = DotProduct(((CVehicle*)CamTargetEntity)->GetForward(), ((CVehicle*)CamTargetEntity)->m_vecMoveSpeed);
+			if (forwardSpeed > 0.4f)
+				FOV += (forwardSpeed - 0.4f) * CTimer::GetTimeStep();
+			if (FOV > DefaultFOV)
+				FOV = Pow(0.98f, CTimer::GetTimeStep()) * (FOV - DefaultFOV) + DefaultFOV;
+			FOV = Clamp(FOV, DefaultFOV, DefaultFOV + 30.0f);
+		}
+	} else
+#endif
+		FOV = DefaultFOV;
 
 	if(ResetStatics){
 		AlphaSpeed = 0.0f;
@@ -2678,8 +2671,10 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 	}
 #endif
 	if (!isAttached) {
-		while(Beta >= TWOPI) Beta -= TWOPI;
-		while(Beta < 0) Beta += TWOPI;
+		if(Beta >= TWOPI || Beta < 0){
+			Beta = fmodf(Beta, TWOPI);
+			if(Beta < 0) Beta += TWOPI;
+		}
 	}
 	if(Alpha > DEGTORAD(60.0f)) Alpha = DEGTORAD(60.0f);
 	else if(Alpha < -DEGTORAD(89.5f)) Alpha = -DEGTORAD(89.5f);
@@ -2723,8 +2718,11 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 				}
 			}
 		}else{
-			while(Beta < -PI) Beta += TWOPI;
-			while(Beta >= PI) Beta -= TWOPI;
+			if(Beta < -PI || Beta >= PI){
+				Beta = fmodf(Beta + PI, TWOPI);
+				if(Beta < 0) Beta += TWOPI;
+				Beta -= PI;
+			}
 		}
 
 		mat = TargetPed->m_attachedTo->GetMatrix();
@@ -3940,7 +3938,12 @@ float fWheelCamBikeXOffset = 0.2f;
 bool
 CCam::Process_WheelCam(const CVector&, float, float, float)
 {
-	FOV = DefaultFOV;
+#ifdef VICEEXT_WFP_WHEELCAM_FOV
+	if (g_bWSPOptionWheelCamFOV)
+		FOV = CDraw::ConvertFOVInverse(DefaultFOV);
+	else
+#endif
+		FOV = DefaultFOV;
 
 	CVector WheelPos;
 	if(CamTargetEntity->IsPed()){
@@ -4446,10 +4449,14 @@ CCam::Process_Editor(const CVector&, float, float, float)
 void
 CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientation, float, float)
 {
-	CPlayerPed* ped;
-	CVehicle* vehicle = nullptr;
+	CPlayerPed* ped = nil;
+	CVehicle* vehicle = nil;
 	if (CamTargetEntity->IsPed()) {
 		ped = (CPlayerPed*)CamTargetEntity;
+		if (ped->InVehicle())
+			vehicle = ped->m_pMyVehicle;
+		else
+			vehicle = FindPlayerVehicle();
 	} else {
 		vehicle = (CVehicle*)CamTargetEntity;
 		ped = (CPlayerPed*)vehicle->pDriver;
@@ -4459,8 +4466,7 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 		return;
 
 	static float stepsLeftToChangeBetaByInput;
-	static bool bNeedTurnBetaAngleRelativeWorld = false;
-	static bool bNeedTurnBetaAngleRelativeVehicle = false;
+	static bool s_odFpWorldRender = false;
 
 	FOV = FrontEndMenuManager.m_PrefsFOV_FP;
 
@@ -4468,10 +4474,51 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 	float CamDist;
 	CColPoint colPoint;
 
+	float odCara = vehicle ? vehicle->GetForward().Heading() : (ped ? ped->m_fRotationCur : 0.0f);
+
 	if(ResetStatics){
 		Rotating = false;
 		m_bCollisionChecksOn = true;
 		ResetStatics = false;
+	}
+#ifdef VICEEXT_CAMERA_FP_INIT
+	if(m_bViceExtFpEntered){
+		m_bViceExtFpEntered = false;
+		stepsLeftToChangeBetaByInput = 0.0f;
+		if (vehicle) {
+			// Dos convenciones conviven en esta funcion: la relativa al coche
+			// usa -HALFPI como "al frente", pero la de mundo (autocentrado o
+			// apuntando) reconstruye Front como (-cos Beta, -sin Beta) y por
+			// tanto necesita Beta = heading - HALFPI. Elegir la que de verdad
+			// va a ejecutarse este frame evita entrar mirando atras.
+			bool odRelative = ped->bIsPlayerAiming ?
+				FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP :
+				!FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP;
+			Beta = odRelative ? -HALFPI : vehicle->GetForward().Heading() - HALFPI;
+			Front = vehicle->GetForward();
+			Up = vehicle->GetUp();
+			Alpha = vehicle->GetForward().z;
+		} else {
+			Beta = odCara - HALFPI;
+		}
+		TheCamera.m_bUseTransitionBeta = false;
+		BetaSpeed = 0.0f;
+		// La convencion de Beta del init debe coincidir con la rama de render
+		// de este frame; si no, el primer frame convierte y salta.
+		s_odFpWorldRender = vehicle ? !(ped->bIsPlayerAiming ?
+			FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP :
+			!FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP) : false;
+#ifdef __EMSCRIPTEN__
+		{
+			char odT[260];
+			snprintf(odT, sizeof odT, "VICEEXT 1p init modo=%d beta=%.4f cara=%.4f veh=%.4f dot=%.4f pref=%d",
+				(int)Mode, Beta, odCara, vehicle ? vehicle->GetForward().Heading() : 0.0f,
+				vehicle ? DotProduct(Front, vehicle->GetForward()) : 0.0f,
+				(int)FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP);
+			ODTRACES(odT);
+		}
+#endif
+#endif
 	}
 
 	TargetCoors = CameraTarget;
@@ -4610,7 +4657,10 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 		}
 
 		if (FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP && !CPad::GetPad(0)->ArePlayerControlsDisabled()) {
-			if ((MouseX != 0.0 || MouseY != 0.0) && CVehicle::m_bDisableMouseSteering || 
+			// Un delta de 1 px es ruido del navegador bajo pointer lock y no debe
+			// congelar el autocentrado; el mod no lo filtraba porque no corria en
+			// un navegador. Por encima de 2 px se considera mirada de verdad.
+			if ((Abs(MouseX) + Abs(MouseY) > 2.0f) && CVehicle::m_bDisableMouseSteering ||
 				CPad::GetPad(0)->IsAffectedByController && (LookLeftRight != 0.0f || LookUpDown != 0.0f)) {
 
 				if (stepsLeftToChangeBetaByInput == 0.0f) {
@@ -4644,38 +4694,46 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 			stepsLeftToChangeBetaByInput = 35.0f;
 		}
 
-		if (FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP) {
-			if (ped->bIsPlayerAiming && !bNeedTurnBetaAngleRelativeVehicle) {
-				bNeedTurnBetaAngleRelativeVehicle = true;
-
-				Beta = -HALFPI - (vehicle->GetRight().Heading() - CrossProduct(Front, Up).Heading());
-			} else if (!ped->bIsPlayerAiming && bNeedTurnBetaAngleRelativeVehicle) {
-				bNeedTurnBetaAngleRelativeVehicle = false;
-			}
-		} else {
-			if (ped->bIsPlayerAiming && !bNeedTurnBetaAngleRelativeWorld) {
-				bNeedTurnBetaAngleRelativeWorld = true;
-
-				Beta = CrossProduct(Front, Up).Heading();
+		// Convencion que usara la rama de render de este frame: mundo si el
+		// autocentrado esta activo (o si se apunta sin camara relativa),
+		// relativa al coche en el resto. Al cambiar (empezar/parar de apuntar
+		// o tocar el autocentrado en el menu) se convierte Beta desde el Front
+		// actual para no dar un salto de 90 grados.
+		bool odAim = ped->bIsPlayerAiming;
+		bool odAuto = FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP;
+		// La conversion y la rama de render tienen que usar exactamente la
+		// misma condicion. stepsLeft forma parte de ella: al soltar el
+		// apuntado la camara sigue en relativa mientras dura la transicion.
+		bool odRelative = (!odAim && (stepsLeftToChangeBetaByInput > 0.0f || !odAuto)) ||
+		                  (odAim && FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP);
+		bool odWorldRender = !odRelative;
+		if (odWorldRender != s_odFpWorldRender) {
+			float camRight = CrossProduct(Front, Up).Heading();
+			if (odWorldRender) {
+				Beta = camRight;
 				Alpha += vehicle->GetForward().z;
-			} else if (!ped->bIsPlayerAiming && bNeedTurnBetaAngleRelativeWorld) {
-				bNeedTurnBetaAngleRelativeWorld = false;
-
-				Beta = -HALFPI - (vehicle->GetRight().Heading() - CrossProduct(Front, Up).Heading());
-			}
+			} else
+				Beta = -HALFPI - (vehicle->GetRight().Heading() - camRight);
+			s_odFpWorldRender = odWorldRender;
 		}
 
 		CMatrix* matrix = &vehicle->GetMatrix();
 
 		float vehicleHeading = vehicle->GetRight().Heading();
 
-		if (FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP && !mouseChangesInput && vehicle->m_vecMoveSpeed.Magnitude2D() > 0.02f) {
+		bool odFpAutoApplied = false;
+
+		// Autocentrado del mod: solo con el coche en movimiento y sin input.
+		// Parado lo resuelve el bloque de coche parado de arriba.
+		if (odAuto && !mouseChangesInput && vehicle->m_vecMoveSpeed.Magnitude2D() > 0.02f) {
+			odFpAutoApplied = true;
 			if (Abs(Beta - vehicleHeading) < 0.01 && Abs(Alpha - vehicle->GetForward().z) < 0.01)
 				m_bFixed1stPersonCamInVeh = true;
 
 			if (m_bFixed1stPersonCamInVeh)
 				Beta = vehicleHeading;
 			else {
+				// from Process_FollowCar_SA, but modified
 
 				float camRightHeading = Front.Heading() - HALFPI;
 				if (camRightHeading < -PI)
@@ -4709,8 +4767,12 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 
 				float newAngleSpeedMaxBlendAmount = 0.85f;
 				float angleChangeStep = Pow(0.1f, CTimer::GetTimeStep());
-				float targetBetaWithStickBlendAmount = (targetBeta - Beta) / Max(CTimer::GetTimeStep(), 1.0f);
-				
+				// El mod divide por Max(dt, 1.0f); por encima de 50 FPS ese suelo ya no
+				// es dt y el avance pasa a depender de los FPS (a 120 FPS tarda 2,5x
+				// mas en recentrar). Con 0.25 el suelo solo actua a partir de 200 FPS:
+				// a 30/50 FPS el valor es identico al del mod.
+				float targetBetaWithStickBlendAmount = (targetBeta - Beta) / Max(CTimer::GetTimeStep(), 0.25f);
+
 				if (targetBetaWithStickBlendAmount < -newAngleSpeedMaxBlendAmount)
 					targetBetaWithStickBlendAmount = -newAngleSpeedMaxBlendAmount;
 				else if (targetBetaWithStickBlendAmount > newAngleSpeedMaxBlendAmount)
@@ -4720,7 +4782,7 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 				BetaSpeed = targetBetaWithStickBlendAmount * angleChangeStepLeft + angleChangeStep * BetaSpeed;
 				if (Abs(BetaSpeed) < 0.0001f)
 					BetaSpeed = 0.0f;
-				
+
 				float betaChangePerFrame = CTimer::GetTimeStep() * BetaSpeed;
 				Beta = betaChangePerFrame + Beta;
 			}
@@ -4729,8 +4791,7 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 				Alpha = InterpFloat(Alpha, vehicle->GetForward().z, m_bFixed1stPersonCamInVeh ? 4.0f : 5.0f);
 		}
 
-		if (!ped->bIsPlayerAiming && (stepsLeftToChangeBetaByInput > 0.0f || !FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP) ||
-			ped->bIsPlayerAiming && FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP) {
+		if (odRelative) {
 			
 			if (ped->bIsPlayerAiming) {
 				if (Beta >= DEGTORAD(5.0f) && Beta < HALFPI) Beta = DEGTORAD(5.0f);
@@ -4754,7 +4815,7 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 				LimitAngleBetaRelativelyTwoAngles(vehicle->GetRight(), DEGTORAD(95.0f), DEGTORAD(95.0f));
 		}
 
-		if (!ped->bIsPlayerAiming && stepsLeftToChangeBetaByInput == 0.0f && FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP ||
+		if (!ped->bIsPlayerAiming && (stepsLeftToChangeBetaByInput == 0.0f && FrontEndMenuManager.m_PrefsAutocenterCamInVeh_FP) ||
 			!FrontEndMenuManager.m_PrefsRelativeCamInVeh_DB_FP && ped->bIsPlayerAiming) {
 
 			if (vehicle->GetUp().z > 0.05f) {
@@ -4772,6 +4833,35 @@ CCam::Process_Real_1st_Person(const CVector& CameraTarget, float TargetOrientati
 			Up = CrossProduct(Right, Front);
 			Up.Normalise();
 		}
+#ifdef __EMSCRIPTEN__
+		{
+			static int8 s_odFpAutoTrace = -1;
+			static int8 s_odFpRelTrace = -1;
+			uint32 odNow = CTimer::GetTimeInMilliseconds();
+			float odErrDeg = (Beta - vehicleHeading) * (180.0f / PI);
+			while (odErrDeg >= 180.0f) odErrDeg -= 360.0f;
+			while (odErrDeg < -180.0f) odErrDeg += 360.0f;
+			int8 odCur = (int8)(odFpAutoApplied ? 1 : 0);
+			if (odCur != s_odFpAutoTrace || (odNow & 0x3FF) < 2) {
+				s_odFpAutoTrace = odCur;
+				char odT[240];
+				snprintf(odT, sizeof odT, "VICEEXT 1p auto auto=%d fixed=%d err=%.2f vel=%.2f look=%d mx=%.1f my=%.1f trans=%u",
+					(int)odFpAutoApplied, (int)m_bFixed1stPersonCamInVeh, odErrDeg,
+					vehicle->m_vecMoveSpeed.Magnitude2D(), (int)mouseChangesInput,
+					MouseX, MouseY, (unsigned)TheCamera.m_uiTransitionState);
+				ODTRACES(odT);
+			}
+			int8 odRel = (int8)(odRelative ? 1 : 0);
+			if (odRel != s_odFpRelTrace || (odNow & 0x1FF) < 2) {
+				s_odFpRelTrace = odRel;
+				char odT[220];
+				snprintf(odT, sizeof odT, "VICEEXT 1p aimrel aim=%d rel=%d steps=%.2f beta=%.3f camRight=%.3f",
+					(int)ped->bIsPlayerAiming, (int)odRelative, stepsLeftToChangeBetaByInput, Beta,
+					CrossProduct(Front, Up).Heading());
+				ODTRACES(odT);
+			}
+		}
+#endif
 	} else if (ped) {
 		if (ped->m_nPedState == PED_SEEK_CAR || ped->m_nPedState == PED_SEEK_IN_BOAT || ped->m_nPedState == PED_ENTER_CAR || ped->m_nPedState == PED_EXIT_CAR)
 			Beta = ped->m_fRotationCur - HALFPI;
@@ -5076,7 +5166,12 @@ CCam::ProcessArrestCamOne(void)
 	CVector TargetPos;
 	CVector CamSource;
 	CPed *cop = nil;
-	FOV = 45.0f;
+#ifdef VICEEXT_WFP_EMERGENCY_FOV
+	if (g_bWSPOptionEmergencyFOV)
+		FOV = DefaultFOV;
+	else
+#endif
+		FOV = 45.0f;
 	bool foundPos = false;
 	int ArrestModes[5] = { -1, -1, -1, -1, -1 };
 
@@ -5286,7 +5381,12 @@ CCam::ProcessArrestCamTwo(void)
 	for(int i = 0; i <= 1; i++){
 		int Dir = i == 0 ? 1 : -1;
 
-		FOV = 60.0f;
+#ifdef VICEEXT_WFP_EMERGENCY_FOV
+		if (g_bWSPOptionEmergencyFOV)
+			FOV = DefaultFOV;
+		else
+#endif
+			FOV = 60.0f;
 		TargetCoors = player->GetPosition();
 		Beta = CGeneral::GetATanOfXY(TargetCoors.x-SourceX, TargetCoors.y-SourceY);
 		BetaOffset = DEGTORAD(Dir*80);
@@ -5570,7 +5670,6 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	TargetCoors.z -= m_fCurrentCameraOffsetZ;
 #endif
 #ifdef VICEEXT_SWIMMING
-	// H2: nadando, el objetivo sube a la superficie (ver el otro proceso).
 	if (CamTargetEntity && CamTargetEntity->IsPed() && ((CPed*)CamTargetEntity)->IsPlayer()
 	    && CPlayerPed::ViceExtIsSwimming()) {
 		float odWl = 0.0f;
@@ -5578,9 +5677,6 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	    	&& TargetCoors.z < odWl + 0.5f)
 			TargetCoors.z = odWl + 0.5f;
 #ifdef __EMSCRIPTEN__
-		// R14: una línea por segundo mientras se nada. Junto con `SWIM2 camz`
-		// cierra el diagnóstico de la cámara de nado: dice que el objetivo está en
-		// la superficie (nivel+0,5) y dónde está la cámara.
 		{
 			static uint32 s_odNextSwim = 0;
 			uint32 odNow = CTimer::GetTimeInMilliseconds();
@@ -5789,6 +5885,70 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 	GetVectorsReadyForRW();
 #endif
 }
+
+#ifdef VICEEXT_CHEAT_EFFECTS
+void
+CCam::Process_FollowProjectile(const CVector& CameraTarget, float TargetOrientation, float, float)
+{
+	FOV = 90.0f;
+
+	if(CamTargetEntity->m_rwObject == nil) {
+		float shakeStrength = TheCamera.m_fCamShakeForce - 0.28f*(CTimer::GetTimeInMilliseconds() - TheCamera.m_uiCamShakeStart)/1000.0f;
+		if (shakeStrength <= 0.0f)
+			TheCamera.RestoreWithJumpCut();
+
+		return;
+	}
+
+	if(ResetStatics){
+		Beta = TargetOrientation;
+		Alpha = 0.0f;
+		m_fInitialPlayerOrientation = TargetOrientation;
+		TheCamera.m_fAvoidTheGeometryProbsTimer = 0.0f;
+	}
+
+	float AlphaOffset, BetaOffset;
+	float MouseX = CPad::GetPad(0)->GetMouseX();
+	float MouseY = CPad::GetPad(0)->GetMouseY();
+	float LookLeftRight = 0.0f, LookUpDown = 0.0f;
+	if((MouseX != 0.0f || MouseY != 0.0f) && !CPad::GetPad(0)->ArePlayerControlsDisabled()){
+		LookLeftRight = -2.5f*MouseX;
+		LookUpDown = 4.0f*MouseY;
+	}else if (CPad::GetPad(0)->IsAffectedByController){
+		LookLeftRight = -CPad::GetPad(0)->LookAroundLeftRight();
+		LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
+	}
+
+	BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+	AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV/80.0f;
+
+	Alpha += AlphaOffset;
+	Beta += BetaOffset;
+	while(Beta >= PI) Beta -= 2*PI;
+	while(Beta < -PI) Beta += 2*PI;
+
+	CVector TargetCoors = CameraTarget;
+	Source = CameraTarget;
+
+	CMatrix* matrix = &CamTargetEntity->GetMatrix();
+	Front = matrix->GetForward();
+	Front.Normalise();
+	Up = -matrix->GetUp();
+	Up.Normalise();
+	CVector Right = CrossProduct(Front, Up);
+	Right.Normalise();
+	Up = CrossProduct(Right, Front);
+	Up.Normalise();
+
+	Front.x = Cos(Alpha) * -Cos(Beta);
+	Front.y = Cos(Alpha) * -Sin(Beta);
+	Front.z = Sin(Alpha);
+
+	GetVectorsReadyForRW();
+
+	ResetStatics = false;
+}
+#endif
 
 // LCS cam hehe
 void
@@ -6102,7 +6262,15 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 
 	// Using GetCarGun(LR/UD) will give us same unprocessed RightStick value as SA
 	float stickX = -(pad->GetCarGunLeftRight());
+#ifdef VICEEXT_CHEAT_EFFECTS
+	float stickY;
+	if (CVehicle::bAirWaysCheat && !CPad::GetPad(0)->IsAffectedByController)
+		stickY = 0.0f;
+	else
+		stickY = -pad->GetCarGunUpDown();
+#else
 	float stickY = -pad->GetCarGunUpDown();
+#endif
 
 	// In SA this checks for m_bUseMouse3rdPerson so num2 / num8 do not move camera
 	// when Keyboard & Mouse controls are used. To make it work better with III/VC, check for actual pad state instead
@@ -6190,6 +6358,57 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	}
 #endif
 
+#ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+	static uint32 s_odCamLastLook = 0;
+	static bool s_odCamLastLookInit = false;
+	static float s_odCamMouseX = 0.0f;
+	static float s_odCamMouseY = 0.0f;
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+
+	if (ResetStatics || !s_odCamLastLookInit) {
+		s_odCamLastLook = ResetStatics ? (odNow - 3000u) : odNow;
+		s_odCamLastLookInit = true;
+	}
+	if (odNow < s_odCamLastLook)	// el reloj salta hacia atras al abrir el menu
+		s_odCamLastLook = odNow;
+
+	{
+		float odKeep = Pow(0.35f, CTimer::GetTimeStep());
+		s_odCamMouseX = s_odCamMouseX * odKeep + pad->GetMouseX();
+		s_odCamMouseY = s_odCamMouseY * odKeep + pad->GetMouseY();
+	}
+	bool odMirando = (Abs(s_odCamMouseX) >= 1.5f || Abs(s_odCamMouseY) >= 1.5f)
+		|| (Abs(pad->GetMouseX()) + Abs(pad->GetMouseY()) >= 0.5f)
+		|| pad->GetLookLeft() || pad->GetLookRight() || pad->GetLookBehindForCar()
+		|| FindPlayerPed()->bIsPlayerAiming;
+	if (odMirando)
+		s_odCamLastLook = odNow;
+
+	static bool s_odCamCentrando = false;
+	static float s_odCamVelCentro = 0.0f;
+	bool odPedido = false;
+	bool odAutoCentrar = false;
+	float odTargetBeta = 0.0f;
+	float odErrorBeta = 0.0f;
+	{
+		odTargetBeta = car->GetForward().Heading() - HALFPI;
+		odErrorBeta = odTargetBeta - Beta;
+		while (odErrorBeta >= PI) odErrorBeta -= 2*PI;
+		while (odErrorBeta < -PI) odErrorBeta += 2*PI;
+	}
+	bool odIdle = (uint32)(odNow - s_odCamLastLook) >= 1500u;
+	bool odAvance = DotProduct(car->GetForward(), car->m_vecMoveSpeed) > 0.02f;
+	bool odPuedeCentrar = odIdle && !odMirando && stickX == 0.0f && odAvance
+		&& TheCamera.m_uiTransitionState == 0;
+	if (odPuedeCentrar) {
+		if (!s_odCamCentrando && Abs(odErrorBeta) > DEGTORAD(3.0f)) {
+			s_odCamCentrando = true;
+			odPedido = true;
+		} else if (s_odCamCentrando && Abs(odErrorBeta) < DEGTORAD(2.0f))
+			s_odCamCentrando = false;
+	}
+	odAutoCentrar = s_odCamCentrando && odPuedeCentrar;
+
 	if (correctAlpha) {
 		if (nPreviousMode != MODE_CAM_ON_A_STRING)
 			alphaCorrected = false;
@@ -6222,6 +6441,31 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	else
 		betaChangePerFrame = CTimer::GetTimeStep() * BetaSpeed;
 	Beta = betaChangePerFrame + Beta;
+
+	if (odAutoCentrar)
+		WellBufferMe(odTargetBeta, &Beta, &s_odCamVelCentro, 0.15f, 0.007f, true);
+	else
+		s_odCamVelCentro = 0.0f;
+
+#ifdef __EMSCRIPTEN__
+	{
+		static bool s_odCamTrazaUltimo = false;
+		static uint32 s_odCamTrazaSiguiente = 0;
+		uint32 odMs = CTimer::GetTimeInMilliseconds();
+		if (odPedido || odAutoCentrar != s_odCamTrazaUltimo || (odAutoCentrar && odMs >= s_odCamTrazaSiguiente)) {
+			float odErr = odTargetBeta - Beta;
+			while (odErr >= PI) odErr -= 2*PI;
+			while (odErr < -PI) odErr += 2*PI;
+			char t[200];
+			snprintf(t, sizeof t, "camauto2 auto=%d pedido=%d schema=1 gen=1 frame=%u error=%.4f errdeg=%.2f beta=%.4f objetivo=%.4f vel=%.4f",
+				odAutoCentrar ? 1 : 0, odPedido ? 1 : 0, (unsigned)CTimer::GetFrameCounter(),
+				odErr, odErr * (180.0f / PI), Beta, odTargetBeta, s_odCamVelCentro * 50.0f * (180.0f / PI));
+			ODTRACES(t);
+			s_odCamTrazaUltimo = odAutoCentrar;
+			s_odCamTrazaSiguiente = odMs + 500u;
+		}
+	}
+#endif
 
 	if (TheCamera.m_bJustCameOutOfGarage) {
 		float invHeading = Atan2(Front.y, Front.x);
@@ -6540,4 +6784,5 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 		}
 	}
 }
+#endif
 #endif

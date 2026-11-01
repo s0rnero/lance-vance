@@ -13,6 +13,14 @@ enum eBikeNodes {
 	BIKE_WHEEL_REAR,
 	BIKE_MUDGUARD,
 	BIKE_HANDLEBARS,
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	BIKE_HEADLIGHT_L,
+	BIKE_TAILLIGHT_L,
+	BIKE_INDICATOR_LF,
+	BIKE_INDICATOR_RF,
+	BIKE_INDICATOR_LR,
+	BIKE_INDICATOR_RR,
+#endif
 	BIKE_NUM_NODES
 };
 
@@ -88,6 +96,11 @@ public:
 	uint8 m_nDriveWheelsOnGroundPrev;
 	float m_fGasPedalAudio;
 	tWheelState m_aWheelState[2];
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	bool m_bIndicatorState[2];
+	void ViceExtProcessTurnSignals(void);
+	void ViceExtApplyIndicatorMaterials(void);
+#endif
 #ifdef VICEEXT_FIX_FV
 	float m_fOdPhase;
 #endif

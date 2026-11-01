@@ -27,6 +27,7 @@
 #include "Dummy.h"
 #include "WindModifiers.h"
 #include "SaveBuf.h"
+#include "ondemand.h"
 
 int gBuildings;
 
@@ -370,6 +371,27 @@ CEntity::PreRender(void)
 			PreRenderForGlassWindow();
 		}else if (((CObject*)this)->bIsPickup) {
 			CPickups::DoPickUpEffects(this);
+			if(GetModelIndex() == MI_PICKUP_SAVEGAME){
+#ifdef FIX_BUGS
+				CCoronas::RegisterCorona((uintptr)this + 8 + 4,
+#else
+				CCoronas::RegisterCorona((uintptr)this + 9,
+#endif
+					0, 0, 0, 255, GetPosition(), 1.2f, 50.0f,
+					CCoronas::TYPE_STAR, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, 0.0f);
+#ifdef __EMSCRIPTEN__
+				{
+					static bool odTrazado = false;
+					if(!odTrazado){
+						odTrazado = true;
+						char cb[128];
+						sprintf(cb, "PICKUP save: el contorno rosa del punto de guardado esta apagado (modelo %d)", GetModelIndex());
+						ODTRACES(cb);
+					}
+				}
+#endif
+			}
 			GetMatrix().UpdateRW();
 			UpdateRwFrame();
 #if defined VICEEXT_WEAPON_RCGRENADE && defined VICEEXT_WEAPON_GRENADE_LAUNCHER

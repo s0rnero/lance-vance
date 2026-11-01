@@ -32,6 +32,8 @@ CClumpModelInfo::CreateInstance(void)
 	if(m_clump == nil)
 		return nil;
 	RpClump *clone = RpClumpClone(m_clump);
+	if(clone == nil)
+		return nil;
 	if(IsClumpSkinned(clone)){
 		RpHAnimHierarchy *hier;
 		RpHAnimAnimation *anim;
@@ -51,6 +53,8 @@ CClumpModelInfo::CreateInstance(RwMatrix *m)
 {
 	if(m_clump){
 		RpClump *clump = (RpClump*)CreateInstance();
+		if(clump == nil)
+			return nil;
 		*RwFrameGetMatrix(RpClumpGetFrame(clump)) = *m;
 		return (RwObject*)clump;
 	}

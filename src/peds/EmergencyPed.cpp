@@ -336,7 +336,7 @@ CEmergencyPed::MedicAI(void)
 					if (Abs(m_fRotationCur - m_fRotationDest) < DEGTORAD(45.0f))
 						m_nEmergencyPedState = EMERGENCY_PED_PERFORM_CPR;
 					else
-						m_fRotationCur = (m_fRotationCur + m_fRotationDest) * 0.5f;
+						m_fRotationCur += (m_fRotationDest - m_fRotationCur) * (1.0f - Pow(0.5f, CTimer::GetTimeStep()));
 				}
 				break;
 			case EMERGENCY_PED_PERFORM_CPR:

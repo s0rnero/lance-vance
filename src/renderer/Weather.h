@@ -43,6 +43,10 @@ public:
 
 	static bool bScriptsForceRain;
 
+	static bool bBryxLights;
+	static void ShowBryxLights();
+	static void HideBryxLights();
+
 	static void RenderRainStreaks(void);
 	static void Update(void);
 	static void Init(void);

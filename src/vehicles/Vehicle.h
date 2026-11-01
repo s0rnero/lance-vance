@@ -41,6 +41,30 @@ enum eCarNodes
 	CAR_BONNET,
 	CAR_BOOT,
 	CAR_WINDSCREEN,
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	CAR_STEERINGWHEEL,
+	CAR_HEADLIGHT_L,
+	CAR_HEADLIGHT_R,
+	CAR_TAILLIGHT_L,
+	CAR_TAILLIGHT_R,
+	CAR_REVERSINGLIGHT_L,
+	CAR_REVERSINGLIGHT_R,
+	CAR_BRAKELIGHT_L,
+	CAR_BRAKELIGHT_R,
+	CAR_SERVICELIGHTS_0,
+	CAR_SERVICELIGHTS_1,
+	CAR_SERVICELIGHTS_2,
+	CAR_SERVICELIGHTS_3,
+	CAR_CLEARANCE_LIGHTS,
+	CAR_INDICATOR_LF,
+	CAR_INDICATOR_RF,
+	CAR_INDICATOR_2_LF,
+	CAR_INDICATOR_2_RF,
+	CAR_INDICATOR_LR,
+	CAR_INDICATOR_RR,
+	CAR_INDICATOR_2_LR,
+	CAR_INDICATOR_2_RR,
+#endif
 	NUM_CAR_NODES,
 };
 
@@ -101,6 +125,14 @@ enum eLights
 	VEHLIGHT_REAR_LEFT,
 	VEHLIGHT_REAR_RIGHT,
 };
+
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+enum eIndicators
+{
+	INDICATORS_LEFT,
+	INDICATORS_RIGHT,
+};
+#endif
 
 enum
 {
@@ -179,7 +211,7 @@ public:
 	CAutoPilot AutoPilot;
 	uint8 m_currentColour1;
 	uint8 m_currentColour2;
-#ifdef VICEEXT_CAR_FOUR_COLORS
+#ifdef VICEEXT_IMPROVED_VEHICLES
 	uint8 m_currentColour3;
 	uint8 m_currentColour4;
 #endif
@@ -339,8 +371,6 @@ public:
 	void ProcessBikeWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelContactSpeed, CVector &wheelContactPoint,
 		int32 wheelsOnGround, float thrust, float brake, float adhesion, float destabTraction, int8 wheelId, float *wheelSpeed, tWheelState *wheelState, eBikeWheelSpecial special, uint16 wheelStatus);
 	void ExtinguishCarFire(void);
-	// Sección 3 (C3.3/C3.4): dummies con nombre de los modelos del mod
-	// (`petrolcap` del depósito, `indicator*` de los intermitentes...).
 	RwFrame *FindDummyFrame(const char *name);
 	void ProcessDelayedExplosion(void);
 	float ProcessWheelRotation(tWheelState state, const CVector &fwd, const CVector &speed, float radius);
@@ -383,6 +413,9 @@ public:
 	void ActivateBombWhenEntered(void);
 	void KillPedsInVehicle(void);
 #ifdef VICEEXT_FIRST_PERSON
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	bool IsHighVehicle(void);
+#endif
 	bool IsOpenTopVehicle(void);
 #endif
 
@@ -408,6 +441,9 @@ public:
 	static bool bCheat9;
 	static bool bCheat10;
 	static bool bHoverCheat;
+#ifdef VICEEXT_CHEAT_EFFECTS
+	static bool bAirWaysCheat;	// truco AIRWAYS (11.03): el coche vuela con DoHoverAboveSurface
+#endif
 	static bool bAllTaxisHaveNitro;
 	static bool m_bDisableMouseSteering;
 	static bool bDisableRemoteDetonation;

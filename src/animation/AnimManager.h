@@ -143,6 +143,7 @@ public:
 	static const char *GetAnimGroupName(AssocGroupId groupId);
 	static CAnimBlendAssociation *CreateAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, AnimationId animId);
+	static CAnimBlendAssociation *FindAnimAssociation(AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *GetAnimAssociation(AssocGroupId groupId, const char *name);
 	static CAnimBlendAssociation *AddAnimation(RpClump *clump, AssocGroupId groupId, AnimationId animId);
 	static CAnimBlendAssociation *AddAnimationAndSync(RpClump *clump, CAnimBlendAssociation *syncanim, AssocGroupId groupId, AnimationId animId);

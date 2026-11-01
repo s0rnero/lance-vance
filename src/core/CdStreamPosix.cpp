@@ -109,28 +109,11 @@ int32 gImgFiles[MAX_CDIMAGES]; // -1: error 0:unused otherwise: fd
 char *gImgNames[MAX_CDIMAGES];
 
 #ifdef __EMSCRIPTEN__
-// ---- web on-demand: lectura sincrona + imagenes como directorios sueltos.
-// Sin hilos (como dos.zone): CdStreamRead lee en linea (el fetch async lo
-// cubre __wrap_open/__wrap_fopen via Asyncify) y CdStreamSync es inmediato.
-// Si "<path>.img" no existe como fichero pero sí "<path>" como directorio
-// (p. ej. models/gta3.img/ con miles de .dff/.txd sueltos), se registra
-// backend suelto usando el .dir para mapear sector->fichero.
 struct OdDirEntry { uint32 start; uint32 sectors; char name[32]; };
 struct OdLoose { char base[128]; OdDirEntry *entries; int nentries; uint32 totalSectors; int lastHit; };
 static OdLoose gOdLoose[MAX_CDIMAGES];
 static bool gOdIsLoose[MAX_CDIMAGES];
 
-// D4 (sección 1): fallos de apertura de un fichero suelto del .img.
-//
-// Un fallo aquí NO significa "fichero que no existe": significa que la capa
-// on-demand todavía no lo tiene en MEMFS y ha aplazado la descarga a propósito
-// (para no congelar el frame; el motor reintenta en otro fotograma). Verificado
-// contra el manifiesto: los 60 fallos de una partida tenían su entrada.
-//
-// Lo que faltaba es poder AFIRMAR que el fichero volvió. Aquí se recuerdan los
-// últimos fallos y, cuando alguno se abre bien, deja `ODSRECOVER <ruta>
-// fallos=<n>`: si todos los fallos acaban recuperados, el aplazamiento es
-// inocuo; un fallo sin recuperación es un modelo que se quedó sin cargar.
 #define OD_FAIL_RING 16
 static struct { char path[192]; int fallos; } gOdFails[OD_FAIL_RING];
 static int gOdFailCount;    // entradas ocupadas
@@ -139,7 +122,6 @@ static int gOdFailTotal;    // fallos totales (el recorte de líneas no lo ocult
 static int gOdFailShown;    // líneas `ODSHORT` emitidas
 static int gOdRecoverShown; // líneas `ODSRECOVER` emitidas
 
-// Casilla del anillo para esa ruta (la crea si no estaba).
 static int
 OdFailSlot(const char *path)
 {
@@ -159,8 +141,6 @@ OdFailSlot(const char *path)
 	return i;
 }
 
-// ¿Esta ruta había fallado antes? Si sí, se anota la recuperación y se saca del
-// anillo (un fichero que ya está en MEMFS no vuelve a fallar).
 static void
 OdNoteOpened(const char *path)
 {
@@ -187,8 +167,6 @@ OdNoteFailed(const char *path)
 	int slot = OdFailSlot(path);
 	gOdFails[slot].fallos++;
 	gOdFailTotal++;
-	// Los primeros van uno a uno (interesa leerlos de corrido); después sólo
-	// cada 20, para que la última línea traiga el total real.
 	if (gOdFailShown < 60 || gOdFailTotal % 20 == 0) {
 		gOdFailShown++;
 		char t[256];
@@ -215,9 +193,6 @@ OdDoRead(int img, void *buffer, uint32 sectorOffset, uint32 nSectors)
 		return rd < want ? STREAM_ERROR : STREAM_NONE;
 	}
 	OdLoose *L = &gOdLoose[img];
-	// Un .img real es continuo por sectores: una petición puede cubrir hasta
-	// 4 ficheros adyacentes (Streaming.cpp agrupa). Servirlos en cadena como
-	// el archivo original; solo los huecos sin entrada van a ceros.
 	uint32 sec = sectorOffset;
 	uint32 remain = nSectors;
 	while (remain > 0) {
@@ -239,7 +214,6 @@ OdDoRead(int img, void *buffer, uint32 sectorOffset, uint32 nSectors)
 				if (odErrCount < 20) { odErrCount++; printf("[od-trace] loose MISS sector %u\n", sec); ODTRACEI("loosemiss ", (int)sec); }
 				return STREAM_ERROR;
 			}
-			// Hueco sin entrada a mitad de tramo: ceros (como el slack del .img).
 			memset(dst, 0, remain * CDSTREAM_SECTOR_SIZE);
 			break;
 		}
@@ -248,7 +222,7 @@ OdDoRead(int img, void *buffer, uint32 sectorOffset, uint32 nSectors)
 		uint32 takeSec = e->start + e->sectors - sec;
 		if (takeSec > remain) takeSec = remain;
 		char fp[192];
-		snprintf(fp, sizeof(fp), "%s/%s", L->base, e->name);
+		snprintf(fp, sizeof(fp), "%.*s/%.*s", 120, L->base, 60, e->name);
 		int fd = open(fp, O_RDONLY);
 		if (fd < 0) {
 #ifdef __EMSCRIPTEN__
@@ -274,8 +248,6 @@ OdDoRead(int img, void *buffer, uint32 sectorOffset, uint32 nSectors)
 		}
 		close(fd);
 		if (rd < wantSeg) {
-			// Fichero más corto de lo que dice su entrada: ceros en su tramo
-			// y se sigue con la entrada siguiente (no se aborta el tramo).
 #ifdef __EMSCRIPTEN__
 			{
 				static int n = 0;
@@ -318,8 +290,6 @@ void
 CdStreamInitThread(void)
 {
 #ifdef __EMSCRIPTEN__
-	// Web monohilo: sin cola, sin semaforos, sin hilos. CdStreamRead lee en
-	// linea (ver rama sync) y CdStreamSync es inmediato.
 	return;
 #else
 	int status;
@@ -471,7 +441,6 @@ void
 CdStreamShutdown(void)
 {
 #ifdef __EMSCRIPTEN__
-	// Web monohilo: no hay hilos que parar.
 	return;
 #else
     // Destroying semaphores and free(gpReadInfo) will be done at threads
@@ -524,8 +493,6 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	pChannel->bLocked = 0;
 
 #ifdef __EMSCRIPTEN__
-	// Web monohilo: leer en linea. El fetch on-demand (wraps) ya suspendio
-	// lo necesario; aqui solo se copia de MEMFS.
 	pChannel->nStatus = OdDoRead(_GET_INDEX(offset), buffer, _GET_OFFSET(offset), size);
 	pChannel->nSectorsToRead = 0;
 	pChannel->bReading = false;
@@ -768,8 +735,6 @@ CdStreamAddImage(char const *path)
 	}
 
 #ifdef __EMSCRIPTEN__
-	// Web on-demand: verificar que lo abierto es un FICHERO (un directorio
-	// suelto con el mismo nombre también "abre" bien y luego todo read falla).
 	if (gImgFiles[gNumImages] != -1) {
 		struct stat st;
 		if (fstat(gImgFiles[gNumImages], &st) != 0 || !S_ISREG(st.st_mode)) {
@@ -777,8 +742,6 @@ CdStreamAddImage(char const *path)
 			gImgFiles[gNumImages] = -1;
 		}
 	}
-	// Preferir directorio suelto ("models/gta3.img/" + .dir): ahorra cientos
-	// de MB frente al .img monolítico. Si no hay, cae al archivo.
 	{
 		char base[128], dirf[140];
 		size_t i, n = strlen(path);

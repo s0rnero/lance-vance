@@ -86,7 +86,7 @@ void CWaterCannon::Update_OncePerFrame(int16 index)
 		}
 	}
 	
-	if ( ((index + CTimer::GetFrameCounter()) & 3) == 0 )
+	if ( ((index + CTimer::GetLogicalFrameCounter()) & 3) == 0 )
 		PushPeds();
 	
 	// free if unused

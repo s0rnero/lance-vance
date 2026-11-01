@@ -10,7 +10,11 @@
 #include "CarGen.h"
 #include "Cranes.h"
 #include "Curves.h"
+#include "Darkel.h"
 #include "CutsceneMgr.h"
+#ifdef VICEEXT_WANTED_PATHS
+#include "CopPed.h"	// CCopPed completo: PickNextNodeAccordingStrategy lee m_nPedType
+#endif
 #include "Gangs.h"
 #include "Game.h"
 #include "Garages.h"
@@ -40,7 +44,11 @@
 #include "Zones.h"
 #include "Pickups.h"
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#define DISTANCE_TO_SPAWN_ROADBLOCK_PEDS (80.0f)
+#else
 #define DISTANCE_TO_SPAWN_ROADBLOCK_PEDS (51.0f)
+#endif
 #define DISTANCE_TO_SCAN_FOR_DANGER (14.0f)
 #define DISTANCE_TO_SCAN_FOR_PED_DANGER (11.0f)
 #define SAFE_DISTANCE_TO_PED (3.0f)
@@ -80,10 +88,18 @@
 #define DISTANCE_BETWEEN_CAR_AND_DEAD_PED (6.0f)
 #define PROBABILITY_OF_PASSENGER_IN_VEHICLE (0.125f)
 
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#define ONSCREEN_DESPAWN_RANGE (CGame::IsInInterior() || CCutsceneMgr::IsRunning() || CDarkel::FrenzyOnGoing() ? 120.0f : 160.0f)
+#define MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN (CGame::IsInInterior() || CCutsceneMgr::IsRunning() || CDarkel::FrenzyOnGoing() ? 100.0f : 140.0f)
+#define REQUEST_ONSCREEN_DISTANCE ((ONSCREEN_DESPAWN_RANGE + MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN) / 2)
+#define OFFSCREEN_DESPAWN_RANGE (CGame::IsInInterior() || CCutsceneMgr::IsRunning() || CDarkel::FrenzyOnGoing() ? 40.0f : 80.0f)
+#define EXTENDED_RANGE_DESPAWN_MULTIPLIER (1.5f)
+#else
 #define ONSCREEN_DESPAWN_RANGE (120.0f)
 #define MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN (100.0f)
 #define REQUEST_ONSCREEN_DISTANCE ((ONSCREEN_DESPAWN_RANGE + MINIMAL_DISTANCE_TO_SPAWN_ONSCREEN) / 2)
 #define OFFSCREEN_DESPAWN_RANGE (40.0f)
+#endif
 #define EXTENDED_RANGE_DESPAWN_MULTIPLIER (1.5f)
 
 bool CCarCtrl::bMadDriversCheat;
@@ -116,6 +132,20 @@ uint32 aCarsToKeepTime[MAX_CARS_TO_KEEP];
 static float ms_odSpawnPhase = 0.0f;
 #endif
 
+// Un coche con posicion no finita (NaN o infinito) esta muerto para el juego
+// pero no para el pool: no se conduce, no se dibuja y PossiblyRemoveVehicle
+// no lo borra jamas, porque "NaN > umbral" siempre es falso. Si ademas es
+// patrulla ocupa uno de los m_MaximumLawEnforcerVehicles para siempre y deja
+// de salir policia en toda la partida (medido: nle=2 cap=2 durante minutos).
+static inline bool
+OdFinitePosition(const CVector &v)
+{
+	return v.x == v.x && v.y == v.y && v.z == v.z &&
+		v.x > -1.0e30f && v.x < 1.0e30f &&
+		v.y > -1.0e30f && v.y < 1.0e30f &&
+		v.z > -1.0e30f && v.z < 1.0e30f;
+}
+
 void
 CCarCtrl::GenerateRandomCars()
 {
@@ -127,6 +157,35 @@ CCarCtrl::GenerateRandomCars()
 	if (CCutsceneMgr::IsRunning()) {
 		CountDownToCarsAtStart = 2;
 		return;
+	}
+	{
+		static uint32 odUltCops = 0;
+		if (CTimer::GetTimeInMilliseconds() - odUltCops >= 1000) {
+			odUltCops = CTimer::GetTimeInMilliseconds();
+#ifdef __EMSCRIPTEN__
+			CWanted* odWanted = FindPlayerPed()->m_pWanted;
+			CPlayerInfo* odPlayer = &CWorld::Players[CWorld::PlayerInFocus];
+			char odLine[200];
+			snprintf(odLine, sizeof odLine, "COPST lvl=%d nle=%d cap=%d cops=%d max=%d rand=%d traf=%d",
+				odWanted->GetWantedLevel(), NumLawEnforcerCars, odWanted->m_MaximumLawEnforcerVehicles,
+				odWanted->m_CurrentCops, odWanted->m_MaxCops, NumRandomCars,
+				(int)(odPlayer->m_nTrafficMultiplier * CarDensityMultiplier * CIniFile::CarNumberMultiplier));
+			ODTRACES(odLine);
+			int odN = 0;
+			for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0 && odN < 4; i--) {
+				CVehicle* pCop = CPools::GetVehiclePool()->GetSlot(i);
+				if (pCop == nil || !pCop->bIsLawEnforcer)
+					continue;
+				odN++;
+				snprintf(odLine, sizeof odLine, "COPVEH m=%d by=%d d=%.0f on=%d a=%d del=%d st=%d mi=%d",
+					pCop->GetModelIndex(), (int)pCop->VehicleCreatedBy,
+					(pCop->GetPosition() - FindPlayerCentreOfWorld(CWorld::PlayerInFocus)).Magnitude2D(),
+					pCop->GetIsOnScreen() ? 1 : 0, CVisibilityPlugins::GetClumpAlpha(pCop->GetClump()),
+					pCop->CanBeDeleted() ? 1 : 0, (int)pCop->GetStatus(), pCop->AutoPilot.m_nCarMission);
+				ODTRACES(odLine);
+			}
+#endif
+		}
 	}
 	if (NumRandomCars < 30){
 		if (CountDownToCarsAtStart == 0)
@@ -149,7 +208,7 @@ CCarCtrl::GenerateOneRandomCar()
 #ifdef VICEEXT_FIX_FV
 	int32 odSpawnPhase = (int32)ms_odSpawnPhase;
 #else
-	int32 odSpawnPhase = (int32)CTimer::GetFrameCounter();
+	int32 odSpawnPhase = (int32)CTimer::GetLogicalFrameCounter();
 #endif
 	bool bTopDownCamera = false;
 	CPlayerInfo* pPlayer = &CWorld::Players[CWorld::PlayerInFocus];
@@ -307,9 +366,6 @@ CCarCtrl::GenerateOneRandomCar()
 			break;
 		}
 	}
-#ifdef VICEEXT_SPAWN_RADIUS_MULT
-	preferredDistance *= VICEEXT_SPAWN_RADIUS_MULT;
-#endif
 	if (!ThePaths.GenerateCarCreationCoors(vecTargetPos.x, vecTargetPos.y, frontX, frontY,
 		preferredDistance, angleLimit, invertAngleLimitTest, &spawnPosition, &curNodeId, &nextNodeId,
 		&positionBetweenNodes, carClass == COPS && pWanted->GetWantedLevel() >= 1))
@@ -343,6 +399,14 @@ CCarCtrl::GenerateOneRandomCar()
 				return;
 		}
 	}
+#ifdef VICEEXT_POLICE_BIKE
+	if (carClass == COPS && carModel == MI_VEEXT_POLWINTERG) {
+		if (!CStreaming::HasModelLoaded(MI_VEEXT_POLWINTERG)) {
+			CStreaming::RequestModel(MI_VEEXT_POLWINTERG, STREAMFLAGS_DEPENDENCY);
+			return;
+		}
+	}
+#endif
 	int16 colliding;
 	CWorld::FindObjectsKindaColliding(spawnPosition, bBoatGenerated ? 40.0f : 10.0f, true, &colliding, 2, nil, false, true, true, false, false);
 	if (colliding)
@@ -397,7 +461,10 @@ CCarCtrl::GenerateOneRandomCar()
 		pVehicle->AutoPilot.m_nTempAction = TEMPACT_NONE;
 		pVehicle->AutoPilot.m_nCruiseSpeed = CGeneral::GetRandomNumberInRange(4, 16);
 		pVehicle->AutoPilot.m_fMaxTrafficSpeed = pVehicle->AutoPilot.m_nCruiseSpeed;
-		pVehicle->AutoPilot.m_nCarMission = CCarAI::FindPoliceBoatMissionForWantedLevel();
+		if (FindPlayerPed() && FindPlayerPed()->m_pWanted->IsPlayerHides())
+			pVehicle->AutoPilot.m_nCarMission = MISSION_BLOCKPLAYER_FARAWAY;
+		else
+			pVehicle->AutoPilot.m_nCarMission = CCarAI::FindPoliceBoatMissionForWantedLevel();
 		pVehicle->bCreatedAsPoliceVehicle = true;
 		break;
 	default:
@@ -560,7 +627,14 @@ CCarCtrl::GenerateOneRandomCar()
 		&directionIncludingCurve
 	);
 	CVector vectorBetweenNodes = pCurNode->GetPosition() - pNextNode->GetPosition();
-	CVector finalPosition = positionIncludingCurve + vectorBetweenNodes * 2.0f / vectorBetweenNodes.Magnitude();
+	// Dos nodos de trafico pueden coincidir (datos del mod o del .zon):
+	// dividir por una magnitud 0 daba inf*0 = NaN y el coche nacia con posicion
+	// NaN, invisible e imposible de eliminar. Si el tramo mide 0, el desvio de
+	// 2 unidades no tiene direccion: se omite.
+	CVector finalPosition = positionIncludingCurve;
+	float nodeSpan = vectorBetweenNodes.Magnitude();
+	if (nodeSpan > 0.001f)
+		finalPosition += vectorBetweenNodes * (2.0f / nodeSpan);
 	finalPosition.z = positionBetweenNodes * pNextNode->GetZ() +
 		(1.0f - positionBetweenNodes) * pCurNode->GetZ();
 	float groundZ = INFINITE_Z;
@@ -591,6 +665,12 @@ CCarCtrl::GenerateOneRandomCar()
 	}
 	else
 		finalPosition.z = groundZ + pVehicle->GetHeightAboveRoad();
+	if (!OdFinitePosition(finalPosition)) {
+		/* Las curvas y los nodos pueden dar NaN con datos degenerados:
+		   un coche asi no se conduce ni se borra nunca. No se crea. */
+		delete pVehicle;
+		return;
+	}
 	pVehicle->SetPosition(finalPosition);
 	pVehicle->SetMoveSpeed(directionIncludingCurve / GAME_SPEED_TO_CARAI_SPEED);
 	CVector2D speedDifferenceWithTarget = (CVector2D)pVehicle->GetMoveSpeed() - vecPlayerSpeed;
@@ -605,14 +685,15 @@ CCarCtrl::GenerateOneRandomCar()
 		pVehicle->SetStatus(STATUS_PHYSICS);
 		break;
 	default:
+#ifdef VICEEXT_CHEAT_EFFECTS
+		pVehicle->bAirWaysCheat || bBoatGenerated ? pVehicle->SetStatus(STATUS_PHYSICS) : pVehicle->SetStatus(STATUS_SIMPLE);
+#else
 		bBoatGenerated ? pVehicle->SetStatus(STATUS_PHYSICS) : pVehicle->SetStatus(STATUS_SIMPLE);
+#endif
 		break;
 	}
 	CVisibilityPlugins::SetClumpAlpha(pVehicle->GetClump(), 0);
 	float odDespawnK = (pVehicle->bExtendedRange ? EXTENDED_RANGE_DESPAWN_MULTIPLIER : 1.0f);
-#ifdef VICEEXT_SPAWN_RADIUS_MULT
-	odDespawnK *= VICEEXT_SPAWN_RADIUS_MULT;
-#endif
 	if (!pVehicle->GetIsOnScreen()){
 		if ((vecTargetPos - pVehicle->GetPosition()).Magnitude2D() > OFFSCREEN_DESPAWN_RANGE * odDespawnK) {
 			/* Too far away cars that are not visible aren't needed. */
@@ -656,16 +737,16 @@ CCarCtrl::GenerateOneRandomCar()
 	pVehicleModel->AvoidSameVehicleColour(&pVehicle->m_currentColour1, &pVehicle->m_currentColour2);
 	CWorld::Add(pVehicle);
 #ifdef __EMSCRIPTEN__
-	// Traza del tráfico (bloque D4): un coche de la calle acaba de entrar en el
-	// mundo. Es la medición directa de QUÉ modelos circulan: contar `TXDIN` no
-	// vale, porque un modelo que ya está residente no vuelve a pedir su TXD y el
-	// tráfico recicla justo los modelos que tiene cargados.
 	{
 		static int ntrafico = 0;
 		if (ntrafico < 20000) {
 			char tt[96];
 			snprintf(tt, sizeof tt, "CARSPAWN model=%d clase=%d", carModel, carClass);
 			ODTRACES(tt);
+			if (carClass == MOTORBIKE) {
+				snprintf(tt, sizeof tt, "BIKESPAWN model=%d", carModel);
+				ODTRACES(tt);
+			}
 			ntrafico++;
 		}
 	}
@@ -791,11 +872,6 @@ CCarCtrl::ChooseCarRating(CZoneInfo* pZoneInfo)
 		}
 	}
 #ifdef __EMSCRIPTEN__
-	// D4 (sección 1): la mezcla de tráfico la fijan los umbrales de la zona (los
-	// pone el script con SetZoneCivilianCarInfo). Sin esto no se puede saber si un
-	// vehículo del mod "no sale" porque su modelo no carga o porque su CLASE no
-	// se sortea en esa zona: los 8 umbrales en crudo dicen exactamente qué clases
-	// son alcanzables (un umbral repetido = clase con probabilidad cero).
 	{
 		static int odZonas = 0;
 		if (odZonas < 3) {
@@ -807,15 +883,6 @@ CCarCtrl::ChooseCarRating(CZoneInfo* pZoneInfo)
 				pZoneInfo->carThreshold[6], pZoneInfo->carThreshold[7]);
 			ODTRACES(tz);
 		}
-		// (20/09) Primera versión del corte, y no servía: imprimía "cuando cambia
-		// la clase", pero la clase se sortea al azar en cada intento, así que
-		// cambiaba CASI SIEMPRE (medido el 21/09: 66.525 líneas de 87.116 sorteos;
-		// el log seguía ahogado).
-		//
-		// (21/09) Ahora: las primeras 12 tiradas, la PRIMERA vez que aparece cada
-		// clase (en pocas líneas se ve qué clases son alcanzables en la zona) y un
-		// recuento completo cada 4096 sorteos (`CARRATECNT`), que es el dato que
-		// de verdad hace falta para saber la mezcla con la que reparte la calle.
 		static int odSorteos = 0;
 		static int odConteo[NUM_CAR_CLASSES] = { 0 };
 		static bool odVisto[NUM_CAR_CLASSES] = { false };
@@ -927,21 +994,18 @@ CCarCtrl::RemoveFromLoadedVehicleArray(int mi, int32 rating)
 int32
 CCarCtrl::ChooseCarModelToLoad(int rating)
 {
-#ifdef __EMSCRIPTEN__
-	// D4 (sección 1, web): qué modelo pide el cargador.
-	//
-	// El original elige UNIFORME entre todos los modelos de la clase, así que un
-	// modelo concreto entra en la calle sólo si le toca entre ~40. Con el
-	// temporizador de 11,7 s por modelo eso son minutos por modelo (y en el
-	// navegador, con menos fotogramas, bastantes más): medido, de los 7 vehículos
-	// nuevos del mod sólo 2-3 llegaban a circular.
-	//
-	// Aquí se sortea con el MISMO peso que el juego ya usa para elegir entre los
-	// vehículos cargados: la frecuencia de `default.ide` (`m_frequency`, la
-	// columna que el mod sube a 100 en los suyos). Así el fondo converge al
-	// reparto que dice el dato y las frecuencias que subimos temporalmente para
-	// ver los vehículos nuevos sirven también para CARGARLOS.
 	int32 total = TotalNumOfCarsOfRating[rating];
+	if(total > 0){
+		int32 unloaded[MAX_CAR_MODELS_IN_ARRAY];
+		int32 numUnloaded = 0;
+		int32 i;
+		for(i = 0; i < total; i++)
+			if(!CStreaming::HasModelLoaded(CarArrays[rating][i]))
+				unloaded[numUnloaded++] = CarArrays[rating][i];
+		if(numUnloaded > 0)
+			return unloaded[CGeneral::GetRandomNumberInRange(0, numUnloaded)];
+	}
+#ifdef __EMSCRIPTEN__
 	if(total > 0){
 		int32 sum = 0;
 		int32 i;
@@ -964,13 +1028,6 @@ CCarCtrl::ChooseCarModelToLoad(int rating)
 int32
 CCarCtrl::ChoosePoliceCarModel(void)
 {
-#ifdef VICEEXT_POLICE_BIKE
-	CStreaming::RequestModel(MI_VEEXT_POLWINTERG, STREAMFLAGS_DEPENDENCY);
-	if (FindPlayerPed()->m_pWanted->GetWantedLevel() > 0 &&
-		CStreaming::HasModelLoaded(MI_VEEXT_POLWINTERG) &&
-		(CGeneral::GetRandomNumber() & 3) == 0)
-		return MI_VEEXT_POLWINTERG;
-#endif
 	if (FindPlayerPed()->m_pWanted->AreMiamiViceRequired() &&
 #ifdef FIX_BUGS
 		(CTimer::GetTimeInMilliseconds() > LastTimeMiamiViceGenerated + 120000 || LastTimeMiamiViceGenerated == 0) &&
@@ -1012,6 +1069,9 @@ CCarCtrl::ChoosePoliceCarModel(void)
 		CStreaming::HasModelLoaded(MI_BARRACKS) &&
 		CStreaming::HasModelLoaded(MI_ARMY))
 		return CGeneral::GetRandomTrueFalse() ? MI_BARRACKS : MI_RHINO;
+#ifdef VICEEXT_POLICE_BIKE
+	return CGeneral::GetRandomTrueFalse() ? MI_VEEXT_POLWINTERG : MI_POLICE;
+#endif
 	return MI_POLICE;
 }
 
@@ -1038,8 +1098,17 @@ CCarCtrl::RemoveDistantCars()
 		if (!pVehicle)
 			continue;
 		PossiblyRemoveVehicle(pVehicle);
+		// PossiblyRemoveVehicle pudo borrarlo; el slot del pool sigue siendo
+		// memoria valida, pero el puntero ya no es un vehiculo vivo.
+		pVehicle = CPools::GetVehiclePool()->GetSlot(i);
+		if (pVehicle == nil)
+			continue;
 		if (pVehicle->bCreateRoadBlockPeds){
+#ifdef VICEEXT_IMPROVED_TECH_PART
+			if ((pVehicle->GetPosition() - FindPlayerCentreOfWorld(CWorld::PlayerInFocus)).Magnitude2D() < DISTANCE_TO_SPAWN_ROADBLOCK_PEDS && !FindPlayerPed()->m_pWanted->IsPlayerHides()) {
+#else
 			if ((pVehicle->GetPosition() - FindPlayerCentreOfWorld(CWorld::PlayerInFocus)).Magnitude2D() < DISTANCE_TO_SPAWN_ROADBLOCK_PEDS) {
+#endif
 				CRoadBlocks::GenerateRoadBlockCopsForCar(pVehicle, pVehicle->m_nRoadblockType);
 				pVehicle->bCreateRoadBlockPeds = false;
 			}
@@ -1057,7 +1126,7 @@ CCarCtrl::RemoveCarsIfThePoolGetsFull(void)
 		odPoolPhase -= 1024.0f;
 	int32 odPhase = (int32)odPoolPhase;
 #else
-	int32 odPhase = (int32)CTimer::GetFrameCounter();
+	int32 odPhase = (int32)CTimer::GetLogicalFrameCounter();
 #endif
 	if ((odPhase & 7) != 3)
 		return;
@@ -1093,6 +1162,16 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 	if (pVehicle->bIsLocked)
 		return;
 #endif
+	/* Vehiculo con posicion no finita: no se puede conducir, no se dibuja y
+	   la comprobacion de distancia de abajo nunca lo alcanza (NaN > x es
+	   falso), asi que vive para siempre. Se retira aqui, que se recorre el
+	   pool entero cada fotograma. */
+	if (!pVehicle->bIsLocked && pVehicle->CanBeDeleted() &&
+		pVehicle != FindPlayerVehicle() && !OdFinitePosition(pVehicle->GetPosition())) {
+		CWorld::Remove(pVehicle);
+		delete pVehicle;
+		return;
+	}
 	CVector vecPlayerPos = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
 	/* BUG: this variable is initialized only in if-block below but can be used outside of it. */
 	if (!IsThisVehicleInteresting(pVehicle) && !pVehicle->bIsLocked &&
@@ -1127,9 +1206,6 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 #endif
 		if (pVehicle->bExtendedRange)
 			threshold *= EXTENDED_RANGE_DESPAWN_MULTIPLIER;
-	#ifdef VICEEXT_SPAWN_RADIUS_MULT
-	threshold *= VICEEXT_SPAWN_RADIUS_MULT;
-#endif
 	if (distanceToPlayer > threshold && !CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){
 			if (pVehicle->GetIsOnScreen()){
 				pVehicle->bFadeOut = true;
@@ -1420,12 +1496,21 @@ void CCarCtrl::SlowCarDownForPedsSectorList(CPtrList& lst, CVehicle* pVehicle, f
 							pPlayerPed->AnnoyPlayerPed(false);
 							pPlayerPed->SetLookFlag(pVehicle, true);
 							pPlayerPed->SetLookTimer(1500);
-							if (pPlayerPed->GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED ||
+							#ifdef VICEEXT_SP_FIST_SHAKE
+								const uint32 nFistSlot = pPlayerPed->GetWeapon()->GetInfo()->m_nWeaponSlot;
+								if ((nFistSlot == WEAPONSLOT_UNARMED || nFistSlot == WEAPONSLOT_MELEE ||
+									 nFistSlot == WEAPONSLOT_HANDGUN || nFistSlot == WEAPONSLOT_SUBMACHINEGUN) &&
+									 pPlayerPed->GetWeapon()->m_eWeaponType != WEAPONTYPE_CHAINSAW) {
+									pPlayerPed->bShakeFist = true;
+								}
+#else
+								if (pPlayerPed->GetWeapon()->m_eWeaponType == WEAPONTYPE_UNARMED ||
 								pPlayerPed->GetWeapon()->m_eWeaponType == WEAPONTYPE_BASEBALLBAT ||
 								pPlayerPed->GetWeapon()->m_eWeaponType == WEAPONTYPE_COLT45 ||
 								pPlayerPed->GetWeapon()->m_eWeaponType == WEAPONTYPE_UZI) {
-								pPlayerPed->bShakeFist = true;
-							}
+									pPlayerPed->bShakeFist = true;
+								}
+#endif
 						}
 					}
 				}
@@ -1653,8 +1738,12 @@ float CCarCtrl::FindAngleToWeaveThroughTraffic(CVehicle* pVehicle, CPhysical* pT
 	float angleToWeaveLeftLastIteration = -9999.9f;
 	float angleToWeaveRightLastIteration = -9999.9f;
 
-	while (angleToWeaveLeft != angleToWeaveLeftLastIteration ||
-		   angleToWeaveRight != angleToWeaveRightLastIteration){
+	const float WEAVE_EPSILON = 1e-4f;
+	const int MAX_WEAVE_PASSES = 8;
+	for (int weavePass = 0; weavePass < MAX_WEAVE_PASSES; weavePass++){
+		if (ABS(angleToWeaveLeft - angleToWeaveLeftLastIteration) < WEAVE_EPSILON &&
+		    ABS(angleToWeaveRight - angleToWeaveRightLastIteration) < WEAVE_EPSILON)
+			break;
 		angleToWeaveLeftLastIteration = angleToWeaveLeft;
 		angleToWeaveRightLastIteration = angleToWeaveRight;
 		for (int y = ystart; y <= yend; y++) {
@@ -1872,10 +1961,46 @@ void CCarCtrl::WeaveForObject(CEntity* pOtherEntity, CVehicle* pVehicle, float* 
 
 bool CCarCtrl::PickNextNodeAccordingStrategy(CVehicle* pVehicle)
 {
+#ifdef VICEEXT_WANTED_PATHS
+	CVector chaseCarPos;
+	CCopPed* copPed = (CCopPed*)pVehicle->pDriver;
+	if (copPed && copPed->m_nPedType == PEDTYPE_COP && pVehicle->GetModelIndex() != MI_RHINO) {
+		CWanted* wanted = FindPlayerPed()->m_pWanted;
+
+		if (wanted->GetWantedLevel() > 0) {
+			int32 path = ThePaths.FindNodeClosestToCoors(wanted->m_vecLastSeenPosPlayer, PATH_CAR, 50.0f);
+			float diff = FindPlayerCoors().z - ThePaths.m_pathNodes[path].GetZ();
+			bool bPlayerNearToCarPath = path != -1 && diff > -4.0f && diff < 4.0f;
+
+			CWantedPaths wantedPaths = pVehicle->AutoPilot.m_aCurrentSeekWantedPaths;
+			if (!bPlayerNearToCarPath && !wantedPaths.wantedPathNode[0].pos.IsZero())
+				chaseCarPos = wantedPaths.wantedPathNode[1].pos;
+			else
+				chaseCarPos = wanted->m_vecLastSeenPosPlayer;
+
+			bool bPlayerInVehAndItMoves = FindPlayerVehicle() && FindPlayerSpeed().Magnitude2D() > 0.2f;
+			if ((wanted->IsPlayerHides() && bPlayerNearToCarPath && Distance2D(wanted->m_vecLastSeenPosPlayer, pVehicle->GetPosition()) < 60.0f) ||
+				(wanted->IsPlayerHides() && !bPlayerNearToCarPath && Distance2D(wanted->m_vecLastSeenPosPlayer, pVehicle->GetPosition()) < 75.0f) ||
+				(!wanted->IsPlayerHides() && (!bPlayerNearToCarPath || wanted->GetWantedLevel() > 1) && (!FindPlayerVehicle() || !bPlayerInVehAndItMoves) && Distance2D(wanted->m_vecLastSeenPosPlayer, pVehicle->GetPosition()) < 50.0f))
+
+				CCarAI::TellOccupantsToLeaveCarImmediately(pVehicle);
+		}
+
+	} else {
+		chaseCarPos = FindPlayerCoors();
+	}
+#endif
 	pVehicle->AutoPilot.m_nCruiseSpeedMultiplierType = ThePaths.m_pathNodes[pVehicle->AutoPilot.m_nNextRouteNode].speedLimit;
 	switch (pVehicle->AutoPilot.m_nCarMission){
 	case MISSION_RAMPLAYER_FARAWAY:
 	case MISSION_BLOCKPLAYER_FARAWAY:
+#ifdef VICEEXT_WANTED_PATHS
+		PickNextNodeToChaseCar(pVehicle,
+			chaseCarPos.x,
+			chaseCarPos.y,
+			chaseCarPos.z,
+			nullptr);
+#else
 		PickNextNodeToChaseCar(pVehicle,
 			FindPlayerCoors().x,
 			FindPlayerCoors().y,
@@ -1883,6 +2008,7 @@ bool CCarCtrl::PickNextNodeAccordingStrategy(CVehicle* pVehicle)
 			FindPlayerCoors().z,
 #endif
 			FindPlayerVehicle());
+#endif
 		return false;
 	case MISSION_GOTOCOORDS:
 	case MISSION_GOTOCOORDS_ACCURATE:
@@ -2390,7 +2516,11 @@ void CCarCtrl::DragCarToPoint(CVehicle* pVehicle, CVector* pPoint)
 	  pVehicle->GetPosition().z - 3.0f, point, &pVehicle->m_aCollPolys[0])){
 		actualAheadZ = point.point.z;
 	}else if (CWorld::ProcessVerticalLine(CVector(posTarget.x, posTarget.y, pVehicle->GetPosition().z + 1.5f),
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	  pVehicle->GetPosition().z - 10.0f, point,	// arreglo del mod (fila 6.27)
+#else
 	  pVehicle->GetPosition().z - 2.0f, point,
+#endif
 	  pRoadObject, true, false, false, false, false, false, &pVehicle->m_aCollPolys[0])){
 		actualAheadZ = point.point.z;
 		pVehicle->m_pCurGroundEntity = pRoadObject;
@@ -2411,7 +2541,11 @@ void CCarCtrl::DragCarToPoint(CVehicle* pVehicle, CVector* pPoint)
 	  pVehicle->GetPosition().z - 3.0f, point, &pVehicle->m_aCollPolys[1])){
 		actualBehindZ = point.point.z;
 	}else if (CWorld::ProcessVerticalLine(CVector(midPos.x, midPos.y, pVehicle->GetPosition().z + 1.5f),
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	  pVehicle->GetPosition().z - 10.0f, point,	// arreglo del mod (fila 6.27)
+#else
 	  pVehicle->GetPosition().z - 2.0f, point,
+#endif
 	  pRoadObject, true, false, false, false, false, false, &pVehicle->m_aCollPolys[1])){
 		actualBehindZ = point.point.z;
 		pVehicle->m_pCurGroundEntity = pRoadObject;
@@ -2784,13 +2918,6 @@ float CCarCtrl::FindMaxSteerAngle(CVehicle* pVehicle)
 	return pVehicle->GetModelIndex() == MI_ENFORCER ? 0.7f : DEFAULT_MAX_STEER_ANGLE;
 }
 
-// ----------------------------------------------------------------------------
-// PORTADO — FramerateVigilante (MIT, © 2023 GTA modding (Junior_Djjr))
-//   https://github.com/GTAmodding/FramerateVigilante
-//   FramerateVigilante/FramerateVigilante.cpp ("constantes por-frame" * ms_fTimeStep)
-// Qué se toma: el spool del heli IA se sumaba por frame. Adaptación: * CTimer::GetTimeStep()
-//   (igual a 50 fps; topes 0.22/0.15 sin cambios).
-// ----------------------------------------------------------------------------
 void CCarCtrl::SteerAIHeliTowardsTargetCoors(CAutomobile* pHeli)
 {
 	if (pHeli->m_aWheelSpeed[1] < 0.22f)

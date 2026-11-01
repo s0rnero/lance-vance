@@ -33,6 +33,15 @@ static int32 u_reflProps;
 static int32 u_specDir;
 static int32 u_specColor;
 
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+static int32 u_leedsEnv;
+static int32 u_texMatrix;
+#endif
+
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+static int32 u_prelightTweak;
+#endif
+
 #define U(i) currentShader->uniformLocations[i]
 
 /*
@@ -40,6 +49,20 @@ static int32 u_specColor;
  */
 
 rw::gl3::Shader *neoVehicleShader;
+
+static void
+DrawDualPass(rw::gl3::InstanceDataHeader *header, rw::gl3::InstanceData *inst)
+{
+	using namespace rw;
+	using namespace rw::gl3;
+
+	if(!g_bSkyDualPass || !getAlphaBlend() || !GetRenderState(ZWRITEENABLE)){
+		drawInst(header, inst);
+		return;
+	}
+
+	drawInstDualPass(header, inst);
+}
 
 static void
 uploadSpecLights(void)
@@ -73,6 +96,112 @@ uploadSpecLights(void)
 	glUniform4fv(U(u_specColor), 1 + NUMEXTRADIRECTIONALS, (float*)&colors);
 }
 
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+
+rw::gl3::Shader *neoLeedsCarShader;
+
+static void
+uploadLeedsEnvMatrix(void)
+{
+	using namespace rw;
+
+	static RawMatrix normal2texcoord = {
+		{ 0.5f,  0.0f, 0.0f }, 0.0f,
+		{ 0.0f, -0.5f, 0.0f }, 0.0f,
+		{ 0.0f,  0.0f, 1.0f }, 0.0f,
+		{ 0.5f,  0.5f, 0.0f }, 1.0f
+	};
+
+	Matrix invMat;
+	RawMatrix invMtx, envMtx;
+
+	Matrix::invert(&invMat, EnvMapCam->getFrame()->getLTM());
+	convMatrix(&invMtx, &invMat);
+	invMtx.pos.set(0.0f, 0.0f, 0.0f);
+	RawMatrix::mult(&envMtx, &invMtx, &normal2texcoord);
+
+	rw::gl3::setUniform(u_texMatrix, &envMtx);
+}
+
+static void
+leedsVehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
+{
+	using namespace rw;
+	using namespace rw::gl3;
+
+	Material *m;
+
+	rw::uint32 flags = atomic->geometry->flags;
+	setWorldMatrix(atomic->getFrame()->getLTM());
+	lightingCB(atomic);
+
+	setupVertexInput(header);
+
+	InstanceData *inst = header->inst;
+	rw::int32 n = header->numMeshes;
+
+	neoLeedsCarShader->use();
+
+	uploadLeedsEnvMatrix();
+
+	setTexture(1, EnvMapTex);
+
+	SetRenderState(SRCBLEND, BLENDSRCALPHA);
+	SetRenderState(DESTBLEND, BLENDINVSRCALPHA);
+
+	while(n--){
+		m = inst->material;
+
+		setMaterial(flags, m->color, m->surfaceProps);
+
+		setTexture(0, m->texture);
+
+		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+
+		float envProps[4];
+		envProps[0] = 0.0f;
+		MatFX *matfx = MatFX::get(m);
+		if(matfx)
+			envProps[0] = matfx->getEnvCoefficient()*LeedsEnvMult;
+		envProps[1] = 0.0f;
+		envProps[2] = 0.0f;
+		envProps[3] = 0.0f;
+		glUniform4fv(U(u_leedsEnv), 1, envProps);
+
+		DrawDualPass(header, inst);
+		inst++;
+	}
+
+	setTexture(1, nil);
+
+	teardownVertexInput(header);
+}
+
+void
+CreateLeedsVehiclePipe(void)
+{
+	using namespace rw;
+	using namespace rw::gl3;
+
+	{
+#include "shaders/obj/neoLeedsCar_frag.inc"
+#include "shaders/obj/neoLeedsCar_vert.inc"
+	const char *vs[] = { shaderDecl, "#define DIRECTIONALS\n", header_vert_src, neoLeedsCar_vert_src, nil };
+	const char *fs[] = { shaderDecl, header_frag_src, neoLeedsCar_frag_src, nil };
+	neoLeedsCarShader = Shader::create(vs, fs);
+	assert(neoLeedsCarShader);
+	}
+}
+
+void
+DestroyLeedsVehiclePipe(void)
+{
+	neoLeedsCarShader->destroy();
+	neoLeedsCarShader = nil;
+}
+
+#endif
+
 static void
 vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 {
@@ -84,6 +213,13 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		matFXGlobals.pipelines[rw::platform]->render(atomic);
 		return;
 	}
+
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	if(LeedsCarPipeEnabled()){
+		leedsVehicleRenderCB(atomic, header);
+		return;
+	}
+#endif
 
 	Material *m;
 
@@ -124,7 +260,7 @@ vehicleRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 		reflProps[3] = m->surfaceProps.specular == 0.0f ? 0.0f : VehicleSpecularity;
 		glUniform4fv(U(u_reflProps), 1, reflProps);
 
-		drawInst(header, inst);
+		DrawDualPass(header, inst);
 		inst++;
 	}
 
@@ -187,14 +323,102 @@ DestroyVehiclePipe(void)
 
 rw::gl3::Shader *neoWorldShader;
 
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+
+rw::gl3::Shader *leedsWorldShader;
+
+static void
+leedsWorldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
+{
+	using namespace rw;
+	using namespace rw::gl3;
+
+	Material *m;
+
+	rw::uint32 flags = atomic->geometry->flags;
+	bool lit = (flags & Geometry::LIGHT) != 0;
+
+	setWorldMatrix(atomic->getFrame()->getLTM());
+	lightingCB(atomic);
+
+	setupVertexInput(header);
+
+	InstanceData *inst = header->inst;
+	rw::int32 n = header->numMeshes;
+
+	leedsWorldShader->use();
+
+	float tweak[4];
+	tweak[0] = LeedsWorldPrelightTweakMult;
+	tweak[1] = LeedsWorldPrelightTweakAdd;
+	tweak[2] = lit ? 1.0f : 0.0f;
+	tweak[3] = 0.0f;
+	glUniform4fv(U(u_prelightTweak), 1, tweak);
+
+	while(n--){
+		m = inst->material;
+
+		if(lit){
+			setMaterial(flags, m->color, m->surfaceProps, 0.5f);
+		}else{
+			RGBA color = { 255, 255, 255, m->color.alpha };
+			setMaterial(color, m->surfaceProps, 0.0f);
+		}
+
+		setTexture(0, m->texture);
+
+		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+
+		DrawDualPass(header, inst);
+		inst++;
+	}
+
+	teardownVertexInput(header);
+}
+
+void
+CreateLeedsWorldPipe(void)
+{
+	using namespace rw;
+	using namespace rw::gl3;
+
+	{
+#include "shaders/obj/leedsWorld_frag.inc"
+#include "shaders/obj/leedsWorld_vert.inc"
+	const char *vs[] = { shaderDecl, header_vert_src, leedsWorld_vert_src, nil };
+	const char *fs[] = { shaderDecl, header_frag_src, leedsWorld_frag_src, nil };
+	leedsWorldShader = Shader::create(vs, fs);
+	assert(leedsWorldShader);
+	}
+}
+
+void
+DestroyLeedsWorldPipe(void)
+{
+	leedsWorldShader->destroy();
+	leedsWorldShader = nil;
+}
+
+#endif
+
 static void
 worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 {
 	using namespace rw;
 	using namespace rw::gl3;
 
-	if(!LightmapEnable){
-		gl3::defaultRenderCB(atomic, header);
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	if(LeedsWorldPipeEnabled()){
+		leedsWorldRenderCB(atomic, header);
+		return;
+	}
+#endif
+
+	if(g_nSkyWorldPipe != WORLDPIPE_NEO && !LightmapEnable){
+		if(g_bSkyDualPass)
+			gl3::defaultRenderCBDualPass(atomic, header);
+		else
+			gl3::defaultRenderCB(atomic, header);
 		return;
 	}
 
@@ -237,7 +461,7 @@ worldRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
 
-		drawInst(header, inst);
+		DrawDualPass(header, inst);
 		inst++;
 	}
 	setTexture(1, nil);
@@ -335,7 +559,7 @@ glossRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 			Texture *tex = GetGlossTex(m);
 			if(tex){
 				setTexture(0, tex);
-				drawInst(header, inst);
+				DrawDualPass(header, inst);
 			}
 		}
 		inst++;
@@ -450,7 +674,7 @@ rimSkinRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
 
-		drawInst(header, inst);
+		DrawDualPass(header, inst);
 		inst++;
 	}
 	teardownVertexInput(header);
@@ -491,7 +715,7 @@ rimRenderCB(rw::Atomic *atomic, rw::gl3::InstanceDataHeader *header)
 
 		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
 
-		drawInst(header, inst);
+		DrawDualPass(header, inst);
 		inst++;
 	}
 	teardownVertexInput(header);
@@ -577,6 +801,13 @@ CustomPipeRegisterGL(void)
 	u_reflProps = rw::gl3::registerUniform("u_reflProps");
 	u_specDir = rw::gl3::registerUniform("u_specDir");
 	u_specColor = rw::gl3::registerUniform("u_specColor");
+#ifdef VICEEXT_SKY_LEEDS_CAR_PIPE
+	u_leedsEnv = rw::gl3::registerUniform("u_leedsEnv");
+	u_texMatrix = rw::gl3::registerUniform("u_texMatrix", rw::gl3::UNIFORM_MAT4);
+#endif
+#ifdef VICEEXT_SKY_LEEDS_WORLD_PIPE
+	u_prelightTweak = rw::gl3::registerUniform("u_prelightTweak");
+#endif
 }
 
 
@@ -599,7 +830,8 @@ struct BuildingInst
 	uint8 fadeAlpha;
 	bool lighting;
 };
-BuildingInst blendInsts[3][2000];
+#define MAXBLENDINSTS 4096
+BuildingInst blendInsts[3][MAXBLENDINSTS];
 int numBlendInsts[3];
 
 static RwRGBAReal black;
@@ -617,6 +849,9 @@ IsTextureTransparent(RwTexture *tex)
 void
 AtomicFirstPass(RpAtomic *atomic, int pass)
 {
+	if(numBlendInsts[pass] >= MAXBLENDINSTS)
+		return;
+
 	using namespace rw;
 	using namespace rw::gl3;
 
@@ -676,6 +911,9 @@ AtomicFirstPass(RpAtomic *atomic, int pass)
 void
 AtomicFullyTransparent(RpAtomic *atomic, int pass, int fadeAlpha)
 {
+	if(numBlendInsts[pass] >= MAXBLENDINSTS)
+		return;
+
 	using namespace rw;
 	using namespace rw::gl3;
 

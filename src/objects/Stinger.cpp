@@ -1,5 +1,6 @@
 #include "common.h"
 #include "Stinger.h"
+#include "ondemand.h"
 #include "CopPed.h"
 #include "ModelIndices.h"
 #include "RpAnimBlend.h"
@@ -45,11 +46,21 @@ CStinger::Init(CPed *pPed)
 	int32 i;
 
 	pOwner = pPed;
+#ifdef VICEEXT_SP_STINGER_FIXES
+	bIsDeployed = true;
+#endif
 	for (i = 0; i < NUM_STINGER_SEGMENTS; i++) {
 		pSpikes[i] = new CStingerSegment();
 #ifdef FIX_BUGS
 		if (!pSpikes[i]) {
 			// Abort!! Pool is full
+#if defined __EMSCRIPTEN__
+			{
+				char t[96];
+				snprintf(t, sizeof t, "VEX sp stinger pool=%d", i);
+				ODTRACES(t);
+			}
+#endif
 			Remove();
 			return;
 		}

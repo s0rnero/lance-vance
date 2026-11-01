@@ -1,5 +1,8 @@
 #pragma once
 #include "Ped.h"
+#ifdef VICEEXT_IMPROVED_TECH_PART
+#include "PlayerPed.h"
+#endif
 
 enum eCopType
 {
@@ -26,13 +29,23 @@ public:
 	float m_fAbseilPos;
 	eCopType m_nCopType;
 	bool m_bThrowsSpikeTrap;
-	CEntity *m_pRopeEntity;	// CHeli or 1
+	CEntity *m_pRopeEntity;
 	uintptr m_nRopeID;
 	uint32 m_nHassleTimer;
 	uint32 field_61C;
 	class CStinger *m_pStinger;
 	int32 field_624;
 	int8 field_628;
+
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	CVector m_vecLastPosPlayerBeforeHiding;
+	CVector m_vecPotentialPlayerSearchCoordinates;
+	bool m_bLookingForPlayer;
+	bool m_bMovesToLastPlayerPosition;
+
+	bool m_bThrowingTeargas;
+	bool m_bUsedTeargas;
+#endif
 
 	CCopPed(eCopType, int32 modifier = 0);
 	~CCopPed();
@@ -46,6 +59,11 @@ public:
 	void CopAI(void);
 	void ProcessHeliSwat(void);
 	void ProcessStingerCop(void);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	void ProcessSearchPlayer(CPlayerPed* playerPed);
+	void FindPotentialPlayerPos(void);
+	bool CheckIfPositionIsUnderWater(CVector checkPos, bool bCheckMiddlePos);
+#endif
 };
 
 VALIDATE_SIZE(CCopPed, 0x62C);

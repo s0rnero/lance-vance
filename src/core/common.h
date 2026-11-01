@@ -217,6 +217,29 @@ inline uint32 ldb(uint32 p, uint32 s, uint32 w)
 #define SCALE_AND_CENTER_X(x) SCREEN_STRETCH_X(x)
 #endif
 
+#include "WidescreenFixOptions.h"
+
+#ifdef VICEEXT_WFP_HUD_SCALE
+#define HUD_SCALE_X(a)           (SCREEN_SCALE_X(a) * Min(Max(g_fWSPOptionHudWidthScale, 0.25f), 4.0f))
+#define HUD_SCALE_Y(a)           (SCREEN_SCALE_Y(a) * Min(Max(g_fWSPOptionHudHeightScale, 0.25f), 4.0f))
+#else
+#define HUD_SCALE_X(a)           SCREEN_SCALE_X(a)
+#define HUD_SCALE_Y(a)           SCREEN_SCALE_Y(a)
+#endif
+
+#ifdef VICEEXT_WFP_HUD_ANCHOR
+extern float g_fWSPHudAnchorShift;
+extern float g_fWSPHudAnchorOffset;
+#define HUD_ANCHOR_SHIFT          (g_fWSPHudAnchorShift)
+#define HUD_ANCHOR_OFFSET         (g_fWSPHudAnchorOffset)
+#else
+#define HUD_ANCHOR_SHIFT          (0.0f)
+#define HUD_ANCHOR_OFFSET         (0.0f)
+#endif
+
+#define HUD_SCALE_FROM_RIGHT(a)  (SCREEN_WIDTH - HUD_SCALE_X(a) + HUD_ANCHOR_OFFSET)
+#define HUD_SCALE_FROM_BOTTOM(a) (SCREEN_HEIGHT - HUD_SCALE_Y(a))
+
 #include "maths.h"
 #include "Vector.h"
 #ifdef GTA_PS2
@@ -364,9 +387,7 @@ extern bool bCameraShakeInVehicleAtHighSpeed;
 extern bool bMilitaryFiringFromTankAtPlayer;
 extern bool bDisableBulletTraces;
 extern CRGBA WaypointColor;
-#ifdef VICEEXT_DISTANT_LIGHTS
 extern bool bEnableDistantLights;
-#endif
 extern bool bRecoilWhenFiring;
 #ifdef VICEEXT_CLIMBING
 extern bool bEnableClimbing;
@@ -442,4 +463,9 @@ template<int s, int t> struct check_size {
 #define STR(x)                          STRINGIFY(x)
 #define CONCAT_(x,y) x##y
 #define CONCAT(x,y) CONCAT_(x,y)
+
+bool ReadIniIfExists(const char *cat, const char *key, bool *out);
+bool ReadIniIfExists(const char *cat, const char *key, int32 *out);
+bool ReadIniIfExists(const char *cat, const char *key, float *out);
+bool ReadIniIfExists(const char *cat, const char *key, char *out, int size);
 

@@ -2456,7 +2456,7 @@ GetSurfaceColor(uint8 surf, uint8 &r, uint8 &g, uint8 &b)
 
 	if(surf == SURFACE_TRANSPARENT_CLOTH || surf == SURFACE_METAL_CHAIN_FENCE ||
 	   surf == SURFACE_TRANSPARENT_STONE || surf == SURFACE_SCAFFOLD_POLE)
-		if(CTimer::GetFrameCounter() & 1){
+		if(CTimer::GetLogicalFrameCounter() & 1){
 			r = 0;
 			g = 0;
 			b = 0;

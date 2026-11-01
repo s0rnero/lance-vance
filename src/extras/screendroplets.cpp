@@ -16,6 +16,7 @@
 #include "ZoneCull.h"
 #include "Weather.h"
 #include "ParticleObject.h"
+#include "ParticleType.h"
 	#include "Pad.h"
 #include "RenderBuffer.h"
 #include "custompipes.h"
@@ -32,6 +33,8 @@ RwTexture *ScreenDroplets::ms_screenTex;
 
 bool ScreenDroplets::ms_enabled = true;
 bool ScreenDroplets::ms_movingEnabled = true;
+
+int32 g_nSkyNeoWaterDrops = 1;
 
 ScreenDroplets::ScreenDrop ScreenDroplets::ms_drops[ScreenDroplets::MAXDROPS];
 int ScreenDroplets::ms_numDrops;
@@ -156,6 +159,14 @@ ScreenDroplets::Shutdown(void)
 #endif
 
 	closeim2d_uv2();
+}
+
+bool
+ScreenDroplets::IsVisible(void)
+{
+	if (ms_numDrops > 0 || ms_numDropsMoving > 0 || ms_splashDuration >= 0)
+		return true;
+	return CWeather::Rain > 0.0f && !CCullZones::CamNoRain() && ms_enabled;
 }
 
 void
@@ -385,6 +396,71 @@ ScreenDroplets::FillScreenMoving(float amount, bool isBlood)
 			if(drop)
 				SetMoving(drop);
 		}
+}
+
+static float
+GetParticleDistance(int32 type)
+{
+	switch(type){
+	case PARTICLE_WATER_SPARK:
+	case PARTICLE_BLOOD:
+	case PARTICLE_BLOOD_SMALL:
+	case PARTICLE_BLOOD_SPURT:
+	case PARTICLE_RAINDROP:
+	case PARTICLE_RAINDROP_SMALL:
+	case PARTICLE_RAIN_SPLASH:
+	case PARTICLE_RAIN_SPLASH_BIGGROW:
+	case PARTICLE_RAIN_SPLASHUP:
+	case PARTICLE_BLOODDROP:
+	case PARTICLE_RAINDROP_2D:
+		return 5.0f;
+	case PARTICLE_SPLASH:
+	case PARTICLE_WATER_HYDRANT:
+	case PARTICLE_PED_SPLASH:
+		return 10.0f;
+	case PARTICLE_CAR_SPLASH:
+		return 12.0f;
+	case PARTICLE_BOAT_SPLASH:
+		return 40.0f;
+	case PARTICLE_WATER:
+	case PARTICLE_WATERSPRAY:
+	case PARTICLE_WATERDROP:
+	case PARTICLE_BOAT_THRUSTJET:
+	case PARTICLE_WATER_CANNON:
+		return 20.0f;
+	}
+	return 20.0f;
+}
+
+static bool
+IsParticleBlood(int32 type)
+{
+	switch(type){
+	case PARTICLE_BLOOD:
+	case PARTICLE_BLOOD_SMALL:
+	case PARTICLE_BLOOD_SPURT:
+	case PARTICLE_BLOODDROP:
+		return true;
+	}
+	return false;
+}
+
+void
+ScreenDroplets::AddExtendedDroplet(int32 particleType, CVector const &pos)
+{
+	if(g_nSkyNeoWaterDrops < 2)
+		return;
+
+	CVector dist = pos - ms_prevCamPos;
+	float len = dist.Magnitude();
+	if(len < 0.001f || len > GetParticleDistance(particleType))
+		return;
+
+	bool isBlood = IsParticleBlood(particleType);
+	if(g_nSkyNeoWaterDrops < 3 && isBlood)
+		return;
+
+	FillScreenMoving(1.0f/(len/2.0f), isBlood);
 }
 
 void

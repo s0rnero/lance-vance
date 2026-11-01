@@ -200,6 +200,8 @@ RpAnimBlendClumpInitNotSkinned(RpClump *clump)
 void
 RpAnimBlendClumpInit(RpClump *clump)
 {
+	if(clump == nil)
+		return;
 	if(IsClumpSkinned(clump))
 		RpAnimBlendClumpInitSkinned(clump);
 	else

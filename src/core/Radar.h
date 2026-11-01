@@ -172,7 +172,12 @@ struct sRadarTraceSave
 #define RADAR_LEFT (40.0f)
 #define RADAR_BOTTOM (40.0f)
 
-#ifdef FIX_RADAR
+#ifdef VICEEXT_WFP_RADAR_SIZE
+float WSPGetRadarWidth(void);
+float WSPGetRadarHeight(void);
+#define RADAR_WIDTH  (WSPGetRadarWidth())
+#define RADAR_HEIGHT (WSPGetRadarHeight())
+#elif defined(FIX_RADAR)
 /*
 	The values are from an early screenshot taken before R* broke radar
 		#define RADAR_WIDTH (82.0f)
@@ -263,6 +268,9 @@ public:
 #ifdef MAP_ENHANCEMENTS
 	static CSprite2d WaypointSprite;
 	static int TargetMarkerId;
+#ifdef VICEEXT_GPS
+	static int RouteBlipId;
+#endif
 	static CVector TargetMarkerPos;
 #endif
 
@@ -284,6 +292,11 @@ public:
 	static void DrawBlips();
 	static void DrawMap();
 	static void DrawRadarMap();
+#ifdef VICEEXT_GPS
+	static void DrawGPS(bool onRadar);
+	static void Setup2dVertex(RwIm2DVertex &vertex, float x, float y, CRGBA color);
+	static void SetBlipRoute(int32 i, bool bEnable);
+#endif
 	static void DrawRadarMask();
 	static void DrawRadarSection(int32 x, int32 y);
 	static void DrawRadarSprite(uint16 sprite, float x, float y, uint8 alpha);

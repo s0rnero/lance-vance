@@ -22,6 +22,7 @@
 #include "ColStore.h"
 #include "Radar.h"
 #include "Pools.h"
+#include "Draw.h"
 
 const struct {
 	const char *szTrackName;
@@ -194,8 +195,6 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 		CStreaming::RemoveCurrentZonesModels();
 
 #ifdef __EMSCRIPTEN__
-	// Trazas de cinemática (van al fichero del host). `dirN` en 0 significa que
-	// cuts.dir no se pudo leer: sin él no hay animaciones ni splines de cámara.
 	{
 		char cut[160];
 		snprintf(cut, sizeof cut, "CUT begin %s objs=%d", szCutsceneName, ms_numCutsceneObjs);
@@ -214,9 +213,6 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, "ANIM\\CUTS.IMG");
 #ifdef __EMSCRIPTEN__
 	if (stream == nil) {
-		// Sin cuts.img no hay animaciones de la cinemática: la escena se verá
-		// como actores quietos y sin audio propio. Se traza y se sigue (el
-		// assert no compila en release y dejaba un stream nulo por el camino).
 		char cut[160];
 		snprintf(cut, sizeof cut, "CUT cutsimg-FALLO %s dirN=%d", szCutsceneName, ms_pCutsceneDir->numEntries);
 		ODTRACES(cut);
@@ -266,9 +262,6 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 			printf("End preload audio %s\n", szCutsceneName);
 		}
 #ifdef __EMSCRIPTEN__
-		// Audio de la cinemática: el track se preloadea ANTES de que la escena
-		// arranque. Si aquí falla (fichero aplazado por estar jugando), la
-		// escena se ve pero no suena: por eso se traza el id del track.
 		{
 			char cut[160];
 			snprintf(cut, sizeof cut, "CUT audio %s track=%d mode=%d", szCutsceneName, trackId, (int)MUSICMODE_CUTSCENE);
@@ -281,9 +274,6 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	ms_loaded = true;
 #ifdef __EMSCRIPTEN__
 	{
-		// Resumen de la carga de la cinemática al fichero de trazas: animaciones
-		// (actores), splines de cámara (movimiento de cámara) y su primera
-		// coordenada. Con esto se distingue "escena vacía" de "cámara perdida".
 		char cut[220];
 		snprintf(cut, sizeof cut, "CUT loaded %s anim=%d cam=%d dirN=%d obj=%d", szCutsceneName, (int)ms_animLoaded, (int)bCamLoaded,
 			ms_pCutsceneDir->numEntries, ms_numCutsceneObjs);
@@ -317,6 +307,23 @@ CCutsceneMgr::FinishCutscene()
 
 	FindPlayerPed()->bIsVisible = true;
 	CWorld::Players[CWorld::PlayerInFocus].MakePlayerSafe(false);
+
+	// 30.0/T60: al saltar una cinemática el guion ya ha hecho FADEOUT y su
+	// FADEIN no siempre llega a ejecutarse; CDraw::FadeValue se queda en 255,
+	// `CCamera::ProcessFade` no lo toca porque m_bFading ya es false, y con el
+	// fade a tope el motor deja de dibujar la escena (dc=0). Síntoma: pantalla
+	// negra con el juego vivo y el jugador ya en la calle. Se devuelve la
+	// pantalla aquí, que es el único sitio que sabe que ha habido un salto.
+	if (CDraw::FadeValue > 0) {
+#ifdef __EMSCRIPTEN__
+		{
+			char odt[96];
+			snprintf(odt, sizeof odt, "CUTFADE skip fade=%d -> fadein", (int)CDraw::FadeValue);
+			ODTRACES(odt);
+		}
+#endif
+		TheCamera.Fade(0.5f, FADE_IN);
+	}
 }
 
 void

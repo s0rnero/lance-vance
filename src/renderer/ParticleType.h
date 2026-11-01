@@ -86,10 +86,6 @@ enum tParticleType
 	PARTICLE_HEATHAZE,
 	PARTICLE_HEATHAZE_IN_DIST,
 
-	// Vice Extended (familia 3/5): los 5 tipos que anade su `particle.cfg`, al
-	// final del fichero. Se declaran aqui para que las matrices dimensionadas
-	// por MAX_PARTICLES los cubran y para que el parser pueda resolverlos por
-	// nombre (su fichero los pone DESPUES de los 83 de serie).
 	PARTICLE_ENGINE_SMOKE2_SMALL,
 	PARTICLE_ENGINE_STEAM_SMALL,
 	PARTICLE_ENGINE_SMOKE_SMALL,

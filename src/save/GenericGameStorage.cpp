@@ -53,32 +53,55 @@
 const uint32 SIZE_OF_ONE_GAME_IN_BYTES = 201729;
 
 #ifdef VICEEXT_AUTOSAVE
-// Sección 3, C2b (20/09): marca de "el autosave está escribiendo" (ver la
-// cabecera). Sin ella la ranura 9 es de sólo lectura.
 bool ViceExtAutosaveInProgress = false;
 #endif
 
+#ifdef VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE
+bool bAutoSave = false;
+bool bSaveAnywhere = false;
+bool bIsAutoSaveRequested = false;
+#endif
+
 #ifdef VICEEXT_SAVE_ANYWHERE
-// Sección 3 (Vice Extended, v2.5 "Saving anywhere. You must not be on a
-// mission, not have a search level and not move"): las tres condiciones.
-// Se usa al guardar desde el menú de pausa; las zonas de guardado de serie no
-// pasan por aquí (ver Frontend.cpp, MENUACTION_SAVEGAME).
 bool
 ViceExtCanSaveAnywhere(void)
 {
-	if (CTheScripts::bAlreadyRunningAMissionScript)
-		return false;
-
 	CPlayerPed *ped = FindPlayerPed();
 	if (ped == nil)
 		return false;
-	if (ped->m_pWanted && ped->m_pWanted->GetWantedLevel() > 0)
+
+	if (ped->DyingOrDead() || ped->bIsInTheAir)
 		return false;
 
-	// "not move": a pie o con el vehículo parado.
 	const CVector &speed = ped->m_pMyVehicle ? ped->m_pMyVehicle->GetMoveSpeed() : ped->GetMoveSpeed();
 	if (speed.Magnitude() > 0.1f)
 		return false;
+
+	if (ped->m_pWanted && ped->m_pWanted->GetWantedLevel() > 0)
+		return false;
+
+	if (CTheScripts::bAlreadyRunningAMissionScript)
+		return false;
+
+	if (!ped->InVehicle() && !ped->IsPedInControl())
+		return false;
+
+	int32 camMode = TheCamera.Cams[0].Mode;
+	if (!ped->InVehicle() && camMode != CCam::MODE_FOLLOWPED && camMode != CCam::MODE_REAL_1ST_PERSON)
+		return false;
+	if (ped->InVehicle() && camMode == CCam::MODE_FIXED)
+		return false;
+
+	if (TheCamera.m_bFading)
+		return false;
+
+	for (uint32 i = 0; i < CGarages::NumGarages; i++) {
+		if (CGarages::aGarages[i].m_eGarageType == GARAGE_NONE)
+			continue;
+		if (CGarages::aGarages[i].IsPlayerOutsideGarage())
+			continue;
+		return false;
+	}
 
 	return true;
 }
@@ -86,10 +109,6 @@ ViceExtCanSaveAnywhere(void)
 
 #ifdef MISSION_REPLAY
 int8 IsQuickSave;
-// Ranura de pausa: GTAVCsf9.b. Con SLOT_COUNT = 9 (sección 3, autosave) es la
-// última ranura de las matrices de arriba, así que `SaveSlot(PAUSE_SAVE_SLOT)`
-// sigue escribiendo el fichero 9 y su información se puede listar en el menú de
-// carga (`FEM_SL9`, el autosave).
 const int PAUSE_SAVE_SLOT = SLOT_COUNT - 1;
 #endif
 
@@ -342,8 +361,6 @@ GenericLoad()
 	CDate dummy; // unused
 	CPad::ResetCheats();
 #ifdef __EMSCRIPTEN__
-	// No fiarse del global fijado en el menú N ticks atrás: re-derivar del
-	// slot actual (mismo patrón que CheckSlotDataValid).
 	MakeValidSaveName(FrontEndMenuManager.m_nCurrSaveSlot);
 	strcpy(LoadFileName, ValidSaveName);
 #endif
@@ -365,7 +382,6 @@ GenericLoad()
 #endif
 	if (!ReadDataFromFile(file, work_buff, size)) {
 #ifdef __EMSCRIPTEN__
-		// DIAG F2-load: antes el retorno se ignoraba y seguía con basura.
 		ODTRACES("GenericLoad FAIL: cuerpo incompleto");
 		printf("[save] GenericLoad FAIL: cuerpo incompleto (file=%s)\n", LoadFileName);
 		CloseFile(file);
@@ -543,8 +559,14 @@ CloseFile(int32 file)
 void
 DoGameSpecificStuffAfterSucessLoad()
 {
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+	if (FrontEndMenuManager.m_nCurrSaveSlot == PAUSE_SAVE_SLOT) {
+		CPlayerPed *ped = FindPlayerPed();
+		if (ped)
+			ped->SetPosition(CVector(0.0f, 0.0f, 0.0f));
+	}
+#endif
 #ifdef __EMSCRIPTEN__
-	// Web: parse en un tick + cola troceada después (ver caso 2). Mismo orden.
 	extern bool gWebDeferSceneLoad;
 	extern bool gWebDeferCollision;
 	if (gWebDeferSceneLoad) {
@@ -566,8 +588,6 @@ DoGameSpecificStuffAfterSucessLoad()
 }
 
 #ifdef __EMSCRIPTEN__
-// Cola diferida del tail: tidy + scripts (la colisión ya drenó en el sub-paso
-// 0b y la escena por pasos). Mismo orden relativo que arriba.
 bool gWebDeferSceneLoad = false;
 bool gWebDeferCollision = false;
 void DoGameSpecificStuffAfterSucessLoadDeferred(void)
@@ -582,16 +602,12 @@ CheckSlotDataValid(int32 slot)
 {
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
 #ifdef __EMSCRIPTEN__
-	// Web: LoadFileName (global BSS, vacío) nunca se asignaba en la ruta PC:
-	// validar y cargar abrían "" y todo load iba a partida nueva. Fijarlo
-	// al slot elegido (MakeValidSaveName ya sale absoluto a /userfiles).
 	MakeValidSaveName(slot);
 	strcpy(LoadFileName, ValidSaveName);
 #endif
 	bool slotOk = CheckDataNotCorrupt(slot, LoadFileName);
 #ifdef __EMSCRIPTEN__
 	{
-		// DIAG F2-load (+pantalla para la traza fusionada).
 		char t[300];
 		snprintf(t, sizeof t, "CheckSlotDataValid slot=%d screen=%d file=%s -> %d",
 			slot, FrontEndMenuManager.m_nCurrScreen, LoadFileName, (int)slotOk);
@@ -1354,5 +1370,59 @@ bool SaveGameForPause(int type)
 	IsQuickSave = 0;
 	DisplaySaveResult(res, CStats::LastMissionPassedName);
 	return true;
+}
+#endif
+
+#if defined VICEEXT_AUTOSAVE_AND_SAVE_ANYWHERE && defined MISSION_REPLAY
+void
+DoAutoSave(void)
+{
+	static uint32 s_lastAutoSaveTime = 0;
+	uint32 now = CTimer::GetTimeInMilliseconds();
+#ifdef __EMSCRIPTEN__
+	{
+		char t[128];
+		snprintf(t, sizeof t, "VICEEXT autosave pide bAutoSave=%d cooldown=%d opcion=%d", 
+			(int)bAutoSave, (int)(s_lastAutoSaveTime != 0 && now - s_lastAutoSaveTime < 1000),
+			(int)FrontEndMenuManager.m_PrefsAutosave);
+		ODTRACES(t);
+	}
+#endif
+	if (bAutoSave)
+		return;
+	if (s_lastAutoSaveTime != 0 && now - s_lastAutoSaveTime < 1000)
+		return;
+
+	bIsAutoSaveRequested = false;
+
+	if (!FrontEndMenuManager.m_PrefsAutosave) {
+#ifdef __EMSCRIPTEN__
+		{
+			char t[96];
+			snprintf(t, sizeof t, "VICEEXT autosave sale motivo=opcion-apagada");
+			ODTRACES(t);
+		}
+#endif
+		return;
+	}
+	IsQuickSave = false;
+	bSaveAnywhere = false;
+	bAutoSave = true;
+	ViceExtAutosaveInProgress = true;
+
+	int res = PcSaveHelper.SaveSlot(PAUSE_SAVE_SLOT);
+	PcSaveHelper.PopulateSlotInfo();
+	s_lastAutoSaveTime = now;
+
+	ViceExtAutosaveInProgress = false;
+	bAutoSave = false;
+
+#ifdef __EMSCRIPTEN__
+	{
+		char t[96];
+		snprintf(t, sizeof t, "VICEEXT autosave slot=%d res=%d", PAUSE_SAVE_SLOT, res);
+		ODTRACES(t);
+	}
+#endif
 }
 #endif

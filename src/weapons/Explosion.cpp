@@ -20,6 +20,7 @@
 #include "World.h"
 
 CExplosion gaExplosion[NUM_EXPLOSIONS];
+static uint32 s_odExplosionStepFrame[NUM_EXPLOSIONS];
 
 // these two were not initialised in original code, I'm really not sure what were they meant to be
 RwRGBA colMedExpl = { 0, 0, 0, 0 };
@@ -54,6 +55,7 @@ CExplosion::ClearAllExplosions()
 		gaExplosion[i].m_pVictimEntity = nil;
 		gaExplosion[i].m_fStopTime = 0.0f;
 		gaExplosion[i].m_nIteration = 0;
+		s_odExplosionStepFrame[i] = 0;
 		gaExplosion[i].m_fStartTime = 0.0f;
 		gaExplosion[i].m_bIsBoat = false;
 		gaExplosion[i].m_bMakeSound = true;
@@ -387,7 +389,7 @@ CExplosion::Update()
 			case EXPLOSION_HELI2:
 			case EXPLOSION_MINE:
 			case EXPLOSION_BARREL:
-				if (CTimer::GetFrameCounter() & 1) {
+				if (CTimer::GetLogicalFrameCounter() & 1) {
 					CPointLights::AddLight(CPointLights::LIGHT_POINT, explosion.m_vecPosition, CVector(0.0f, 0.0f, 0.0f), 20.0f, 1.0f, 1.0f, 0.5f, CPointLights::FOG_NONE, true);
 					CCoronas::RegisterCorona((uintptr)&explosion, 255, 255, 200, 255, explosion.m_vecPosition, 8.0f, 120.0f, gpCoronaTexture[0], CCoronas::TYPE_NORMAL, CCoronas::REFLECTION_ON, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 				} else
@@ -425,7 +427,7 @@ CExplosion::Update()
 			case EXPLOSION_BOAT:
 				if (someTime >= 3500) {
 					if (explosion.m_pVictimEntity != nil) {
-						if ((CGeneral::GetRandomNumber() & 0xF) == 0 && !explosion.m_bIsBoat) {
+						if (CGeneral::ChancePerTick(16) && !explosion.m_bIsBoat) {
 							CVehicle *veh = (CVehicle*)explosion.m_pVictimEntity;
 							uint8 component = CAR_WING_LR;
 
@@ -446,7 +448,7 @@ CExplosion::Update()
 								CParticle::AddParticle(PARTICLE_EXPLOSION_MEDIUM, pos, CVector(0.0f, 0.0f, 0.0f), nil, 3.5f, color);
 						}
 					}
-					if (CTimer::GetFrameCounter() & 1) {
+					if (CTimer::GetLogicalFrameCounter() & 1) {
 						CPointLights::AddLight(CPointLights::LIGHT_POINT, explosion.m_vecPosition, CVector(0.0f, 0.0f, 0.0f), 15.0f, 1.0f, 0.0f, 0.0f, CPointLights::FOG_NONE, true);
 						CCoronas::RegisterCorona((uintptr)&explosion, 200, 100, 0, 255, explosion.m_vecPosition, 6.0f, 80.0f, gpCoronaTexture[0], CCoronas::TYPE_NORMAL, CCoronas::REFLECTION_ON, CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 					} else
@@ -480,9 +482,12 @@ CExplosion::Update()
 			default:
 				break;
 			}
-			if (someTime > 0)
-				explosion.m_nIteration++;
-			else
+			if (someTime > 0) {
+				if (s_odExplosionStepFrame[i] != CTimer::GetLogicalFrameCounter()) {
+					s_odExplosionStepFrame[i] = CTimer::GetLogicalFrameCounter();
+					explosion.m_nIteration++;
+				}
+			} else
 				explosion.m_nIteration = 0;
 		}
 	}

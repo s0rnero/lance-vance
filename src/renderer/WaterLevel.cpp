@@ -125,12 +125,6 @@ CWaterLevel::Initialise(Const char *pWaterDat)
 	{
 		hFile = CFileMgr::OpenFile("DATA\\waterpro.dat", "rb");
 #ifdef __EMSCRIPTEN__
-		// Web (sección 1, 21/09): aquí reintentar es un bucle INFINITO si el
-		// fichero no está en el FS virtual — la capa on-demand ya hizo su
-		// intento y devolvió fallo, así que el `while` no acaba nunca y el
-		// navegador se queda en negro sin un solo error. Un intento basta; si
-		// falla se avisa y se sigue sin los datos PRO del agua (el juego
-		// funciona: sólo el agua pierde el detalle de niveles).
 		if (hFile < 0) {
 			printf("[od-trace] WATER sin DATA\\waterpro.dat (open=%d): se sigue sin datos PRO\n", hFile);
 			ODTRACES("WATER no-waterpro");

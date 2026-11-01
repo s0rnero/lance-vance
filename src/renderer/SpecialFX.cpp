@@ -189,7 +189,7 @@ CSpecialFX::Render2DFXs(void)
 		CFont::SetPropOn();
 		CFont::SetColor(CRGBA(0, 255, 0, 200));
 		CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
-		sprintf(gString, "%d", CTimer::GetFrameCounter() & 0x3F); // mb % 63
+		sprintf(gString, "%d", CTimer::GetLogicalFrameCounter() & 0x3F); // mb % 63
 		AsciiToUnicode(gString, gUString);
 		CFont::PrintString(SCREEN_WIDTH * 8 / 10, SCREEN_HEIGHT * 8 / 10, gUString);
 		for (int32 i = 0; i < SCREEN_HEIGHT; i += 4) {
@@ -1087,6 +1087,10 @@ CBrightLights::Render(void)
 #endif
 		}
 
+#ifdef VICEEXT_WFP_BRIGHT_LIGHTS_FAR
+		if(g_bWSPOptionBrightLightsOnlyFar && aBrightLights[i].m_camDist < BRIGHTLIGHTS_FADE_DIST)
+			continue;
+#endif
 		if(aBrightLights[i].m_camDist < BRIGHTLIGHTS_FADE_DIST)
 			a = 255;
 		else

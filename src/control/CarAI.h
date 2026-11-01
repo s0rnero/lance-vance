@@ -11,6 +11,9 @@ public:
 	static float FindSwitchDistanceFarNormalVehicle(CVehicle*);
 	static float FindSwitchDistanceFar(CVehicle*);
 	static void BackToCruisingIfNoWantedLevel(CVehicle*);
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	static void BackToCruisingIfPlayerLost(CVehicle*);
+#endif
 	static void UpdateCarAI(CVehicle*);
 	static void CarHasReasonToStop(CVehicle*);
 	static float GetCarToGoToCoors(CVehicle*, CVector*);
@@ -19,6 +22,10 @@ public:
 	static void AddAmbulanceOccupants(CVehicle*);
 	static void AddFiretruckOccupants(CVehicle*);
 	static void TellOccupantsToLeaveCar(CVehicle*);
+#ifdef VICEEXT_WANTED_PATHS
+	static void TellCarToSeekWantedPaths(CVehicle*);
+	static void TellOccupantsToLeaveCarImmediately(CVehicle*);
+#endif
 	static void TellOccupantsToFleeCar(CVehicle*);
 	static void TellCarToRamOtherCar(CVehicle*, CVehicle*);
 	static void TellCarToBlockOtherCar(CVehicle*, CVehicle*);

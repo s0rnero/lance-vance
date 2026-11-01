@@ -297,7 +297,7 @@ CPlayerInfo::Process(void)
 			m_nVisibleMoney += changeBy;
 	}
 
-	if (!(CTimer::GetFrameCounter() & 15)) {
+	if (!(CTimer::GetLogicalFrameCounter() & 15)) {
 		CVector2D playerPos = m_pPed->bInVehicle ? m_pPed->m_pMyVehicle->GetPosition() : m_pPed->GetPosition();
 		m_fRoadDensity = ThePaths.CalcRoadDensity(playerPos.x, playerPos.y);
 	}
@@ -327,7 +327,11 @@ CPlayerInfo::Process(void)
 							}
 
 							if (canJumpOff || veh->m_vecMoveSpeed.Magnitude() < 0.1f) {
+#ifdef VICEEXT_SWIMMING
+								if (bEnableSwimming || !bEnableSwimming && !veh->bIsInWater)
+#else
 								if (!veh->bIsInWater)
+#endif
 									m_pPed->SetObjective(OBJECTIVE_LEAVE_CAR, veh);
 
 							} else if (veh->GetStatus() != STATUS_PLAYER && veh != CGameLogic::pShortCutTaxi) {
@@ -428,7 +432,7 @@ CPlayerInfo::Process(void)
 			}
 		}
 	}
-	if (!(CTimer::GetFrameCounter() & 31)) {
+	if (!(CTimer::GetLogicalFrameCounter() & 31)) {
 		CVehicle *veh = FindPlayerVehicle();
 		if (veh && m_pPed->bInVehicle && veh->GetUp().z < 0.0f
 			&& veh->m_vecMoveSpeed.Magnitude() < 0.05f && (veh->IsCar() || veh->IsBoat()) && !veh->bIsInWater) {
@@ -885,6 +889,10 @@ void
 CPlayerInfo::DeletePlayerSkin()
 {
 	if (m_pSkinTexture) {
+#ifdef VICEEXT_PED_VARIATIONS
+		if (m_pPed && m_pSkinTexture == m_pPed->texClothingVariation)
+			m_pPed->texClothingVariation = nil;
+#endif
 		RwTextureDestroy(m_pSkinTexture);
 		m_pSkinTexture = nil;
 	}

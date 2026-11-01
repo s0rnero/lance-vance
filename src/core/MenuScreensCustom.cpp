@@ -30,6 +30,7 @@
 #include "IniFile.h"
 #include "CarCtrl.h"
 #include "Population.h"
+#include "WidescreenFixOptions.h"
 // Menu screens array is at the bottom of the file.
 #ifdef PC_MENU
 #ifdef CUSTOM_FRONTEND_OPTIONS
@@ -363,6 +364,107 @@ void ControllerTypeAfterChange(int8 before, int8 after)
 	FrontEndMenuManager.LoadController(after);
 }
 #endif
+
+// Helpers de la pantalla del WFP: solo existen si el menu se publica.
+#ifdef VICEEXT_WFP_MENU
+const char *wspRadarSizeTexts[] = { "FEM_NRM", "FEM_IVR" };
+
+static wchar* WspAspectDraw(int32 value)
+{
+	switch (value) {
+		case 1:
+			return TheText.Get("FEM_169");
+		case 2:
+			return TheText.Get("FEM_219");
+		default:
+			return TheText.Get("FEM_AUT");
+	}
+}
+
+static void WspSetAspect(int32 *value, char *text, int8 action)
+{
+	if (action != FEOPTION_ACTION_RIGHT && action != FEOPTION_ACTION_LEFT)
+		return;
+	int32 next = *value + (action == FEOPTION_ACTION_RIGHT ? 1 : -1);
+	if (next < 0)
+		next = 2;
+	else if (next > 2)
+		next = 0;
+	*value = next;
+	strcpy(text, next == 1 ? "16:9" : next == 2 ? "21:9" : "auto");
+	FrontEndMenuManager.SaveSettings();
+}
+
+static wchar* WspHudAspectDraw(bool *disabled, bool userHovering)
+{
+	return WspAspectDraw(g_nWSPOptionHudAspectRatio);
+}
+
+static void WspHudAspectPress(int8 action)
+{
+	WspSetAspect(&g_nWSPOptionHudAspectRatio, g_szWSPOptionHudAspectRatio, action);
+}
+
+static wchar* WspMenuAspectDraw(bool *disabled, bool userHovering)
+{
+	return WspAspectDraw(g_nWSPOptionMenuAspectRatio);
+}
+
+static void WspMenuAspectPress(int8 action)
+{
+	WspSetAspect(&g_nWSPOptionMenuAspectRatio, g_szWSPOptionMenuAspectRatio, action);
+}
+
+static wchar* WspTextOutlineDraw(bool *disabled, bool userHovering)
+{
+	switch (g_nWSPOptionTextShadowMode) {
+		case 1:
+			return TheText.Get("FEM_4D4");
+		case 2:
+			return TheText.Get("FEM_16D");
+		default:
+			return TheText.Get("FEM_OFF");
+	}
+}
+
+static void WspTextOutlinePress(int8 action)
+{
+	if (action != FEOPTION_ACTION_RIGHT && action != FEOPTION_ACTION_LEFT)
+		return;
+	int32 next = g_nWSPOptionTextShadowMode + (action == FEOPTION_ACTION_RIGHT ? 1 : -1);
+	if (next < 0)
+		next = 2;
+	else if (next > 2)
+		next = 0;
+	g_nWSPOptionTextShadowMode = next;
+	FrontEndMenuManager.SaveSettings();
+}
+
+static void RestoreDefWidescreenFix(int8 action)
+{
+	if (action != FEOPTION_ACTION_SELECT)
+		return;
+	g_fWSPOptionHudWidthScale = 1.0f;
+	g_fWSPOptionHudHeightScale = 1.0f;
+	g_fWSPOptionRadarWidthScale = 1.0f;
+	g_fWSPOptionSubtitlesScale = 1.0f;
+	g_bWSPOptionIVRadarScaling = false;
+	g_bWSPOptionSmallerTextShadows = false;
+	g_bWSPOptionCarSpeedDependantFOV = false;
+	g_bWSPOptionDontTouchFOV = false;
+	g_bWSPOptionSmartCutsceneBorders = false;
+	g_bWSPOptionVCSCamShake = false;
+	g_bWSPOptionSmallerVehicleCorona = false;
+	g_bWSPOptionNoLightSquare = false;
+	g_nWSPOptionTextShadowMode = 0;
+	g_nWSPOptionHudAspectRatio = 0;
+	g_nWSPOptionMenuAspectRatio = 0;
+	strcpy(g_szWSPOptionHudAspectRatio, "auto");
+	strcpy(g_szWSPOptionMenuAspectRatio, "auto");
+	FrontEndMenuManager.SaveSettings();
+}
+#endif
+
 CMenuScreenCustom aScreens[] = {
 	// MENUPAGE_STATS = 0
 	{ "FEH_STA", MENUPAGE_NONE, nil, nil,
@@ -435,6 +537,9 @@ CMenuScreenCustom aScreens[] = {
 #else
 	{ "FEH_DIS", MENUPAGE_OPTIONS, new CCustomScreenLayout({40, 78, 25, true}), nil,
 #endif
+#ifdef VICEEXT_WFP_MENU
+		MENUACTION_CHANGEMENU, "FET_WSF", { nil, SAVESLOT_NONE, MENUPAGE_WIDEFIX_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+#endif
 		MENUACTION_BRIGHTNESS,	"FED_BRI", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_DRAWDIST,	"FEM_LOD", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		DENSITY_SLIDERS
@@ -449,6 +554,7 @@ CMenuScreenCustom aScreens[] = {
 #ifdef VICEEXT_WEAPON_SIGHT
 		MENUACTION_WEAPONSIGHT,	"FED_WST", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 #endif
+		MENUACTION_GPS,			"FED_GPS", { nil, SAVESLOT_NONE, MENUPAGE_DISPLAY_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CFO_DYNAMIC,	"FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefDisplay) }, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE}, 320, 0, MENUALIGN_CENTER,
 	},
@@ -474,30 +580,20 @@ CMenuScreenCustom aScreens[] = {
 	},
 	// MENUPAGE_CHOOSE_LOAD_SLOT = 8
 	{ "FET_LG", MENUPAGE_NEW_GAME, nil, nil,
-#ifdef VICEEXT_AUTOSAVE
-		// Sección 3, C2b (20/09): la ranura del **autoguardado va LA PRIMERA** de
-		// la lista (lo pidió el jugador). Se lleva las coordenadas de la primera
-		// fila y las 8 de siempre se colocan debajo (0,0 = "debajo de la
-		// anterior"); el nombre y la fecha de cada fila se calculan por nº de
-		// RANURA y no por posición en la pantalla (Frontend.cpp ~1126), que era
-		// lo que ataba la lista al orden. Fichero: GTAVCsf9.b.
-		MENUACTION_CHECKSAVE,	"FEM_SL9", {nil, SAVESLOT_9,		0}, 40, 90, MENUALIGN_LEFT,
-		MENUACTION_CHECKSAVE,	"FEM_SL1", {nil, SAVESLOT_1,		0}, 0, 0, MENUALIGN_LEFT,
-#else
 		MENUACTION_CHECKSAVE,	"FEM_SL1", {nil, SAVESLOT_1,		0}, 40, 90, MENUALIGN_LEFT,
-#endif
 		MENUACTION_CHECKSAVE,	"FEM_SL2", {nil, SAVESLOT_2,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL3", {nil, SAVESLOT_3,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL4", {nil, SAVESLOT_4,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL5", {nil, SAVESLOT_5,		0}, 0, 0, MENUALIGN_LEFT,
-		MENUACTION_CHECKSAVE,	"FEM_SL6", {nil, SAVESLOT_6,		0}, 0, 0, MENUALIGN_LEFT,		MENUACTION_CHECKSAVE,	"FEM_SL7", {nil, SAVESLOT_7,	0}, 0, 0, MENUALIGN_LEFT,
-		// C2b-2 (21/09, 7ª partida): el jugador lo pidió con la lista a la vista:
-		// "debería tener los mismos 8 slots pero 1 reservado para el autoguardado".
-		// La lista vuelve a tener 8 filas: la del autoguardado (arriba del todo,
-		// con su rótulo AUTOGUARDADO) y las ranuras manuales 1..7. La fila de la
-		// ranura 8 desaparece de la lista (su fichero GTAVCsf8.b deja de ser
-		// accesible desde el menú; era una fila que ya no cabía).
+		MENUACTION_CHECKSAVE,	"FEM_SL6", {nil, SAVESLOT_6,		0}, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHECKSAVE,	"FEM_SL7", {nil, SAVESLOT_7,		0}, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHECKSAVE,	"FEM_SL8", {nil, SAVESLOT_8,		0}, 0, 0, MENUALIGN_LEFT,
+#ifdef VICEEXT_AUTOSAVE
+		MENUACTION_CHECKSAVE,	"FEM_SL9", {nil, SAVESLOT_AUTOSAVE,	0}, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE,	0}, 320, 365, MENUALIGN_CENTER,
+#else
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE,	0}, 320, 345, MENUALIGN_CENTER,
+#endif
 	},
 	// MENUPAGE_CHOOSE_DELETE_SLOT = 9
 	{ "FES_DEL", MENUPAGE_NEW_GAME, nil, nil,
@@ -509,7 +605,12 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHECKSAVE,	"FEM_SL6",	{nil, SAVESLOT_6,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL7",	{nil, SAVESLOT_7,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL8",	{nil, SAVESLOT_8,		0}, 0, 0, MENUALIGN_LEFT,
+#ifdef VICEEXT_AUTOSAVE
+		MENUACTION_CHECKSAVE,	"FEM_SL9",	{nil, SAVESLOT_AUTOSAVE,	0}, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE,	0}, 320, 365, MENUALIGN_CENTER,
+#else
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE,	0}, 320, 345, MENUALIGN_CENTER,
+#endif
 	},
 	// MENUPAGE_LOAD_SLOT_CONFIRM = 10
 	{ "FET_LG", MENUPAGE_CHOOSE_LOAD_SLOT, nil, nil,
@@ -543,8 +644,7 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_SAVEGAME,			"FEM_SL5", {nil, SAVESLOT_5,		MENUPAGE_SAVE_OVERWRITE_CONFIRM}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_SAVEGAME,			"FEM_SL6", {nil, SAVESLOT_6,		MENUPAGE_SAVE_OVERWRITE_CONFIRM}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_SAVEGAME,			"FEM_SL7", {nil, SAVESLOT_7,		MENUPAGE_SAVE_OVERWRITE_CONFIRM}, 0, 0, MENUALIGN_LEFT,
-		// C2b-2: mismo recorte que en la carga (8 ranuras en total, una es la del
-		// autoguardado y no se puede sobrescribir a mano): las manuales son 1..7.
+		MENUACTION_SAVEGAME,			"FEM_SL8", {nil, SAVESLOT_8,		MENUPAGE_SAVE_OVERWRITE_CONFIRM}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_RESUME_FROM_SAVEZONE,"FESZ_CA", {nil, SAVESLOT_NONE,	0}, 320, 345, MENUALIGN_CENTER,
 	},
 	// MENUPAGE_SAVE_OVERWRITE_CONFIRM = 16
@@ -616,9 +716,6 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHANGEMENU,	"FEC_JOD", {nil, SAVESLOT_NONE, MENUPAGE_DETECT_JOYSTICK}, 0, 0, MENUALIGN_CENTER,
 #endif
 		MENUACTION_CHANGEMENU,	"FEC_MOU", {nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_CENTER,
-#ifdef VICEEXT_FIRST_PERSON
-		MENUACTION_CHANGEMENU,	"FEC_FPC", {nil, SAVESLOT_NONE, MENUPAGE_FIRST_PERSON}, 0, 0, MENUALIGN_CENTER,
-#endif
 		MENUACTION_RESTOREDEF,	"FET_DEF", {nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_PC}, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
    },
@@ -680,17 +777,13 @@ CMenuScreenCustom aScreens[] = {
 	{ "FET_PAU", MENUPAGE_DISABLED, nil, nil,
 		MENUACTION_RESUME,		"FEP_RES",	{nil, SAVESLOT_NONE, 0}, 320, 120, MENUALIGN_CENTER,
 #ifdef VICEEXT_SAVE_ANYWHERE
-		// Sección 3 (Vice Extended, v2.5 "Saving anywhere"): guardar desde el
-		// menú de pausa, sin pasar por una zona de guardado. Las condiciones del
-		// mod (sin misión, sin nivel de búsqueda y parado) se comprueban al
-		// elegir ranura (Frontend.cpp, MENUACTION_SAVEGAME); la etiqueta es la
-		// de la pantalla de guardado de serie (FET_SG = "GUARDAR PARTIDA").
 		MENUACTION_CHANGEMENU,	"FET_SG",	{nil, SAVESLOT_NONE, MENUPAGE_CHOOSE_SAVE_SLOT}, 0, 0, MENUALIGN_CENTER,
 #endif
 		MENUACTION_CHANGEMENU,	"FEH_SGA",	{nil, SAVESLOT_NONE, MENUPAGE_NEW_GAME}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FEH_MAP",	{nil, SAVESLOT_NONE, MENUPAGE_MAP}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FEP_STA",	{nil, SAVESLOT_NONE, MENUPAGE_STATS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FEH_BRI",	{nil, SAVESLOT_NONE, MENUPAGE_BRIEFS}, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU,	"FEO_OTH",	{nil, SAVESLOT_NONE, MENUPAGE_OTHER_SETTINGS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FET_OPT",	{nil, SAVESLOT_NONE, MENUPAGE_OPTIONS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FEP_QUI",	{nil, SAVESLOT_NONE, MENUPAGE_EXIT}, 0, 0, MENUALIGN_CENTER,
    },
@@ -832,13 +925,43 @@ CMenuScreenCustom aScreens[] = {
 	},
 #endif
 
+#ifdef VICEEXT_AUTOSAVE
+	{ "FEO_OTH", MENUPAGE_PAUSE_MENU, nil, nil,
+		MENUACTION_AUTOSAVE, "FET_AUT", { nil, SAVESLOT_NONE, MENUPAGE_OTHER_SETTINGS }, 40, 150, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU, "FEC_FPC", { nil, SAVESLOT_NONE, MENUPAGE_FIRST_PERSON }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_GOBACK, "FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_LEFT,
+	},
+#endif
+
 #if defined VICEEXT_FIRST_PERSON && defined VICEEXT_FIRING_AND_AIMING
-	{ "FEC_FPC", MENUPAGE_CONTROLLER_PC, nil, nil,
+	{ "FEC_FPC", MENUPAGE_OTHER_SETTINGS, nil, nil,
 		MENUACTION_FOV_FP, "FEC_FOV", { nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_SETTINGS }, 40, 155, MENUALIGN_LEFT,
 		MENUACTION_AUTOCENTER_IN_VEHICLE_FP, "FEC_ACV", { nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_RELATIVE_CAM_IN_VEHICLE_DB_FP, "FEC_RVD", { nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_DOOM_MODE_FP, "FEC_DOM", { nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK, "FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_LEFT,
+	},
+#endif
+
+#ifdef VICEEXT_WFP_MENU
+	{ "FET_WSF", MENUPAGE_DISPLAY_SETTINGS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
+		MENUACTION_CFO_SLIDER, "FEM_HWS", { new CCFOSlider(&g_fWSPOptionHudWidthScale, nil, nil, 0.5f, 1.5f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FEM_HHS", { new CCFOSlider(&g_fWSPOptionHudHeightScale, nil, nil, 0.5f, 1.5f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FEM_RWS", { new CCFOSlider(&g_fWSPOptionRadarWidthScale, nil, nil, 0.5f, 1.5f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_RSZ", { new CCFOSelect((int8*)&g_bWSPOptionIVRadarScaling, nil, nil, wspRadarSizeTexts, ARRAY_SIZE(wspRadarSizeTexts), false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SLIDER, "FEM_SBS", { new CCFOSlider(&g_fWSPOptionSubtitlesScale, nil, nil, 0.25f, 4.0f) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FEM_OUT", { new CCFODynamic(nil, nil, nil, WspTextOutlineDraw, WspTextOutlinePress) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_STS", { new CCFOSelect((int8*)&g_bWSPOptionSmallerTextShadows, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_SFD", { new CCFOSelect((int8*)&g_bWSPOptionCarSpeedDependantFOV, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_DTF", { new CCFOSelect((int8*)&g_bWSPOptionDontTouchFOV, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_CSB", { new CCFOSelect((int8*)&g_bWSPOptionSmartCutsceneBorders, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_VCS", { new CCFOSelect((int8*)&g_bWSPOptionVCSCamShake, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_SCL", { new CCFOSelect((int8*)&g_bWSPOptionSmallerVehicleCorona, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT, "FEM_NLS", { new CCFOSelect((int8*)&g_bWSPOptionNoLightSquare, nil, nil, off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FEM_MC9", { new CCFODynamic(nil, nil, nil, WspMenuAspectDraw, WspMenuAspectPress) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FEM_HAC", { new CCFODynamic(nil, nil, nil, WspHudAspectDraw, WspHudAspectPress) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_DYNAMIC, "FET_DEF", { new CCFODynamic(nil, nil, nil, nil, RestoreDefWidescreenFix) }, 320, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK, "FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 #endif
 };
