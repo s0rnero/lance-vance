@@ -1,0 +1,461 @@
+vehiculo,lado,accion,estado_antes,nodo_post,clases_post,tex_post
+admiral,lf,nada,igual,si,a0r0b0o8,lights:8
+admiral,rf,nada,igual,si,a0r0b0o8,lights:8
+admiral,lr,nada,igual,si,a0r0b0o4,lights:4
+admiral,rr,nada,igual,si,a0r0b0o4,lights:4
+airtrain,lf,-,-,no,,
+airtrain,rf,-,-,no,,
+airtrain,lr,-,-,no,,
+airtrain,rr,-,-,no,,
+ambulan,lf,nada,igual,si,a0r0b0o2,lights:2
+ambulan,rf,nada,igual,si,a0r0b0o2,lights:2
+ambulan,lr,TRIGGER,no hay,no,,
+ambulan,rr,TRIGGER,no hay,no,,
+angel,lf,nada,igual,si,a0r0b0o2,lights:2
+angel,rf,nada,igual,si,a0r0b0o2,lights:2
+angel,lr,nada,igual,si,a0r0b0o2,lights:2
+angel,rr,nada,igual,si,a0r0b0o2,lights:2
+baggage,lf,nada,igual,si,a0r4b0o2,lights:6
+baggage,rf,nada,igual,si,a0r4b0o2,lights:6
+baggage,lr,nada,igual,si,a0r4b0o2,baggage8bit128:6
+baggage,rr,nada,igual,si,a0r4b0o2,baggage8bit128:6
+banshee,lf,TRIGGER,no hay,no,,
+banshee,rf,TRIGGER,no hay,no,,
+banshee,lr,TRIGGER,no hay,no,,
+banshee,rr,TRIGGER,no hay,no,,
+barracks,lf,NODO-PROPIO,igual,si,a0r0b1o0,barracks868bit128:1
+barracks,rf,NODO-PROPIO,igual,si,a0r0b1o0,barracks868bit128:1
+barracks,lr,NODO-AMBAR,igual,si,a5r0b0o0,barracks868bit128:5
+barracks,rr,NODO-AMBAR,igual,si,a5r0b0o0,barracks868bit128:5
+benson,lf,NODO-AMBAR,igual,si,a2r0b0o0,benson868bit128:2
+benson,rf,NODO-AMBAR,igual,si,a2r0b0o0,benson868bit128:2
+benson,lr,NODO-PROPIO,igual,si,a0r2b0o0,benson868bit128:2
+benson,rr,NODO-PROPIO,igual,si,a0r2b0o0,benson868bit128:2
+bfinject,lf,NODO-PROPIO,igual,si,a0r0b12o0,bfinject868bit128:2|bfinject86body8bit64:10
+bfinject,rf,NODO-PROPIO,igual,si,a0r0b12o0,bfinject868bit128:2|bfinject86body8bit64:10
+bfinject,lr,NODO-PROPIO,igual,si,a0r8b0o0,bfinject868bit128:8
+bfinject,rr,NODO-PROPIO,igual,si,a0r8b0o0,bfinject868bit128:8
+blistac,lf,NODO-AMBAR,igual,si,a5r0b0o0,blistac868bit128:5
+blistac,rf,NODO-AMBAR,igual,si,a5r0b0o0,blistac868bit128:5
+blistac,lr,nada,no hay,no,,
+blistac,rr,nada,no hay,no,,
+bloodra,lf,NODO-PROPIO,igual,si,a0r0b4o0,bloodra8bit128:4
+bloodra,rf,NODO-PROPIO,igual,si,a0r0b4o0,bloodra8bit128:4
+bloodra,lr,NODO-PROPIO,igual,si,a0r12b0o0,bloodra8bit128:12
+bloodra,rr,NODO-PROPIO,igual,si,a0r12b0o0,bloodra8bit128:12
+bloodrb,lf,NODO-PROPIO,igual,si,a0r0b14o0,bloodrb8bit128:5|bloodrbbody128a:9
+bloodrb,rf,NODO-PROPIO,igual,si,a0r0b14o0,bloodrb8bit128:5|bloodrbbody128a:9
+bloodrb,lr,NODO-PROPIO,igual,si,a0r5b0o0,bloodrb8bit128:5
+bloodrb,rr,NODO-PROPIO,igual,si,a0r5b0o0,bloodrb8bit128:5
+bobcat,lf,NODO-AMBAR,igual,si,a4r0b0o0,bobcat868bit128:4
+bobcat,rf,NODO-AMBAR,igual,si,a5r0b0o0,bobcat868bit128:5
+bobcat,lr,NODO-PROPIO,igual,si,a0r5b0o0,bobcat868bit128:5
+bobcat,rr,NODO-PROPIO,igual,si,a0r5b0o0,bobcat868bit128:5
+boxville,lf,NODO-PROPIO,distinto,si,a0r0b8o0,boxville868bit128:1|boxville86body8bit128:7
+boxville,rf,NODO-PROPIO,distinto,si,a0r0b13o0,boxville868bit128:2|boxville86body8bit128:11
+boxville,lr,NODO-AMBAR,igual,si,a2r0b0o0,boxville868bit128:2
+boxville,rr,NODO-AMBAR,igual,si,a2r0b0o0,boxville868bit128:2
+burrito,lf,NODO-AMBAR,igual,si,a8r0b0o0,burrito868bit128:8
+burrito,rf,NODO-AMBAR,igual,si,a8r0b0o0,burrito868bit128:8
+burrito,lr,NODO-PROPIO,igual,si,a0r2b0o0,burrito868bit128:2
+burrito,rr,NODO-PROPIO,igual,si,a0r2b0o0,burrito868bit128:2
+bus,lf,NODO-AMBAR,igual,si,a6r0b0o0,bus8bit128:6
+bus,rf,NODO-AMBAR,igual,si,a6r0b0o0,bus8bit128:6
+bus,lr,NODO-PROPIO,igual,si,a0r5b0o0,bus8bit128:5
+bus,rr,NODO-PROPIO,igual,si,a0r5b0o0,bus8bit128:5
+cabbie,lf,NODO-AMBAR,igual,si,a5r0b0o0,cabbie8bit128:5
+cabbie,rf,NODO-AMBAR,igual,si,a5r0b0o0,cabbie8bit128:5
+cabbie,lr,NODO-AMBAR,igual,si,a6r0b0o0,cabbie8bit128:6
+cabbie,rr,NODO-AMBAR,igual,si,a6r0b0o0,cabbie8bit128:6
+caddy,lf,NODO-PROPIO,igual,si,a0r0b13o0,caddy8bit128:1|caddybody128a:12
+caddy,rf,NODO-PROPIO,igual,si,a0r0b15o0,caddy8bit128:1|caddybody128a:14
+caddy,lr,NODO-PROPIO,igual,si,a0r2b0o0,caddy8bit128:2
+caddy,rr,NODO-PROPIO,igual,si,a0r2b0o0,caddy8bit128:2
+cheetah,lf,nada,igual,si,a0r0b0o2,lights:2
+cheetah,rf,nada,igual,si,a0r0b0o2,lights:2
+cheetah,lr,nada,igual,si,a0r0b0o16,lights:16
+cheetah,rr,nada,igual,si,a0r0b0o16,lights:16
+chopper,lf,-,-,no,,
+chopper,rf,-,-,no,,
+chopper,lr,-,-,no,,
+chopper,rr,-,-,no,,
+coach,lf,NODO-AMBAR,igual,si,a2r0b0o0,coach868bit128:2
+coach,rf,NODO-AMBAR,crea,si,a1r0b0o0,coach868bit128:1
+coach,lr,nada,no hay,no,,
+coach,rr,nada,no hay,no,,
+coastg,lf,-,-,no,,
+coastg,rf,-,-,no,,
+coastg,lr,-,-,no,,
+coastg,rr,-,-,no,,
+comet,lf,nada,no hay,no,,
+comet,rf,nada,no hay,no,,
+comet,lr,NODO-PROPIO,igual,si,a0r3b0o0,comet868bit128:3
+comet,rr,NODO-PROPIO,igual,si,a0r3b0o0,comet868bit128:3
+cuban,lf,NODO-AMBAR,distinto,si,a1r0b0o0,cubanbody128a:1
+cuban,rf,NODO-AMBAR,distinto,si,a1r0b0o0,cubanbody128a:1
+cuban,lr,NODO-PROPIO,igual,si,a0r23b0o0,cuban8bit128:23
+cuban,rr,NODO-PROPIO,igual,si,a0r23b0o0,cuban8bit128:23
+deaddodo,lf,-,-,no,,
+deaddodo,rf,-,-,no,,
+deaddodo,lr,-,-,no,,
+deaddodo,rr,-,-,no,,
+deluxo,lf,NODO-PROPIO,igual,si,a0r0b2o0,deluxo868bit128:2
+deluxo,rf,NODO-PROPIO,igual,si,a0r0b1o0,deluxo868bit128:1
+deluxo,lr,NODO-PROPIO,igual,si,a0r10b0o0,deluxo868bit128:10
+deluxo,rr,NODO-PROPIO,igual,si,a0r10b0o0,deluxo868bit128:10
+dinghy,lf,-,-,no,,
+dinghy,rf,-,-,no,,
+dinghy,lr,-,-,no,,
+dinghy,rr,-,-,no,,
+enforcer,lf,NODO-AMBAR,igual,si,a9r0b0o0,enforcer868bit128:9
+enforcer,rf,NODO-AMBAR,igual,si,a9r0b0o0,enforcer868bit128:9
+enforcer,lr,NODO-AMBAR,igual,si,a17r0b0o0,enforcer868bit128:17
+enforcer,rr,NODO-AMBAR,igual,si,a15r0b0o0,enforcer868bit128:15
+esperant,lf,NODO-AMBAR,crea,si,a6r0b0o0,esperanto8bit128:6
+esperant,rf,NODO-AMBAR,crea,si,a6r0b0o0,esperanto8bit128:6
+esperant,lr,nada,no hay,no,,
+esperant,rr,nada,no hay,no,,
+faggio,lf,nada,no hay,no,,
+faggio,rf,nada,no hay,no,,
+faggio,lr,NODO-AMBAR,igual,si,a6r0b0o0,faggio8bit128:6
+faggio,rr,NODO-AMBAR,igual,si,a6r0b0o0,faggio8bit128:6
+fbicar,lf,NODO-PROPIO,igual,si,a0r0b19o0,fbicar86body8bit128:19
+fbicar,rf,NODO-PROPIO,igual,si,a0r0b19o0,fbicar86body8bit128:19
+fbicar,lr,nada,no hay,no,,
+fbicar,rr,nada,no hay,no,,
+fbiranch,lf,NODO-PROPIO,igual,si,a0r0b3o0,fbirancher86body8bit64:3
+fbiranch,rf,NODO-PROPIO,igual,si,a0r0b4o0,fbirancher86body8bit64:4
+fbiranch,lr,nada,no hay,no,,
+fbiranch,rr,nada,no hay,no,,
+firetruk,lf,nada,igual,si,a0r0b0o2,lights:2
+firetruk,rf,nada,igual,si,a0r0b0o2,lights:2
+firetruk,lr,nada,igual,si,a0r0b0o2,lights:2
+firetruk,rr,nada,igual,si,a0r0b0o2,lights:2
+flatbed,lf,NODO-PROPIO,igual,si,a0r0b2o0,flatbed868bit128:2
+flatbed,rf,NODO-PROPIO,igual,si,a0r0b2o0,flatbed868bit128:2
+flatbed,lr,NODO-AMBAR,igual,si,a3r0b0o0,flatbed868bit128:3
+flatbed,rr,NODO-AMBAR,igual,si,a3r0b0o0,flatbed868bit128:3
+freeway,lf,nada,igual,si,a0r0b0o2,lights:2
+freeway,rf,nada,igual,si,a0r0b0o2,lights:2
+freeway,lr,nada,igual,si,a0r0b0o2,lights:2
+freeway,rr,nada,igual,si,a0r0b0o2,lights:2
+gangbur,lf,NODO-AMBAR,igual,si,a8r0b0o0,gangbur868bit128:8
+gangbur,rf,NODO-AMBAR,igual,si,a8r0b0o0,gangbur868bit128:8
+gangbur,lr,NODO-PROPIO,igual,si,a0r2b0o0,gangbur868bit128:2
+gangbur,rr,NODO-PROPIO,igual,si,a0r2b0o0,gangbur868bit128:2
+glendale,lf,NODO-PROPIO,igual,si,a0r0b17o0,glendale8bit128:10|glendalebody128a:7
+glendale,rf,NODO-PROPIO,igual,si,a0r0b17o0,glendale8bit128:10|glendalebody128a:7
+glendale,lr,NODO-PROPIO,igual,si,a0r5b0o0,glendale8bit128:5
+glendale,rr,NODO-PROPIO,igual,si,a0r5b0o0,glendale8bit128:5
+greenwoo,lf,nada,no hay,no,,
+greenwoo,rf,nada,no hay,no,,
+greenwoo,lr,nada,no hay,no,,
+greenwoo,rr,nada,no hay,no,,
+hellenbach,lf,nada,igual,si,a0r0b0o6,lights:6
+hellenbach,rf,nada,igual,si,a0r0b0o6,lights:6
+hellenbach,lr,nada,igual,si,a0r0b0o2,lights:2
+hellenbach,rr,nada,igual,si,a0r0b0o2,lights:2
+hermes,lf,NODO-PROPIO,igual,si,a0r0b16o0,hermes8bit128:2|hermesbody128a:14
+hermes,rf,NODO-PROPIO,igual,si,a0r0b16o0,hermes8bit128:2|hermesbody128a:14
+hermes,lr,NODO-PROPIO,igual,si,a0r23b0o0,hermes8bit128:23
+hermes,rr,NODO-PROPIO,igual,si,a0r23b0o0,hermes8bit128:23
+hotrina,lf,NODO-AMBAR,distinto,si,a1r0b0o0,hotrina8bit128:1
+hotrina,rf,NODO-AMBAR,distinto,si,a1r0b0o0,hotrina8bit128:1
+hotrina,lr,NODO-PROPIO,igual,si,a0r4b0o0,hotrina8bit128:4
+hotrina,rr,NODO-PROPIO,igual,si,a0r4b0o0,hotrina8bit128:4
+hotrinb,lf,NODO-AMBAR,igual,si,a3r0b0o0,hotrinb8bit128:3
+hotrinb,rf,NODO-AMBAR,igual,si,a3r0b0o0,hotrinb8bit128:3
+hotrinb,lr,NODO-PROPIO,igual,si,a0r6b0o0,hotrinb8bit128:6
+hotrinb,rr,NODO-PROPIO,igual,si,a0r6b0o0,hotrinb8bit128:6
+hotring,lf,NODO-AMBAR,distinto,si,a1r0b0o0,hotring8bit128:1
+hotring,rf,NODO-AMBAR,distinto,si,a1r0b0o0,hotring8bit128:1
+hotring,lr,NODO-PROPIO,igual,si,a0r6b0o0,hotring8bit128:6
+hotring,rr,NODO-PROPIO,igual,si,a0r6b0o0,hotring8bit128:6
+hunter,lf,nada,no hay,no,,
+hunter,rf,nada,no hay,no,,
+hunter,lr,nada,no hay,no,,
+hunter,rr,nada,no hay,no,,
+idaho,lf,nada,igual,si,a0r0b0o4,lights:4
+idaho,rf,nada,igual,si,a0r0b0o4,lights:4
+idaho,lr,TRIGGER,no hay,no,,
+idaho,rr,TRIGGER,no hay,no,,
+infernus,lf,nada,igual,si,a2r0b0o0,infernus868bit128:2
+infernus,rf,nada,igual,si,a2r0b0o0,infernus868bit128:2
+infernus,lr,nada,igual,si,a1r0b0o15,lights:16
+infernus,rr,nada,igual,si,a0r0b0o16,lights:16
+jetmax,lf,-,-,no,,
+jetmax,rf,-,-,no,,
+jetmax,lr,-,-,no,,
+jetmax,rr,-,-,no,,
+kaufman,lf,NODO-AMBAR,igual,si,a5r0b0o0,cabbie8bit128:5
+kaufman,rf,NODO-AMBAR,igual,si,a5r0b0o0,cabbie8bit128:5
+kaufman,lr,NODO-AMBAR,igual,si,a6r0b0o0,cabbie8bit128:6
+kaufman,rr,NODO-AMBAR,igual,si,a6r0b0o0,cabbie8bit128:6
+landstal,lf,NODO-AMBAR,crea,si,a5r0b0o0,landstal868bit128:5
+landstal,rf,NODO-AMBAR,crea,si,a5r0b0o0,landstal868bit128:5
+landstal,lr,NODO-PROPIO,igual,si,a0r4b0o0,landstal868bit128:4
+landstal,rr,NODO-PROPIO,igual,si,a0r4b0o0,landstal868bit128:4
+linerun,lf,NODO-AMBAR,igual,si,a7r0b0o0,linerun868bit128:7
+linerun,rf,NODO-AMBAR,igual,si,a7r0b0o0,linerun868bit128:7
+linerun,lr,NODO-PROPIO,igual,si,a0r6b0o0,linerun868bit128:6
+linerun,rr,NODO-PROPIO,igual,si,a0r6b0o0,linerun868bit128:6
+lovefist,lf,NODO-AMBAR,distinto,si,a2r0b0o0,lovefist868bit128:2
+lovefist,rf,NODO-AMBAR,distinto,si,a2r0b0o0,lovefist868bit128:2
+lovefist,lr,NODO-PROPIO,igual,si,a0r5b0o0,lovefist868bit128:5
+lovefist,rr,NODO-PROPIO,igual,si,a0r5b0o0,lovefist868bit128:5
+manana,lf,NODO-AMBAR,igual,si,a3r0b0o0,manana868bit128:3
+manana,rf,NODO-AMBAR,igual,si,a3r0b0o0,manana868bit128:3
+manana,lr,NODO-AMBAR,distinto,si,a1r0b0o0,manana868bit128:1
+manana,rr,NODO-AMBAR,distinto,si,a1r0b0o0,manana868bit128:1
+manchez,lf,TRIGGER,no hay,no,,
+manchez,rf,TRIGGER,no hay,no,,
+manchez,lr,TRIGGER,no hay,no,,
+manchez,rr,TRIGGER,no hay,no,,
+marquis,lf,-,-,no,,
+marquis,rf,-,-,no,,
+marquis,lr,-,-,no,,
+marquis,rr,-,-,no,,
+maverick,lf,nada,no hay,no,,
+maverick,rf,nada,no hay,no,,
+maverick,lr,nada,no hay,no,,
+maverick,rr,nada,no hay,no,,
+mesa,lf,NODO-AMBAR,igual,si,a2r0b0o0,mesa868bit128:2
+mesa,rf,NODO-AMBAR,igual,si,a2r0b0o0,mesa868bit128:2
+mesa,lr,NODO-PROPIO,igual,si,a0r7b0o0,mesa868bit128:7
+mesa,rr,NODO-PROPIO,igual,si,a0r7b0o0,mesa868bit128:7
+moonbeam,lf,NODO-AMBAR,igual,si,a2r0b0o0,moonbm8bit128:2
+moonbeam,rf,NODO-AMBAR,igual,si,a2r0b0o0,moonbm8bit128:2
+moonbeam,lr,NODO-AMBAR,igual,si,a6r0b0o0,moonbm8bit128:6
+moonbeam,rr,NODO-AMBAR,igual,si,a6r0b0o0,moonbm8bit128:6
+mrwhoop,lf,NODO-PROPIO,igual,si,a0r0b13o0,mrwhoo868bit128:1|mrwhoo86body8bit128:12
+mrwhoop,rf,NODO-PROPIO,igual,si,a0r0b12o0,mrwhoo868bit128:2|mrwhoo86body8bit128:10
+mrwhoop,lr,NODO-AMBAR,igual,si,a2r0b0o0,mrwhoo868bit128:2
+mrwhoop,rr,NODO-AMBAR,igual,si,a2r0b0o0,mrwhoo868bit128:2
+mule,lf,NODO-PROPIO,igual,si,a0r0b1o0,mule8bit128:1
+mule,rf,NODO-PROPIO,igual,si,a0r0b1o0,mule8bit128:1
+mule,lr,NODO-PROPIO,igual,si,a0r4b0o0,mule8bit128:4
+mule,rr,NODO-PROPIO,igual,si,a0r4b0o0,mule8bit128:4
+oceanic,lf,NODO-PROPIO,igual,si,a0r0b2o0,oceanic8bit128:2
+oceanic,rf,NODO-PROPIO,igual,si,a0r0b2o0,oceanic8bit128:2
+oceanic,lr,NODO-PROPIO,igual,si,a0r12b0o0,oceanic8bit128:12
+oceanic,rr,NODO-PROPIO,igual,si,a0r12b0o0,oceanic8bit128:12
+packer,lf,NODO-AMBAR,crea,si,a12r0b0o0,packer8bit128:12
+packer,rf,NODO-AMBAR,crea,si,a12r0b0o0,packer8bit128:12
+packer,lr,NODO-AMBAR,igual,si,a4r0b0o0,packer8bit128:4
+packer,rr,NODO-AMBAR,igual,si,a4r0b0o0,packer8bit128:4
+patriot,lf,nada,igual,si,a0r0b0o34,lights:34
+patriot,rf,nada,igual,si,a0r0b0o34,lights:34
+patriot,lr,nada,igual,si,a0r0b0o34,lights:34
+patriot,rr,nada,igual,si,a0r0b0o34,lights:34
+pcj600,lf,TRIGGER,no hay,no,,
+pcj600,rf,TRIGGER,no hay,no,,
+pcj600,lr,nada,igual,si,a0r0b0o2,lights:2
+pcj600,rr,nada,igual,si,a0r0b0o2,lights:2
+peren,lf,NODO-AMBAR,igual,si,a2r0b0o0,peren868bit128:2
+peren,rf,NODO-AMBAR,igual,si,a2r0b0o0,peren868bit128:2
+peren,lr,NODO-PROPIO,igual,si,a0r1b0o0,peren868bit128:1
+peren,rr,NODO-PROPIO,igual,si,a0r1b0o0,peren868bit128:1
+peren2,lf,TRIGGER,no hay,no,,
+peren2,rf,TRIGGER,no hay,no,,
+peren2,lr,nada,igual,si,a0r0b0o4,lights:4
+peren2,rr,nada,igual,si,a0r0b0o4,lights:4
+pheonix,lf,NODO-PROPIO,igual,si,a0r0b4o0,pheonix868bit128:2|pheonix86body128a:2
+pheonix,rf,NODO-PROPIO,igual,si,a0r0b4o0,pheonix868bit128:2|pheonix86body128a:2
+pheonix,lr,NODO-PROPIO,igual,si,a0r14b0o0,pheonix868bit128:14
+pheonix,rr,NODO-PROPIO,igual,si,a0r14b0o0,pheonix868bit128:14
+pizzaboy,lf,nada,no hay,no,,
+pizzaboy,rf,nada,no hay,no,,
+pizzaboy,lr,NODO-AMBAR,igual,si,a6r0b0o0,pizzaboy8bit128:6
+pizzaboy,rr,NODO-AMBAR,igual,si,a6r0b0o0,pizzaboy8bit128:6
+police,lf,nada,igual,si,a0r0b0o4,lights:4
+police,rf,nada,igual,si,a0r0b0o4,lights:4
+police,lr,nada,igual,si,a0r0b0o2,lights:2
+police,rr,nada,igual,si,a0r0b0o2,lights:2
+polmav,lf,nada,no hay,no,,
+polmav,rf,nada,no hay,no,,
+polmav,lr,nada,no hay,no,,
+polmav,rr,nada,no hay,no,,
+polwintergreen,lf,nada,igual,si,a0r0b0o8,lights:8
+polwintergreen,rf,nada,igual,si,a0r0b0o8,lights:8
+polwintergreen,lr,nada,igual,si,a0r0b0o8,lights:8
+polwintergreen,rr,nada,igual,si,a0r0b0o8,lights:8
+pony,lf,NODO-AMBAR,distinto,si,a1r0b0o0,pony868bit128:1
+pony,rf,NODO-AMBAR,distinto,si,a1r0b0o0,pony868bit128:1
+pony,lr,NODO-PROPIO,distinto,si,a0r2b0o0,pony868bit128:2
+pony,rr,NODO-PROPIO,distinto,si,a0r2b0o0,pony868bit128:2
+predator,lf,-,-,no,,
+predator,rf,-,-,no,,
+predator,lr,-,-,no,,
+predator,rr,-,-,no,,
+premier,lf,nada,igual,si,a0r0b0o4,lights:4
+premier,rf,nada,igual,si,a0r0b0o4,lights:4
+premier,lr,nada,igual,si,a0r0b0o2,lights:2
+premier,rr,nada,igual,si,a0r0b0o2,lights:2
+rancher,lf,NODO-AMBAR,crea,si,a4r0b0o0,ranch868bit128:4
+rancher,rf,NODO-AMBAR,crea,si,a4r0b0o0,ranch868bit128:4
+rancher,lr,NODO-AMBAR,igual,si,a3r0b0o0,ranch868bit128:3
+rancher,rr,NODO-AMBAR,igual,si,a3r0b0o0,ranch868bit128:3
+rcbandit,lf,nada,no hay,no,,
+rcbandit,rf,nada,no hay,no,,
+rcbandit,lr,nada,no hay,no,,
+rcbandit,rr,nada,no hay,no,,
+rcbaron,lf,nada,no hay,no,,
+rcbaron,rf,nada,no hay,no,,
+rcbaron,lr,nada,no hay,no,,
+rcbaron,rr,nada,no hay,no,,
+rcgoblin,lf,nada,no hay,no,,
+rcgoblin,rf,nada,no hay,no,,
+rcgoblin,lr,NODO-PROPIO,igual,si,a0r5b0o0,rcgoblin8bit128:5
+rcgoblin,rr,NODO-PROPIO,igual,si,a0r5b0o0,rcgoblin8bit128:5
+rcraider,lf,nada,no hay,no,,
+rcraider,rf,nada,no hay,no,,
+rcraider,lr,nada,no hay,no,,
+rcraider,rr,nada,no hay,no,,
+reefer,lf,-,-,no,,
+reefer,rf,-,-,no,,
+reefer,lr,-,-,no,,
+reefer,rr,-,-,no,,
+regina,lf,NODO-AMBAR,igual,si,a2r0b0o0,regina868bit128:2
+regina,rf,NODO-AMBAR,igual,si,a2r0b0o0,regina868bit128:2
+regina,lr,NODO-PROPIO,igual,si,a0r6b0o0,regina868bit128:6
+regina,rr,NODO-PROPIO,igual,si,a0r6b0o0,regina868bit128:6
+rhino,lf,nada,no hay,no,,
+rhino,rf,nada,no hay,no,,
+rhino,lr,nada,no hay,no,,
+rhino,rr,nada,no hay,no,,
+rio,lf,-,-,no,,
+rio,rf,-,-,no,,
+rio,lr,-,-,no,,
+rio,rr,-,-,no,,
+romero,lf,NODO-AMBAR,distinto,si,a1r0b0o0,romero8bit128:1
+romero,rf,NODO-AMBAR,distinto,si,a1r0b0o0,romero8bit128:1
+romero,lr,NODO-PROPIO,igual,si,a0r4b0o0,romero8bit128:4
+romero,rr,NODO-PROPIO,igual,si,a0r4b0o0,romero8bit128:4
+rumpo,lf,NODO-AMBAR,distinto,si,a1r0b0o0,rumpo868bit128:1
+rumpo,rf,NODO-AMBAR,distinto,si,a1r0b0o0,rumpo868bit128:1
+rumpo,lr,NODO-AMBAR,distinto,si,a2r0b0o0,rumpo868bit128:2
+rumpo,rr,NODO-AMBAR,distinto,si,a2r0b0o0,rumpo868bit128:2
+sabre,lf,nada,igual,si,a0r1b0o3,lights:4
+sabre,rf,nada,igual,si,a0r1b0o3,lights:4
+sabre,lr,nada,igual,si,a0r0b0o4,lights:4
+sabre,rr,nada,igual,si,a0r0b0o4,lights:4
+sabretur,lf,nada,igual,si,a0r1b0o3,lights:4
+sabretur,rf,nada,igual,si,a0r1b0o3,lights:4
+sabretur,lr,nada,igual,si,a0r0b0o4,lights:4
+sabretur,rr,nada,igual,si,a0r0b0o4,lights:4
+sanchez,lf,nada,no hay,no,,
+sanchez,rf,nada,no hay,no,,
+sanchez,lr,nada,no hay,no,,
+sanchez,rr,nada,no hay,no,,
+sandking,lf,NODO-AMBAR,crea,si,a5r0b0o0,sandking868bit128:5
+sandking,rf,NODO-AMBAR,crea,si,a5r0b0o0,sandking868bit128:5
+sandking,lr,NODO-PROPIO,igual,si,a0r4b0o0,sandking868bit128:4
+sandking,rr,NODO-PROPIO,igual,si,a0r4b0o0,sandking868bit128:4
+seaspar,lf,NODO-PROPIO,igual,si,a0r0b15o0,seasparrowbody128a:15
+seaspar,rf,NODO-PROPIO,igual,si,a0r0b15o0,seasparrowbody128a:15
+seaspar,lr,nada,no hay,no,,
+seaspar,rr,nada,no hay,no,,
+securica,lf,NODO-AMBAR,igual,si,a2r0b0o0,securica868bit128:2
+securica,rf,NODO-AMBAR,igual,si,a2r0b0o0,securica868bit128:2
+securica,lr,NODO-AMBAR,igual,si,a8r0b0o0,securica868bit128:8
+securica,rr,NODO-AMBAR,igual,si,a8r0b0o0,securica868bit128:8
+sentinel,lf,NODO-AMBAR,igual,si,a5r0b0o0,sentinel868bit128:5
+sentinel,rf,NODO-AMBAR,igual,si,a5r0b0o0,sentinel868bit128:5
+sentinel,lr,nada,no hay,no,,
+sentinel,rr,nada,no hay,no,,
+sentxs,lf,NODO-AMBAR,igual,si,a5r0b0o0,sentxs868bit128:5
+sentxs,rf,NODO-AMBAR,igual,si,a5r0b0o0,sentxs868bit128:5
+sentxs,lr,nada,no hay,no,,
+sentxs,rr,nada,no hay,no,,
+skimmer,lf,-,-,no,,
+skimmer,rf,-,-,no,,
+skimmer,lr,-,-,no,,
+skimmer,rr,-,-,no,,
+spand,lf,NODO-AMBAR,igual,si,a2r0b0o0,spand8bit128:2
+spand,rf,NODO-AMBAR,igual,si,a2r0b0o0,spand8bit128:2
+spand,lr,NODO-PROPIO,igual,si,a0r4b0o0,spand8bit128:4
+spand,rr,NODO-PROPIO,igual,si,a0r4b0o0,spand8bit128:4
+sparrow,lf,NODO-PROPIO,igual,si,a0r0b2o0,sparrowbody128a:2
+sparrow,rf,NODO-PROPIO,igual,si,a0r0b2o0,sparrowbody128a:2
+sparrow,lr,nada,no hay,no,,
+sparrow,rr,nada,no hay,no,,
+speeder,lf,-,-,no,,
+speeder,rf,-,-,no,,
+speeder,lr,-,-,no,,
+speeder,rr,-,-,no,,
+squalo,lf,-,-,no,,
+squalo,rf,-,-,no,,
+squalo,lr,-,-,no,,
+squalo,rr,-,-,no,,
+stallion,lf,NODO-PROPIO,igual,si,a0r0b6o0,stalion86body8bit64:6
+stallion,rf,NODO-PROPIO,igual,si,a0r0b6o0,stalion86body8bit64:6
+stallion,lr,NODO-PROPIO,igual,si,a0r7b0o0,stalion868bit128:7
+stallion,rr,NODO-PROPIO,igual,si,a0r7b0o0,stalion868bit128:7
+stinger,lf,NODO-AMBAR,igual,si,a3r0b0o0,stinger86body64:3
+stinger,rf,NODO-AMBAR,igual,si,a3r0b0o0,stinger86body64:3
+stinger,lr,NODO-AMBAR,igual,si,a7r0b0o0,stinger86body64:7
+stinger,rr,NODO-AMBAR,igual,si,a7r0b0o0,stinger86body64:7
+streetfi,lf,nada,igual,si,a0r0b0o2,lights:2
+streetfi,rf,nada,igual,si,a0r0b0o2,lights:2
+streetfi,lr,nada,igual,si,a0r0b0o2,lights:2
+streetfi,rr,nada,igual,si,a0r0b0o2,lights:2
+stretch,lf,NODO-AMBAR,distinto,si,a1r0b0o0,stretch8bit128:1
+stretch,rf,NODO-AMBAR,distinto,si,a1r0b0o0,stretch8bit128:1
+stretch,lr,NODO-PROPIO,igual,si,a0r5b0o0,stretch8bit128:5
+stretch,rr,NODO-PROPIO,igual,si,a0r5b0o0,stretch8bit128:5
+taxi,lf,nada,igual,si,a0r0b0o4,lights:4
+taxi,rf,nada,igual,si,a0r0b0o4,lights:4
+taxi,lr,nada,igual,si,a0r0b0o2,lights:2
+taxi,rr,nada,igual,si,a0r0b0o2,lights:2
+topfun,lf,NODO-AMBAR,crea,si,a1r0b0o0,topfun868bit128:1
+topfun,rf,NODO-AMBAR,crea,si,a1r0b0o0,topfun868bit128:1
+topfun,lr,NODO-PROPIO,distinto,si,a1r1b0o0,topfun868bit128:2
+topfun,rr,NODO-PROPIO,distinto,si,a1r1b0o0,topfun868bit128:2
+trash,lf,NODO-PROPIO,igual,si,a0r0b4o0,trash868bit128:1|trash86body8bit128:3
+trash,rf,NODO-PROPIO,igual,si,a0r0b4o0,trash868bit128:1|trash86body8bit128:3
+trash,lr,NODO-AMBAR,igual,si,a3r0b0o0,trash868bit128:3
+trash,rr,NODO-AMBAR,igual,si,a2r0b0o0,trash868bit128:2
+trash2,lf,nada,igual,si,a0r0b0o2,lights:2
+trash2,rf,nada,igual,si,a0r0b0o2,lights:2
+trash2,lr,nada,igual,si,a0r0b0o2,lights:2
+trash2,rr,nada,igual,si,a0r0b0o2,lights:2
+tropic,lf,-,-,no,,
+tropic,rf,-,-,no,,
+tropic,lr,-,-,no,,
+tropic,rr,-,-,no,,
+vcnmav,lf,nada,no hay,no,,
+vcnmav,rf,nada,no hay,no,,
+vcnmav,lr,nada,no hay,no,,
+vcnmav,rr,nada,no hay,no,,
+vicechee,lf,nada,igual,si,a0r0b0o2,lights:2
+vicechee,rf,nada,igual,si,a0r0b0o2,lights:2
+vicechee,lr,nada,igual,si,a0r0b0o16,lights:16
+vicechee,rr,nada,igual,si,a0r0b0o16,lights:16
+virgo,lf,NODO-PROPIO,igual,si,a0r0b6o0,virgobody8bit128a:6
+virgo,rf,NODO-PROPIO,igual,si,a0r0b6o0,virgobody8bit128a:6
+virgo,lr,NODO-PROPIO,igual,si,a0r10b0o0,virgo8bit128:10
+virgo,rr,NODO-PROPIO,igual,si,a0r10b0o0,virgo8bit128:10
+voodoo,lf,NODO-PROPIO,igual,si,a0r0b4o0,voodoobody128c:4
+voodoo,rf,NODO-PROPIO,igual,si,a0r0b4o0,voodoobody128c:4
+voodoo,lr,NODO-PROPIO,igual,si,a0r16b0o0,voodoo8bit128:16
+voodoo,rr,NODO-PROPIO,igual,si,a0r16b0o0,voodoo8bit128:16
+walton,lf,nada,no hay,no,,
+walton,rf,nada,no hay,no,,
+walton,lr,NODO-PROPIO,igual,si,a0r1b0o0,walton8bit128:1
+walton,rr,NODO-PROPIO,igual,si,a0r1b0o0,walton8bit128:1
+washing,lf,NODO-AMBAR,igual,si,a4r0b0o0,washington8bit128:4
+washing,rf,NODO-AMBAR,igual,si,a4r0b0o0,washington8bit128:4
+washing,lr,NODO-PROPIO,igual,si,a0r5b0o0,washington8bit128:5
+washing,rr,NODO-PROPIO,igual,si,a0r5b0o0,washington8bit128:5
+wintergreen,lf,nada,igual,si,a0r0b0o8,lights:8
+wintergreen,rf,nada,igual,si,a0r0b0o8,lights:8
+wintergreen,lr,nada,igual,si,a0r0b0o8,lights:8
+wintergreen,rr,nada,igual,si,a0r0b0o8,lights:8
+yankee,lf,NODO-PROPIO,igual,si,a0r0b5o0,yankee868bit128:1|yankee86body8bit128:4
+yankee,rf,NODO-PROPIO,igual,si,a0r0b5o0,yankee868bit128:1|yankee86body8bit128:4
+yankee,lr,NODO-AMBAR,igual,si,a2r0b0o0,yankee868bit128:2
+yankee,rr,NODO-AMBAR,igual,si,a2r0b0o0,yankee868bit128:2
+zebra,lf,NODO-AMBAR,distinto,si,a6r0b0o0,cabbie8bit128:5|zebrabody8bit128:1
+zebra,rf,NODO-AMBAR,distinto,si,a7r0b0o0,cabbie8bit128:6|zebrabody8bit128:1
+zebra,lr,NODO-AMBAR,distinto,si,a7r0b0o0,cabbie8bit128:6|zebrabody8bit128:1
+zebra,rr,NODO-AMBAR,crea,si,a8r0b0o0,cabbie8bit128:6|zebrabody8bit128:2

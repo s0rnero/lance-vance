@@ -1,0 +1,461 @@
+vehiculo,tipo,base,lado,objetivo,accion,estado,detalle,accion_plan
+admiral,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+admiral,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+admiral,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+admiral,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+airtrain,plane,octubre,lf,-,-,-,,-
+airtrain,plane,octubre,rf,-,-,-,,-
+airtrain,plane,octubre,lr,-,-,-,,-
+airtrain,plane,octubre,rr,-,-,-,,-
+ambulan,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+ambulan,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+ambulan,car,mod,lr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+ambulan,car,mod,rr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+angel,bike,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+angel,bike,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+angel,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+angel,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+baggage,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 4, 'b': 0, 'o': 2} tex=lights",nada
+baggage,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 4, 'b': 0, 'o': 2} tex=lights",nada
+baggage,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 4, 'b': 0, 'o': 2} tex=body",nada
+baggage,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 4, 'b': 0, 'o': 2} tex=body",nada
+banshee,car,mod,lf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+banshee,car,mod,rf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+banshee,car,mod,lr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+banshee,car,mod,rr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+barracks,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=1 o=0,NODO-PROPIO
+barracks,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=1 o=0,NODO-PROPIO
+barracks,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+barracks,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+benson,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+benson,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+benson,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+benson,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+bfinject,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=12 o=0,NODO-PROPIO
+bfinject,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=12 o=0,NODO-PROPIO
+bfinject,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=8 b=0 o=0,NODO-PROPIO
+bfinject,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=8 b=0 o=0,NODO-PROPIO
+blistac,car,mod,lf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+blistac,car,mod,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+blistac,car,mod,lr,SIN,nada,no hay,,BORRA-NODO
+blistac,car,mod,rr,SIN,nada,no hay,,BORRA-NODO
+bloodra,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+bloodra,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+bloodra,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=12 b=0 o=0,NODO-PROPIO
+bloodra,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=12 b=0 o=0,NODO-PROPIO
+bloodrb,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=14 o=0,NODO-PROPIO
+bloodrb,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=14 o=0,NODO-PROPIO
+bloodrb,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+bloodrb,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+bobcat,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=4 nodo=4/body,NODO-AMBAR
+bobcat,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+bobcat,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+bobcat,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+boxville,car,octubre,lf,PROPIO,NODO-PROPIO,distinto,a=0 r=0 b=8 o=0,NODO-AMBAR
+boxville,car,octubre,rf,PROPIO,NODO-PROPIO,distinto,a=0 r=0 b=13 o=0,NODO-AMBAR
+boxville,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+boxville,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+burrito,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+burrito,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+burrito,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+burrito,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+bus,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+bus,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+bus,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+bus,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+cabbie,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+cabbie,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+cabbie,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+cabbie,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+caddy,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=13 o=0,NODO-PROPIO
+caddy,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=15 o=0,NODO-PROPIO
+caddy,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+caddy,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+cheetah,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+cheetah,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+cheetah,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 16} tex=lights",RESTAURA-MOD
+cheetah,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 16} tex=lights",RESTAURA-MOD
+chopper,heli,octubre,lf,-,-,-,,-
+chopper,heli,octubre,rf,-,-,-,,-
+chopper,heli,octubre,lr,-,-,-,,-
+chopper,heli,octubre,rr,-,-,-,,-
+coach,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,-
+coach,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=1,-
+coach,car,octubre,lr,SIN,nada,no hay,,-
+coach,car,octubre,rr,SIN,nada,no hay,,-
+coastg,boat,octubre,lf,-,-,-,,-
+coastg,boat,octubre,rf,-,-,-,,-
+coastg,boat,octubre,lr,-,-,-,,-
+coastg,boat,octubre,rr,-,-,-,,-
+comet,car,mod,lf,SIN,nada,no hay,,-
+comet,car,mod,rf,SIN,nada,no hay,,-
+comet,car,mod,lr,PROPIO,NODO-PROPIO,igual,a=0 r=3 b=0 o=0,-
+comet,car,mod,rr,PROPIO,NODO-PROPIO,igual,a=0 r=3 b=0 o=0,-
+cuban,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-PROPIO
+cuban,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-PROPIO
+cuban,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=23 b=0 o=0,NODO-PROPIO
+cuban,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=23 b=0 o=0,NODO-PROPIO
+deaddodo,plane,octubre,lf,-,-,-,,-
+deaddodo,plane,octubre,rf,-,-,-,,-
+deaddodo,plane,octubre,lr,-,-,-,,-
+deaddodo,plane,octubre,rr,-,-,-,,-
+deluxo,car,mod,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,NODO-PROPIO
+deluxo,car,mod,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=1 o=0,NODO-PROPIO
+deluxo,car,mod,lr,PROPIO,NODO-PROPIO,igual,a=0 r=10 b=0 o=0,NODO-PROPIO
+deluxo,car,mod,rr,PROPIO,NODO-PROPIO,igual,a=0 r=10 b=0 o=0,NODO-PROPIO
+dinghy,boat,octubre,lf,-,-,-,,-
+dinghy,boat,octubre,rf,-,-,-,,-
+dinghy,boat,octubre,lr,-,-,-,,-
+dinghy,boat,octubre,rr,-,-,-,,-
+enforcer,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=9 nodo=9/body,NODO-AMBAR
+enforcer,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=9 nodo=9/body,NODO-AMBAR
+enforcer,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=17 nodo=17/body,NODO-AMBAR
+enforcer,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=15 nodo=15/body,NODO-AMBAR
+esperant,car,octubre,lf,AMBAR,NODO-AMBAR,crea,a=6,NODO-AMBAR
+esperant,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=6,NODO-AMBAR
+esperant,car,octubre,lr,SIN,nada,no hay,,BORRA-NODO
+esperant,car,octubre,rr,SIN,nada,no hay,,BORRA-NODO
+faggio,bike,octubre,lf,SIN,nada,no hay,,-
+faggio,bike,octubre,rf,SIN,nada,no hay,,-
+faggio,bike,octubre,lr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,-
+faggio,bike,octubre,rr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,-
+fbicar,car,mod,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=19 o=0,-
+fbicar,car,mod,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=19 o=0,-
+fbicar,car,mod,lr,SIN,nada,no hay,,-
+fbicar,car,mod,rr,SIN,nada,no hay,,-
+fbiranch,car,mod,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=3 o=0,-
+fbiranch,car,mod,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,-
+fbiranch,car,mod,lr,SIN,nada,no hay,,-
+fbiranch,car,mod,rr,SIN,nada,no hay,,-
+firetruk,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+firetruk,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+firetruk,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+firetruk,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+flatbed,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,NODO-PROPIO
+flatbed,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,NODO-PROPIO
+flatbed,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+flatbed,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+freeway,bike,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+freeway,bike,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+freeway,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+freeway,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+gangbur,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+gangbur,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+gangbur,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+gangbur,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=2 b=0 o=0,NODO-PROPIO
+glendale,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=17 o=0,NODO-PROPIO
+glendale,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=17 o=0,NODO-PROPIO
+glendale,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+glendale,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+greenwoo,car,mod,lf,SIN,nada,no hay,,BORRA-NODO
+greenwoo,car,mod,rf,SIN,nada,no hay,,BORRA-NODO
+greenwoo,car,mod,lr,SIN,nada,no hay,,BORRA-NODO
+greenwoo,car,mod,rr,SIN,nada,no hay,,BORRA-NODO
+hellenbach,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 6} tex=lights",nada
+hellenbach,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 6} tex=lights",nada
+hellenbach,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+hellenbach,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+hermes,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=16 o=0,NODO-PROPIO
+hermes,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=16 o=0,NODO-PROPIO
+hermes,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=23 b=0 o=0,NODO-PROPIO
+hermes,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=23 b=0 o=0,NODO-PROPIO
+hotrina,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=14/body,NODO-PROPIO
+hotrina,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=14/body,NODO-PROPIO
+hotrina,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+hotrina,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+hotrinb,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+hotrinb,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+hotrinb,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+hotrinb,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+hotring,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=5/body,NODO-PROPIO
+hotring,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=5/body,NODO-PROPIO
+hotring,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+hotring,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+hunter,car,octubre,lf,SIN,nada,no hay,,-
+hunter,car,octubre,rf,SIN,nada,no hay,,-
+hunter,car,octubre,lr,SIN,nada,no hay,,-
+hunter,car,octubre,rr,SIN,nada,no hay,,-
+idaho,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+idaho,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+idaho,car,mod,lr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+idaho,car,mod,rr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+infernus,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 2, 'r': 0, 'b': 0, 'o': 0} tex=body",nada
+infernus,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 2, 'r': 0, 'b': 0, 'o': 0} tex=body",nada
+infernus,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 1, 'r': 0, 'b': 0, 'o': 15} tex=lights",nada
+infernus,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 16} tex=lights",nada
+jetmax,boat,octubre,lf,-,-,-,,-
+jetmax,boat,octubre,rf,-,-,-,,-
+jetmax,boat,octubre,lr,-,-,-,,-
+jetmax,boat,octubre,rr,-,-,-,,-
+kaufman,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+kaufman,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+kaufman,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+kaufman,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+landstal,car,octubre,lf,AMBAR,NODO-AMBAR,crea,a=5,NODO-AMBAR
+landstal,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=5,NODO-AMBAR
+landstal,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+landstal,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+linerun,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=7 nodo=7/body,NODO-AMBAR
+linerun,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=7 nodo=7/body,NODO-AMBAR
+linerun,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+linerun,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+lovefist,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=2 nodo=4/body,NODO-AMBAR
+lovefist,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=2 nodo=4/body,NODO-AMBAR
+lovefist,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+lovefist,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+manana,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+manana,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+manana,car,octubre,lr,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-AMBAR
+manana,car,octubre,rr,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-AMBAR
+manchez,bike,mod,lf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+manchez,bike,mod,rf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+manchez,bike,mod,lr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+manchez,bike,mod,rr,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+marquis,boat,octubre,lf,-,-,-,,-
+marquis,boat,octubre,rf,-,-,-,,-
+marquis,boat,octubre,lr,-,-,-,,-
+marquis,boat,octubre,rr,-,-,-,,-
+maverick,car,octubre,lf,SIN,nada,no hay,,-
+maverick,car,octubre,rf,SIN,nada,no hay,,-
+maverick,car,octubre,lr,SIN,nada,no hay,,-
+maverick,car,octubre,rr,SIN,nada,no hay,,-
+mesa,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+mesa,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+mesa,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=7 b=0 o=0,NODO-PROPIO
+mesa,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=7 b=0 o=0,NODO-PROPIO
+moonbeam,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+moonbeam,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+moonbeam,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+moonbeam,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,NODO-AMBAR
+mrwhoop,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=13 o=0,NODO-PROPIO
+mrwhoop,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=12 o=0,NODO-PROPIO
+mrwhoop,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+mrwhoop,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+mule,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=1 o=0,NODO-PROPIO
+mule,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=1 o=0,NODO-PROPIO
+mule,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+mule,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+oceanic,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,NODO-PROPIO
+oceanic,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,NODO-PROPIO
+oceanic,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=12 b=0 o=0,NODO-PROPIO
+oceanic,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=12 b=0 o=0,NODO-PROPIO
+packer,car,octubre,lf,AMBAR,NODO-AMBAR,crea,a=12,NODO-AMBAR
+packer,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=12,NODO-AMBAR
+packer,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=4 nodo=4/body,NODO-AMBAR
+packer,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=4 nodo=4/body,NODO-AMBAR
+patriot,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 34} tex=lights",nada
+patriot,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 34} tex=lights",nada
+patriot,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 34} tex=lights",nada
+patriot,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 34} tex=lights",nada
+pcj600,bike,mod,lf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+pcj600,bike,mod,rf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+pcj600,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+pcj600,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+peren,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+peren,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+peren,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=1 b=0 o=0,NODO-PROPIO
+peren,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=1 b=0 o=0,NODO-PROPIO
+peren2,car,mod,lf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+peren2,car,mod,rf,PROPIO,TRIGGER,no hay,el motor resuelve con sus lamparas,TRIGGER
+peren2,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+peren2,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+pheonix,car,mod,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+pheonix,car,mod,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+pheonix,car,mod,lr,PROPIO,NODO-PROPIO,igual,a=0 r=14 b=0 o=0,NODO-PROPIO
+pheonix,car,mod,rr,PROPIO,NODO-PROPIO,igual,a=0 r=14 b=0 o=0,NODO-PROPIO
+pizzaboy,bike,octubre,lf,SIN,nada,no hay,,-
+pizzaboy,bike,octubre,rf,SIN,nada,no hay,,-
+pizzaboy,bike,octubre,lr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,-
+pizzaboy,bike,octubre,rr,AMBAR,NODO-AMBAR,igual,a=6 nodo=6/body,-
+police,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+police,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+police,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+police,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+polmav,car,octubre,lf,SIN,nada,no hay,,-
+polmav,car,octubre,rf,SIN,nada,no hay,,-
+polmav,car,octubre,lr,SIN,nada,no hay,,-
+polmav,car,octubre,rr,SIN,nada,no hay,,-
+polwintergreen,bike,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+polwintergreen,bike,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+polwintergreen,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+polwintergreen,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+pony,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=8/lights,NODO-PROPIO
+pony,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=8/lights,NODO-PROPIO
+pony,car,octubre,lr,PROPIO,NODO-PROPIO,distinto,a=0 r=2 b=0 o=0,NODO-PROPIO
+pony,car,octubre,rr,PROPIO,NODO-PROPIO,distinto,a=0 r=2 b=0 o=0,NODO-PROPIO
+predator,boat,octubre,lf,-,-,-,,-
+predator,boat,octubre,rf,-,-,-,,-
+predator,boat,octubre,lr,-,-,-,,-
+predator,boat,octubre,rr,-,-,-,,-
+premier,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+premier,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+premier,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+premier,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+rancher,car,mod,lf,AMBAR,NODO-AMBAR,crea,a=4,NODO-AMBAR
+rancher,car,mod,rf,AMBAR,NODO-AMBAR,crea,a=4,NODO-AMBAR
+rancher,car,mod,lr,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+rancher,car,mod,rr,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+rcbandit,car,octubre,lf,SIN,nada,no hay,,-
+rcbandit,car,octubre,rf,SIN,nada,no hay,,-
+rcbandit,car,octubre,lr,SIN,nada,no hay,,-
+rcbandit,car,octubre,rr,SIN,nada,no hay,,-
+rcbaron,car,octubre,lf,SIN,nada,no hay,,-
+rcbaron,car,octubre,rf,SIN,nada,no hay,,-
+rcbaron,car,octubre,lr,SIN,nada,no hay,,-
+rcbaron,car,octubre,rr,SIN,nada,no hay,,-
+rcgoblin,car,octubre,lf,SIN,nada,no hay,,-
+rcgoblin,car,octubre,rf,SIN,nada,no hay,,-
+rcgoblin,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,-
+rcgoblin,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,-
+rcraider,car,octubre,lf,SIN,nada,no hay,,-
+rcraider,car,octubre,rf,SIN,nada,no hay,,-
+rcraider,car,octubre,lr,SIN,nada,no hay,,-
+rcraider,car,octubre,rr,SIN,nada,no hay,,-
+reefer,boat,octubre,lf,-,-,-,,-
+reefer,boat,octubre,rf,-,-,-,,-
+reefer,boat,octubre,lr,-,-,-,,-
+reefer,boat,octubre,rr,-,-,-,,-
+regina,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+regina,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+regina,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+regina,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=6 b=0 o=0,NODO-PROPIO
+rhino,car,mod,lf,SIN,nada,no hay,,-
+rhino,car,mod,rf,SIN,nada,no hay,,-
+rhino,car,mod,lr,SIN,nada,no hay,,-
+rhino,car,mod,rr,SIN,nada,no hay,,-
+rio,boat,octubre,lf,-,-,-,,-
+rio,boat,octubre,rf,-,-,-,,-
+rio,boat,octubre,lr,-,-,-,,-
+rio,boat,octubre,rr,-,-,-,,-
+romero,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=3/body,NODO-PROPIO
+romero,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=3/body,NODO-PROPIO
+romero,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+romero,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+rumpo,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=8/lights,NODO-PROPIO
+rumpo,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=8/lights,NODO-PROPIO
+rumpo,car,octubre,lr,AMBAR,NODO-AMBAR,distinto,a=2 nodo=8/lights,NODO-AMBAR
+rumpo,car,octubre,rr,AMBAR,NODO-AMBAR,distinto,a=2 nodo=8/lights,NODO-AMBAR
+sabre,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 1, 'b': 0, 'o': 3} tex=lights",nada
+sabre,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 1, 'b': 0, 'o': 3} tex=lights",nada
+sabre,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+sabre,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+sabretur,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 1, 'b': 0, 'o': 3} tex=lights",nada
+sabretur,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 1, 'b': 0, 'o': 3} tex=lights",nada
+sabretur,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+sabretur,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+sanchez,bike,octubre,lf,SIN,nada,no hay,,-
+sanchez,bike,octubre,rf,SIN,nada,no hay,,-
+sanchez,bike,octubre,lr,SIN,nada,no hay,,-
+sanchez,bike,octubre,rr,SIN,nada,no hay,,-
+sandking,car,octubre,lf,AMBAR,NODO-AMBAR,crea,a=5,NODO-AMBAR
+sandking,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=5,NODO-AMBAR
+sandking,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+sandking,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+seaspar,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=15 o=0,-
+seaspar,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=15 o=0,-
+seaspar,car,octubre,lr,SIN,nada,no hay,,-
+seaspar,car,octubre,rr,SIN,nada,no hay,,-
+securica,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+securica,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+securica,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+securica,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=8 nodo=8/body,NODO-AMBAR
+sentinel,car,mod,lf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+sentinel,car,mod,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+sentinel,car,mod,lr,SIN,nada,no hay,,BORRA-NODO
+sentinel,car,mod,rr,SIN,nada,no hay,,BORRA-NODO
+sentxs,car,mod,lf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+sentxs,car,mod,rf,AMBAR,NODO-AMBAR,igual,a=5 nodo=5/body,NODO-AMBAR
+sentxs,car,mod,lr,SIN,nada,no hay,,BORRA-NODO
+sentxs,car,mod,rr,SIN,nada,no hay,,BORRA-NODO
+skimmer,boat,octubre,lf,-,-,-,,-
+skimmer,boat,octubre,rf,-,-,-,,-
+skimmer,boat,octubre,lr,-,-,-,,-
+skimmer,boat,octubre,rr,-,-,-,,-
+spand,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+spand,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+spand,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+spand,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=4 b=0 o=0,NODO-PROPIO
+sparrow,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,-
+sparrow,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=2 o=0,-
+sparrow,car,octubre,lr,SIN,nada,no hay,,-
+sparrow,car,octubre,rr,SIN,nada,no hay,,-
+speeder,boat,octubre,lf,-,-,-,,-
+speeder,boat,octubre,rf,-,-,-,,-
+speeder,boat,octubre,lr,-,-,-,,-
+speeder,boat,octubre,rr,-,-,-,,-
+squalo,boat,octubre,lf,-,-,-,,-
+squalo,boat,octubre,rf,-,-,-,,-
+squalo,boat,octubre,lr,-,-,-,,-
+squalo,boat,octubre,rr,-,-,-,,-
+stallion,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=6 o=0,NODO-PROPIO
+stallion,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=6 o=0,NODO-PROPIO
+stallion,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=7 b=0 o=0,NODO-PROPIO
+stallion,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=7 b=0 o=0,NODO-PROPIO
+stinger,car,mod,lf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+stinger,car,mod,rf,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+stinger,car,mod,lr,AMBAR,NODO-AMBAR,igual,a=7 nodo=7/body,NODO-AMBAR
+stinger,car,mod,rr,AMBAR,NODO-AMBAR,igual,a=7 nodo=7/body,NODO-AMBAR
+streetfi,bike,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+streetfi,bike,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+streetfi,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+streetfi,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+stretch,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-AMBAR
+stretch,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=1 nodo=2/body,NODO-AMBAR
+stretch,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+stretch,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+taxi,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+taxi,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 4} tex=lights",nada
+taxi,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+taxi,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+topfun,car,octubre,lf,AMBAR,NODO-AMBAR,crea,a=1,BORRA-NODO
+topfun,car,octubre,rf,AMBAR,NODO-AMBAR,crea,a=1,BORRA-NODO
+topfun,car,octubre,lr,PROPIO,NODO-PROPIO,distinto,la via B arrastra ambar: a=1 r=1 b=0 o=0,NODO-PROPIO
+topfun,car,octubre,rr,PROPIO,NODO-PROPIO,distinto,la via B arrastra ambar: a=1 r=1 b=0 o=0,NODO-PROPIO
+trash,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+trash,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+trash,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=3 nodo=3/body,NODO-AMBAR
+trash,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+trash2,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+trash2,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+trash2,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+trash2,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+tropic,boat,octubre,lf,-,-,-,,-
+tropic,boat,octubre,rf,-,-,-,,-
+tropic,boat,octubre,lr,-,-,-,,-
+tropic,boat,octubre,rr,-,-,-,,-
+vcnmav,car,octubre,lf,SIN,nada,no hay,,-
+vcnmav,car,octubre,rf,SIN,nada,no hay,,-
+vcnmav,car,octubre,lr,SIN,nada,no hay,,-
+vcnmav,car,octubre,rr,SIN,nada,no hay,,-
+vicechee,car,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+vicechee,car,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 2} tex=lights",nada
+vicechee,car,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 16} tex=lights",RESTAURA-MOD
+vicechee,car,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 16} tex=lights",RESTAURA-MOD
+virgo,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=6 o=0,NODO-PROPIO
+virgo,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=6 o=0,NODO-PROPIO
+virgo,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=10 b=0 o=0,NODO-PROPIO
+virgo,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=10 b=0 o=0,NODO-PROPIO
+voodoo,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+voodoo,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=4 o=0,NODO-PROPIO
+voodoo,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=16 b=0 o=0,NODO-PROPIO
+voodoo,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=16 b=0 o=0,NODO-PROPIO
+walton,car,octubre,lf,SIN,nada,no hay,,BORRA-NODO
+walton,car,octubre,rf,SIN,nada,no hay,,BORRA-NODO
+walton,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=1 b=0 o=0,NODO-PROPIO
+walton,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=1 b=0 o=0,NODO-PROPIO
+washing,car,octubre,lf,AMBAR,NODO-AMBAR,igual,a=4 nodo=4/body,NODO-AMBAR
+washing,car,octubre,rf,AMBAR,NODO-AMBAR,igual,a=4 nodo=4/body,NODO-AMBAR
+washing,car,octubre,lr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+washing,car,octubre,rr,PROPIO,NODO-PROPIO,igual,a=0 r=5 b=0 o=0,NODO-PROPIO
+wintergreen,bike,mod,lf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+wintergreen,bike,mod,rf,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+wintergreen,bike,mod,lr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+wintergreen,bike,mod,rr,COMO-MOD,nada,igual,"n={'a': 0, 'r': 0, 'b': 0, 'o': 8} tex=lights",nada
+yankee,car,octubre,lf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=5 o=0,NODO-PROPIO
+yankee,car,octubre,rf,PROPIO,NODO-PROPIO,igual,a=0 r=0 b=5 o=0,NODO-PROPIO
+yankee,car,octubre,lr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+yankee,car,octubre,rr,AMBAR,NODO-AMBAR,igual,a=2 nodo=2/body,NODO-AMBAR
+zebra,car,octubre,lf,AMBAR,NODO-AMBAR,distinto,a=6 nodo=5/body,NODO-AMBAR
+zebra,car,octubre,rf,AMBAR,NODO-AMBAR,distinto,a=7 nodo=6/body,NODO-AMBAR
+zebra,car,octubre,lr,AMBAR,NODO-AMBAR,distinto,a=7 nodo=6/body,NODO-AMBAR
+zebra,car,octubre,rr,AMBAR,NODO-AMBAR,crea,a=8,NODO-AMBAR

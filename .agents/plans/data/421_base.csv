@@ -1,0 +1,116 @@
+vehiculo,base,nodos_base,nodos_servido,desvio
+admiral,mod,4,4,
+airtrain,octubre,0,0,
+ambulan,mod,2,2,
+angel,mod,4,4,
+baggage,mod,4,4,
+banshee,mod,0,4,"nodos []->[('indicator_lf', 4, 'banshee868bit128'), ('indicator_lr', 6, 'banshee868bit128'), ('indicator_rf', 4, 'banshee868bit128'), ('indicator_rr', 6, 'banshee868bit128')]"
+barracks,octubre,0,4,"nodos []->[('indicator_lf', 1, 'barracks868bit128'), ('indicator_lr', 5, 'barracks868bit128'), ('indicator_rf', 1, 'barracks868bit128'), ('indicator_rr', 5, 'barracks868bit128')]"
+benson,octubre,0,4,"nodos []->[('indicator_lf', 2, 'benson868bit128'), ('indicator_lr', 2, 'benson868bit128'), ('indicator_rf', 2, 'benson868bit128'), ('indicator_rr', 2, 'benson868bit128')]"
+bfinject,octubre,0,4,"nodos []->[('indicator_lf', 8, 'bfinject868bit128'), ('indicator_lr', 8, 'bfinject868bit128'), ('indicator_rf', 8, 'bfinject868bit128'), ('indicator_rr', 8, 'bfinject868bit128')]"
+blistac,mod,0,2,"nodos []->[('indicator_lr', 6, 'blistac868bit128'), ('indicator_rr', 6, 'blistac868bit128')]"
+bloodra,octubre,0,4,"nodos []->[('indicator_lf', 3, 'bloodra8bit128'), ('indicator_lr', 2, 'bloodra8bit128'), ('indicator_rf', 3, 'bloodra8bit128'), ('indicator_rr', 2, 'bloodra8bit128')]"
+bloodrb,octubre,0,4,"nodos []->[('indicator_lf', 13, 'bloodrb8bit128'), ('indicator_lr', 1, 'bloodrb8bit128'), ('indicator_rf', 13, 'bloodrb8bit128'), ('indicator_rr', 1, 'bloodrb8bit128')]"
+bobcat,octubre,0,4,"nodos []->[('indicator_lf', 4, 'bobcat868bit128'), ('indicator_lr', 5, 'bobcat868bit128'), ('indicator_rf', 5, 'bobcat868bit128'), ('indicator_rr', 5, 'bobcat868bit128')]"
+boxville,octubre,0,4,"nodos []->[('indicator_lf', 1, 'boxville868bit128'), ('indicator_lr', 2, 'boxville868bit128'), ('indicator_rf', 1, 'boxville868bit128'), ('indicator_rr', 2, 'boxville868bit128')]"
+burrito,octubre,0,2,"nodos []->[('indicator_lf', 8, 'burrito868bit128'), ('indicator_rf', 8, 'burrito868bit128')]"
+bus,octubre,0,4,"nodos []->[('indicator_lf', 5, 'bus8bit128'), ('indicator_lr', 2, 'bus8bit128'), ('indicator_rf', 5, 'bus8bit128'), ('indicator_rr', 2, 'bus8bit128')]"
+cabbie,octubre,0,4,"nodos []->[('indicator_lf', 5, 'cabbie8bit128'), ('indicator_lr', 7, 'cabbie8bit128'), ('indicator_rf', 5, 'cabbie8bit128'), ('indicator_rr', 7, 'cabbie8bit128')]"
+caddy,octubre,0,2,"nodos []->[('indicator_lr', 2, 'caddy8bit128'), ('indicator_rr', 2, 'caddy8bit128')]"
+cheetah,mod,4,4,"nodos [('indicator_lf', 2, 'lights'), ('indicator_lr', 16, 'lights'), ('indicator_rf', 2, 'lights'), ('indicator_rr', 16, 'lights')]->[('indicator_lf', 2, 'lights'), ('indicator_lr', 24, 'lights'), ('indicator_rf', 2, 'lights'), ('indicator_rr', 24, 'lights')]"
+chopper,octubre,0,0,
+coach,octubre,0,2,"nodos []->[('indicator_lf', 2, 'coach868bit128'), ('indicator_rf', 2, 'coach868bit128')]"
+coastg,octubre,0,0,
+comet,mod,0,2,"nodos []->[('indicator_lr', 8, 'comet868bit128'), ('indicator_rr', 8, 'comet868bit128')]"
+cuban,octubre,0,4,"nodos []->[('indicator_lf', 4, 'cubanbody128a'), ('indicator_lr', 2, 'cuban8bit128'), ('indicator_rf', 4, 'cubanbody128a'), ('indicator_rr', 2, 'cuban8bit128')]"
+deaddodo,octubre,0,0,
+deluxo,mod,0,4,"nodos []->[('indicator_lf', 2, 'deluxo868bit128'), ('indicator_lr', 8, 'deluxo868bit128'), ('indicator_rf', 1, 'deluxo868bit128'), ('indicator_rr', 7, 'deluxo868bit128')]"
+dinghy,octubre,0,0,
+enforcer,octubre,0,4,"nodos []->[('indicator_lf', 8, 'enforcer868bit128'), ('indicator_lr', 4, 'enforcer868bit128'), ('indicator_rf', 8, 'enforcer868bit128'), ('indicator_rr', 4, 'enforcer868bit128')]"
+esperant,octubre,0,4,"nodos []->[('indicator_lf', 2, 'esperanto8bit128'), ('indicator_lr', 20, 'esperanto8bit128'), ('indicator_rf', 2, 'esperanto8bit128'), ('indicator_rr', 12, 'esperanto8bit128')]"
+faggio,octubre,0,2,"nodos []->[('indicator_lr', 6, 'faggio8bit128'), ('indicator_rr', 6, 'faggio8bit128')]"
+fbicar,mod,0,2,"nodos []->[('indicator_lf', 2, 'fbicar86body8bit128'), ('indicator_rf', 2, 'fbicar86body8bit128')]"
+fbiranch,mod,0,2,"nodos []->[('indicator_lf', 2, 'fbirancher86body8bit64'), ('indicator_rf', 2, 'fbirancher86body8bit64')]"
+firetruk,mod,4,4,
+flatbed,octubre,0,4,"nodos []->[('indicator_lf', 2, 'flatbed868bit128'), ('indicator_lr', 3, 'flatbed868bit128'), ('indicator_rf', 2, 'flatbed868bit128'), ('indicator_rr', 3, 'flatbed868bit128')]"
+freeway,mod,4,4,
+gangbur,octubre,0,4,"nodos []->[('indicator_lf', 4, 'gangbur868bit128'), ('indicator_lr', 2, 'gangbur868bit128'), ('indicator_rf', 4, 'gangbur868bit128'), ('indicator_rr', 2, 'gangbur868bit128')]"
+glendale,octubre,0,2,"nodos []->[('indicator_lr', 6, 'glendale8bit128'), ('indicator_rr', 6, 'glendale8bit128')]"
+greenwoo,mod,0,4,"nodos []->[('indicator_lf', 3, 'greenwood868bit128'), ('indicator_lr', 6, 'greenwood868bit128'), ('indicator_rf', 3, 'greenwood868bit128'), ('indicator_rr', 6, 'greenwood868bit128')]"
+hellenbach,mod,4,4,
+hermes,octubre,0,2,"nodos []->[('indicator_lr', 21, 'hermes8bit128'), ('indicator_rr', 21, 'hermes8bit128')]"
+hotrina,octubre,0,4,"nodos []->[('indicator_lf', 1, 'hotrina8bit128'), ('indicator_lr', 4, 'hotrina8bit128'), ('indicator_rf', 1, 'hotrina8bit128'), ('indicator_rr', 4, 'hotrina8bit128')]"
+hotrinb,octubre,0,4,"nodos []->[('indicator_lf', 2, 'hotrinb8bit128'), ('indicator_lr', 4, 'hotrinb8bit128'), ('indicator_rf', 2, 'hotrinb8bit128'), ('indicator_rr', 4, 'hotrinb8bit128')]"
+hotring,octubre,0,4,"nodos []->[('indicator_lf', 1, 'hotring8bit128'), ('indicator_lr', 6, 'hotring8bit128'), ('indicator_rf', 1, 'hotring8bit128'), ('indicator_rr', 6, 'hotring8bit128')]"
+hunter,octubre,0,0,
+idaho,mod,2,2,
+infernus,mod,4,4,
+jetmax,octubre,0,0,
+kaufman,octubre,0,4,"nodos []->[('indicator_lf', 5, 'cabbie8bit128'), ('indicator_lr', 6, 'cabbie8bit128'), ('indicator_rf', 5, 'cabbie8bit128'), ('indicator_rr', 6, 'cabbie8bit128')]"
+landstal,octubre,0,4,"nodos []->[('indicator_lf', 3, 'landstal868bit128'), ('indicator_lr', 4, 'landstal868bit128'), ('indicator_rf', 3, 'landstal868bit128'), ('indicator_rr', 4, 'landstal868bit128')]"
+linerun,octubre,0,4,"nodos []->[('indicator_lf', 6, 'linerun868bit128'), ('indicator_lr', 3, 'linerun868bit128'), ('indicator_rf', 6, 'linerun868bit128'), ('indicator_rr', 3, 'linerun868bit128')]"
+lovefist,octubre,0,4,"nodos []->[('indicator_lf', 2, 'lovefist868bit128'), ('indicator_lr', 5, 'lovefist868bit128'), ('indicator_rf', 2, 'lovefist868bit128'), ('indicator_rr', 5, 'lovefist868bit128')]"
+manana,octubre,0,4,"nodos []->[('indicator_lf', 3, 'manana868bit128'), ('indicator_lr', 2, 'manana868bit128'), ('indicator_rf', 3, 'manana868bit128'), ('indicator_rr', 2, 'manana868bit128')]"
+manchez,mod,0,0,
+marquis,octubre,0,0,
+maverick,octubre,0,0,
+mesa,octubre,0,4,"nodos []->[('indicator_lf', 2, 'mesa868bit128'), ('indicator_lr', 7, 'mesa868bit128'), ('indicator_rf', 2, 'mesa868bit128'), ('indicator_rr', 7, 'mesa868bit128')]"
+moonbeam,octubre,0,4,"nodos []->[('indicator_lf', 4, 'moonbm8bit128'), ('indicator_lr', 2, 'moonbm8bit128'), ('indicator_rf', 4, 'moonbm8bit128'), ('indicator_rr', 2, 'moonbm8bit128')]"
+mrwhoop,octubre,0,4,"nodos []->[('indicator_lf', 1, 'mrwhoo868bit128'), ('indicator_lr', 2, 'mrwhoo868bit128'), ('indicator_rf', 1, 'mrwhoo868bit128'), ('indicator_rr', 2, 'mrwhoo868bit128')]"
+mule,octubre,0,4,"nodos []->[('indicator_lf', 1, 'mule8bit128'), ('indicator_lr', 2, 'mule8bit128'), ('indicator_rf', 1, 'mule8bit128'), ('indicator_rr', 2, 'mule8bit128')]"
+oceanic,octubre,0,2,"nodos []->[('indicator_lr', 20, 'oceanic8bit128'), ('indicator_rr', 20, 'oceanic8bit128')]"
+packer,octubre,0,4,"nodos []->[('indicator_lf', 7, 'packer8bit128'), ('indicator_lr', 8, 'packer8bit128'), ('indicator_rf', 7, 'packer8bit128'), ('indicator_rr', 8, 'packer8bit128')]"
+patriot,mod,8,8,
+pcj600,mod,2,2,
+peren,octubre,0,4,"nodos []->[('indicator_lf', 2, 'peren868bit128'), ('indicator_lr', 1, 'peren868bit128'), ('indicator_rf', 2, 'peren868bit128'), ('indicator_rr', 1, 'peren868bit128')]"
+peren2,mod,2,2,
+pheonix,mod,0,2,"nodos []->[('indicator_lr', 16, 'pheonix868bit128'), ('indicator_rr', 16, 'pheonix868bit128')]"
+pizzaboy,octubre,0,0,
+police,mod,4,4,
+polmav,octubre,0,0,
+polwintergreen,mod,4,4,
+pony,octubre,0,4,"nodos []->[('indicator_lf', 1, 'pony868bit128'), ('indicator_lr', 2, 'pony868bit128'), ('indicator_rf', 1, 'pony868bit128'), ('indicator_rr', 2, 'pony868bit128')]"
+predator,octubre,0,0,
+premier,mod,4,4,
+rancher,mod,0,4,"nodos []->[('indicator_lf', 2, 'ranch868bit128'), ('indicator_lr', 3, 'ranch868bit128'), ('indicator_rf', 2, 'ranch868bit128'), ('indicator_rr', 3, 'ranch868bit128')]"
+rcbandit,octubre,0,0,
+rcbaron,octubre,0,0,
+rcgoblin,octubre,0,0,
+rcraider,octubre,0,0,
+reefer,octubre,0,0,
+regina,octubre,0,2,"nodos []->[('indicator_lf', 2, 'regina868bit128'), ('indicator_rf', 2, 'regina868bit128')]"
+rhino,mod,0,0,
+rio,octubre,0,0,
+romero,octubre,0,4,"nodos []->[('indicator_lf', 2, 'romero8bit128'), ('indicator_lr', 2, 'romero8bit128'), ('indicator_rf', 2, 'romero8bit128'), ('indicator_rr', 2, 'romero8bit128')]"
+rumpo,octubre,0,4,"nodos []->[('indicator_lf', 1, 'rumpo868bit128'), ('indicator_lr', 2, 'rumpo868bit128'), ('indicator_rf', 1, 'rumpo868bit128'), ('indicator_rr', 2, 'rumpo868bit128')]"
+sabre,mod,4,4,
+sabretur,mod,4,4,
+sanchez,octubre,0,0,
+sandking,octubre,0,4,"nodos []->[('indicator_lf', 3, 'sandking868bit128'), ('indicator_lr', 3, 'sandking868bit128'), ('indicator_rf', 3, 'sandking868bit128'), ('indicator_rr', 3, 'sandking868bit128')]"
+seaspar,octubre,0,0,
+securica,octubre,0,4,"nodos []->[('indicator_lf', 2, 'securica868bit128'), ('indicator_lr', 7, 'securica868bit128'), ('indicator_rf', 2, 'securica868bit128'), ('indicator_rr', 7, 'securica868bit128')]"
+sentinel,mod,0,4,"nodos []->[('indicator_lf', 7, 'sentinel868bit128'), ('indicator_lr', 1, 'sentinel868bit128'), ('indicator_rf', 7, 'sentinel868bit128'), ('indicator_rr', 1, 'sentinel868bit128')]"
+sentxs,mod,0,4,"nodos []->[('indicator_lf', 7, 'sentxs868bit128'), ('indicator_lr', 1, 'sentxs868bit128'), ('indicator_rf', 7, 'sentxs868bit128'), ('indicator_rr', 1, 'sentxs868bit128')]"
+skimmer,octubre,0,0,
+spand,octubre,0,0,
+sparrow,octubre,0,0,
+speeder,octubre,0,0,
+squalo,octubre,0,0,
+stallion,octubre,0,4,"nodos []->[('indicator_lf', 6, 'stalion86body8bit64'), ('indicator_lr', 7, 'stalion868bit128'), ('indicator_rf', 6, 'stalion86body8bit64'), ('indicator_rr', 7, 'stalion868bit128')]"
+stinger,mod,0,4,"nodos []->[('indicator_lf', 4, 'stinger86body64'), ('indicator_lr', 12, 'stinger86body64'), ('indicator_rf', 4, 'stinger86body64'), ('indicator_rr', 12, 'stinger86body64')]"
+streetfi,mod,4,4,
+stretch,octubre,0,4,"nodos []->[('indicator_lf', 1, 'stretch8bit128'), ('indicator_lr', 5, 'stretch8bit128'), ('indicator_rf', 1, 'stretch8bit128'), ('indicator_rr', 5, 'stretch8bit128')]"
+taxi,mod,4,4,
+topfun,octubre,0,4,"nodos []->[('indicator_lf', 2, 'topfun868bit128'), ('indicator_lr', 4, 'topfun868bit128'), ('indicator_rf', 2, 'topfun868bit128'), ('indicator_rr', 4, 'topfun868bit128')]"
+trash,octubre,0,4,"nodos []->[('indicator_lf', 3, 'trash868bit128'), ('indicator_lr', 8, 'trash868bit128'), ('indicator_rf', 3, 'trash868bit128'), ('indicator_rr', 8, 'trash868bit128')]"
+trash2,mod,4,4,
+tropic,octubre,0,0,
+vcnmav,octubre,0,0,
+vicechee,mod,4,4,"nodos [('indicator_lf', 2, 'lights'), ('indicator_lr', 16, 'lights'), ('indicator_rf', 2, 'lights'), ('indicator_rr', 16, 'lights')]->[('indicator_lf', 2, 'lights'), ('indicator_lr', 24, 'lights'), ('indicator_rf', 2, 'lights'), ('indicator_rr', 24, 'lights')]"
+virgo,octubre,0,4,"nodos []->[('indicator_lf', 1, 'virgo8bit128'), ('indicator_lr', 10, 'virgo8bit128'), ('indicator_rf', 1, 'virgo8bit128'), ('indicator_rr', 10, 'virgo8bit128')]"
+voodoo,octubre,0,4,"nodos []->[('indicator_lf', 4, 'voodoobody128c'), ('indicator_lr', 12, 'voodoo8bit128'), ('indicator_rf', 4, 'voodoobody128c'), ('indicator_rr', 12, 'voodoo8bit128')]"
+walton,octubre,0,4,"nodos []->[('indicator_lf', 21, 'waltonbody8bit128'), ('indicator_lr', 1, 'walton8bit128'), ('indicator_rf', 21, 'waltonbody8bit128'), ('indicator_rr', 1, 'walton8bit128')]"
+washing,octubre,0,2,"nodos []->[('indicator_lf', 4, 'washington8bit128'), ('indicator_rf', 4, 'washington8bit128')]"
+wintergreen,mod,4,4,
+yankee,octubre,0,4,"nodos []->[('indicator_lf', 3, 'yankee868bit128'), ('indicator_lr', 2, 'yankee868bit128'), ('indicator_rf', 3, 'yankee868bit128'), ('indicator_rr', 2, 'yankee868bit128')]"
+zebra,octubre,0,4,"nodos []->[('indicator_lf', 5, 'cabbie8bit128'), ('indicator_lr', 7, 'cabbie8bit128'), ('indicator_rf', 6, 'cabbie8bit128'), ('indicator_rr', 7, 'cabbie8bit128')]"

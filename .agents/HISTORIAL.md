@@ -5620,3 +5620,876 @@ cada modelo por `(sector, tamano)` con la tabla precargada y el lector suelto us
 dos tablas (`gta3.dir` y `cuts.dir`): md5 identicos, 0 solapes en `bootseed` (antes 603) y
 el `.dir` empaquetado en `reVC.data` con el mismo md5 que el de disco. `build.sh` EXIT=0 y
 `check-served-build.sh` EXIT=0 con `dataTag`/`VERSION` en `2026-10-30-34.0-T69`.
+
+## 2026-11-02 41.0 — Intermitentes con la lampara propia y boton H
+
+Se ejecuto el plan 41.0. `indicator_audit.py --own-faces` separa las caras
+reales del coche (ambar propio o lampara prestada), remapea solo los vertices
+usados, las quita del atomic de origen y crea/reutiliza los nodos
+`indicator_lf/rf/lr/rr`; un extremo sin lampara no crea nodo. Fallo corregido
+en el camino: `_struct_remap` escribe el STRUCT sin surface props, asi que el
+chunk debe declarar `0x1003FFFF` (0x34003); con `0xC02FFFF` el lector consumia
+12 bytes de mas (el mismo desfase de los planes 32/34). 47 vehiculos en las
+tres copias (12 del grupo B + 28 del C + 7 del D). El motor solo pinta ambar
+cuando el nodo usa la textura `lights`; las caras reales conservan su color y
+solo suben `ambient` al encender (piloto rojo -> rojo, faro blanco -> blanco).
+Boton H: accion `VEHICLE_HEADLIGHTS`, `bHeadlights`, `HeadlightsJustDown` y
+override por coche (`bLightsForced`/`bLightsOverride`) que se suelta al bajar
+del vehiculo (con respaldo tras cargar una config vieja que deje la tecla
+en `rsNULL`). `dataTag` a `2026-11-02-41.0-T96`, `manifest.json` regenerado y
+`reVC.data` reenlazado. Verificacion: `dff_structver --check` 47/47 sin
+errores (1214 geometrias) y `dff_readcheck` sin avisos nuevos (walton conserva
+los suyos). Sin nodo: pizzaboy, chopper, manchez y sanchez (piloto unico
+centrado), rcbandit y rhino; coach/fbicar/fbiranch solo delanteras. Pendiente
+la partida del jugador.
+
+## 2026-11-04 44.0 — El metodo del Banshee en toda la flota, sin faros inventados
+
+Se ejecuto el plan 44.0 (pasos 1-9; el 10 es la firma del jugador). La causa del
+«no parpadea como el Banshee» era que las dos rutas tenian puertas distintas: los
+materiales parpadeaban con el veredicto de ambar MEDIDO, pero las coronas y las
+sombras de luz pasaban por `odStdSignals = mi->bNewLights ||
+bStandardCarsUseTurnSignals`, y con el `features.ini` del mod (byte = 0) los 90
+modelos sin nodo de lampara se quedaban fijos. Ese flag es legitimo en el binario
+porque alli el intermitente se escribe en el MATERIAL de la lampara; aqui el
+destello y la sombra no dependen de la geometria del nodo, asi que se borro el
+terminal y manda una sola cosa, la lente medida del costado
+(`Automobile.cpp:3755`). El byte del ini se sigue leyendo y ya no gobierna nada
+(`re3.cpp:325`, ADR-021).
+
+Tres cosas mas: (a) la mascara de lente que ya usaban el dato y el barrido de
+anclas ahora rige tambien al subir `ambient`, asi que el capon del Hermes deja de
+encenderse (16 caras tocadas -> 2; 1829 -> 1665 en toda la flota, 20 atomics con
+carroceria arrastrada) y se conserva el «si todo es body, no excluyas nada» porque
+cuban, stinger, zebra, boxville, caddy, bfinject, bloodrb, mrwhoop, trash y yankee
+llevan su lente pintada EN textura de body; (b) fuera los dos unicos colores
+inventados que quedaban (ambar por textura `lights` y `{255,127,0}` del destello):
+sin fila medida no hay destello; (c) una lente partida en varios atomics echa UN
+destello por tramo con su ancla, su tamano y su color medidos (`idFirst + g*n + k`,
+coches +48..+55, motos +44..+47; maximo 2 grupos medidos, `packer` 4.16 m entre
+tramos: el destello flotaba a media caja).
+
+Datos: el generador declara ambar la celda cuyas caras llevan todas el atlas
+`lights`/`lightson` del mod (diseno del mod, regla 2 de 42.1). Tabla 306 -> 338
+filas, `descartadas: {}`, ambar 176 -> 214 (212 previstos; `baggage` LF/RF tambien
+eran de atlas). `sabre`/`sabretur` delante pasan a ambar, `pony`/`topfun` detras
+siguen rojos. Ningun DFF/TXD tocado: `dataTag` sigue `2026-11-03-42.1-T109`,
+`VERSION` a `2026-11-04-44.0-T116`.
+
+Verificacion: `indicator_audit.py --check` 115/89 sin problemas;
+`dff_structver.py --check gta3.img` 4640 ficheros / 7227 geometrias / 0 version mal
+/ 0 malla mal; `dff_readcheck.py` los mismos 5 avisos de siempre (`chopper`,
+`deaddodo`, `exhaust`, `hunter`, `vcnmav`), ninguno tocado aqui; `build.sh` EXIT=0
+sin avisos nuevos; `check-served-build.sh` EXIT=0 con las 4 marcas nuevas (y la
+aguja vieja de `INDCORONA` actualizada al formato `k=%d g=%d/ng=%d`, que con el
+nuevo texto no habria casado).
+
+## 2026-11-05 44.0-T117 — Cuatro sintomas de dos partidas: cuelgue, mareo, bucle y fase S
+
+Sin plan (el jugador pidio investigar y corregir directamente). Dos partidas suyas
+son la evidencia: `odtrace.prev.log` (13:34:50-13:39:32Z, 13 785 filas: la que
+revento) y `odtrace.log` (13:39:32-13:59:23Z, 41 067 filas: la del mareo y los
+bajones).
+
+(a) **Cuelgue** `[raiz]` (ADR-045). Las tres ultimas filas utiles de la partida que
+revento dan la cadena: `ODSHORT open-fail errno=44 total=260` -> 13:39:18.086
+`JSERR_REJ` en `RwStreamClose` (capturado, el juego sigue) -> 13:39:18.119 `JSERR`
+**mortal sin capturar** con la pila
+`RpAnimBlendClumpGetMainAssociation <- CReplay::StorePedAnimation <- RecordThisFrame
+<- CReplay::Update <- CGame::Process`. Despues solo escribia el vigilante de JS
+(`WDTALIVE ... mark=125`, el tick congelado) hasta el recargo (`BART pct=16`). La
+explosion de la ambulancia no era la causa: el grabador de repeticiones pasa
+`ped->m_rwObject` como `RpClump` de un ped ya liberado. Aqui no hay reproduccion
+posible (F1/F2/F3 y un `replay.h`), asi que `CReplay::Update()` y
+`CReplay::RecordParticle()` salen directos bajo `__EMSCRIPTEN__`: se va el fallo y
+de paso dos barridos completos de los pools de vehiculos y peds por frame y una
+escritura por particula. Queda **abierto** el `RwStreamClose`: `StreamMemory::close()`
+esta vacio y `open()` no puede devolver nil, asi que el simbolo que culpo el navegador
+es un vecino inlined y no se ha puesto guarda muerta; la hipotesis de trabajo es la
+ADR-044 (metadatos de heap corruptos desde geometrias DFF sin validar).
+
+(b) **Mareo** `[raiz]` (ADR-046). Las 150 filas `MAREO` de ambas partidas leen igual:
+`type=2 blur=5 add=150 drunk=0.000 trails=0 just=1 sw=0 fb=1`. `drunk=0.000` descarta
+el temblor de `CMBlur::Drunkness` (que es lo que T115 ataco y por eso no se arreglo) y
+`sw=0` descarta el post-FX. Lo que queda es `add=150`: solo lo escribe `main.cpp`
+mientras `m_ScreenReductionPercentage > 0`, y el unico que pone 30.0 es
+`ProcessWideScreenOn()`, que solo corre con `m_WideScreenOn`. La columna `ms` sube
+seguida desde 0 hasta el techo de filas (150 x 500 ms = 75 s) sin reiniciarse, con el
+`CUTSKIP` en `ms=770`: pantalla ancha de cinematica encendida al menos 77 s de juego
+normal -> viewport reducido (imagen blanda), zoom de cinematica enclavado y barras.
+`SetupCutsceneToStart()` encedia la ancha y solo `DeleteCutsceneData()` la apagaba;
+ahora `FinishCutscene()` la apaga el, simetrico con quien la enciende. Techo `MAREO`
+150 -> 400 y la fila lleva `wide`/`red`/`zoom`. La oscilacion lenta de camara **no**
+esta atribuida: el `PEDCAM` viejo solo miraba `MODE_FOLLOWPED` por debajo de 0.5 y no
+echo ni una fila en dos partidas en coche, asi que T117 lo cambia por una ventana de
+1 s que pide el RECORRIDO de Beta/Alpha/Distance en cualquier modo, sin dedo en el
+palo, y lleva `avoid`/`col`/`wide`/`zoom` para ver quien lo sujeta.
+
+(c) **Bucle de audio** `[raiz + instrumento]` (ADR-047, amplia la ADR-039). El censo
+no reprodujo ningun bucle pegado: `SNDSTUCK = LOOPORPHAN = LOOPKILL = LOOPCOLLIDE = 0`
+y todos los largos (20-80 s) son duenos vivos (`SFX_CAR_IDLE_2` 80 s en ch=10 con
+ent=71, `SFX_CAR_IDLE_10` 80 s ch=12 ent=54, motor/road-noise/palmera/jumbo). Los 31
+`LOOPSET` son todos `cnt=0` y casi todos `lp=0,last` (la muestra entera); la unica
+region autorada es `3393,13941` de 13 996 a 12 kHz. O sea: el gestor queria esos
+bucles. Lo que no veia nadie es el carril del diferido: `OdSfxChannelDefer()`
+**devuelve TRUE**, asi que la activacion le aplica `SetChannelLoopCount` (que escribe
+`AL_LOOPING` en la fuente) y marca el arranque sin arrancar; si mientras otro sample
+ocupa ese canal - y `StopChannel` solo se llama si la fuente esta sonando, cosa que un
+diferido nunca esta - el diferido pendiente sobrevive en `s_odChSfx[]`, y cuando
+decodifica `Service()` rellena el canal con el one-shot viejo y lo arranca con el
+`AL_LOOPING` del nuevo dueno: un disparo o un choque sonando en bucle y ciego para
+todos los cerrojos, porque el gestor cree que ese canal es otra cosa. `InitialiseChannel`
+ya mata el diferido al entregar el canal (traza `ODCHCLASH`, 40 filas). Ademas `LOOPSET`
+deja de muestrear 1-de-cada-200 (que era justo la forma de no ver el caso) y lleva
+`sfx=` (campo `CChannel::SfxTag`), `SNDDIE` lleva `ent=`/`vivo=` y `SNDTOP` pasa de
+acumulado a **delta de ventana con nacimientos**, que es la firma de un one-shot
+re-disparado tan rapido que suena continuo (SFX_ROAD_NOISE: 207 745 peticiones y
+3 391 952 ms en 20 min, 424 muestras distintas).
+
+(d) **FPS** `[medida]`. Presupuesto medio por frame: L2,22 + A0,58 + R0,80 + **S5,42**
++ T0,14 + P0,00 = 9,16 ms de trabajo y 4,97 ms de espera (techo ~70 fps). En el 20,9 %
+de las ventanas con S > 8 ms, S vale 12,91 de media y la espera se hunde a ~0,8 ms con
+`n` en 49: el tiempo perdido esta DENTRO del tick, no en el GPU (P siempre 0,00 => la
+entrega es asincronica). El coste no lo explica el numero de draw calls solos: de S1,4 a
+S4,5 ms con dc de 673 a 2111 (~2 us/draw) y luego 15,8 ms con dc 2193 (~7 us/draw),
+superlineal. Descartado con datos: el volumen de trazas (34 filas/s, `ODTRACE_DROP=0`),
+un disparo discreto que provoque el frame lento (ningun tag se aleja de razon 1,0
+lento/normal) y el camino de uniformes de librw (`setUniform` ya compara bytes y
+`flushUniforms` sube solo si cambio el serial; `RW_GL_USE_UBOS` esta apagado, lo que
+descartada la subida por realocacion y deja el `glUniform` por change de material como
+unica candidata, sin tocar el vendor a ciegas). El unico agujero grande (1123,8 ms con
+espera > 50 ms) no llevaba streaming ni actividad OD (`strm=0ms`): sigue sin atribuir.
+Para nombrar de una vez donde se va S, T117 instrumenta los 44 `PUSH_RENDERGROUP` ya
+existentes: `RGPASS` vuelca cada segundo los 12 pases con mas ms por ocurrencia
+(~60 `emscripten_get_now()` por frame, ~3 us) y corre antes del
+`if(!bDebugRenderGroups) return;`, asi que no depende del menu de debug.
+
+Herramienta: `sfx-audit-check.py` decodifica ya `SNDTOP dt=/rq=/br=`, `SNDDIE ...
+vivo=` (avisa si un bucle sigue vivo sin dueno), la media de `RGPASS` por pase,
+`LOOPSET` con nombre de muestra y aviso cuando un bucle infinito cubre toda una
+muestra corta, `PEDCAM` y `ODCHCLASH`.
+
+Verificacion: `build.sh` EXIT=0 (236/236, sin avisos nuevos en los ficheros tocados);
+`check-served-build.sh` OK con `VERSION 2026-11-05-44.0-T117` y las marcas del
+navegador en la misma; presentes en el `reVC.wasm` servido `RGPASS`, `ODCHCLASH`,
+`PEDCAM`, `LOOPSET ch=%u sfx`, `SNDTOP dt=` y `vivo=`. Nada de esto esta validado en
+juego aun: falta la partida del jugador con T117 (tareas 20/21/22/23/24 siguen
+abiertas a la espera de su log).
+
+## 2026-11-05 47.0-T1 — Regresión tras el skip: HUD en cinemática, mareo y el crash «caminando» `[raíz]` `[tooling]`
+
+Tres síntomas de la partida con `2026-11-05-45.0-T5` (grabación 17:05:46, log
+`logs/odtrace-2026-11-05_22-01-05.log`). El plan 45 no estropeó los DFF: están
+byte-válidos. Lo que se rompió fue el **índice** que describe dónde caen.
+
+(a) **Crash** `[raíz]`. El motor resuelve sectores contra el `models/gta3.dir`
+**hornado en `reVC.data`** (bootseed), y `repack_dir.py` recalculaba cada copia
+recorriendo su propio árbol: una entrada sin fichero en esa caja conservaba su
+`start` viejo mientras el cursor seguía avanzando. Medido en la copia del
+bootseed: 6096 entradas, suma de sectores 178489, final de la última 178476 →
+367 huecos y 368 solapes → dos modelos reclamaban el mismo sector y el DFF que
+llegaba no era el suyo; la cabecera BIN declaraba más bytes que la rebanada y
+`rw::malloc_h` reventaba (el «por qué la rebanada era ajena» que ADR-044 dejó
+sin responder). Ahora: un solo layout contiguo, `--mirror` escribe las copias con
+los mismos bytes y el índice se autocomprueba antes de escribir.
+`tools/check_img_index.py` es puerta dura en `build.sh` (contigüidad, sectores
+por entrada contra el fichero servido, md5 de las copias, manifiesto y
+bootseed.list): roto a propósito el `.dir` del bootseed con +5 sectores en la
+entrada 100, `build.sh` sale 1 antes de `emcmake`. `OdDoRead` ya no rellena de
+ceros un sector entero que falta (`STREAM_ERROR`), `ConvertBufferToObject`
+rechaza un BIN que declara más de lo leído (`DFFGARBAGE`) antes de dárselo a
+librw y `RETRYCAP` corta a 3 los reintentos de un streamId que falla 4 veces
+(con decaimiento a los 600 frames). `DIRTAG` dice el índice que el motor lleva
+dentro: esperado `n=6096 total=178498 h=6742a6fe` (ambas cajas md5
+`846c2b67b334d0083df0f2f2ff3014c2`).
+
+(b) **HUD en la cinemática** `[raíz]`. VC no tiene una prueba «estoy en
+cinemática» en el HUD: lo tapa únicamente la pantalla ancha que enciende
+`SetupCutsceneToStart()`. T117 (ADR-046) apagó la ancha en `FinishCutscene()` —
+correcto para el letterbox y el desenfoque — y con ello quitó el único bloqueo
+del HUD durante la cola del skip. `Hud.cpp:340` suma `&& !CCutsceneMgr::IsRunning()`
+y `HUDGATE` traza una fila por cambio de los ocho booleans que deciden el portón
+(`wants/wide/cutrun/cutproc/cutskip/intro/replay/cam`). T117 se queda. ADR-048.
+
+(c) **Mareo** `[instrumento]`. El único escritor de `CMBlur::Drunkness` es
+`COMMAND_SET_PLAYER_DRUNKENNESS` (`Script7.cpp:893-901`), y ese opcode apaga
+además el decaimiento de T115 (`m_nFadeDrunkenness = 0`). `DRUNKSET` nombra
+valor, jugador, IP y script. Sin cambio de comportamiento: no se toca el mareo
+sin saber quién lo pone (barco intencionado vs leftover del skip).
+
+Extras comprobados, los tres se caen del plan (no hay código que escribir):
+`open()` ya pasa por `__wrap_open` → `od_fetch` → `OD.ensure`, así que el
+ENOENT ya se intenta traer (S4-a no existe como hueco); la rotación
+`logs/odtrace-<fecha>.log` **sí** funciona (11 archivos del 5/11, 50 del 30/10)
+— mi diagnóstico «no existen archivos» era falso; y el `fuera-de-manifest` son
+845 rutas distintas por sesión (sondeos de `.tga/.png/.bmp`, `userfiles/*.ini`,
+`.set`), no reintentos del mismo nombre: una caché negativa sólo quitaría el
+19 % de esas filas, que además van a `window.__odq` y no cuestan frame (S4-b
+descartado por medición).
+
+Datos y tags: solo cambió `models/gta3.dir` (mismo tamaño, contenido nuevo) →
+manifiesto regenerado, sello `__vc__` `cb3644d53616174f732cfb1dda3f5885` (ese
+sello, no el tag, es el que purga IndexedDB: `cacheKey()` lo prefiere),
+`dataTag 2026-11-05-47.0-T1` por trazabilidad y `VERSION 2026-11-05-47.0-T1`.
+`ondemand.js` entra como `--pre-js` y **ninja no lo ve como dependencia**: sin
+`touch` de un fuente el `reVC.js` servido habría seguido con el tag viejo (la
+trampa que `check-served-build.sh` existe para cazar); añadidas 6 marcas del
+plan, incluida la del `dataTag`.
+
+Verificación: `check_img_index.py` verde en `models` y `anim`; build completo
+EXIT=0; `check-served-build.sh` OK con las 6 marcas de 47.0 presentes. Pendiente
+del jugador: dos partidas sin `memory access out of bounds`, `DIRTAG
+total=178498`, HUD sin minimapa tras el skip, y las filas `DRUNKSET` que deciden
+el mareo (tareas 17/23/24/26 siguen abiertas a la espera de su log).
+
+## 2026-11-06 48.0-T1 — Lo que el motor medía en FRAMES: sirenas, rotor, NPC en coche invisible, reloj, peso y asiento `[raíz]` `[ADR-050]`
+
+Cuatro síntomas de una partida con `2026-11-05-47.0-T1` más el hundimiento de los
+NPC. El hilo común no es el 45 ni el streaming: es que el motor estaba escrito para
+30 Hz fijos (`Idle()` → un `CTimer::Update()` por frame presentado,
+`src/core/main.cpp:2005`), y aquí el navegador compone a hasta 120. Todo lo que
+sumaba «una vez por frame sin escalar» corre 4× más rápido, y toda ventana medida
+«en frames» se queda 4× más corta. ADR-050 nombra la clase; los planes 41.0-47.0
+habían arreglado síntomas sueltos, y por eso seguían apareciendo.
+
+(a) **Sirenas: cuesta activarlas o desactivarlas** `[raíz]`. `CPad::UpdatePads`
+empujaba la muestra del claxon por frame a un anillo de 5 (`Pad.cpp:2512`,
+`HORNHISTORY_SIZE = 5`), y el toggle de `CAutomobile::DoEngineHandling`
+(`Automobile.cpp:1458`) lee tres huecos de ese anillo: la ventana del «doble toque
+corto» eran 5 frames = **166 ms a 30 FPS pero 42 ms a 120 FPS**, y un toque humano
+dura 120-200 ms → casi siempre caía en la rama de pulsación larga (suena el claxon)
+y el toggle no llegaba a dispararse. Ahora el anillo se empuja por **tick lógico de
+30 Hz** (`CTimer::GetLogicalFrameCounter()`, con tope de `HORNHISTORY_SIZE`
+reemplazos por frame). A 30 FPS es bit a bit lo de antes. Mismo código en motos
+(`Bike.cpp:1147`) → un cambio en `CPad` cubre las dos. Traza `HORNHIST mps=
+ventana_ms=` (cada 5 s, pad 0): lo esperado es `ventana_ms≈166` a cualquier FPS.
+Nota: los sitios `Pad.cpp:2464/2486` están dentro de `#ifdef GTA_PS2` y no se
+compilan en este build.
+
+(b) **Rotor del helicóptero** `[raíz + feeling]`. Medido: la rampa del jugador ya
+escalaba (`+= 0.001f * CTimer::GetTimeStep()`, `Automobile.cpp:1514`, umbral
+`> 0.15f`) → son **3.0 s a 30 y a 120 FPS**, así que «casi instantáneo» no era un
+bug de FPS sino la rampa que añadió el mod (`VICEEXT_FIX_FV`). Lo que sí era de FPS:
+el decaimiento del rotor de un heli aparcado restaba `0.0005f` **por frame sin
+escalar** (`:1490`) → se paraba 4× más rápido en tiempo real. Escalado con
+`GetTimeStepFix()` y la rampa alargada a 6 s moviendo la constante a `config.h`
+(`OD_HELI_RAMP` / `OD_HELI_RAMP_RC` / `OD_HELI_DECAY`, también en el `SteerAIHeli`
+de los helicópteros de IA en `CarCtrl.cpp`). Si 6 s sigue pareciendo corto, el
+siguiente paso es subir el umbral de `0.15f` a `0.18f`.
+
+(c) **NPC sentado en un coche invisible** `[raíz]`. Cada coche de tráfico nace con
+alpha 0 (`CarCtrl.cpp:695`) y su alpha subía `+16` **por frame**
+(`Vehicle.cpp:2194`), y los ocupantes se dibujaban con alpha plena antes que el
+coche (`Renderer.cpp:207-216`) → peatón flotando en el aire. La rampa daba 0.53 s a
+30 FPS y 0.13 s a 120, con 4× más spawns por segundo. Dos cambios: la rampa escalada
+(`OD_VEH_FADE_IN/OUT` × `GetTimeStepFix()`, mismo tiempo real a cualquier FPS) y el
+portón en el render — por debajo de `OD_SEAT_GHOST_ALPHA = 32` no se dibuja al
+ocupante, así el fantasma desaparece en vez de solo acortarse.
+
+(d) **Reloj interno** `[raíz]`. El culpable no era el `if` de un minuto por frame
+(`Clock.cpp:64`) sino el **clamp de 60 ms** de `Timer.cpp:164`: cada hitch de carga
+(recurrente en WASM) recorta el tiempo y el reloj lo pierde → el ciclo día/noche y
+los temporizadores de misión se quedan por detrás del tiempo real, y «los modelos
+aparecen tarde» se lee como el mundo yendo a destiempo. `CClock::Update` ahora
+acumula contra `GetTimeInMillisecondsNonClipped()` (la línea temporal *anterior* al
+clamp) con `odClockCarryMs`, y recupera en bucle acotado hasta
+`OD_CLOCK_MAX_CATCHUP = 20` minutos (una pausa larga cambia la hora, no la
+teletransporta). El clamp de 60 ms se queda: sin él un frame de 2 s daría una patada
+física. Traza `RELOJ sim= real_ms= esperado_ms= dif_ms= hora=` cada 5 s; el carry se
+reinicia con `gbFreezeTime` y con el adelanto de hora (RightShoulder1).
+
+(e) **Coches demasiado pesados** `[raíz, punto medio]`. Al atropellar, el empuje del
+peón al coche estaba **anulado** (condición `m_vecMoveSpeed == 0` y factor 0 en las
+dos ramas de `CPhysical::ApplyCollision`, `Physical.cpp:795-935`) y el desplazamiento
+por colisión también a 0 contra cualquier coche, parado o en marcha → el coche
+quedaba estático. No se ha revertido a la física vanilla: el empuje se **atenúa** a
+`OD_PUSH_VS_PED = 0.25` sólo cuando el coche está casi parado
+(`< OD_VEH_ALMOST_STOPPED_SQ = 0.0004`), y el `shift` contra un coche **en marcha**
+pasa a `OD_SHIFT_VS_PED = 0.15 × (masa coche / masa peón) × GetTimeStepFix()`
+(≈0.0065 de la corrección original), manteniendo 0 contra coche aparcado. Así:
+atropellar mueve el coche, un peón corriendo sigue sin empujar uno parked, y el
+peón sí se aparta. Traza `EMPUJE who= vantes= vdespues= escala= pedvel= vehmasa=`
+(200 ms de tope, ambas ramas). Riesgo aceptado y anotado: con 0.25 un peón a pie que
+choque contra un coche **aparcado** sí le transfiere un 25 % de impulso (antes 0);
+la traslación la sigue frenando el shift ≈0.0065, y `EMPUJE` es la fila que lo
+desmiente si no.
+
+(f) **NPC hundidos en el asiento** `[medida + raíz]`. El anclaje del asiento pone la
+**cadera** del esqueleto en la posición del asiento (`Ped.cpp:8633`), así que el ped
+bajo pierde cabeza: medido con `tools/ped_seat_height.py` sobre 269 modelos de ped,
+altura de cabeza 0.412-0.714 m, **mediana 0.605 = la del jugador** → los bajos
+(39 modelos a 0.412, 49 a 0.668) son los que se ven «solo la parte de arriba de la
+cabeza» o «nadie al volante». Compensación `max(0, 0.605 − cabeza)` ≤ **19 cm**,
+tabla generada de 107 filas (las 162 restantes ya están a 0.605 o más) incrustada en
+`PedModelInfo.cpp` y resuelta en `SetClump` por nombre de modelo (el `rw::Frame` de
+librw no lleva nombre, así que no se puede consultar el hueso en tiempo de
+ejecución; medir la pose de reposo en runtime se descartó por eso). `m_seatLift` en
+`CPedModelInfo` sólo bajo `VICEEXT_SEAT_BY_PED_HEIGHT`, y no se aplica en motos. El
+jugador no está en la tabla: no cambia. Traza `SILLACAM … comp= pednom=`.
+
+Puertas: los seis cambios van cada uno tras su `#define` de `config.h`, así que
+cualquiera se puede apagar sin tocar el resto. Las constantes de feeling
+(`OD_HELI_RAMP`, `OD_VEH_FADE_*`, `OD_PUSH_VS_PED`, `OD_SHIFT_VS_PED`,
+`OD_SEAT_GHOST_ALPHA`, `OD_CLOCK_MAX_CATCHUP`) viven en `config.h` para afinarlas
+sin recompilar medio motor.
+
+Tags y marcas: `VERSION` y `dataTag` a `2026-11-06-48.0-T1` (subida del contador
+compartido, sin reescribir el texto de 45.0/47.0), `check-served-build.sh` con 4
+marcas nuevas (`HORNHIST mps=`, `RELOJ sim=`, `EMPUJE who=`, `comp=%.3f pednom=`)
+más la del `dataTag`. T3 y T4 no añaden literal nuevo: se comprueban por el tag.
+Datos: no cambia ningún fichero servido.
+
+Verificación: `build.sh` EXIT=0 (`[245/245] Linking … reVC.js`, sólo los warnings
+pre-existentes del árbol), `check-served-build.sh` OK con las 4 marcas de 48.0 y la
+del `dataTag`, y el navegador recibe `VERSION = 2026-11-06-48.0-T1` (misma que el
+disco, medido por curl en el 2077). Ningún dato servido cambió.
+Pendiente del jugador: doble toque de sirena con `ventana_ms≈166`, heli que se para
+lento y arranca en 6 s, sin peatón flotando al aparecer un coche de tráfico, `RELOJ
+dif_ms=` acotado tras los hitches, atropellar y ver moverse el coche, y los NPC
+bajos al volante. Siguiente plan exigido por el jugador: **censo de todo el código
+que dependa de los FPS** para física, más allá de los cuatro puntos de arriba.
+
+## 2026-11-06 49.0-T1 — El censo completo del motor: logica que contaba FRAMES presentados `[raíz]` `[ADR-050]`
+
+Lo pidió el jugador después del 48.0: «posiblemente no se hayan tenido en cuenta todos
+los escenarios en los que los FPS son determinantes para las físicas». El censo recorrió
+**todo `src/`** con `tools/census_fps.py` (nuevo, de este plan): 655 candidatos en
+funciones de un tick por frame (ALTA 38, MEDIA 110, BAJA 507), más cuatro barridos
+humanos por subsistema, porque el triaje automático no ve las tres formas más
+traicioneras — no respeta `#ifdef`, no ve un incremento cuyo lado derecho es una
+expresión, y no ve el offset mal escalado que luego se integra bien. La regla que
+gobierna todo el plan es ADR-050: **el frame presentado no es una unidad de tiempo**; lo
+que se quería era cerrar la clase, no arreglar seis síntomas.
+
+Doce conversiones + dos instrumentos, aplicados con `tmp/patch49.py` — 40 ediciones
+ancladas por número de línea, de abajo hacia arriba, con `assert` de contenido por
+anclaje y CRLF/LF conservado por fichero (`Streaming.cpp` es LF; los otros 19 CRLF).
+Cada una tras su `#define` de `config.h:671-694`.
+
+(a) **Mando en primera persona** `[raíz, el peor hallazgo]`. `Beta += BetaOffset` era
+inocente línea a línea: quien calculaba `BetaOffset` no lo escalaba, así que girar con
+el stick iba 4× más rápido a 120 FPS. Seis sitios (`Cam.cpp:1645`, `:2592`, `:2711`,
+`:3144`, `:3300`, `:6012`) separan ahora el **ratón** —que ya llega como delta acumulado
+por evento, escalarlo lo faría temblar— del **stick**, que es un nivel mantenido y sí se
+multiplica por `GetTimeStepFix()` (`VICEEXT_STICK_TIMESTEP_SCALED`).
+
+(b) **Cámara y ventanas** `[raíz]`. La ventana de colisión (`Cam.cpp:183`), el EMA del
+auto-centrado (`Cam.cpp:223`, `Pow(0.895f, GetTimeStepFix())`) y el contador de
+`Camera.cpp:683` pasan a **ticks lógicos**: `GetLogicalFramesPassed()` vale 0 en la
+mayoría de los frames presentados a 120 FPS y 1 en ~uno de cada cuatro, que es
+exactamente el ritmo de 30 Hz al que estas ventanas fueron calibradas.
+
+(c) **Giro en el aire** `[raíz]`. `m_vecTurnSpeed` se amortiguaba con un factor fijo por
+frame (`Physical.cpp:582`); a 120 FPS el giro en caída se moría 4× antes. Ahora
+`Pow(OD_AIR_TURN_DAMP, GetTimeStepFix())`.
+
+(d) **Streaming** `[raíz]`. La recarga de clase de vehículos y la cuenta atrás de la
+siguiente carga (`Streaming.cpp:2069`, `:2220`) contaban frames: a 120 FPS el world
+streaming pedía cargas cuatro veces más a menudo, que es parte del «los modelos aparecen
+tarde» y de los hitches. Pasan a ticks lógicos, y `OD_STREAM_VEH_FRAMES` sigue leyéndose
+en frames de 30 Hz.
+
+(e) **Conducción y física suelta** `[raíz]`. El bache de suspensión (`Automobile.cpp:843`,
+`:856`), el nado del jugador (`PlayerPed.cpp:2957`, `:2979`), la sangre y el decal del
+peón (`Ped.cpp:3795`) y los parpadeos y rampas del HUD, el mareo y los peces
+(`Hud.cpp:1094`, `:1358`, `:1404`, `Fluff.cpp:668`, `MBlur.cpp:491`,
+`WaterCreatures.cpp:206`, `User.cpp:48`) estaban a un paso por frame. Y el audio: lluvia
+(`AudioLogic.cpp:1470`), diferido de reflexión (`AudioManager.cpp:1310`) y la secuencia
+de retune (`MusicManager.cpp:705`), donde los dos contadores que se pisaban («== 19» y
+«== 1») ahora avanzan un paso por tick lógico.
+
+(f) **Agua: el velo blanco al entrar y salir** `[raíz, del vídeo del jugador]`. No era la
+textura de agua sino las **gotas de lente** (`ScreenDroplets`): el presupuesto de gotas
+se gastaba por frame (todo el brote cabía en ~42 ms → fogonazo blanco), la duración se
+descontaba por frame (0,47 s reales → 0,12 s) y, lo peor, `RegisterSplash` rearman el
+efecto **cada vez que nacía una partícula de salpicadura**, así que entrar y salir
+repetido dejaba la lente blanca para siempre. Forma 5 de ADR-050: el cuerpo corre un
+paso por tick lógico porque `ndrops[]` está indexado por duración — se recorre, no se
+escala — y el rearm se limita por reloj de pared (`OD_SPLASH_REARM_MS` = 500 ms,
+`screendroplets.cpp:478`). Lo de «le cuesta entrar y salir como si luchara» eran los
+temporizadores del nado del apartado (e). Traza `SPLASH dur= d2=`: una línea por
+chapotazo, antes había una por partícula.
+
+(g) **Asiento uniforme para todos los NPCs** `[corrección del jugador]`. La compensación
+por altura del 48.0 (T7) resultó ser un error de bulto: «da igual que sea bajito, todos
+los NPCs deben ir en la misma posición en el coche; usa la config de los que están bien
+para todos sin discriminar». Se apaga `VICEEXT_SEAT_BY_PED_HEIGHT` (`config.h:658`, rama
+conservada y compilando) y queda `OD_SEAT_LIFT_ALL = 0.0` — la postura de Tommy — para
+todos (`Ped.cpp:8630`). La tabla de alturas y el medidor siguen ahí por si se vuelve a
+necesitar; el marcador `SILLACAM … comp=` también, ahora en 0.000.
+
+(h) **Crash del Hunter a mucha altura** `[instrumentado, NO arreglado]`. Con dos partidas
+crashueadas y sin reproduce determinista: el heap estaba en 437–495 MB de 2 GB y el
+recuento de texturas era estable, así que ni agotamiento ni fuga; tres llamadores
+distintos muriendo dentro de `emscripten_builtin_malloc` apunta a metadatos del heap
+rotos o a un tamaño absurdo, y los contadores de colmodel son `int16` (tamaño absurdo
+imposible ahí). Se pone **una** cota real donde el índice entra sin validar —la cabecera
+de un TXD— (`TexRead.cpp:102`, `:170`: rechaza `numTextures` negativo o >512 y traza
+`TXDBAD ntext= dictpos=`) más las trazas `ODLOAD id= cds= nom=` (`Streaming.cpp:671`) y
+`ODTXD slot= nom= ntex= ok=` (`TxdStore.cpp:224`). Las trazas se limitan por reloj
+(200–250 ms) y no por número total de líneas, porque un tope de líneas corre el riesgo de
+tirar justo la última antes del abort. Sin una partida nueva, **T14 no afirma haber
+arreglado el crash**: lo ha hecho legible. Añadido además `NEUMATICO fwd= right= adh=
+ts= fps=` (`Vehicle.cpp:912`), el instrumento del 48.0 que faltaba para el agarre.
+
+No se tocó, con motivo: **T3** resultó falso positivo (forma 7 — un *read* por frame de un
+valor cuyo dueño ya avanza a 30 Hz no es defecto: el `HornPattern` lo era), **T11**
+`m_nPedStateTimer` (tres relojes dentro de un campo; el riesgo es toda la IA de peones),
+`Cam.cpp:1122` (ventana de 2 muestras), `sampman_oal.cpp` (ya cortado por ms),
+`Frontend.cpp` (menús) y `Automobile.cpp:1937` (lane de vehículos). El censo re-pasado da
+650 candidatos y los ALTA siguen en 38, pero revisados uno a uno no son trabajo
+pendiente: ramas `#else` muertas de las conversiones, envolturas de ángulo (`-= 6.28f`),
+coeficientes por evento y teclas de editor. Lo único real que emerge es **F17**: la mira
+del tanque (`Automobile.cpp:5508-5509`) acumula giro por frame — es física y queda
+pendiente de aprobación, en un fichero compartido con el otro lane.
+
+Tags y marcas: `VERSION` y `dataTag` a `2026-11-06-49.0-T1` (contador compartido subido
+sin reescribir el texto de 45.0/47.0/48.0) y `check-served-build.sh` con seis marcas
+nuevas (`SPLASH dur=`, `ODLOAD id=`, `TXDBAD ntext=`, `ODTXD slot=`, `NEUMATICO fwd=` y el
+`dataTag`). Datos: no cambia ninguno.
+
+Verificación: `build.sh` `[245/245] Linking … reVC.js`, `EXIT=0`, con un solo aviso nuevo
+atribuible (`-Wdouble-promotion` en el `%.1f` de `SPLASH`) sobre los 14 151
+preexistentes; `check-served-build.sh` OK con todas las marcas;
+`tools/check-define-build.sh VICEEXT_SEAT_BY_PED_HEIGHT` OK (la rama apagada sigue
+compilando); y servido real por `[::1]:2077` con `VERSION = 2026-11-06-49.0-T1` y el wasm
+de 24,6 MB respondiendo 200.
+
+Pendiente del jugador: (1) chapotear entrando y saliendo del agua — una vez por chapotazo,
+sin velo blanco, y `SPLASH dur=14 d2=` una línea por chapotazo; (2) cualquier NPC al
+volante con `comp=0.000`; (3) volver a subir el Hunter hasta el techo del mapa y pasarme
+la última `ODLOAD`/`ODTXD`/`TXDBAD` antes del crash; (4) mando, cámara, suspensión, nado,
+HUD/mareo y audio iguales a 30 y a 120 FPS. Sigue abierto de antes: validar 47.0/48.0, el
+bucle de audio (ADR-047), la decisión del mareo y la fase S de los bajones.
+
+## 2026-11-06 50.0-T1 — El FOV que dejaba el skip y el anuncio que casaba la radio `[raíz]`
+
+Dos correcciones pedidas en partida, cada una con su define en `config.h:697-700`.
+
+Lo que notó el jugador: (1) saltar la primera cinemática cambiaba el FOV «sin razón» y
+preguntaba con qué propósito se había añadido ese cambio; (2) al empezar la partida, el
+anuncio de la radio (cortes de puente por tormenta) o silenciosa la emisora y la mataba,
+o sonaba y después la dejaba rota; cambiar de emisora no hacía nada y solo volver a subir
+al coche lo arreglaba. Con RADIO OFF el anuncio siempre funcionaba.
+
+**El FOV no lo añadió nadie: es de R\* y solo lo produce el salto.** `CCutsceneMgr::
+FinishCutscene()` era el único sitio que no devolvía la cámara al juego — el final normal
+pasa por `DeleteCutsceneData()`, que llama a `TheCamera.RestoreWithJumpCut()`
+(`src/animation/CutsceneMgr.cpp:545`); el skip solo ponía `m_bcutsceneFinished` y
+apagaba la pantalla ancha. Con el modo todavía `MODE_FLYBY`, `CCam::Process_FlyBy` sale
+en la primera línea (`src/core/Cam.cpp:3933`) y deja congelados `Source/Front/Up` y
+`FOV` del .DAT; `CCamera::Process` toma `FOV = Cams[ActiveCam].FOV`
+(`src/core/Camera.cpp:534`) y lo vuelca en `CDraw::SetFOV` (`src/core/Camera.cpp:607`),
+así que el juego vivo se dibuja con el FOV de la cinemática hasta que el guion se
+decide a llamar a `DeleteCutsceneData()`. Con RADIO OFF no se notaba porque la emisora
+no entra en ese camino. El `ConvertFOVforCutscene`/`SetCutsceneCameraZoom` del plan
+30.x-40.x (`ebe1378`) no toca el FOV del juego: el zoom se rinde a 1,0 al apagar la
+pantalla ancha (`src/core/Camera.cpp:2898`) y la rama de juego lo vuelve a poner a 1,0
+(`src/renderer/Draw.cpp:224`).
+
+Cambio: en el bloque `if (bCamLoaded)` del skip se hace lo mismo que en el final normal —
+`RestoreWithJumpCut()` + `SetCutsceneCameraZoom(1.0f)` (`src/animation/CutsceneMgr.cpp:317-326`),
+detras de `VICEEXT_SKIP_CAMERA_RESTORE`. Va **antes** de `TheCamera.FinishCutscene()` por
+un motivo concreto: `RestoreWithJumpCut()` deja `m_fPositionAlongSpline` a 0 y el guion
+usa ese valor (`HasCutsceneFinished()`) para enterarse del fin de la cinemática;
+`FinishCutscene()` lo vuelve a poner a 1,0. La traza `CUTSKIP` ahora nombra lo que el
+salto dejaba puesto: `fov/sfov/zoom/mode` (`src/animation/CutsceneMgr.cpp:307-312`).
+
+**El anuncio de puente se quedaba «en curso» para siempre.** `ServiceAnnouncement()`
+ponía `m_nPlayingTrack = NO_TRACK` antes de `StartStreamedFile()` y tiraba el valor de
+retorno; si el fichero no abría, el bloque de progreso solo sale por
+`IsStreamPlaying()` o por `m_nPlayingTrack != NO_TRACK` — con las dos cosas a la vez en
+falso no había ninguna salida, y mientras `m_bAnnouncementInProgress` es TRUE
+`ServiceGameMode` corta el retune y no relanza emisora (`src/audio/MusicManager.cpp:721-725`).
+Eso es exactamente «muda y rota, y cambiar de emisora no hace nada». Bajar y subir al
+coche la arreglaba porque el camino de fuera-del-coche sí limpia el estado
+(`src/audio/MusicManager.cpp:853-861`). La segunda variante —anuncio que suena y luego
+rompe la radio— estaba en `ServiceTrack`: un `StartStreamedFile` de emisora que fallaba
+dejaba `m_bTrackChangeStarted` a TRUE, y con esa bandera `m_nNextTrack` deja de seguir a
+`m_nFrontendTrack` (`src/audio/MusicManager.cpp:1065`), o sea sorda a cualquier emisora
+nueva.
+
+Cambio (`VICEEXT_RADIO_PSA_GUARD`, `src/audio/MusicManager.cpp:48-99`): las dos llamadas
+honran el retorno; el fallo de anuncio rinde el anuncio y re-arrastra la emisora
+(`odGiveUpAnnouncement`, mismo restablecimiento que bajar del coche) y el fallo de
+emisora limpia las dos banderas y apaga la emisora del coche para no reintentar el
+fichero roto cada dos frames (`odDeadStation`). Añadido un reloj de pared de
+`OD_PSA_SILENCE_MS` (2000 ms) porque no vale mirar solo el retorno: `CStream::Start()`
+solo pide los buffers y el sonido llega en un `Update()` posterior, así que
+«reproduciendo» es falso durante al menos un frame y la cota tiene que ser de tiempo, no
+de frames ni de ticks logicos. Trazas nuevas `PSA ev=armed|openfail|watchdog|deadstation`.
+
+Tags y marcas: `VERSION` a `2026-11-06-50.0-T1` (`gta_vc_browser/web/lib/index.js:362`);
+`dataTag` se queda en `2026-11-06-46.0-T6` porque aquí no cambia ni un byte de datos.
+`check-served-build.sh` con dos marcas nuevas (`sfov=%.1f zoom=%.3f mode=` y `PSA ev=`).
+
+Verificación: `build.sh` enlazado verde tras los cambios, con **cero** avisos nuevos
+atribuibles (el `snprintf` del `CUTSKIP` quedó con `(double)` en los tres argumentos
+nuevos para no sumar avisos `-Wdouble-promotion` a los tres que ya tenia); los dos
+ficheros recompilan con `-UVICEEXT_SKIP_CAMERA_RESTORE -UVICEEXT_RADIO_PSA_GUARD` (las
+ramas `#else` son el código original); y servido real con `VERSION = 2026-11-06-50.0-T1`
+y todas las marcas OK.
+
+Pendiente del jugador: (1) saltar la intro con espacio/Enter ratón y comprobar que el
+FOV al volver a la calle es el de siempre (la línea `CUTSKIP ... fov= sfov= zoom= mode=`
+dice qué dejo el salto; `mode=` debe ser el de la camara de juego, no el FLYBY); (2) al
+empezar la partida con emisora puesta, oir el anuncio del puente y que la emisora vuelva
+sola despues; si vuelve muda, la línea `PSA ev=` nombra si el fichero no abrio
+(`openfail`), si se rindió por la cota (`watchdog`) o si la emisora se declaró muerta
+(`deadstation`). Queda sin tocar el mismo patron de inicio-fallido en
+`ServiceFrontEndMode` (`src/audio/MusicManager.cpp:552-562`), que no forma parte de lo
+pedido.
+
+## 2026-11-07 43.0-T1 — Tres menus nativos: galeria, musica propia y partidas (alcance recortado) `[raiz]` `[ADR-051/052/053]`
+
+El jugador dio el gate `ejecuta el plan` para el 43.0 **recortando el alcance**: solo los
+tres menus nativos y que funcionen de verdad. Aparte, y pendientes hasta que el pida
+retomarlos, quedan el trailer/datos del bucket (bloques 1 y 2) y el arreglo de fotos con
+AA: «el gate enciende el bucket no», el juego sigue desarrollandose en local y meter
+descargas del bucket lo entorpeceria. Tambien corrigio el nombre: `useBucket` paso a
+`runMode` con `local` (defecto, cero peticiones al bucket) y `live` (cuando se publique).
+Decidio el tope de 300 MB acumulados tanto al subir como al bajar, y pidio los 14 rotulos
+nuevos sin tildes ni caracteres raros en los 6 idiomas porque el menu no los dibuja bien.
+
+Que se hizo: seis paginas nuevas al final del enum `eMenuScreen` **y** de `aScreens[]`
+(mismo orden: `aScreens[m_nCurrScreen]` va por indice), nueve acciones
+`MENUACTION_WEB_*`, tres defines `VICEEXT_WEB_*`, y una rama en `MENUACTION_CHECKSAVE`
+que descarga `GTAVCsfN.b` sin cargar la partida y vuelve a Gestionar partidas. Galeria
+entra por Configuracion extra, musica por Sonido, partidas por Iniciar partida. Los «Si»
+de las dos confirmaciones llevan accion propia: `MENUACTION_YES`/`NO` solo llaman
+`SwitchToNewScreen(m_TargetMenu)`, asi que poner el borrado ahi no habria borrado nada.
+Las filas llaman por `EM_ASM` a los ganchos `window.__vc*` de `index.js`, que reutilizan
+`gallery.js`/`music.js`/`saves.js` sin duplicar la logica de los overlays DOM.
+
+Musica: `/MP3` se monto en IDBFS en el mismo `preRun` que `/userfiles`, antes del
+`FS.syncfs(true, ...)`; `ViceExtRescanUserMusic()` en `sampman_oal.cpp` rehace la lista y
+los `nTrackStreamPos` y se llama directamente como
+`globalThis.Module._ViceExtRescanUserMusic()` tras subir/borrar, sin `ccall`. USERTRACK
+existe en VC (`audio_enums.h:14`) y `FEA_MP3` ya estaba en los 6 GXT.
+
+**El fallo que casi rompe el arranque**: el primer intento puso
+`-sEXPORTED_FUNCTIONS=_ViceExtRescanUserMusic` a secas. Emscripten 6.0.9 toma una lista
+sin `_main` como *reactor*, avisa `unused-main`, quita `main` de los exports y el juego
+no arranca (`tools/link.py:1096-1107`, `tools/emscripten.py:628-641`). Corregido a
+`-sEXPORTED_FUNCTIONS=_main,_ViceExtRescanUserMusic`; el glue servido asigna ambos.
+Otras dos correcciones: `FESZ_QGF`/`FESZ_QGM` tienen 8 caracteres y `gxt_menu_keys.py`
+corta en `MAXKEY = 7`, asi que las claves reales son `FES_QGF`/`FES_QGM`; y son **seis**
+paginas nuevas, no cinco, porque «no hay slots» necesita la suya.
+
+Tags y marcas: `VERSION` y `dataTag` a `2026-11-07-43.0-T1` (sube el dataTag porque
+cambian los GXT servidos); `gen_manifest.py` deja 17.488 entradas con sello
+`01a96661642aefd9cdaf3cb42690cc0f`. `check-served-build.sh` cambio las dos marcas de
+dataTag viejas por siete marcas del 43.0 (`FEM_GAL`, `FEM_MUS`, `FET_GSP`, `FES_QGF`,
+`ViceExtRescanUserMusic`, `__vcSaveDownload` y el tag nuevo).
+
+Verificacion (pruebas declaradas, sin navegador de agente): `build.sh` verde
+`[243/243] Linking`, `check-served-build.sh` **OK con todas las marcas**; 14 claves
+presentes en los 12 GXT, pares `streamed`/`bootseed` identicos byte a byte, `check-src`
+0 ausentes en los 6 idiomas, cero bytes no-ASCII en los `.tsv`; `node --check` de los 8
+modulos JS, `bash -n` de los dos scripts, `py_compile` de las herramientas; y los tres
+ZIP (fotos, musica, partidas) abiertos con `zipfile`: 2+1+2 entradas, deflate, CRC bueno.
+No se corrio `viceext-log-check.py` porque aun no hay log del jugador con esta build.
+
+Pendiente del jugador: probar en partida los tres menus (subir un mp3 y oir USERTRACK sin
+recargar, que sobreviva a F5, descargar/borrar canciones, descargar una ranura y todas,
+importar partidas, que las confirmaciones no borren hasta el «Si», y que Cargar partida
+siga igual). Quedan apartados, sin tocar, el trailer y los datos del bucket y el arreglo
+de fotos con AA (D8 y pasos 0.5/3.9-3.13).
+
+## 2026-11-07 49.1-T1 — Los cinco puntos del jugador: el skip, el anuncio, el techo de vuelo, el agua y el desbordamiento del mareo `[raíz]` `[ADR-050]`
+
+Gate del jugador: *«no es necesario enriquecer el plan»* y *«con esto ya entendido, te
+doy el gate para que puedas ejecutar el plan»*. Se ejecutó el 49.1 tal cual (T20-T26).
+
+**Los cinco puntos, con la causa medida (no inventada) delante:**
+
+1. **El mundo oscuro al saltar la 1ª cinemática era una invención nuestra.** El T18 del
+   50.0 metió una devolución de cámara en `FinishCutscene`; el jugador solo había pedido
+   quitar el salto de FOV. T20 = **revert puro** (fuera `VICEEXT_SKIP_CAMERA_RESTORE` del
+   motor y de `config.h`), y el FOV se integra en la frontera con
+   `VICEEXT_FOV_BOUNDARY_RAMP`/`OD_FOV_RAMP_MS 750u` (`Draw.cpp:213-259`), que es la
+   opción B de D.1; la A (un solo FOV también en cinemática) esperaba decisión y no se
+   hizo. Traza nueva `FOVLN t= raw= scaled= cut= mode=`.
+2. **El techo invisible es vanilla, y se levanta, no se rodea.** `VICEEXT_CEILING_RAISED`
+   + `OD_CEILING_Z_SCALE 0.5f` evalúan las tres curvas vanilla (`Vehicle.cpp:338`, `:463`
+   y `:532`) en `z × 0.5`: el mismo `10/(z−70)` y el mismo tope de sustentación, pero al
+   doble de altura; con 1.0 vuelve el vanilla exacto. Nada de límites nuevos. `VUELO z=
+   vz= thrust= factor= fm= modelo= fps=` (helper `Vehicle.cpp:285`, 1 línea/250 ms). El
+   **crash** sigue abierto a propósito: se le entra con traza (`ODSHORT`/`ODLOAD`/
+   `ODTXD`/`TXDBAD`) y con la partida que crucee, como decía el plan.
+3. **El anuncio no sonaba porque el `.MP3` no llegaba nunca a MEMFS.** El guard del 50.0
+   había tapado el síntoma (la radio ya no moría) dejando el aviso mudo. T22 arrastra los
+   dos `.MP3` del puente al empezar la partida, reintenta con reloj
+   (`OD_PSA_ANNOUNCE_RETRY_MS 250u`) y solo declara la emisora muerta tras 8 s de fallos
+   seguidos (`OD_PSA_STATION_DEAD_MS`); `PSA ev=openok` lo demuestra y `ODNOFETCH path=
+   canon= why=` (`ondemand.js:1347`) nombra la petición que no llegó.
+4. **El agua: el nado no se ha tocado.** La causa del chapuzón «mil veces» y de la
+   entrada tardia es la **puerta**: entraba en mar abierto sin exigir calado
+   (`odEntry`) pero para *mantenerse* exigía 0,20 m, que el nadador solo alcanza al
+   cuadro siguiente → entra/sale cuadro a cuadro, y cada entrada pedía el carril y
+   soltaba un chapotazo (`nivel=6.20 hondo=0.17`, `swim exit motivo=somero` pegado a
+   `swim enter z=6.0` en el mismo vuelco de trazas). `VICEEXT_SWIM_DEEP_LATCH` mira el
+   fondo también mientras se nada (solo cuando el calado no llega al umbral), y
+   `VICEEXT_SWIM_ANIM_CUT` corta la pose de caída/nado en el propio cuadro
+   (`blendAmount = 0`, `blendDelta = -1000`, el idioma del motor en `CPed::SetLanding`)
+   en vez de fundirla 0,25 s. El chapuzón tiene **un reloj común**
+   (`VICEEXT_SPLASH_REARM`/`OD_SPLASH_EVENT_MS 450u`, `PedArbiter.cpp:124`) para los tres
+   sitios de `Ped.cpp:1982`/`:2026` y la entrada de `PlayerPed.cpp:2941`; los NPCs no
+   pasan por la puerta (`!IsPlayer() ||`). La prioridad (salto y salida a tierra seca)
+   siempre entra y arma el reloj, así que el chapuzón que el jugador espera ver no se
+   pierde nunca. **El instrumento estaba muerto**: 0 líneas `SPLASH` en toda la sesión
+   del 50.0-T1; ahora `SPLASH sitio= num= dur= calladas= z=` en cada chapuzón aceptado,
+   con cuántas se callaron.
+5. **El mareo que «ya estaba corregido con datos»: los datos no existían y la causa era
+   un desbordamiento.** `MAREO` se autocensuraba a 400 filas con un predicado siempre
+   verdadero y `DRUNKSET` a 40, así que el informe anterior estaba construido sobre cero
+   evidencia. La raíz (`PlayerPed.cpp:3471`, `VICEEXT_DRUNK_FADE_NO_WRAP`): el
+   desvanecido hacía `m_nDrunkenness - ticks` con `uint8` y `uint32`, que se promociona
+   **sin signo**; con embriaguez 0 y un tick el resultado es 4 294 967 295, el `uint8` se
+   llena de 255 y Tommy queda mareado del todo en el instante en que
+   `CMissionCleanup::Process` arma el desvanecido — fin de misión y **salto de la
+   2ª cinemática**, exactamente donde lo vio el jugador. Ahora `DRUNKW src=
+   misioncleanup|resurreccion|initialstate|fade-fin val=` nombra a cada escritor.
+
+**Trazas basura fuera** (petición transversal): el tope de 400 de `MAREO`, el tope de 40
+de `DRUNKSET` y el `CAP` de 200 000 líneas con su `ODCAP drop` del enrutador. Se
+comprobó que `VICEEXT swim exit` y `SWIM2 exit`, que parecen la misma fila dos veces,
+**no** son borrables: la primera la consume `seccion3-log-check.mjs:262-266` y la segunda
+`viceext-log-check.py:887`. Las familias gordas de la lane de vehículos (`VEX …`,
+`SILLACAM`, `NEUMATICO`, `P4 kind=`) son de su dueño y no se tocaron.
+
+**Logs por partida (T26):** el motor marca el hito con `PART ida=<n> desde=<estado>` en
+cada transición a `GS_PLAYING_GAME` (`glfw.cpp:2575`); se usó ese hito y no `inGame`
+porque `inGame` cambia al acabar **cada cinemática** (probado: `WEBHB state=9 ingame=0
+cut=1 → ingame=1 cut=0`) y partiría el log en trozos sin sentido. `vite.js` corta el
+fichero en ese hito y archiva `logs/odtrace-<fecha>_<hora>_p<n>_<build>[_<nombre>].log`
+con el tag **con el que se jugó** cada tramo (el primer intento archivaba con el tag
+nuevo) y sufijos `-b…-f` si el nombre ya existe; la cabecera `rotado: sesion nueva (…)`
+se conserva literal porque es la clave con la que vive el checker.
+
+**Verificación** (pruebas declaradas, sin navegador de agente): `bash build.sh` verde
+`[2/2] Linking`, exit 0, 0 errores y un solo aviso nuevo (`-Wdouble-promotion` en
+`PedArbiter.cpp:139`), ya corregido con `(double)z`; `check-served-build.sh` **OK con
+todas las marcas**, seis de ellas nuevas (`SPLASH sitio=`, `VUELO z=`, `DRUNKW src=`,
+`FOVLN`, `PART ida=`, `ODNOFETCH`); `node --check` de `vite.js`/`index.js` y el router de
+logs probado con un armazón de node sobre un directorio de ficción (dos partidas →
+`_p1`/`_p2`); `dataTag` sin cambios (49.1 no toca datos). El puerto 2077 no estaba
+levantado, así que lo que recibe el navegador no se midió en vivo.
+`viceext-log-check.py` sobre el log viejo sigue leyendo bien y además confirma el
+diagnóstico del agua: **FALLO R17** «nadando el clip de nado casi no se mezcla
+(sw<0.5 en 12 de 83 muestras)», la firma del entra/sale que cierra T23.
+
+**Hallazgo de método (ADR-050, hay que dejarlo escrito):** la validación de la rama
+`#else` con `-U<DEFINE>` en la línea de compilación **no prueba nada** cuando el
+`#define` vive en `config.h`, porque `-U` solo afecta a lo previo al translation unit y
+el `#define` posterior gana. Se documentó así en el 50.0 y salía verde por vacío. La
+forma que sí prueba: `#undef` temporales al final del propio `config.h`,
+`-fsyntax-only` sobre los TUs tocados y restaurar el fichero byte a byte
+(`C:\tmp\iav49\t49else.py`; 12 TUs, `exit=0` y 0 errores con los siete defines del
+49.1 anulados, `config.h` restaurado y verificado por sha256).
+
+**Pendiente del jugador** (recarga fuerte y una partida por punto): (1) saltar la intro
+→ mundo claro, HUD y sin salto de FOV; (2) Hunter/avión a ver qué altura dan y si
+vuelven a crashear, con `VUELO`/`ODLOAD` en la traza; (3) oír el anuncio del puente al
+empezar; (4) entrar andando, saltar al mar y salir a la orilla: un chapuzón por
+evento, entrada inmediata y brazada mezclada; (5) saltar la 2ª cinemática y terminar una
+misión sin mareo, y si aparece, la fila `DRUNKW src=` nombra al culpable. Cada partida
+queda en su propio fichero de `logs/`.
+
+## 2026-11-07 43.0-T2 — Los tres menus salian en la pagina equivocada: un indice desalineado `[raiz]` `[ADR-054]`
+
+El jugador probo el 43.0-T1 y reporto que Galeria, Gestionar musica y Gestionar partidas
+no mostraban sus opciones sino la pagina de confirmacion (o «no hay espacio»), que
+«Volver» y «No» se quedaban en bucle obligando a recargar la pestana, y que dar «Si»
+en musica crasheaba el juego. Los logs de esas partidas (`19-46` a `19-51`, con
+`JS build=2026-11-07-49.1-T1 data=2026-11-07-43.0-T1`, `FEMENU scr=53` repetido y
+`SCRTXT3 ... "S."`) estaban ahi y confirmaron el diagnostico.
+
+Causa raiz, medida con `em++ -E` y las banderas reales de la build: el enum tenia
+`MENUPAGE_WIDEFIX_SETTINGS` bajo `VICEEXT_WFP_OPTIONS` (activo) pero su pantalla
+`FET_WSF` esta bajo `VICEEXT_WFP_MENU`, que el plan 29.0 comento en `config.h:545`.
+Eso dejaba `MENUPAGES = 57` contra **56** entradas en `aScreens[]`. Como se indexa por
+el valor del enum, desde el 50 todo se corria +1: 51 (Galeria) caia en la confirmacion
+de fotos, 53 (Musica) en la de canciones y 55 (Partidas) en «no hay espacio»; y
+`m_PreviousPage` apuntaba a ese mismo indice, asi que `SwitchToNewScreen(-2)` volvia a
+la misma pantalla. El desajuste era invisible porque `extern aScreens[MENUPAGES]`
+rellena con ceros una lista corta de inicializadores, y porque el conteo anterior se
+habia hecho sobre el texto del fuente, no sobre el preprocesado.
+
+El crash de musica era otra cosa: `MENUACTION_WEB_MUSIC_DELETE` -> `EM_ASM` ->
+`__vcMusicDeleteAll()` -> `deleteAllMusic()` -> `rescanUserMusic()` ->
+`Module._ViceExtRescanUserMusic()`, una reentrada WASM -> JS -> WASM dentro del mismo
+frame con `-sASYNCIFY=1`. Galeria no crasheaba porque `clearGallery()` no vuelve al
+WASM: encaja con lo que vio el jugador.
+
+Correccion: la guardia del enum paso a `VICEEXT_WFP_MENU` (su unico uso real, la fila
+`FET_WSF`, ya esta bajo esa guardia); `extern CMenuScreenCustom aScreens[]` paso a
+tamano incompleto y se agrego
+`static_assert(sizeof(aScreens)/sizeof(aScreens[0]) == MENUPAGES, ...)` al final de la
+tabla, de modo que **el build ya no compila si el enum y la tabla se desalinean**;
+`deleteAllMusic()` difiere el re-escaneo con `setTimeout(rescanUserMusic, 0)`; y
+`VERSION` subio a `2026-11-07-43.0-T2`. El `dataTag` se queda en
+`2026-11-07-43.0-T1` porque no cambio ni un byte de datos servidos.
+
+Verificacion: preprocesado real `MENUPAGES = 56 / enum 56 / tabla 56` (ALIGNED, ultimas
+8 posiciones casan una a una); `build.sh` verde `[243/243] Linking` con la asercion
+compilando; `check-served-build.sh` OK con todas las marcas y `_main` y
+`_ViceExtRescanUserMusic` exportados; `node --check` de 7 modulos, `bash -n`,
+`py_compile` y las 14 claves GXT en los 12 ficheros, todo OK. Sin trazas nuevas, asi
+que no se toco `viceext-log-check.py`. Sin verificacion de gameplay por navegador de
+agente: la prueba en partida queda del lado del jugador.
+
+Pendiente del jugador: recargar con el VERSION nuevo y repetir los tres menus (deben
+abrir sus opciones, «No»/«Volver» deben regresar y «Si» debe borrar sin crashear).
+Siguen apartados y sin tocar los bloques 1-2 del bucket/trailer y el arreglo de fotos
+con AA. Memoria: seccion de correccion en el plan 43.0 y ADR-054.
+
+## 2026-11-07 49.2-T1 — FOV fijo, la frontera del agua copiada del binario del mod, y la sonda para el crash del vuelo `[raiz]` `[ADR-050]`
+
+Gate del jugador: *«no enriquezcas el plan… ejecuta el plan»*, con las tres decisiones
+que habia que tomar con el, no adivinadas: **(1)** un solo FOV dentro y fuera de la
+cinematica (le parece un plus ver mas, no un defecto), **(2)** ni un parche de sintoma
+para el crash del vuelo: primero el culpable exacto, **(3)** el agua tal cual del mod
+incluido el subidito al muelle, pero **mezclada con el climbing que ya portamos** para
+que Tommy pueda agarrarse a una superficie desde el agua con la tecla de saltar. El
+anuncio del puente se deja como esta: lo oyio bien en coche y en helicoptero.
+
+**1) El FOV: dos inventos que se van.** La rampa del 49.1 (`VICEEXT_FOV_BOUNDARY_RAMP`,
+`OD_FOV_RAMP_MS 750u`) era **la causa** del zoom que el jugador veia: en su partida salto
+de 47,9 a 65,5 en 811 ms al arrancar INT_A y de 69,9 a 82,4 en 900 ms al omitirla, con una
+meseta de 3,1 s y un salto seco a 86,1 despues. Se retira el define y la rampa enteros
+(`src/renderer/Draw.cpp:213-259`) y queda `VICEEXT_FOV_SINGLE`: durante la cinematica se
+publica `ConvertFOV(DefaultFOV)`, el mismo valor escalado que el motor publica en juego a
+pie sin apuntar, asi que la frontera desaparece del todo. No se guarda «el ultimo valor
+del juego» porque en la pantalla de carga el motor publica 120 grados y la intro heredaba
+ese chiste. El codigo original (la referencia que el dio, `re3/src/renderer/Draw.cpp:97`)
+no anima nada: cambia el valor de un cuadro a otro. `FOVLN` deja de hablar por reloj
+(1 295 lineas por sesion) y solo emite cuando el valor publicado cambia >=0,05 o al
+cambiar el estado de cinematica.
+
+**2) El agua: medida en el binario, no deducida.** REA con Ghidra sobre
+`mods/extended/GameFiles/ViceEx.exe` (recibos en `gta_vc_browser/tmp/rea/492-*.txt` e
+indice en `492-INDICE.md`). Lo que hace el mod y nosotros no:
+
+* **UN solo criterio** de puerta (`0x56bf45`/`0x56bf57`): superficie por encima del centro
+  +0,20 m **o** empuje de flotacion por encima de la gravedad. Nunca mira el fondo. El par
+  de umbrales que teniamos (0,30 entrar / 0,20 mantenerse) era lo que hacia entrar y salir
+  en cuadros consecutivos.
+* En la entrada: **gravedad apagada y `v.z = 0`** en el propio cuadro (`0x56c0aa-0x56c0cc`),
+  `RestorePreviousState`, quitar agachado/golpe y `BlendAnimation(Tread, 4.0f)` con
+  callback. El `-1000` con `ASSOC_PARTIAL` del binario esta en el camino
+  `PlacePedOnDryLand`, que vive **bajo `EnableSwimming == 0`**: o sea, mi corte seco del
+  49.1 (`VICEEXT_SWIM_ANIM_CUT`) no era el mod y se retira.
+* Mientras nada, el mod **repasa cada cuadro** ocho animaciones de salto/caida/salida de
+  coche y las manda fundir a `-4.0`. Eso es lo que faltaba: el motor volvía a mezclar el
+  `FALL` y la brazada tardaba **0,8-2,0 s** en pesar (`sw=` medido en su log).
+* Al salir: brazadas a **`-6.0`** (1/6 s) **sin tocar `blendAmount`** y dejando terminar el
+  `Swim_jumpout`; y el **subidito al reborde** (linea desde `z+0,5`, alternativa `z+0,75`,
+  hacia delante `1,5` contra edificios).
+* `FUN_00566d90`, que parecia el predicado del nado, es **«es tipo jugador»**
+  (`m_nPedType <= 3`): los NPCs del mod nunca nadan.
+
+Ejecutado detras de `VICEEXT_SWIM_MOD_BORDER` (puerta, gravedad, fundidos y repaso por
+cuadro) y `VICEEXT_SWIM_CLIMB_EXIT` (la mezcla que pidio el jugador): con la tecla de
+saltar pulsada y una superficie agarrable a menos de **1,20 m** sobre el agua (de pie son
+2,25 m; en el agua el cuerpo no tiene donde apoyar el impulso) suelta el nado y llama al
+`StartClimbing` que ya portamos; si no se pulsa y nada hacia delante, el reborde entre
+**0,35 y 0,90 m** produce el subidito del mod. Trazas nuevas `SWIMCLIMB ok= altura=` y
+`SWIMHOP ok= altura=`, y el motivo de salida gana `trepar`/`reborde`. Se arregla ademas el
+instrumento que no media nada: `fall=` era un centinela **-1,00 en todas las muestras**;
+ahora reporta la mayor mezcla entre las seis animaciones de caida/salto que puede haber
+en pantalla. La flotacion que necesita la puerta se guarda en el arbitro de pedidos
+(`ViceExtSetFlota`/`ViceExtFlota`, `src/core/PedArbiter.cpp`) y **no** en `CPed`, para no
+tocar el layout validado (`VALIDATE_SIZE(CPed, 0x5F4)`).
+
+**3) El crash del vuelo: sin parches, con sonda.** Su log dej6 la firma: a 148 m en hover
+(Hunter, `fm=6`, maximo 190,8 m; el techo al doble funciona) el proceso muere en
+`RetryLoadFile -> ProcessLoadingChannel -> ConvertBufferToObject -> LoadAtomicFile ->
+RpClumpStreamRead -> Clump::streamRead -> Light::streamRead -> Light::create ->
+rw::malloc_h -> emscripten_builtin_malloc` con *memory access out of bounds*; 1 400
+rechazos en 24 s, heap WASM fijo en 384 MB de 2 GB (no es falta de memoria),
+`MTraffic2.dff` con **1 281 intentos** sin llegar y fase de streaming a 45 ms/cuadro. El
+jugador no quiere parches de sintoma, asi que T30/T31/T33 quedan **aparcados** y se
+ejecuta T32, **rectificado el mismo dia por el jugador**: el primer intento montaba una
+build paralela (`build.sh --sonda` → `web/public/build-sonda/` → `build/web-sonda`) que se
+eligia con **`?sonda=1`** en la URL. Lo rechazo por complejidad inutil —«solo activa la
+puta sonda y cuando ya no la necesitemos la eliminamos»— y tenia razon: un selector de
+version es codigo nuevo, otra ruta servida y otra forma de equivocarse al probar, para algo
+que se resuelve con dos banderas. Queda `-sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=1` **dentro de
+la build que se sirve** (en `gta_vc_browser/build.sh`, comentadas como SONDA TEMPORAL para
+quitarlas con el culpable en la mano), sin bandera, sin carpeta paralela y sin parametro de
+URL. Comprobado en el paquete servido: 315 macro-llamadas `SAFE_HEAP_INDEX` y su
+`function SAFE_HEAP_INDEX`. Objetivo: que el **primer** acceso invalido nombre al culpable,
+no el `malloc` que lo hereda veinte segundos despues. Falta su partida de 2-3 minutos
+volando alto. Efecto secundario cazado por el camino: con la sonda el enlazador reescribe
+las literales del pre-js con comillas dobles, y `check-served-build.sh` comparaba
+`dataTag: '...'` con comilla simple → decia `dataTag servido: ?` y un FALTA falso; el
+checker acepta ya las dos comillas.
+
+**Y la sonda sirviendo rompio el arranque (mismo dia, 22:52Z).** El jugador abrio
+`localhost:2077` y se quedo en negro: el registro traia `ENGERR Aborted(segmentation
+fault)` justo despues de `VEX sky opts`, con el bucle principal callado
+(`WDTALIVE mainSilentMs` subiendo y `mark=-1`). Motivo: `-sSAFE_HEAP` comprueba la
+alineacion de cada acceso y el motor/librw leen estructuras empaquetadas sin alinear por
+todas partes, y `-sSTACK_OVERFLOW_CHECK` choca con Asyncify, que mueve la pila a proposito.
+O sea, los dos vigilantes se disparan con codigo sano en este proyecto. Lecciones
+registradas, las tres con la firma del jugador delante: **(1)** instrumentar se hace sobre
+una build de prueba que nadie usa para jugar, nunca sobre la servida; **(2)** antes de
+entregar una build hay que probar que **arranca**, y aqui eso no existe en ningun arnes
+automatizado (no hay prueba sin navegador en `gta_vc_browser/tools/`), asi que la
+comprobacion es el primer arranque del jugador; **(3)** al sustituir un paquete servido con
+el mismo `VERSION`, el navegador conserva el roto en la cache: se subio la etiqueta a
+`2026-11-07-49.2-T2` para cambiar la URL y sacar el T1 enfermo. Las dos banderas fuera de
+`build.sh`, con un comentario que explica por que no van ahi.
+
+**Trazas basura (lo que el pidio en el punto anterior y se arrastraba):** `ODNOFETCH`, el
+instrumento que puse yo para el anuncio, emitio **936 lineas en la partida del vuelo y
+1 664 en la siguiente**, todas del mismo motivo. Pasa a una linea `ODNOFETCH primero
+porque=` por cada motivo nuevo y un resumen `ODNOFETCH n= unicos= pico= porque= fichero=`
+cada 5 s (`gta_vc_browser/web/ondemand.js`).
+
+**Verificacion** (pruebas declaradas, sin navegador de agente): - `bash gta_vc_browser/build.sh` verde, exit 0, 0 errores y 0 avisos nuevos atribuibles (el unico candidato, PlayerPed.cpp:2970, es la traza SWIMIDLE preexistente). Y tras la rectificacion, `build.sh` otra vez (exit 0) con la sonda puesta en la build servida: `web/public/build/reVC.js` lleva 315 `SAFE_HEAP_INDEX` y su funcion; el guard de STACK_OVERFLOW_CHECK se paso en la linea de enlace pero no encontre su cadena en el paquete, asi que **no lo doy por visto**. `check-served-build.sh` vuelve a dar OK con todas las marcas y el navegador responde `2026-11-07-49.2-T1`.
+- `tools/check-served-build.sh` -> **OK: el motor servido lleva TODAS las marcas**, con las dos nuevas (`SWIMCLIMB ok=`, `SWIMHOP ok=`); `dataTag` sin cambios (49.2 no toca datos) y el dev server respondio: `el navegador recibe la misma VERSION = 2026-11-07-49.2-T1`, o sea la comparacion con lo servido es real y no solo de disco.
+- Ramas `#else` (ADR-050): doce TUs con los siete defines del plan anulados por `#undef` temporales al final de `config.h` -> exit=0 y 0 errores, y `config.h` restaurado byte a byte (`C:\tmp\iav49\t49else.py`).
+- `bash -n` de `build.sh` y del checker; `node --check` de `index.js` y `ondemand.js`.
+- Recibo REA guardado en el repo: `gta_vc_browser/tmp/rea/492-*.txt` (28 ficheros) con su indice `492-INDICE.md`, para que la proxima ronda no vuelva a abrir Ghidra.
+
+**Pendiente del jugador:** (a) una partida normal para ver el FOV fijo en la intro y la
+frontera del agua (entrar andando, clavado, salir a la orilla y, junto a un muelle o
+acera, dar a saltar para trepar); (b) 2-3 minutos de Hunter entre 150 y 190 m en la
+misma build servida, que ya lleva la sonda puesta, para cerrar la causa del crash. Con la sonda habra que decidir
+T30/T31/T33 con el nombre del culpable delante, no antes.
+
+**Segunda vuelta el mismo dia (servida como `49.2-T3`).** El jugador volvio con dos
+cosas: el clavado seguia tardando en verse nadar, y el helicoptero otra vez se cortaba.
+
+* **Lo que quedaba de la brazada lenta, medido en su log:** el motor seguia mezclando el
+  `quieto` (`ANIM_STD_IDLE`, delta 4,0) **cada cuadro** mientras el ped nadaba, porque
+  nuestro nadador vive en `PED_IDLE`; el clip de nado entraba con el mismo delta y peleaba
+  con el. El mod no pasa por ahi: su nadador esta en un estado propio y esa funcion nunca
+  le toca el cuerpo. Guarda en `CPed::SetMoveAnim` (`Ped.cpp:835-844`) detras del mismo
+  `VICEEXT_SWIM_MOD_BORDER`. Con esto la rampa pasa a ser lo que es en el mod: un cuarto
+  de segundo.
+* **El trepar desde el agua no funcionaba como lo entregue:** `CanPedClimbingThis`
+  devolvía falso para el jugador mientras el nado tuviera el carril (guarda que puso el
+  port del climbing para que nadando no se trepe). Mi puerta del espacio la consultaba
+  antes de soltar el carril, asi que nunca se abria. Anadido el permiso `desdeElAgua` como
+  parametro con defecto: los demas llamantes no cambian.
+* Traza `SWIMRAMPA sw= fall= idle= z= nivel= hondo= aire=` cada 50 ms en los primeros
+  ~400 ms de la entrada (la rampa dura 250 ms y la unica que la miraba salia a 1 Hz: una
+  muestra por rampa, no se podia afirmar nada). El medidor de la pose de caida pasa a una
+  funcion compartida (`ViceExtSwimFallBlend`) en vez de estar duplicado en la traza.
+* **El corte NO era de altura:** cay6 a **59,8 m** con la build limpia (T2), con la pila
+  `ProcessLoadingChannel -> ConvertBufferToObject -> CColStore::LoadCol ->
+  CFileLoader::LoadCollisionFile -> LoadCollisionModel -> RwMalloc -> rw::malloc_h ->
+  emscripten_builtin_malloc` en *memory access out of bounds* y el bucle principal callado
+  despues (`mainSilentMs=53133`). Justo antes: **8 174 texturas vivas, 8 804 creadas y
+  solo 593 borradas**, `txd=681/526MB`, MEMFS 375 MB dentro de un heap que **nunca crecio**
+  de los 384 MB iniciales (tope 2 GB, `ALLOW_MEMORY_GROWTH=1`) y `ODSHORT errno=44
+  total=720`. Con eso el techo al doble queda descartado como disparador; la historia real
+  es la liberacion de texturas y el heap que no sube, y el siguiente paso es medir el
+  tamano pedido y el estado del reparto en el propio sitio del malloc (camino A), no
+  instrumentar el runtime entero (camino B, ya demostrado que no arranca).
+* Etiquetado: T2 -> **T3** al sustituir el paquete servido (la regla que aprendi hoy con
+  el pantallazo negro). Verificacion: `build.sh` exit 0 y 0 errores, `check-served-build.sh`
+  OK con la marca nueva `SWIMRAMPA sw=` y el navegador respondiendo `2026-11-07-49.2-T3`.

@@ -1,0 +1,209 @@
+---
+name: 032-web-texture-eviction-is-driven-by-measured-vram
+status: accepted
+date: 2026-11-02
+domain: rendering
+supersedes: []
+---
+
+# ADR-032: On web, prototype eviction is driven by measured VRAM, not by disc bytes
+
+## Context
+
+The player's T99 session ended in a hard freeze: a synchronous main-thread
+block of at least 4.38 s
+(`WDTALIVE mainSilentMs=4381 stall=1 mark=5 ent=2884`) on an otherwise perfect
+frame (`FPSLOG frames=60 over17=0 maxdelta=17 med=17`, heap 119 MB of 384 MB,
+`JSERR` 0, `WEBGL_LOST` 0, `SCMLOOP` 0). The one resource that grew without
+bound for the whole session was GPU memory, and `gl3raster.cpp:19-22` already
+said so in its own comment: a renderer that dies of texture memory is "la unica
+muerte que no deja marca en la traza".
+
+`WEBHB` publishes `tex=`, the count of live GL textures (created minus
+destroyed). Two consecutive sessions, both starting from the same 223:
+
+| Session | `WEBHB` samples | `tex=` first | `tex=` last | increases | **decreases** |
+| --- | --- | --- | --- | --- | --- |
+| T97 (`odtrace-2026-11-02_17-55-33.log`) | 503 | 223 | 6437 | 97 | **0** |
+| T99 (`web/odtrace.log`) | 609 | 223 | 7277 | 172 | **2** |
+
+The T99 curve is `223, 3763, 4640, 5053, 5688, 5728, 5728, 5728, 5760, 5972,
+6730, 6750, 7034, ... 7277` — monotonic, with 434 of 608 steps flat. Two
+decreases in ten minutes is not eviction, it is noise.
+
+`streamed-access.log` for 2026-11-02 (the two sessions above) records **1,346
+TXD loads covering 466 distinct names and 287.4 MB of file bytes**. 7,277 live
+textures against 466 distinct dictionaries is the same statement from the other
+side: essentially every TXD fetched all day was still resident when the session
+died. Both sessions report `webgl s3tc=0 astc=0`, so all of it was uploaded
+uncompressed.
+
+### Why the destroy chain never starts
+
+The chain itself is intact. reVC never destroys a texture explicitly; it relies
+on librw refcounting:
+
+`Entity::DeleteRwObject` -> `CBaseModelInfo::RemoveRef` -> `CTxdStore::RemoveRef`
+-> `CStreaming::RemoveTxd` -> `RemoveModel(txdId)` -> `RwTexDictionaryDestroy`
+-> `TexDictionary::destroy` -> `Texture::destroy`.
+
+A streamed texture has **refCount 2**: one from the dictionary
+(`vendor/librw/src/texture.cpp:284`) and one from the model prototype's
+material, taken by `Material::setTexture` -> `tex->addRef()`
+(`vendor/librw/src/geometry.cpp:1023-1029`). So `Texture::destroy`
+(`texture.cpp:293-294`) only moves 2 -> 1 and stops: no `Raster::destroy`, no
+`glDeleteTextures`. The raster is freed only when the prototype's material dies,
+i.e. `Material::destroy` (`geometry.cpp:1010-1016`), which runs only from
+`CModelInfo::DeleteRwObject()` inside `CStreaming::RemoveModel(modelId)`.
+
+And on web `RemoveModel` for a loaded model effectively never runs:
+
+1. `RemoveLeastUsedModel` (`src/core/Streaming.cpp:1562`) is the only routine
+   evictor. It is reached from `MakeSpaceFor` (`:3485-3501`) and from
+   `DeleteRwObjectsBehindCamera` (`:3252`, loop at `:3403`) — both **only under
+   memory pressure**, `ms_memoryUsed >= ms_memoryAvailable`.
+2. `ms_memoryAvailable` is `(_dwMemAvailPhys - 10 MB)/2`, floor 65 MB
+   (`:232-234`, fallback `:3489-3493`). On Emscripten `_dwMemAvailPhys` is
+   hardcoded to 512 MB (`src/skel/glfw/glfw.cpp:641`), so the budget is
+   **~251 MB**.
+3. `ms_memoryUsed` counts **disc sectors**, not VRAM:
+   `+= GetCdSize() * CDSTREAM_SECTOR_SIZE` at `:858` and `:937`, `-=` at
+   `:1301`. `UpdateMemoryUsed` (`:2969-2979`) is a no-op because
+   `USE_CUSTOM_ALLOCATOR` is off. The whole `streamed/` tree is ~321 MB, so a
+   session that loads most of it still never crosses 251 MB of *disc* bytes.
+4. What the player sees as "models disappearing" is
+   `DeleteFarAwayRwObjects` (`:3085`, called every tick at `:345`), which
+   destroys **entity instances** and never calls `RemoveModel`, so it never
+   touches a prototype and never touches a TXD.
+5. `CStreaming::Update`'s own release loop (`:400-404`) purges only the
+   *requested* list, and `RemoveUnusedModelsInLoadedList` is empty.
+
+The 2 decreases in T99 match the only path that does call `RemoveModel` during
+play: vehicle cycling (`RemoveLoadedVehicle` / `AddToLoadedVehiclesList`).
+
+`destroyNativeRaster` (`vendor/librw/src/gl/gl3raster.cpp:917`) is **not** the
+bug. Its `NORMAL`/`TEXTURE`, `CAMERATEXTURE` and non-GLES `ZBUFFER` branches all
+deleted their texture; under `gl3Caps.gles` a z-buffer is a renderbuffer and was
+never counted. Nothing streamed takes a non-deleting path. The function was
+simply never called.
+
+## Decision
+
+1. **Measure VRAM in librw.** `gl3raster.cpp:24-26` adds `gOdTexBytes`
+   (estimated live bytes), `gOdTexGenTotal` and `gOdTexDelTotal` (cumulative
+   create/delete counts). `odTexRasterBytes` (`:86-101`) sums `getLevelSize`
+   over `numLevels`, halves the total for the local RGB565 path using the same
+   predicate that selects it in `rasterUnlock`, and adds a third for an
+   autogenerated mip chain. Bytes are added at `rasterUnlock` level 0 (`:597`)
+   and subtracted by `odTexRelease` (`:104-110`), which replaces the three bare
+   `odTexDel` calls in `destroyNativeRaster` (`:926`, `:937`, `:953`).
+2. **Publish it every second.** `WEBHB` (`src/skel/glfw/glfw.cpp:2629-2636`)
+   gains `texb=<MB> texgen= texdel= txd=<live>/<cumulative MB>`, appended
+   **after** `mov=` so no existing token changes position. The buffer grows
+   240 -> 352.
+3. **Account per TXD.** `src/rw/TxdStore.cpp:12-36` adds `gOdTxdBytes`,
+   `gOdTxdLive` and `OdTxdAccount(slot, name, before)`, which reads the
+   `gOdTexBytes` delta across the dictionary load. It is called from
+   `LoadTxd` (`:181`) and from `FinishLoadTxd` (`:240`); `StartLoadTxd` (`:216`)
+   snapshots into a **per-slot** array, because two streaming channels can have
+   a TXD in flight at once — the same reason `loadNumTextures` and
+   `loadStreamPos` are per-slot. `gOdTxdLive` is decremented in `RemoveTxd`
+   (`:253`) and `RemoveTxdSlot` (`:89`). The `ODTXD` line is emitted only for
+   dictionaries costing >= 2 MB of VRAM, capped at 60 lines and then every
+   200th, per ADR-029.
+4. **The fix: evict on measured VRAM.** `CStreaming::Update`
+   (`src/core/Streaming.cpp:406-426`, web-only) releases up to **two**
+   least-used models per tick while `gOdTexBytes > 256 MB`, using the existing
+   `RemoveLeastUsedModel(STREAMFLAGS_20)` — the same call, with the same
+   exclusion mask, that `MakeSpaceFor` uses. It stops early if nothing is
+   removable. Because that function checks `GetNumRefs() == 0`,
+   `CTxdStore::GetNumRefs` / `IsTxdUsedByRequestedModels` and
+   `CAnimManager::GetNumRefsToAnimBlock` before removing anything, and falls
+   back to `RemoveLoadedVehicle`, it drives the whole chain down to
+   `Material::destroy` -> `Raster::destroy` -> `destroyNativeRaster` ->
+   `odTexDel`.
+5. **`ODTEXREL` carries the budget question.** The trace emitted alongside the
+   release (same 60-then-every-200th cap) prints `texb=`, the cumulative
+   `texdel=`, and `mem=<ms_memoryUsed>MB/<ms_memoryAvailable>MB veh=`. That is
+   what makes the 251 MB disc budget visible for the first time and what will
+   say whether 256 MB is the right VRAM watermark.
+6. **256 MB is a first estimate, not a measurement.** It sits below the
+   ~7,277-texture state the T99 session reached and above what a normal drive
+   should need, but nothing in this repository measures VRAM directly. If the
+   next log shows `ODTEXREL n=` climbing continuously from the start of a
+   session, the working set genuinely exceeds the watermark and the number has
+   to rise; if it never fires and `texb=` still ends near the old curve, it has
+   to fall.
+7. **`ms_memoryAvailable` and `_dwMemAvailPhys` are deliberately untouched.**
+
+## Consequences
+
+- The destroy chain runs for the first time on web. `texdel=` is the pass/fail
+  number: on T97 and T99 it would have read 0 and 2.
+- `tex=` alone was ambiguous — it could not distinguish "nothing evicted" from
+  "evicted but not deleted". `texgen=`/`texdel=`/`texb=` separate the two.
+- Eviction is not free. `RemoveLeastUsedModel` destroys a prototype, which
+  frees a clump and its rasters; two per tick bounds that cost, and the loop
+  exits as soon as the watermark is met, so the steady-state cost is zero.
+  Returning to an evicted area re-streams it, which on web means an on-demand
+  fetch — the deferral path ADR-030 just made cheap.
+- `gOdTexBytes` is an **estimate**. It halves for RGB565 by re-evaluating the
+  upload predicate at destroy time, and approximates an autogenerated mip chain
+  as +1/3. Re-uploading a raster at level 0 adds twice and subtracts once, so
+  the counter can drift upward over a long session. It is a watermark trigger
+  and a diagnostic, not an allocator.
+- Trace volume: `WEBHB` unchanged at 1/s but wider; `ODTXD` at most 60 lines
+  then every 200th; `ODTEXREL` same shape. Measured against the 2026-11-02
+  population (16 loads >= 2 MB of *file* bytes), `ODTXD` should stay well
+  inside its cap.
+- `vendor/librw` changed, so `vendor-librw-local-changes.patch` was regenerated
+  from `git diff HEAD` inside the submodule. The regenerated patch was verified
+  to differ from the committed one **only** in the `src/gl/gl3raster.cpp`
+  section: same 29 file sections, same order, 82 differing lines all inside
+  that one file.
+- Verification: compiled as build `2026-11-02-41.0-T100` via
+  `bash gta_vc_browser/build.sh`, exit 0, `error:` count 0, no new warnings on
+  any added line, `check-served-build.sh` EXIT=0, and the new format strings
+  (`ODTEXREL n=%u texb=%lldMB`, `ODTXD n=%d slot=%d nom=%s vram=%lldKB`,
+  `texb=%lldMB texgen=%d texdel=%d txd=%d/%lldMB`) plus the retained ADR-029
+  markers (`VEX scm`, `VICEEX sfx`) are present in the linked `reVC.wasm`.
+  `dataTag` stays at `2026-11-02-41.0-T97`: no served data changed. **No
+  gameplay was verified in a browser** — the project forbids the agent from
+  doing that — so `accepted` here means "decision taken, implemented and
+  compiled", not "confirmed in the game".
+
+## Alternatives Considered
+
+- **Lower `ms_memoryAvailable` under `__EMSCRIPTEN__` to something a session
+  actually crosses (48-64 MB), and let `MakeSpaceFor` do the evicting.** This is
+  the smaller diff and uses the stock pressure path, but it was rejected:
+  `desiredNumVehiclesLoaded` is derived from the same variable at
+  `Streaming.cpp:235` as `(int32)((ms_memoryAvailable / MB - 65) / 3 + 12)` in
+  `size_t` arithmetic. Any budget below 65 MB makes `48 - 65` wrap unsigned and
+  yields a garbage vehicle target, which is read at `:1690`, `:1930` and `:2524`
+  — traffic streaming would silently stop. Decoupling the two is possible, but
+  the budget would still be a guess about *disc* bytes while the resource that
+  kills the renderer is VRAM, and a disc-byte budget misprices exactly the
+  thing that matters (a small palettised TXD costs several times its file size
+  once uploaded uncompressed with mips).
+- **Re-weight `ms_memoryUsed` by real VRAM at `:858`/`:937`/`:1301`.** More
+  honest accounting, but a larger change to a variable eleven call sites read,
+  and it still only fires through `MakeSpaceFor` — so it inherits the
+  `desiredNumVehiclesLoaded` coupling above. Kept as the better long-term
+  answer if the watermark proves too blunt.
+- **Fix it inside `destroyNativeRaster` or the librw GL layer.** Rejected: that
+  code is correct and was never reached.
+- **Compress textures (S3TC/ASTC) so they cost less.** Both sessions report
+  `s3tc=0 astc=0`, so no compressed path is available in this browser, and the
+  format only multiplies the cost. Retention is what makes it unbounded; a 5x
+  cheaper texture that is never freed still grows without limit.
+- **Evict on `gOdTexLive` (texture count) instead of bytes.** Rejected: 7,277
+  textures says nothing about cost, since a 4x4 menu glyph and a 512x512 road
+  atlas both count as one. Bytes is the quantity the GPU actually runs out of.
+
+## State
+
+`accepted` (2026-11-02). Related to ADR-030 (the deferral churn that made
+`DeleteFarAwayRwObjects` skippable) and to ADR-029 (trace volume caps). Does not
+supersede anything. The 256 MB watermark in clause 6 is explicitly provisional
+and is the first thing to revise once a session reports `texb=`.

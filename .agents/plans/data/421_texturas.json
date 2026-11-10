@@ -1,0 +1,1616 @@
+{
+ "base": {
+  "admiral": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "airtrain": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "ambulan": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 16
+  },
+  "angel": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 8
+  },
+  "baggage": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "banshee": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "barracks": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "benson": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bfinject": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "blistac": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "bloodra": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bloodrb": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bobcat": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "boxville": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "burrito": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "bus": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "cabbie": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "caddy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "cheetah": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "chopper": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "coach": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "coastg": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "comet": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "cuban": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "deaddodo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "deluxo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "dinghy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "enforcer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "esperant": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "faggio": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "fbicar": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "fbiranch": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "firetruk": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 16
+  },
+  "flatbed": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "freeway": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "gangbur": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "glendale": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "greenwoo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "hellenbach": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 14
+  },
+  "hermes": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "hotrina": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "hotrinb": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "hotring": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "hunter": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "idaho": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "infernus": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "jetmax": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "kaufman": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "landstal": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "linerun": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "lovefist": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "manana": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "manchez": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "marquis": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "maverick": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "mesa": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "moonbeam": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "mrwhoop": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "mule": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "oceanic": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "packer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "patriot": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "pcj600": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "peren": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "peren2": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 13
+  },
+  "pheonix": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "pizzaboy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "police": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 17
+  },
+  "polmav": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "polwintergreen": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "pony": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "predator": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "premier": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "rancher": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "rcbandit": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "rcbaron": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 1
+  },
+  "rcgoblin": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "rcraider": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "reefer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "regina": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "rhino": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "rio": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "romero": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "rumpo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "sabre": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 9
+  },
+  "sabretur": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 9
+  },
+  "sanchez": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "sandking": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "seaspar": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "securica": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "sentinel": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "sentxs": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "skimmer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "spand": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "sparrow": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "speeder": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "squalo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "stallion": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "stinger": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "streetfi": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "stretch": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "taxi": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "topfun": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "trash": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "trash2": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 13
+  },
+  "tropic": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "vcnmav": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "vicechee": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "virgo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "voodoo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "walton": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "washing": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "wintergreen": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 5
+  },
+  "yankee": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "zebra": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  }
+ },
+ "servido": {
+  "admiral": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "airtrain": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "ambulan": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 16
+  },
+  "angel": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 8
+  },
+  "baggage": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "banshee": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "barracks": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "benson": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bfinject": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "blistac": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "bloodra": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bloodrb": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "bobcat": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "boxville": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "burrito": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "bus": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "cabbie": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "caddy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "cheetah": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "chopper": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "coach": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "coastg": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "comet": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "cuban": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "deaddodo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "deluxo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "dinghy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "enforcer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "esperant": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "faggio": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "fbicar": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "fbiranch": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "firetruk": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 16
+  },
+  "flatbed": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "freeway": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "gangbur": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "glendale": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "greenwoo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "hellenbach": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 14
+  },
+  "hermes": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "hotrina": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "hotrinb": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 10
+  },
+  "hotring": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "hunter": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "idaho": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "infernus": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "jetmax": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "kaufman": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 11
+  },
+  "landstal": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "linerun": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "lovefist": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "manana": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "manchez": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "marquis": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "maverick": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "mesa": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "moonbeam": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "mrwhoop": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "mule": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "oceanic": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "packer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "patriot": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "pcj600": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "peren": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "peren2": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 13
+  },
+  "pheonix": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "pizzaboy": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "police": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 17
+  },
+  "polmav": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "polwintergreen": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "pony": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "predator": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "premier": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "rancher": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "rcbandit": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "rcbaron": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 1
+  },
+  "rcgoblin": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "rcraider": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "reefer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "regina": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "rhino": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 3
+  },
+  "rio": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "romero": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "rumpo": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "sabre": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 9
+  },
+  "sabretur": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 9
+  },
+  "sanchez": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "sandking": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "seaspar": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "securica": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "sentinel": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "sentxs": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "skimmer": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 4
+  },
+  "spand": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "sparrow": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "speeder": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "squalo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 5
+  },
+  "stallion": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "stinger": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "streetfi": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 7
+  },
+  "stretch": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "taxi": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 11
+  },
+  "topfun": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  },
+  "trash": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "trash2": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 13
+  },
+  "tropic": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 6
+  },
+  "vcnmav": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "vicechee": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 10
+  },
+  "virgo": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "voodoo": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "walton": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "washing": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 7
+  },
+  "wintergreen": {
+   "lights": true,
+   "lightsoff": false,
+   "lightson": true,
+   "lightsonly": false,
+   "n": 5
+  },
+  "yankee": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 9
+  },
+  "zebra": {
+   "lights": false,
+   "lightsoff": false,
+   "lightson": false,
+   "lightsonly": false,
+   "n": 8
+  }
+ }
+}
