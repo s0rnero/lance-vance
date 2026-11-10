@@ -52,39 +52,54 @@ export function vcWeb(options = {}) {
   const trazaFichero = (n) => (n ? path.join(path.dirname(traceFile), 'odtrace-' + n + '.log') : traceFile);
   const trazaPrev = (n) => (n ? trazaFichero(n).replace(/\.log$/i, '') + '.prev.log' : prevTraceFile);
 
-  // Fecha de inicio de la sesión que se está rotando: primer sello ISO del
-  // fichero. Si no se puede leer, se usa la hora de la rotación.
-  function sessionStamp(file) {
-    let iso = null;
-    try {
-      const fd = fs.openSync(file, 'r');
-      const buf = Buffer.alloc(256);
-      const n = fs.readSync(fd, buf, 0, 256, 0);
-      fs.closeSync(fd);
-      const m = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/.exec(buf.toString('utf8', 0, n));
-      if (m) iso = m[1];
-    } catch (e) {}
-    if (!iso) iso = new Date().toISOString().slice(0, 19);
+  // Fecha de inicio del trozo que se archiva: primer sello ISO del texto. Si no
+  // aparece ninguno, se usa la hora de la rotación.
+  function stampOf(texto) {
+    const m = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/.exec(texto);
+    const iso = m ? m[1] : new Date().toISOString().slice(0, 19);
     return iso.replace('T', '_').replace(/:/g, '-');
   }
 
-  // Copia la traza que se está cerrando a logs/odtrace-<fecha>_<hora>.log.
-  // Devuelve el nombre del archivo, o null si no había nada que archivar.
-  function archiveSession(file) {
+  // [desde, hasta) del fichero de traza, en texto; null si no hay nada.
+  function readRange(file, desde, hasta) {
     try {
-      if (!fs.existsSync(file) || fs.statSync(file).size === 0) return null;
+      const st = fs.statSync(file);
+      const a = Math.max(0, Math.min(desde, st.size));
+      const b = Math.max(a, Math.min(hasta === undefined ? st.size : hasta, st.size));
+      if (b - a <= 0) return null;
+      const buf = Buffer.alloc(b - a);
+      const fd = fs.openSync(file, 'r');
+      fs.readSync(fd, buf, 0, buf.length, a);
+      fs.closeSync(fd);
+      return buf.toString('utf8');
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // logs/<base>.log. Si el nombre ya existe se añade -b, -c...: una partida
+  // jugada no se sobreescribe nunca, es la evidencia de los bloques.
+  function writeTo(base, texto) {
+    try {
       fs.mkdirSync(archiveDir, { recursive: true });
-      const base = 'odtrace-' + sessionStamp(file);
       let dest = path.join(archiveDir, base + '.log');
       for (const suf of ['-b', '-c', '-d', '-e', '-f']) {
         if (!fs.existsSync(dest)) break;
         dest = path.join(archiveDir, base + suf + '.log');
       }
-      fs.copyFileSync(file, dest);
+      fs.writeFileSync(dest, texto);
       return path.basename(dest);
     } catch (e) {
       return null;
     }
+  }
+
+  // Copia la traza que se está cerrando a logs/odtrace-<fecha>_<hora>.log.
+  // Devuelve el nombre del archivo, o null si no había nada que archivar.
+  function archiveSession(file) {
+    const texto = readRange(file, 0);
+    if (!texto) return null;
+    return writeTo('odtrace-' + stampOf(texto), texto);
   }
   const logs = options.logs === true;                              // *.log al lado del cwd
   const isolated = options.crossOriginIsolated !== false;
@@ -137,10 +152,26 @@ export function vcWeb(options = {}) {
 
   // Trazas del motor: POST por lotes. El primer lote de una página nueva
   // (JS build=...) rota el fichero, así la sesión actual siempre está completa.
+  // Cada PART ida=<n> que emite el motor cierra ADEMÁS el trozo de la partida
+  // anterior, de forma que cada partida queda en su propio fichero de logs/ con
+  // la fecha de inicio y el tag del paquete con el que se jugó. Sin tope de
+  // líneas: el log vive en la máquina del jugador, el tamaño no es problema y
+  // el `ODCAP drop` sí perdía evidencia a mitad de partida.
   function traceRoute() {
-    let lines = 0;
-    let capped = false;
-    const CAP = 200000;
+    let build = '';
+    let partida = 0;
+    let desde = 0;                    // bytes ya archivados del fichero vivo
+    const slug = (s) => String(s || '').replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40);
+    function archivaParte(file, hasta, n, nombre) {
+      const trozo = readRange(file, desde, hasta);
+      if (!trozo) return null;
+      const base = 'odtrace-' + stampOf(trozo) + '_p' + n +
+        (build ? '_' + slug(build) : '') + (nombre ? '_' + slug(nombre) : '');
+      return writeTo(base, trozo);
+    }
+    function tamano(file) {
+      try { return fs.statSync(file).size; } catch (e) { return 0; }
+    }
     return (req, res, next) => {
       const nombre = trazaNombre(req.url);
       if (nombre === false) return next();
@@ -152,38 +183,62 @@ export function vcWeb(options = {}) {
       req.on('end', () => {
         const ts = new Date().toISOString() + ' ';
         const inLines = body.split('\n');
-        if (inLines.some((ln) => ln.startsWith('JS build='))) {
-          lines = 0; capped = false;
+        const arranque = inLines.find((ln) => ln.startsWith('JS build='));
+        if (arranque) {
+          const m = /build=(\S+)/.exec(arranque);
+          const siguiente = m ? m[1] : '';
           // NO se borra la anterior: se copia a *.prev.log (compatibilidad con
-          // las utilidades que ya lo leen) y, además, a logs/ con fecha, de
-          // forma que TODAS las partidas quedan archivadas y localizables.
+          // las utilidades que ya lo leen) y, además, a logs/: la partida que
+          // estaba abierta cierra su propio fichero y, si en esa página no se
+          // llegó a jugar, se archiva la sesión entera.
           try {
             if (fs.existsSync(file) && fs.statSync(file).size > 0)
               fs.copyFileSync(file, prev);
           } catch (e) {}
-          const archived = archiveSession(file);
+          const guardada = partida >= 1 ? archivaParte(file, tamano(file), partida, nombre)
+                                       : archiveSession(file);
+          partida = 0;
+          desde = 0;
+          build = siguiente;
           try {
             fs.writeFileSync(file, ts + 'rotado: sesion nueva (anterior en '
-              + path.basename(prev) + (archived ? ', archivada en logs/' + archived : '') + ')'
+              + path.basename(prev) + (guardada ? ', archivada en logs/' + guardada : '') + ')'
               + (nombre ? ' [traza ' + nombre + ']' : '') + '\n');
           } catch (e) {}
         }
         let out = '';
+        const lotes = [];
         for (const ln of inLines) {
           if (!ln) continue;
-          if (lines >= CAP) {
-            if (!capped) { capped = true; out += ts + 'ODCAP drop (cap ' + CAP + ')\n'; }
-            continue;
-          }
-          lines++;
-          out += ts + ln + '\n';
+          const pedazo = ts + ln + '\n';
+          const m = /^PART ida=(\d+)/.exec(ln);
+          lotes.push({ bytes: Buffer.byteLength(pedazo), part: m ? +m[1] : 0 });
+          out += pedazo;
         }
-        if (out) { try { fs.appendFileSync(file, out); } catch (e) { try { console.error('[odtrace] no se pudo escribir ' + file + ': ' + (e && e.message)); } catch (_) {} } }
+        if (!out) { res.end('ok'); return; }
+        let pos = tamano(file);
+        try {
+          fs.appendFileSync(file, out);
+        } catch (e) {
+          try { console.error('[odtrace] no se pudo escribir ' + file + ': ' + (e && e.message)); } catch (_) {}
+        }
+        let avisos = '';
+        for (const l of lotes) {
+          if (l.part > partida) {
+            if (partida >= 1) {
+              const hechas = archivaParte(file, pos, partida, nombre);
+              if (hechas) avisos += ts + 'PARTLOG p' + partida + ' -> logs/' + hechas + '\n';
+            }
+            partida = l.part;
+            desde = l.part === 1 ? 0 : pos;
+          }
+          pos += l.bytes;
+        }
+        if (avisos) { try { fs.appendFileSync(file, avisos); } catch (e) {} }
         res.end('ok');
       });
     };
   }
-
   const install = (server) => {
     server.middlewares.use(streamedUrl, serveDir(streamedUrl, streamedDir, 'streamed'));
     server.middlewares.use(assetsUrl, serveDir(assetsUrl, assetsDir, 'assets'));

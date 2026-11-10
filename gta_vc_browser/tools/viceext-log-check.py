@@ -795,6 +795,24 @@ def bloque_sirena(lineas):
     return "OK", "%d encolados de sirena, %d combinaciones (model, sample)" % (len(sr), len(parejas))
 
 
+def bloque_touch(lineas):
+    print("\n== TOUCH · controles tactiles y autoaim (VEX touch) ==")
+    enable = [l for l in lineas if "VEX touch enable=" in l]
+    autoaim = [l for l in lineas if "VEX touch autoaim" in l]
+    pad = [l for l in lineas if "VEX input dev=pad" in l]
+    for l in enable + autoaim:
+        print("   " + l.strip())
+    if not enable and not autoaim:
+        return "SIN DATOS", "sin trazas `VEX touch` (no se uso la capa tactil en esta sesion)"
+    activa = any("enable=1" in l for l in enable)
+    aim = any("autoaim=1" in l for l in autoaim)
+    if activa and aim:
+        return "OK", ("capa tactil activa y autoaim tactil a 1%s"
+                       % ("; mando de la Gamepad API activo" if pad else ""))
+    return "PARCIAL", ("enable=%d autoaim=%d; faltan trazas de activacion o de autoaim"
+                        % (1 if activa else 0, 1 if aim else 0))
+
+
 def bloque_icon(lineas):
     """Icono de arma del HUD (L2): ¿encontró textura para cada arma nueva?"""
     print("\n== L2 · icono de arma en el HUD (HUDICON) ==")
@@ -3910,6 +3928,7 @@ def main():
                         ("RC", bloque_recoil), ("AX", bloque_ax),
                         ("UZI", bloque_uzi),
                         ("S13", bloque_modscript), ("MUNDO", bloque_mundo),
+                        ("TOUCH", bloque_touch),
                         ("VW", bloque_wheelrot), ("AW", bloque_aimsens),
                         ("AS", bloque_altsit),
                         ("VEHI", bloque_vehi)):
@@ -3920,7 +3939,7 @@ def main():
         print("   B   FALLO    build de la sesion distinta de la servida (ver arriba)")
     for nombre in ("D2", "D4", "D5", "D6", "D7", "D8", "R2", "R3", "J1",
                    "R5", "R9", "R11", "L2", "R3b", "L6", "H", "R12", "R13", "R14", "R15", "R16",
-                   "R17", "R19", "R27", "SR", "LB", "AX", "UZI", "S13", "MUNDO", "VW",
+                   "R17", "R19", "R27", "SR", "LB", "AX", "UZI", "S13", "MUNDO", "TOUCH", "VW",
                    "AW", "AS", "VEHI"):
         estado, motivo = res[nombre]
         print("   %-3s %-9s %s" % (nombre, estado, motivo))

@@ -67,7 +67,8 @@ function fromNet(key, rel, size) {
       if (!buf || !buf.byteLength) throw new Error('fichero vacio');
       if (isHtml(buf)) throw new Error('HTML en vez de fichero');
       if (size && buf.byteLength < size) throw new Error('truncado ' + buf.byteLength + '/' + size);
-      idbPut(key, buf).then(function () { res({ buf: buf, src: 'net' }); });
+      idbPut(key, buf);
+      res({ buf: buf, src: 'net' });
     }).catch(function (e) { clearTimeout(timer); rej(e); });
   });
 }
@@ -84,7 +85,7 @@ onmessage = function (ev) {
   INFLIGHT[k] = 1;
   var t0 = Date.now();
   idbGet(k).then(function (c) {
-    if (c && c.byteLength && !isHtml(c)) return { buf: c, src: 'idb' };
+    if (c && c.byteLength && !isHtml(c) && (!m.size || c.byteLength === m.size)) return { buf: c, src: 'idb' };
     return fromNet(k, m.rel, m.size);
   }).then(function (r) {
     delete INFLIGHT[k];
@@ -151,7 +152,159 @@ var OD = {
   // (`MESHBADMAT`), el modelo fallaba y el clump a medias reventaba en
   // `Frame::updateObjects`. Se reordena la malla (mismo tamano) y se corrige el
   // generador. Purga la cache IDB.
-  dataTag: '2026-10-30-34.0-T69',
+  // T103 (3/11, plan 42.1): 66 DFF de vehículo reconstruidos desde la base
+  // limpia con la regla de hue (460 celdas: 17 nodos borrados, 4 restaurados del
+  // mod, 58 ámbar real y 88 propios en su color) y `models/gta3.dir`
+  // reempaquetado: 13 entradas crecen y 25 encogen (banshee 189->93 sectores al
+  // quitarle los nodos inventados de octubre). Purga la cache IDB: sin eso el
+  // navegador seguiria leyendo los DFF viejos por ruta.
+  // T109 (3/11, plan 42.1 paso 4 re-medido): dos evidencias nuevas deciden el
+  // ambar cara a cara (rasterizado de la UV de la cara y parche cerrado en el
+  // atlas), asi que 10 celdas pasan de AMBAR a PROPIO (boxville y mrwhoop
+  // delante, washing/linerun/topfun detras) y 18 DFF se rehacen desde
+  // `tmp/base421`. `rumpo`/`pony` recuperan su unica lente ambar real que el
+  // paso anterior habia borrado, y `lovefist`/`stretch`/`manana`/`cuban` quedan
+  // recortados a las caras que sostienen el parche. `gta3.dir`: 2 entradas
+  // crecen (topfun 82->83, zebra 97->98) y 3 encogen (hotrina, pony, romero);
+  // sello del manifiesto ded0fa884ecbcc337cc6f370311aabc7.
+  // T110 (3/11, plan 42.1): NO sube el tag. Todo lo del reporte es motor: la
+  // tabla de lentes se compila dentro del wasm (`src/vehicles/IndicatorLensTable.h`),
+  // no se sirve, y ningun DFF/txd/img cambio. Subirlo obligaria a re-bajar todo
+  // el juego por un cambio de codigo (ADR-027).
+  // 45.0 T6 (5/11): SI sube. El split de la lente (T4) reescribio 27 DFF del
+  // gta3.img servido, 18 de ellos con tamano nuevo, y `repack_dir.py` rehizo
+  // `models/gta3.dir` (streamed y bootseed) con los sectores recalculados. Sin
+  // este tag el navegador seguia usando las entradas viejas de IndexedDB y el
+  // motor leia modelos truncados o desalineados.
+  // 47.0 T1 (5/11): solo cambia `models/gta3.dir`, y cambia de contenido sin
+  // cambiar de tamano: los 195.072 bytes son las mismas 6096 entradas con un
+  // layout contiguo autoritativo (antes 367 huecos y 368 solapes entre las dos
+  // cajas). El sello `__vc__` del manifiesto es el que purga la cache IDB; el
+  // tag sube para que el `data=` de la traza se pueda leer por plan.
+  // 48.0 T1 (6/11): el plan no cambia ningun dato servido; el tag sube porque lo
+  // que cambia es como el motor cuenta el tiempo (claxon a 30 Hz logicos, rampa
+  // de alpha escalada, reloj que recupera hitches, empuje ped<->coche atenuado y
+  // asiento compensado por altura). Se sube tambien para que
+  // `check-served-build.sh` pueda comprobar que el paquete lleva el plan dentro.
+  // 49.0 T1 (6/11): sigue sin cambiar ningun dato servido. Sube el tag porque
+  // el censo de logica por frame movio doce contadores al reloj logico (mando,
+  // giro en el aire, streaming, suspension, camara, nado, sangre, HUD, mareo,
+  // peces, audio y las gotas de lente del salpicado), dejo uniforme el asiento
+  // de los NPCs y anadio la cota de texturas por TXD con las trazas del Hunter.
+  // 46.0 T6 (6/11): SI sube. `gen_lens_atlas.py` inyecta en 17 TXDs del
+  // gta3.img servido un atlas derivado `<atlas>_lens` (copia del atlas del coche
+  // con las 925 texelas sin matiz del footprint de las lentes re-tingidas al
+  // matiz templado medido en ese mismo footprint, conservando la luminancia); el
+  // motor lo monta solo en el flanco encendido del parpadeo. Los 17 crecen de
+  // tamano (+136 KB DXT1) y `repack_dir.py` rehizo `models/gta3.dir` (streamed y
+  // bootseed, mirror byte a byte) con los sectores recalculados. Purga la cache
+  // IDB: sin esto el navegador seguiria abriendo los TXDs viejos, sin lente.
+  // 51.0 T6 (7/11): SI sube. Los seis `TEXT/*.gxt` llevan las etiquetas nuevas del
+  // menu de controles (FEC_LTS/FEC_RTS/FEC_EML dicen intermitente izquierdo /
+  // intermitente derecho / luces de parqueo en los 6 idiomas; cada fichero crece
+  // ~118 bytes, `stage_bootseed.py` los volco en el `.data` antes de enlazar y
+  // TABL sigue OK con sus 78 misiones). El motor ademas achica el disco del
+  // destello, pinta el ambar medido de la captura del mod, restringe la IA de
+  // cruce del trafico y conserva el intermitente latcheado al bajarse. Sucesor en
+  // NOMBRE de `2026-11-07-43.1-T1`: el contenido del 43.1 sigue en el arbol y en
+  // esta build. Purga la cache IDB: sin eso el navegador abriria el GXT viejo.
+  // 55.0 (8/11): REVERTIDO por el jugador («los cambios que hiciste son
+  // invenciones, te pido revertirlos»). La relajacion de las tres compuertas de
+  // `indicator_lens45.py` hizo pintar al benson las marcas laterales del
+  // parachoques en vez de la lente que esta debajo del faro, y el parche se quito
+  // (`benson.dff` restaurado byte a byte desde el respaldo del 3/11, tabla de
+  // lentes de vuelta a 262 filas). Vuelve como plan 56.0 con la deteccion
+  // 56.0 (8/11) T3b: el DATO vuelve a cambiar. La deteccion de lentes tenia dos
+  // ciegos de muestreo (UV recortadas en V y el byte alfa basura de las texturas
+  // con hasAlpha=0) ya corregidos en la herramienta; con la medida buena se
+  // regenero `IndicatorLensTable.h` (262 -> 320 filas, 190 -> 204 nodos con lente
+  // ambar, 0 nodos que pierdan su ambar) y se rehiciéron los nodos de los modelos
+  // aprobados por el jugador: boxville, mule, trash y pizzaboy con sus cuatro
+  // esquinas, fbiranch, esperant y fbicar delante. Esperant sube a 86 sectores y
+  // fbicar baja a 93, asi que `gta3.dir` esta reempaquetado y las tres cajas
+  // sincronizadas -tambien el `trash.dff` de `bootseed/`, que se habia quedado
+  // con la version del 55.0 revertido mientras `streamed/` tenia la original-.
+  // Sucesor en NOMBRE de `2026-11-08-53.0-T1`: su contenido (los GXT de opciones
+  // 56.0 T8 (8/11): REVERTIDA la tanda de direccionales. El jugador lo dice con
+  // sus dos capturas del mule y del fbiranch: «te pedi unicamente que activaras
+  // los focos y las luces intermitentes de cada uno de esos, no inventar unos
+  // nuevos ni cambiar sus formas o tamanos». Se devolvieron los nueve DFF
+  // (fbiranch, boxville, mule, trash, esperant, fbicar, pizzaboy, idaho, stinger)
+  // a su estado previo en las tres cajas y la tabla de lentes a las 262 filas
+  // servidas, anadiendo UNICAMENTE las dos filas del benson, que es el unico que
+  // el jugador confirma funcionando. Prueba dura de que el arbol de datos volvio
+  // al punto aprobado: el sello del manifiesto es de nuevo
+  // `60a0c0a3f340f41b170e4b6b21982b0d`, el mismo que dejo el revert del 55.0.
+  // Sucesor en NOMBRE de `2026-11-08-56.0-T7` y `2026-11-08-56.0-T3` (las dos
+  // tandas revertidas, cuyo contenido ya no esta en el arbol) y de
+  // `2026-11-08-53.0-T1` (los GXT de opciones extra, intactos). Purga IDB.
+  // 58.0 T3 (8/11): los TXD de esperant/boxville/fbiranch/mule/trash reciben su
+  // atlas derivado <atlas>_lens (lentes ambar de carroceria, plan 58.0 T3/T4).
+  // Cambian los datos servidos -> purga IDB. Sucesor en NOMBRE de
+  // `2026-11-08-56.0-T8` (la tanda revertida, cuyo contenido sigue fuera del
+  // arbol); ese rotulo se conserva aqui para que su marca de check-served-build
+  // siga encontrandolo en el paquete.
+  // 58.0 T4 (8/11): el material de lente de carroceria se parte en slot
+  // izquierdo y derecho (split_lens_material.py) en esperant/boxville/mule/
+  // trash (chassis_hi) y fbiranch (chassis_hi detras, bump_front_hi_ok
+  // delante): cero cambio de vertices/posiciones, solo indice de material por
+  // triangulo y dos copias identicas del material. BodyLensTable.h regenerada:
+  // cada fila pinta SOLO el slot de su costado (giro a la izquierda ya no
+  // enciende el cristal derecho). Los TXD no cambian; cambian los DFF y el
+  // gta3.dir -> purga IDB. Sucesor en NOMBRE de `2026-11-08-58.0-T3` (sus atlas
+  // derivados siguen servidos intactos); ese rotulo se conserva aqui para que
+  // su marca de check-served-build siga encontrandolo en el paquete.
+  // 58.1 T1 (9/11): cambian los TXD de topfun/rumpo/pony (atlas derivado de cara
+  // completa <tex>_lens: la direccional delantera enciende entera, no solo el
+  // hilo), mrwhoop (atlas derivado de carroceria sobre el faro) y trash (se
+  // retira el atlas inventado del porton); zebra.dff re-parenta el clon de
+  // pintura fuera del nodo indicator y mrwhoop.dff parte el material de la lente
+  // por costado -> purga IDB. Sucesor en NOMBRE de `2026-11-08-58.0-T4` (sus
+  // atlas de esperant/boxville/fbiranch/mule siguen servidos intactos); ese
+  // rotulo se conserva aqui para que su marca de check-served-build siga
+  // encontrandolo en el paquete.
+  // 59.0: cambia trash.txd (atlas `trash868bit128_lens` re-escrito a ARGB8888
+  // con la cara entera de las direccionales traseras) y con el gta3.dir
+  // reempaquetado (los TXD que el plan 59.0 heredo reescritos crecieron de
+  // sectores: boxville, cabbie, enforcer, fbiranch, manana, mrwhoop...). El
+  // que purga de verdad es el sello de contenido del manifiesto (ADR-027);
+  // este rotulo solo se reporta. dataTag anterior: `2026-11-09-58.1-T1`.
+  // 61.0 T2: TXD del banshee convertido a 32 bits; el sello del manifiesto
+  // tambien cambia, que es lo que purga la cache IDB (ADR-027).
+  // 61.0 T3: el cuerpo del banshee lleva marcador de pintura en su material
+  // dominante (chassis_hi); el dataTag sube para purgar la IDB con el DFF nuevo.
+  // 61.0 T4: el cuerpo usa la textura banshee86body128a; el dataTag sube para
+  // purgar la IDB con el DFF nuevo (386685 bytes).
+  // 62.0 T1: DFF de mrwhoop, rumpo, pony, topfun, boxville, esperant, fbiranch y
+  // fbicar con el cristal en slot propio; cambian tambien las dos tablas de lentes.
+  // dataTag anterior: `2026-11-09-62.0-T1`.
+  // 61.0 T5: el chassis_hi reparte el atlas banshee868bit128 (1946 tris);
+  // el dataTag sube para purgar la IDB con el DFF nuevo (386693 bytes).
+  // dataTag anterior: `2026-11-09-62.0-T2`.
+  // 61.0 T6: el chassis_hi pasa al atlas completo (3956 tris); la textura de
+  // puertas `banshee86body128a` sale del chasis; DFF 386685 bytes.
+  // 62.1 T1: fbicar revertido y el nodo solo se enciende con fila ambar medida;
+  // el faro blanco del mrwhoop y los pilotos de rumpo/pony/topfun dejan de
+  // recibir ambient. dataTag anterior: `2026-11-09-62.0-T3`.
+  // 62.2 T1: T7 alinea las UVs del atlas del Banshee contra el PC y reconstruye
+  // los grupos de malla desde el STRUCT. dataTag anterior: `2026-11-09-62.1-T1`.
+  // 62.3 T1: T8 copia las UVs REALES de los triángulos PC (cuerpo y atlas) al
+  // chassis_hi Xbox; 0 degenerados. dataTag anterior: `2026-11-09-62.2-T1`.
+  // 63.0 T1 (10/11): T9 instala el Banshee COMPLETO de The Hero 1:1: DFF
+  // 342016 B, 33 frames/16 atomics y chassis_hi 3956 tris con los 9 materiales
+  // Xbox repartidos; TXD 1552204 B, 8 texturas 32 bits. Sustituye al T8 y purga
+  // la IDB (el DFF/TXD y el .dir cambian de tamaño/sectores).
+  // 62.2 T2: cristal medido por matiz+saturacion (pony/topfun/esperant ganan
+  // las caras que el 20 % dejaba fuera) y fbicar declarado con las mismas
+  // caras y sitios del washing (6 delante 407,8 cm2, 7 detras 228,0 cm2).
+  // Etiqueta: la lane del banshee uso 62.2-T1, 62.3-T1 y `2026-11-10-63.0-T1`
+  // para su 61.0; se conservan aqui para que el paquete siga dando su marca.
+  // 62.3 T2: huella del derivado = las caras que DECLARA la fila (no solo las
+  // del nodo): rumpo/pony/topfun/esperant pasan del 22-35 % al 100 % de
+  // cobertura por cara, 527 texelas, fuera=0. Se conserva el literal
+  // `2026-11-10-63.0-T1` y `2026-11-10-63.1-T1` de la lane del banshee, y la
+  // propia `2026-11-09-62.2-T2`, que el checker exige ver en el paquete.
+  dataTag: '2026-11-09-62.3-T2',
   manifest: null,
   db: null,
   inflight: {},
@@ -363,7 +516,7 @@ var OD = {
     OD._census.ev = OD.evicted;
     OD._census.evmb = Math.round(OD.evictedBytes / 1048576);
     OD._census.fmb = Math.round(OD.fetchedBytes / 1048576);
-    OD._census.idb = OD.idbHits;
+    OD._census.idb = OD.idbHits + ((OD.wkStats && OD.wkStats.idb) || 0);
     OD._census.per = Object.entries(per).map(([k, v]) => k + ':' + Math.round(v / 1048576)).join(' ');
     OD._census.ufs = Math.round((per['/userfiles'] || 0) / 1048576);
     OD._census.root = Math.round((per['/'] || 0) / 1048576);
@@ -466,7 +619,7 @@ var OD = {
       try { FS.mkdirTree(d); } catch (e) {}
     }
     try {
-      const r = await fetch(OD.cfg.manifestUrl);
+      const r = await fetch(OD.cfg.manifestUrl, { cache: 'no-cache' });
       OD.manifest = await r.json();
     } catch (e) { OD.manifest = {}; }
     setTimeout(() => OD.prefetchLastStation(), 15000);
@@ -551,12 +704,18 @@ var OD = {
     }, 60000);
     // Bucles primero (motor, sirenas, ambientes): son los que suenan en cuanto
     // conduces y no pueden permitirse una descarga/decodificación a mitad.
+    setTimeout(() => { OD.prefetchAnnouncements(); }, 4000);
     setTimeout(() => { OD.prefetchLoops(); }, 6000);
   },
 
   // Trae en silencio las muestras con puntos de loop (las lee de la propia
   // tabla SDT que ya está en el FS virtual). Evita el tirón de la primera vez
   // que suena un motor.
+  async prefetchAnnouncements() {
+    for (const p of ['/Audio/bclosed.mp3', '/Audio/bopen.mp3']) {
+      try { await OD._ensure(p); } catch (e) {}
+    }
+  },
   async prefetchLoops() {
     try {
       let p = '/Audio/sfx.SDT';
@@ -599,7 +758,7 @@ var OD = {
   // motor pide en la sesión y la siguiente se precarga durante la carga del
   // mundo, empezando por los ficheros MÁS PEQUEÑOS (cada uno cuesta una
   // suspensión igual que uno grande, así que los pequeños rinden más por MB).
-  // Presupuesto en MB (cfg.warmMB) y lista en localStorage (atada al dataTag).
+  // Presupuesto en MB (cfg.warmMB) y lista en localStorage (atada a la clave de la caché).
   warmKey: 'vc_warm1',
   warmList: null,
   warmSeen: null,
@@ -617,7 +776,7 @@ var OD = {
     let list = [];
     try {
       const raw = JSON.parse(localStorage.getItem(OD.warmKey) || 'null');
-      if (raw && raw.tag === OD.dataTag && Array.isArray(raw.list)) list = raw.list;
+      if (raw && raw.tag === OD.cacheKey() && Array.isArray(raw.list)) list = raw.list;
     } catch (e) {}
     OD.warmList = list;
     return list;
@@ -630,7 +789,7 @@ var OD = {
       for (const p of OD.warmSeen) set.add(p);
       if (set.size === n0) return;
       const list = [...set].slice(-6000);
-      localStorage.setItem(OD.warmKey, JSON.stringify({ tag: OD.dataTag, list }));
+      localStorage.setItem(OD.warmKey, JSON.stringify({ tag: OD.cacheKey(), list }));
       if (OD.verbose) console.log('[od] lista de arranque en caliente: ' + list.length + ' ficheros');
     } catch (e) {}
   },
@@ -725,7 +884,7 @@ var OD = {
     OD.wkWaiters = {};
     OD.wkFails = {};
     OD.wkErrs = {};
-    OD.wkStats = { ask: 0, take: 0, wait: 0, fast: 0, idb: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
+    OD.wkStats = { ask: 0, take: 0, fast: 0, idb: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
   },
   wkStart() {
     if (OD.wkWaiters && Object.keys(OD.wkWaiters).length) OD.wkFlushWaiters('reinicio-worker');
@@ -908,7 +1067,7 @@ var OD = {
     if (now - OD.wkLastLine < 30000) return;
     OD.wkLastLine = now;
     const s = OD.wkStats;
-    OD.trace('ODWK peticiones=' + s.ask + ' aplazados=' + s.fast + ' esperas=' + s.wait +
+    OD.trace('ODWK peticiones=' + s.ask + ' aplazados=' + s.fast +
       ' entregados=' + s.take + ' escritos=' + s.wrote + ' esperando=' + Math.round(OD.wkReadyBytes / 1048576) + 'MB' +
       ' idb=' + s.idb + ' red=' + s.net + ' err=' + s.err + ' ms=' + Math.round(s.ms));
   },
@@ -1008,16 +1167,18 @@ var OD = {
   // re-descarga solo si se vuelve a necesitar. El uso se anota en el store
   // 'meta' ({t, s} por clave) en lotes, para no escribir en cada lectura.
   // ------------------------------------------------------------------------
-  _idbPairs(store) {
+  _idbPairs(store, keysOnly) {
     return new Promise((res) => {
       if (!OD.db) return res([]);
       try {
         const tx = OD.db.transaction([store], 'readonly');
         const st = tx.objectStore(store);
         const kq = st.getAllKeys();
-        const vq = st.getAll();
+        const vq = keysOnly ? null : st.getAll();
         tx.oncomplete = () => {
-          const ks = kq.result || [], vs = vq.result || [];
+          const ks = kq.result || [];
+          if (keysOnly) { res(ks.map((k) => [k, null])); return; }
+          const vs = vq.result || [];
           res(ks.map((k, i) => [k, vs[i]]));
         };
         tx.onerror = () => res([]);
@@ -1072,7 +1233,7 @@ var OD = {
     const capMB = OD.cfg.idbCapMB;
     if (!capMB || capMB <= 0) return;
     const t0 = Date.now();
-    const pairs = await OD._idbPairs('files');
+    const pairs = (await OD._idbPairs('files', true)).filter(([k]) => k !== OD.cacheKeyName);
     if (!pairs.length) return;
     const metas = new Map(await OD._idbPairs('meta'));
     let total = 0;
@@ -1115,16 +1276,25 @@ var OD = {
     await OD.idbMetaPut(keys.map((k) => [k, { t: now, s: OD.idbSizeOf(k, null) }]));
   },
 
-  // Purga por versión de datos (ver dataTag). Imprescindible al regenerar
-  // assets: sin esto el navegador sigue sirviendo los bytes viejos.
+  // Purga por versión de datos (ver el sello __vc__ del manifiesto). Imprescindible
+  // al regenerar assets: sin esto el navegador sigue sirviendo los bytes viejos.
+  cacheKeyName: '__cachekey__',
+  cacheKey() {
+    try {
+      const h = OD.manifest && OD.manifest['__vc__'] && OD.manifest['__vc__'].h;
+      if (h) return 'm' + h;
+    } catch (e) {}
+    return OD.dataTag;
+  },
   async idbPurgeIfStale() {
     if (!OD.db) return;
-    const prev = await OD.idbGet('__datatag__');
-    if (prev !== OD.dataTag) {
+    const key = OD.cacheKey();
+    const prev = await OD.idbGet(OD.cacheKeyName);
+    if (prev !== key) {
       await OD.idbClear();
-      await OD.idbPut('__datatag__', OD.dataTag);
-      console.log('[od] caché de datos purgada (' + (prev || 'vacía') + ' -> ' + OD.dataTag + ')');
-      OD.trace('DATATAG old=' + (prev || 'ninguno') + ' new=' + OD.dataTag + ' (caché IDB purgada)');
+      await OD.idbPut(OD.cacheKeyName, key);
+      console.log('[od] caché de datos purgada (' + (prev || 'vacía') + ' -> ' + key + ')');
+      OD.trace('DATATAG old=' + (prev || 'ninguno') + ' new=' + key + ' (caché IDB purgada)');
     }
   },
 
@@ -1272,9 +1442,43 @@ var OD = {
       OD.asyncMs += ((typeof performance !== 'undefined') ? performance.now() : Date.now()) - t0;
     }
   },
+  noFetchConteo: {},
+  noFetchMotivos: {},
+  noFetchCierre: 0,
+  noFetch(reqPath, canon, why, t0) {
+    // T38 (49.2): el instrumento del 49.1 se desboco. En la partida del vuelo
+    // dejo 936 lineas y en la siguiente 1664, todas del mismo motivo, y eso es
+    // la basura que el jugador pidio borrar. La primera vez de cada motivo se
+    // emite entera (es la que nombra el caso) y el resto se agrega en un
+    // resumen cada 5 s con el fichero que mas se repite.
+    const clave = (canon || '-') + '|' + why;
+    const now = Date.now();
+    OD.noFetchConteo[clave] = (OD.noFetchConteo[clave] || 0) + 1;
+    try {
+      if (!OD.noFetchMotivos[why]) {
+        OD.noFetchMotivos[why] = 1;
+        OD.trace('ODNOFETCH primero porque=' + why + ' path=' + reqPath +
+          ' canon=' + (canon || '-') + ' ms=' + (now - t0));
+      }
+      if (now >= OD.noFetchCierre) {
+        OD.noFetchCierre = now + 5000;
+        const claves = Object.keys(OD.noFetchConteo);
+        if (claves.length === 0) return;
+        let total = 0, pico = '', picoN = 0;
+        for (const c of claves) {
+          total += OD.noFetchConteo[c];
+          if (OD.noFetchConteo[c] > picoN) { picoN = OD.noFetchConteo[c]; pico = c; }
+        }
+        OD.trace('ODNOFETCH n=' + total + ' unicos=' + claves.length + ' pico=' + picoN +
+          ' porque=' + (pico.split('|')[1] || '-') + ' fichero=' + (pico.split('|')[0] || '-'));
+        OD.noFetchConteo = {};
+      }
+    } catch (e) {}
+  },
   async _ensure(reqPath) {
     // El motor abre a veces con ruta relativa al CWD (p. ej. "SPANISH.GXT"
     // con CWD=/TEXT). Probar tal cual + contra CWD.
+    const t0 = Date.now();
     let cwd = '/';
     try { cwd = FS.cwd(); } catch (e) {}
     const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
@@ -1303,7 +1507,10 @@ var OD = {
       const ready = OD.wkTake(canon);
       if (ready) return OD.writeFile(canon, ready);
       OD.wkAsk(canon, hit);
-      if (OD.wkFastFail(canon)) return null;
+      if (OD.wkFastFail(canon)) {
+        OD.noFetch(reqPath, canon, 'presupuesto', t0);
+        return null;
+      }
       // T18: en partida la espera se acota a 2 s (antes 30 s dentro de una carga
       // bloqueante, que es donde se quedó congelado el juego al salir un cop del
       // coche y pedir su .ifp). Cargando (init, escena desde el menú) se mantiene
@@ -1314,7 +1521,10 @@ var OD = {
       // El worker no pudo traerlo: en partida se reintenta en otro frame (el
       // motor lo vuelve a pedir); durante la carga se sigue por el camino de
       // siempre, que es la ruta crítica y no admite aplazamientos.
-      if (OD.wkInGame()) return null;
+      if (OD.wkInGame()) {
+        OD.noFetch(reqPath, canon, 'worker', t0);
+        return null;
+      }
     }
 
     if (OD.inflight[canon]) { await OD.inflight[canon]; return OD.exists(canon) ? canon : null; }
@@ -1336,7 +1546,7 @@ var OD = {
         const h = String.fromCharCode(...u8.slice(0, 9)).toLowerCase();
         return h.startsWith('<!doctype') || h.startsWith('<html');
       };
-      if (cached) {
+      if (cached && cached.byteLength && (!hit.s || cached.byteLength >= hit.s)) {
         const u8 = new Uint8Array(cached);
         if (isHtmlHead(u8)) throw new Error('caché envenenada, re-descargar');
         FS.createDataFile(parent, name, new Uint8Array(0), true, true, true);
@@ -1384,9 +1594,17 @@ var OD = {
       try { FS.unlink(canon + '.part'); } catch (ee) {}
     }
     delete OD.inflight[canon];
-    return OD.exists(canon) ? canon : null;
+    if (OD.exists(canon)) return canon;
+    OD.noFetch(reqPath, canon, 'descarga', t0);
+    return null;
   },
 };
+
+window.__vcRaf = { n: 0 };
+(function vcRafCount() {
+  window.__vcRaf.n++;
+  try { requestAnimationFrame(vcRafCount); } catch (e) {}
+})();
 
 if (typeof Module !== 'undefined') {
   if (!Module.preRun) Module.preRun = [];

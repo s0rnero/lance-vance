@@ -14,8 +14,22 @@ un fichero por otro de distinto tamaño hay que recalcular dos cosas:
 El **orden de las entradas se conserva**: el motor mapea los IDs de streaming a
 la entrada por índice, y los nombres son los del `.dir` original.
 
+El layout es **siempre contiguo**: cada entrada arranca justo donde terminó la
+anterior, también las cuyo fichero no está en la carpeta (se reserva su tamaño
+viejo). Si una entrada ausente se quedara con su `start` antiguo el cursor la
+alcancaría y dos modelos reclamarían el mismo sector; el lector abre el primero
+que encuentra, así que el motor recibiría el DFF de otro modelo y reventaría en
+`rw::malloc_h` (plan 47.0).
+
+Un solo layout es autoritativo: el calculado contra la carpeta servida. Las
+demás cajas (`bootseed/`, que va horneada en el `.data`) se publican con
+`--mirror`, byte a byte, para que el índice en memoria y los bytes que se
+abren no puedan divergir.
+
 Uso:
     python tools/repack_dir.py gta_vc_browser/streamed/models/gta3.img
+    python tools/repack_dir.py gta_vc_browser/streamed/models/gta3.img \
+        --mirror gta_vc_browser/bootseed/models/gta3.dir
     python tools/repack_dir.py <carpeta> --dry-run
 """
 import argparse
@@ -48,6 +62,8 @@ def main():
     ap = argparse.ArgumentParser(description="Recalcula el .dir de una imagen suelta.")
     ap.add_argument("carpeta", help="p.ej. gta_vc_browser/streamed/models/gta3.img")
     ap.add_argument("--dir", dest="dirpath", help="ruta del .dir (por defecto, al lado)")
+    ap.add_argument("--mirror", action="append", default=[], metavar="DIR",
+                    help="escribe además estos .dir con los mismos bytes (p.ej. el del bootseed)")
     ap.add_argument("--dry-run", action="store_true", help="no escribir, solo informar")
     a = ap.parse_args()
 
@@ -94,7 +110,14 @@ def main():
             e[0], e[1] = start, sec
         else:
             faltan.append(e[2])
+            e[0] = start
         start += e[1]
+
+    for i in range(1, len(entries)):
+        prev = entries[i - 1]
+        if entries[i][0] != prev[0] + prev[1]:
+            raise SystemExit("ERROR: layout no contiguo en la entrada %d (%s): start=%d, "
+                             "esperado %d" % (i, entries[i][2], entries[i][0], prev[0] + prev[1]))
 
     out = bytearray()
     for e in entries:
@@ -114,11 +137,12 @@ def main():
         print("AVISO: %d entradas sin fichero (se conservan tal cual): %s"
               % (len(faltan), ", ".join(faltan[:5])))
     if a.dry_run:
-        print("[dry-run] no escribo %s" % dirpath)
+        print("[dry-run] no escribo %s%s" % (dirpath, "".join(" ni " + m for m in a.mirror)))
         return
-    with open(dirpath, "wb") as f:
-        f.write(out)
-    print("escrito %s (%d bytes)" % (dirpath, len(out)))
+    for path in [dirpath] + a.mirror:
+        with open(path, "wb") as f:
+            f.write(out)
+        print("escrito %s (%d bytes)" % (path, len(out)))
 
 
 if __name__ == "__main__":

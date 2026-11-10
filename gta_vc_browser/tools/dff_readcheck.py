@@ -96,27 +96,30 @@ def check_mesh(buf, start, end, nmats):
     if nmesh > 100000:
         errs.append(("mesh", start, "numMeshes=%d" % nmesh))
         return errs
-    head = 12 + 8 * nmesh
-    if head > n:
-        errs.append(("mesh", start, "cabecera+entradas=%d > len=%d (meshes=%d)" % (head, n, nmesh)))
-        return errs
-    need = head + 4 * total
-    if need != n:
-        errs.append(("mesh_need", start, "need=%d len=%d (meshes=%d total=%d)" % (need, n, nmesh, total)))
+    # librw lee cada grupo intercalado: cabecera {numIndices, matIndex} y a
+    # continuacion SUS indices (Geometry::readMesh). No es todo cabeceras y
+    # luego todos los indices: eso desplaza al lector y da MESHBADMAT.
     p = start + 12
     total_sum = 0
     for i in range(nmesh):
+        if p + 8 > end:
+            errs.append(("mesh", p, "cabeza de malla %d fuera del chunk" % i))
+            return errs
         ni, mi = struct.unpack_from("<Ii", buf, p)
         p += 8
         if mi < 0 or mi >= nmats:
             errs.append(("mesh_mat", p - 4, "matIndex=%d mats=%d (malla %d)" % (mi, nmats, i)))
+        if ni > 1000000 or p + 4 * ni > end:
+            errs.append(("mesh_len", p, "indices=%d no caben (malla %d)" % (ni, i)))
+            return errs
+        p += 4 * ni
         total_sum += ni
-    if total_sum > total:
-        errs.append(("mesh_suma", start, "total=%d suma=%d (meshes=%d)" % (total, total_sum, nmesh)))
-        consumed = 12 + 8 * nmesh + 4 * total_sum
-        if consumed > n:
-            errs.append(("mesh_len", start, "consume=%d len=%d (total=%d suma=%d)"
-                         % (consumed, n, total, total_sum)))
+    if total_sum != total:
+        errs.append(("mesh_suma", start, "totalIndices=%d suma=%d (meshes=%d)"
+                     % (total, total_sum, nmesh)))
+    if p != end:
+        errs.append(("mesh_len", p, "sobran %d bytes (total=%d suma=%d)"
+                     % (end - p, total, total_sum)))
     return errs
 
 
@@ -232,7 +235,11 @@ def check_file(path):
     try:
         top = children(buf, 0, len(buf))
     except Bad as e:
-        return [("top", e.off, e.detail)]
+        # Los DFF del juego van alineados a sector: la cola de ceros es
+        # relleno valido, no un chunk truncado.
+        if any(b for b in buf[e.off:]):
+            return [("top", e.off, e.detail)]
+        top = children(buf, 0, e.off)
     clump = first(top, CLUMP)
     if clump is None:
         return [("top", 0, "sin clump 0x10")]

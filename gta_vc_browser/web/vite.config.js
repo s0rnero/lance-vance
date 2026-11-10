@@ -15,6 +15,12 @@ export default defineConfig({
   server: {
     port: 2077,
     strictPort: true,
+    // Tuneles de Cloudflare (prueba en el movil): `cloudflared tunnel --url
+    // http://localhost:2077` asigna un hostname *-trycloudflare.com distinto en
+    // cada arranque, y Vite 6 responde solo a los hosts autorizados. Con el
+    // sufijo valen todos los que salgan del tuneo; las IPs de red local ya estan
+    // permitidas por defecto, asi que `npm run dev -- --host` sigue sirviendo.
+    allowedHosts: ['.trycloudflare.com'],
     headers: {
       // Obligatorias para SharedArrayBuffer (pthreads del motor).
       'Cross-Origin-Opener-Policy': 'same-origin',
@@ -31,6 +37,7 @@ export default defineConfig({
   preview: {
     port: 2077,
     strictPort: true,
+    allowedHosts: ['.trycloudflare.com'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',

@@ -12,6 +12,11 @@
 // El motor (wasm) y los datos NO van en el paquete: se sirven por HTTP y aquí
 // solo se apunta dónde están (buildUrl / streamedUrl / manifestUrl / assetsUrl).
 import { CSS, STYLE_ID } from './styles.js';
+import { createTouchControls, touchDetected } from './touch.js';
+import { downloadAllGallery, clearGallery } from './gallery.js';
+import { downloadSlot, downloadAll, importSavesFromPicker } from './saves.js';
+import { importMusic, deleteAllMusic, downloadAllMusic, musicInfo, rescanUserMusic } from './music.js';
+import { restoreSkins, importSkinsFromPicker, skinInfo } from './skins.js';
 
 // Tag de esta ronda: sale en la consola, en el título y en las trazas.
 // Sirve para saber QUÉ código corre (adiós confusión de cachés).
@@ -170,7 +175,335 @@ import { CSS, STYLE_ID } from './styles.js';
 // pesomira en CROUCH2" con el build bueno en disco). Subir el tag en CADA build.
 // T55: barra de carga real por paso del init de partida nueva y FOV de
 // cinemática convertido al aspecto actual (antes salía estirada).
-export const VERSION = '2026-10-31-40.0-T92';
+// T103 (plan 42.1): el nodo de giro se recorre en TODOS los atomics y materiales
+// (la lente real de 11 modelos está repartida) y las motos sin nodo `indicator_*`
+// parpadean con su faro/piloto como los coches. Datos: 66 DFF reconstruidos desde
+// la base limpia y `gta3.dir` reempaquetado (13 entradas crecen, 25 encogen).
+// T108: los bucles de OpenAL reescriben sus puntos de loop recortados al buffer
+// real (antes heredaban la región del sample anterior y sonaban repetidos) y el
+// `ResetTimers` corta los canales activos; un ped sentado ya no arrastra el
+// fundido de entrada, que lo desviaba por el pase alfa y el asiento se lo comía.
+// T109 (plan 42.1): `IndicatorLensTable.h` vuelve a medir el árbol servido tras
+// reconstruir 18 DFF desde la base limpia (306 filas: 176 ámbar, 84 rojas, 46
+// blancas). El ámbar de `rumpo`/`pony` vuelve porque era nuestro, no del mod;
+// `boxville`/`mrwhoop` delante pasan a su color propio.
+// T110 (plan 42.1, reporte del jugador de 3/11): tres correcciones de motor.
+// El daño global (`m_fHealth`) ya no apaga los faros — solo el calcinado, el
+// wrecked y el estado de LA ESENA (dañar una puerta deja alumbrar). La tabla
+// lleva el veredicto ambar como dato (`amber` por fila: 176 sí / 130 no), asi
+// que un nodo sin ambar parpadea con SU propio faro/piloto (ruta Banshee) y no
+// se inventa ningun destello rojo ni blanco nuevo. El ancla del destello se
+// mide con la LTM de la raiz del jerarquia (cancela el transform del mundo que
+// se colaba en la primera medida) mas un filtro de plausibilidad, lo que arregla
+// los coches que solo destellaban a la izquierda (cheetah); y las motos/faggio
+// reciben su propio barrido de destellos, que antes no existia porque la ruta
+// vivia solo en `CAutomobile::RenderLights`.
+// T110b: la puerta de plausibilidad del ancla sale de medir las 162 celdas ambar
+// del arbol servido (|y| hasta 6.90 en el packer, 19 lentes de UN triangulo con
+// spread 0): con la caja de 6.0 y el corte por debajo de 0.01 se caían 23
+// destellos. Y el daño deja de apagar los dos faros con cualquier golpe de
+// parachoques: el mod solo rompe la lupa que cuelga de la pieza golpeada
+// (`newLightsData`, 6 modelos con faro en el parachoques, 14 con luces en el ala;
+// el resto cuelga del chasis).
+// T111 (rendimiento/estabilidad, reporte del jugador de 3/11):
+// El LOD de los edificios se quedaba pintado para siempre porque el corte vanilla de
+// busqueda de disco (`m_loadingPriority` + cola > 5/10) jamas se despeja en la web: el
+// backlog cronico del worker deja `prio=1` (153/153 sondas CARBLOCK) y los gemelos
+// hi-res nunca se pidian. En `__EMSCRIPTEN__` esos dos cortes pasan a ser solo un tope
+// de cola (32) y `LODLEFT` se sustituye por `LODSTUCK`/`LODHEAL`, que miden cuanto dura
+// el enganche y prueban si san. Audio: el reloj de rachas del vigilante de loops se
+// pisaba cada frame (dursec siempre 0, por eso LOOPORPHAN/KILL/COLLIDE salian a 0) y
+// ahora un loop de mas de 8 s se traza con su numero de sample (`LOOPLONG`).
+// T113 (estabilidad, crasheo del jugador del 4/11 a las 15:23:52Z):
+// El fallo no era falta de memoria (heap0=480 MB de 2 GB, y la sesion siguiente sin
+// crash subio a 499 MB) sino el heap roto: la firma `memory access out of bounds` en
+// `emscripten_builtin_malloc` es cronica desde el 10/10 (8234 fallos) y la funcion donde
+// muere va cambiando (`CRunningScript::Load`, `RpAtomicGetGeometry`, `CSprite`, `memchr`),
+// o sea que cae el siguiente que toca el heap, no el que lo rompio. La guardia GEOSTRUCT
+// del 24/10 no disparo ni una vez (0 filas), asi que el DFF pasaba el filtro y corrompia
+// despues: `numTexCoordSets` llega a 255 contra un `texCoords[8]` fijo, `addMorphTargets`
+// reservaba `n*sz` en int32 (desborda y el bucle de inicializacion rebasa el bloque) y el
+// lector de morph targets escribia 12*numVertices bytes en la direccion 0 cuando el DFF
+// decia `hasNormals` sin traer la bandera NORMALS. Los tres agujeros se cierran en
+// `vendor/librw/src/geometry.cpp`; ahora el atomic se rechaza y el motor lo reintenta con
+// `GEOSTRUCT/GEOMORPH rechazado` + `FAIL model <nombre>` en la traza.
+// T114 (42.1): REA del `ViceEx.exe` enviado (sha256 4df2726e…, FUN_00612670 =
+// CAutomobile::DoVehicleLights). El binario solo puerta con
+// `bStandardCarsUseTurnSignals` la copia VIEJA de los cuatro booleanos; dentro de
+// `if (mi->bNewLights)` se calculan sin leer el ini. Como el DFF del Banshee
+// conserva `headlight_l`/`taillight_l` (bNewLights = 1) y no tiene ningun nodo
+// `indicator_*`, su faro blanco y su piloto rojo parpadean con su propia corona
+// aunque el features.ini del mod traiga el flag a 0. Ademas la segunda corona del
+// mismo faro (ids this+26/27 del binario) se mueve con ese estado, no con
+// `bLightsOn`: antes dejaba en el Banshee un foco fijo detras del que si guiñaba.
+// T115 (43.0, rendimiento/estabilidad, reporte del jugador del 4/11):
+// Audio: censo por muestra (`SNDTOP`/`SNDLIST` cada 15 s con reqs y ms reales por
+// sample) y etiqueta del productor (`__LINE__`) en cada ranura, con `SNDNEW`/
+// `SNDSTUCK`/`SNDDIE` y `prod=`/`refresco=` para que un bucle quede asignado a la
+// linea que lo renueva en vez de adivinarlo. Mareo: `CMBlur::Drunkness` es estatica
+// y solo la escribe `SetDrunkBlur` cuando `m_nDrunkenness != 0`, asi que al bajar a
+// cero nunca se desvanecia: el temblor de camara y el fantasma del frame anterior
+// (postfx.cpp mezcla `pFrontBuffer` con `175*Drunkness`) sobrevivian a la embriaguez
+// y seguian pintados tras saltar la cinematica o terminar la mision. Se añade el
+// `ClearDrunkBlur` y las trazas `DRUNKCL`/`MAREO`/`CUTSKIP`.
+// T116 (44.0, intermitentes): el metodo del Banshee deja de ser privilegio del
+// Banshee. Antes la ruta de lampara propia estaba doblada por dos puertas
+// distintas: los materiales parpadeaban con el veredicto de ambar MEDIDO, pero
+// las coronas y las sombras de luz pasaban por `odStdSignals = bNewLights ||
+// bStandardCarsUseTurnSignals`, y con el features.ini del mod (byte = 0) los 90
+// modelos normales se quedaban fijos. Resultado: mesa, regina, landstalker,
+// sentinel, esperanto, hermes y pheonix no echaban ningun destello al girar. Ahora
+// manda una sola cosa - la lente medida del costado - y los 460 costados consultan
+// el mismo veredicto. Ademas: (a) la mascara de lente (la misma formula del dato,
+// `lens_mats`) se aplica tambien al subir `ambient`, asi que el capo del Hermes
+// deja de encenderse (pintaba 16 caras, 14 de ellas de capon; pinta 2); (b) fuera
+// los dos unicos colores inventados que quedaban (el ambar por textura `lights` y
+// el {255,127,0} del destello): sin fila medida no hay destello, y la tabla llega
+// a 338 filas / 214 ambar porque el atlas `lights` del mod es lente ambar por
+// diseno del mod - el Sabre delantero parpadea ambar como las demas direccionales;
+// (c) una lente partida en varios atomics (landstal, esperant, packer, rancher,
+// sandking, zebra: 14 celdas, maximo 2 grupos) echa UN destello por tramo con su
+// ancla, su tamano y su color medidos, en ids +48..+55 (coches) y +44..+47 (motos),
+// y el destello del Packer deja de flotar a media caja (4.2 m entre tramos).
+// Sin cambios en DFF/TXD: el `dataTag` sigue `2026-11-03-42.1-T109`.
+// T117 (estabilidad y coste): del log de dos partidas. (a) Cuelgue: la linea
+// fatal sin capturar sale de `CReplay::StorePedAnimation` ->
+// `RpAnimBlendClumpGetMainAssociation` sobre el clump de un ped ya liberado.
+// Aqui no hay grabacion que reproducir (F1/F2/F3), asi que `CReplay::Update` y
+// `RecordParticle` salen directos: se quita el fallo y dos barridos completos
+// de los pools de vehiculos y peds por frame. (b) Mareo: 150 filas `MAREO` con
+// `add=150 drunk=0.000 sw=0` durante 78 s seguidos prueban que NO era la
+// embriaguez - es la pantalla ancha que se queda encendida. `add=150` solo lo
+// escribe `ProcessWideScreenOn`, y ese solo corre si `m_WideScreenOn`; el guion
+// la apagaba en `DeleteCutsceneData`, que puede tardar o no llegar. Ahora
+// `FinishCutscene` la apaga el, como la enciende `SetupCutsceneToStart`.
+// (c) Audio en bucle: el censo no reprodujo ningun bucle pegado (SNDSTUCK =
+// LOOPORPHAN = LOOPCOLLIDE = 0), y eso apuntaba a un candidato que ninguna
+// medida de duracion ve: un disparo unico que otro productor renueva tan
+// rapido que suena continuo. `SNDDIE` lleva `ent`/`vivo` y `SNDTOP` cambia de
+// acumulado a delta de ventana con nacimientos, que es lo que lo delata.
+// (d) FPS: el tiempo perdido esta dentro del tick de `RenderScene` (la espera
+// cae a ~0,8 ms cuando la fase S pasa de 8 ms), asi que `RGPASS` reparte ese
+// coste entre los 40 pases de render ya nombrados con `PUSH_RENDERGROUP`.
+// T5 (plan 45.0): la tabla de lentes pasa a ser por RACIMO con su color MEDIDO
+// (262 filas, 244 ambar, 166 celdas en 58 modelos) y lleva mascara de materiales
+// `mats`, flag `atlas` y area. El motor suelda las caras de lente por vertice
+// comun (DSU, tope 4096 vertices; si se pasa, un grupo por atomic como antes),
+// empareja fila<->grupo por orden con contraprueba de centroide a 25 cm y pinta
+// SOLO los materiales que la fila declara, con el color de la fila: en el atlas
+// `lights` del mod (texelos blancos por diseno) se escribe el ambar; en una lente
+// de textura propia el material se queda blanco porque el tono ya viene del pixel
+// y pintarlo multiplicaria dos ambares. El tamano del destello sale del area real.
+// Ids: el 3r..5t grupo va a +100 hacia arriba, que +56..+71 chocaba con las
+// coronas de faro/piloto (+60..+69) del mismo `Automobile.cpp`. Datos: 27 DFF
+// retocados (T4) -> sube tambien el `dataTag` a `2026-11-05-45.0-T6`.
+// T1 (plan 47.0, estabilidad): tres cosas de la partida jugada tras el 45.
+// (a) Crash a los segundos de saltar la 2a cinematica: el motor resuelve los
+// sectores contra el `models/gta3.dir` hornado en `reVC.data`, y ese `.dir` se
+// habia recalculado recorriendo el arbol de cada caja, no el layout autoritativo
+// -> 367 huecos y 368 solapes: dos modelos reclamaban el mismo sector y el DFF
+// que llegaba no era el suyo. `repack_dir.py` arma ahora un unico layout
+// contiguo y `--mirror` escribe las copias con los mismos bytes;
+// `check_img_index.py` (puerta dura en `build.sh`) no deja construir encima de
+// un indice desincronizado, y `OdDoRead` ya no rellena de ceros un sector entero
+// que falta: devuelve STREAM_ERROR y el streaming re-pide. `DFFGARBAGE` marca el
+// rechazo de un BIN que declara mas bytes que la rebanada leida, y `DIRTAG` dice
+// el indice que el motor tiene en la cabeza (n=6096 total=178498).
+// (b) HUD visible durante la cinematica: `FinishCutscene` apaga la pantalla
+// ancha (T117) y el HUD solo se cortaba por ese flag, asi que volvia con la
+// mision sin empezar. El porton mira tambien `CCutsceneMgr::IsRunning()` y
+// `HUDGATE` traza cada cambio de estado.
+// (c) Mareo: sigue puesto por el juego (`COMMAND_SET_PLAYER_DRUNKENNESS`, unico
+// escritor); `DRUNKSET` traza valor, script y IP para saber si es intencionado o
+// leftover del skip. Sin cambio de comportamiento hasta tener esa medida.
+// Datos: solo cambia `models/gta3.dir` (mismos bytes en streamed y bootseed,
+// mismo tamano) -> el sello `__vc__` del manifiesto ya purga la cache IDB, y
+// `dataTag` sube a `2026-11-05-47.0-T1` por trazabilidad.
+// T1 (plan 48.0, lo que el motor media en FRAMES y no en segundos): seis puntos,
+// cada uno detras de su `#define` en `config.h`. (a) Sirenas: el anillo del
+// claxon se muestreaba por frame, asi que la ventana del doble toque pasaba de
+// 166 ms a 42 ms a 120 FPS y el toggle casi nunca disparaba -> ahora se empuja a
+// 30 Hz logicos (`HORNHIST`). (b) Helicoptero: el decaimiento del rotor iba por
+// frame (se paraba 4x mas rapido a 120 FPS) y la rampa del mod pasa de 3 s a 6 s
+// con `OD_HELI_RAMP` en `config.h`. (c) NPC sentado en coche invisible: la rampa
+// de alpha de los coches de trafico era por frame y los jinetes se dibujaban con
+// alpha plena -> escalada, y no se dibuja al ocupante por debajo de
+// `OD_SEAT_GHOST_ALPHA`. (d) Reloj: perdia tiempo en cada hitch por el clamp de
+// 60 ms de `Timer.cpp`; `CClock::Update` acumula con el reloj no recortado y
+// recupera hasta 20 minutos (`RELOJ`). (e) Peso de los coches: el empuje
+// peon<->coche estaba ANULADO, ahora se atenua a `OD_PUSH_VS_PED` (0.25) y el
+// desplazamiento contra coche en movimiento a `OD_SHIFT_VS_PED` (`EMPUJE`). (f)
+// NPCs hundidos en el asiento: el anclaje va a la cadera, asi que el ped bajo
+// pierde cabeza; la tabla de 107 esqueletos medida con `ped_seat_height.py`
+// levanta el asiento hasta 19 cm (`SILLACAM comp=`).
+// T1..T16 (plan 49.0, el censo): se recorrio todo `src/` buscando logica que
+// contaba frames presentados. Doce puntos corregidos, cada uno detras de su
+// `#define`: mando escalado por `GetTimeStepFix()` (CAM), amortiguacion del
+// giro en el aire (PHYS), cadencias de streaming y de peones por tick logico
+// (STREAM), baches de suspension (AUTO), ventanas de camara (CAMERA), nado
+// (PLAYERPED), sangre (PED), parpadeos y rampas del HUD/mareo/peces (HUD,
+// MBLUR, WATER), lluvia y retune (AUDIO) y las gotas de lente del salpicado
+// (DROPLETS), que ya no rearman la pantalla blanca al salir del agua.
+// Ademas: el asiento vuelve a ser UNIFORME para todos los NPCs (T15) — se
+// apaga `VICEEXT_SEAT_BY_PED_HEIGHT` y queda `OD_SEAT_LIFT_ALL` (0.0, la
+// postura de Tommy). T14 añade cota de texturas por TXD (`TXDBAD`) y trazas
+// `ODLOAD`/`ODTXD` para el crash del Hunter; T12 deja la medida `NEUMATICO`.
+// Datos: no cambia ninguno -> `dataTag` sube solo por trazabilidad.
+// T3/T4 (plan 46.0, triángulos apagados y destello sobre el capó): (a) el atlas
+// de lente derivado `<atlas>_lens` se resuelve en `CVehicleModelInfo::SetClump`
+// por puntero (pareja base/derivada) y se monta solo en el flanco encendido del
+// parpadeo, igual que el motor hace con `lights`/`lightson`; con el atlas viejo
+// una cara cuyo footprint cae a medias sobre una zona cromada del mismo atlas
+// sale media gris. (b) La corona de intermitente pasa `useNearDist=false,
+// nearDist=VICEEXT_IND_NEAR` (0,10 m): el render de coronas resta siempre el
+// nearDist y el default de 1,5 m plantaba el disco delante del capó. Datos: 17
+// TXDs del gta3.img servido llevan el atlas derivado (925 texelas re-tingidas al
+// matiz medido) y `gta3.dir` reempaquetado -> `dataTag` `2026-11-06-46.0-T6`.
+// La etiqueta solo nombra el plan que ejecuta hoy; el contenido del 49.0 y el
+// atlas de lente del 46.0-T6 (esos son los DATOS, dataTag) siguen intactos en
+// el árbol y en esta build.
+// 49.1 (2026-11-07), los cinco puntos del jugador tras el 50.0-T1. (1) La
+// frontera cinematica->juego deja de saltar de FOV: se integra en
+// OD_FOV_RAMP_MS y `FOVLN` publica el valor cuadro a cuadro. (2) El anuncio de
+// puente suena: los dos .MP3 se traen a MEMFS al empezar la partida y
+// `ODNOFETCH` nombra la peticion que no llego. (3) El techo de vuelo vanilla se
+// evalua al doble de alto (OD_CEILING_Z_SCALE=0.5) con `VUELO` midiendo empuje,
+// factor y fps. (4) El mareo ya no vuelve al saltar la segunda cinematica: el
+// desvanecido restaba ticks a un uint8 sin signo y se llenaba de 255
+// (VICEEXT_DRUNK_FADE_NO_WRAP), y `DRUNKW` nombra a quien escribe la embriaguez.
+// (5) El agua: en mar abierto el calado de 0,20 m ya no expulsa al nadador al
+// cuadro siguiente (entrada y salida dejan de parpadear), la pose de caida se
+// corta en el mismo cuadro y un reloj unico deja un chapuzon por ventana
+// (`SPLASH sitio= num= dur=`). Cada partida acaba ademas en su propio
+// `logs/odtrace-<fecha>_<hora>_p<n>_<tag>.log` y el tope de 200 000 lineas del
+// enrutador esta quitado.
+// 49.2 (2026-11-07), tres puntos de sus dos partidas. (1) FOV: fuera la rampa
+// del 49.1 (era EL zoom que veia: 811 ms al arrancar la cinematica y 900 ms +
+// meseta + salto seco al omitirla) y, por su decision, un solo FOV dentro y
+// fuera (`VICEEXT_FOV_SINGLE`); `FOVLN` ya no habla por reloj, solo cuando el
+// valor cambia. (2) Vuelo: la build que se sirve lleva la sonda puesta en
+// build.sh (SAFE_HEAP + STACK_OVERFLOW_CHECK, sin banderas ni parámetros) para
+// que el PRIMER acceso invalido nombre donde ocurrio, no el malloc que lo
+// hereda veinte segundos despues (RetryLoadFile -> ConvertBufferToObject ->
+// rw::Light::create -> malloc). Se quitan las dos banderas con el culpable en
+// la mano. (3) Agua: la frontera
+// entrar/salida copiada del binario del mod (un solo criterio de calado +
+// flotacion, gravedad y v.z en la entrada, brazadas a -6.0 al salir y repaso
+// cada cuadro de salto/caida/salida-de-coche) y salida trepando con el
+// climbing que ya portamos, mas el subidito al reborde; `SWIMCLIMB`/`SWIMHOP`
+// lo demuestran y `fall=` deja de ser el centinela -1.00. El anuncio del puente
+// queda como esta: el jugador lo oyo bien en coche y en helicoptero.
+// 49.2-T2 (mismo dia): la T1 se sirvio con la sonda de accesos puesta
+// (SAFE_HEAP + STACK_OVERFLOW_CHECK) y el motor abortaba en el arranque con
+// `Aborted(segmentation fault)`: pantalla negra. Retiradas las dos banderas,
+// subo la etiqueta para que el navegador pida otra URL y no recargue el
+// paquete roto que ya tenia en cache.
+// 49.2-T3: el clavado seguia tardando en verse nadar. Causa medida: mientras
+// se nada, el motor seguia mezclando el `quieto` del estado PED_IDLE cada
+// cuadro y la brazada peleaba con el (el mod no lo hace: su nadador esta en un
+// estado propio). Ahora `SetMoveAnim` sale antes cuando el carril del nado es
+// nuestro, y el trepar desde el agua funciona (el climbing se vetaba a si
+// mismo al estar nadando). Traza nueva `SWIMRAMPA` para ver la rampa real.
+// 51.0-T6 (7/11): cierre de la familia de intermitentes. Cuatro cosas del motor
+// y una de datos: el disco del destello pasa a 1,6 x el diametro de la lente con
+// clamp [0,09 ; 0,24] m (medido contra la captura del mod: estaba 3,4 veces
+// grande), el ambar de las 117 filas del atlas `lights` es el (253,165,0) medido
+// en esa captura (antes (255,225,0), amarillo chillon), el trafico solo senala
+// el giro que va a hacer en un cruce al que ya se acerca (nodo con >= 3 enlaces,
+// umbral de angulo del mod 0,5 y ultima fraccion del tramo) y echa el parqueo
+// cuando va a pararse a bajarse, y lo que el jugador latcheó con la tecla sigue
+// parpadeando despues de bajarse hasta volver a pulsarla (el parqueo se cae al
+// empezar a andar). Los GXT traen las etiquetas nuevas del menu de controles.
+// 51.1-T1 (7/11): dos correcciones del 51.0 pedidas por el jugador. (a) El
+// parqueo del jugador NO se apaga al acelerar -eso no se pidio-; lo que se pidio
+// es que el NPC que aparco con las luces puestas tenga el criterio de apagarlas al
+// volver a andar (`parqueo-apagando` en la traza turners). (b) En la moto, el
+// destello se quedaba en la posicion de la lente sin tumbar (captura del 07/11):
+// la inclinacion vive en el frame `chassis_dummy`, y los nodos `indicator_*`
+// cuelgan de ahi, asi que el ancla se guarda en espacio del nodo y se transforma
+// por su LTM viva. No cambia ningun dato servido: sube VERSION para que el
+// navegador pida el wasm nuevo; `dataTag` se queda en la del 51.0.
+// 55.0 (8/11): REVERTIDO por pedido del jugador. La deteccion relajada pinto en
+// el benson las marcas laterales del parachoques en lugar de la lente que esta
+// debajo del faro; se devolvieron el DFF y la tabla de lentes a su estado anterior
+// y la herramienta de deteccion tambien. El trabajo vuelve como plan 56.0 con
+// otra base de medida (las capturas del jugador del 08/11), no como parche.
+// 56.0 (8/11) T1/T1b/T1c/T4/T5 en el MOTOR: la herramienta de deteccion pesa
+// ahora el AREA que la cara pisa en cada texela (recorte exacto contra la celda)
+// y respeta el alfa solo cuando la textura lo declara, que es lo que devolvio la
+// lente del fbiranch. La tabla de lentes servida es la regenerada con esa medida.
+// Ademas el coach (autocar) ya no admite la 1a persona -no tiene interior medido,
+// 6 caras en la cabina frente a la mediana de la flota de 113- y el charco de luz
+// del suelo se ancla a la lampara en vez de crecer con la longitud del modelo.
+// Sucesor en NOMBRE de `2026-11-08-54.0-T1`, cuyo trabajo (colision, TXD, heap)
+// sigue en la build. T8 (8/11): REVERTIDA la tanda de direccionales por pedido
+// del jugador - la tabla vuelve a las 262 filas servidas mas las dos del benson
+// (264), unicas que el jugador confirma funcionando. Las correcciones de la
+// herramienta de deteccion (T1/T1b/T1c) se quedan: son las que permiten ver la
+// lente sin inventarla, y las reglas de camara y de luces del autocar/panzer (T4
+// y T5) el jugador las da por buenas.
+// 58.0 T1 (8/11): la tabla recibe UNICAMENTE las 28 filas que el jugador dicto
+// modelo por modelo (rumpo/spand/gangbur/manana/pony delante, cabbie/zebra/
+// rancher/boxville detras, enforcer detras con sus dos racimos, securica las
+// cuatro esquinas). Diff contra la servida: 28 anadidas, 0 perdidas, ningun otro
+// modelo cambia. Con la fila declarada el nodo enciende su lente y emite su aro
+// de luz: el halo que faltaba en securica/enforcer era exactamente esto, sin fila
+// ambar no hay corona. Los focos cuya cara comparte material con la pintura
+// (esperant detras, boxville delante, fbiranch) NO entran: pintar por material
+// iluminaria medio panel y mover la cara esta prohibido; quedan preguntados.
+// 58.0 T3 (8/11): esos focos de carroceria YA entran, sin geometria: atlas
+// derivado <atlas>_lens (via 46.0) que solo enciende las texelas ambar del
+// footprint medido. BodyLensTable.h (14 filas, 6 sitios) + VICEEXT_BODY_LENS.
+// dataTag cambia porque los TXD de esperant/boxville/fbiranch/mule/trash cambian.
+// 58.0 T4 (8/11): el material compartido de la lente se parte en slot izquierdo
+// y derecho (copias identicas, cero cambio de geometria) y la tabla regenerada
+// pinta cada costado con SU slot: el giro a la izquierda enciende su cristal y
+// el derecho ya no enciende los dos. VERSION anterior: `2026-11-08-58.0-T3`.
+// 58.1 T1 (9/11): los seis defectos de la prueba en juego del 58.0. topfun recibe
+// sus 2 filas de nodo delanteras (atlas de cara completa, atlas=1); rumpo/pony
+// delantera pasa a atlas=1 con el footprint entero de la cara iluminado (no solo
+// el hilo ambar); zebra recupera la pintura que un plan viejo metio en el nodo
+// (re-parent del clon al root con la matriz mundo intacta, cero cambio de forma);
+// mrwhoop enciende el ambar sobre el faro blanco (ruta carroceria 58.0, material
+// partido por costado); trash pierde la fila inventada del porton (stop rojo) y
+// su atlas derivado. fbiranch NO se toca (pendiente de log nuevo). Cambian DFF y
+// TXD -> dataTag sube. VERSION anterior: `2026-11-09-57.0-T1`.
+// 59.0 (T0-T4): el respaldo sin nombre de las lentes de carroceria pasa de
+// centroide de material a triangulo medido (a <= 0,25 m del xyz de la fila), el
+// material de cada fila se clasifica en runtime como exclusivo de lente y, solo
+// entonces, la ruta de carroceria sube el ambient al ambar medido igual que la
+// ruta del nodo — es lo que enciende la mitad de la cara que vive en chassis_hi
+// (rumpo, pony y topfun 4/4 filas; cabbie, zebra, securica, enforcer, manana,
+// spand y rancher completas). Trash estrena atlas de cara completa sin
+// comprimir. gangbur pasa a tintarse como pony. Trazas nuevas: BODYLENSROW con
+// excl=/tint= y AMBERGATE por coche. VERSION anterior: `2026-11-09-59.1-T2`.
+// 61.0 (pedido directo del jugador, sin plan): el mapa del radar y sus blips se
+// colocaban con SCREEN_SCALE_X(8.0f) mientras el marco rosa se coloca en
+// RADAR_LEFT (40) — el cristal salia fuera del aro. src/core/Radar.cpp,
+// TransformRadarPointToScreenSpace: ahora las tres piezas comparten el origen
+// del marco, igual en PC que en tactil. VERSION anterior: `2026-11-09-60.0-T1`.
+// 61.0 T2 (piloto Xbox `banshee`): el TXD del pack se convierte a 32 bits BGRA
+// sin comprimir y se instala en streamed/bootseed. El sello sube para que el
+// navegador no reutilice el .data ni la cache IDB con el TXD DXT viejo.
+// VERSION anterior: `2026-11-09-61.0-T1`.
+// 61.0 T3: marcador de pintura del cuerpo del banshee; el DFF cambia sin
+// cambiar de tamano, asi que la recarga se fuerza por VERSION/dataTag.
+// 61.0 T4: el chassis_hi usa la textura de carroceria banshee86body128a;
+// el DFF cambia de tamano (386685), asi que el sello sube otra vez.
+// 61.0 T5: el chassis_hi reparte el atlas banshee868bit128 (1946 tris) y
+// conserva la carroceria (2010 tris) con la pintura; sello nuevo.
+// 61.0 T6: el chasis Xbox usa el atlas completo (3956 tris); la textura
+// banshee86body128a es de puertas/aletas. El cuerpo deja de salir liso.
+// 62.2 T7: UVs del atlas alineadas contra el Banshee PC y malla reconstruida
+// desde el STRUCT. VERSION anterior: 2026-11-09-62.1-T1.
+// 62.3 T8: UVs reales de los triángulos PC para cuerpo y atlas; sin
+// interpolación y sin degenerados. VERSION anterior: 2026-11-09-62.2-T1.
+// 63.0 T9: Banshee completo de The Hero 1:1 (DFF 342016 B, 16 atomics, 9
+// materiales; TXD 1552204 B, 32 bits). VERSION anterior: 2026-11-09-62.3-T1.
+// 63.1 T1 (10/11): MatFX recibe env-map dinámico en carrocerías con specular
+// (Banshee de The Hero y el resto de la flota Xbox), sin cambiar el pipeline
+// global a Neo. VERSION anterior: 2026-11-09-62.2-T2.
+export const VERSION = '2026-11-09-62.3-T2';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
@@ -179,11 +512,18 @@ const DEFAULTS = {
   streamedUrl: '/streamed/',// datos sueltos on-demand
   manifestUrl: '/manifest.json', // índice de streamed/ (claves en minúsculas)
   assetsUrl: '/vc/',        // copia legal original, SOLO se mira si falta streamed/
+  runMode: 'local',
+  bucketUrl: 'https://vicecity-data.carv-portfolio.workers.dev/',
   // --- Comportamiento ---
   fill: 'viewport',         // 'viewport' (toda la pantalla) | 'parent' (la caja del div)
   title: true,              // poner el título de la pestaña con el tag de build
+  intro: true,              // portada con el trailer antes del juego
+  introUrl: null,           // vídeo de la portada (null = intro/vc.mp4 o el del bucket)
   audio: true,              // desbloquear audio con el primer gesto (sin botones)
   pointerLock: true,        // capturar el ratón al hacer clic en el canvas
+  touch: 'auto',             // 'auto' | 'on' | 'off'
+  touchIconsUrl: '/touch/icons/',
+  touchLookSensitivity: 0.9,
   guardUnload: true,        // pedir confirmación al cerrar/recargar en partida
   fullscreenKey: true,      // F11 = pantalla completa del juego
   showFps: false,           // contador de FPS del motor (esquina superior izq.)
@@ -236,10 +576,11 @@ function injectStyles(doc) {
   (doc.head || doc.documentElement).appendChild(s);
 }
 
-function markup(root, fill) {
+function markup(root, fill, intro) {
   root.dataset.fill = fill;
   root.innerHTML = `
     <canvas class="vc-canvas" tabindex="0"></canvas>
+    ${intro ? '<video class="vc-intro" playsinline preload="auto"></video>\n    <button class="vc-skip" type="button" disabled>Omitir</button>' : ''}
     <div class="vc-bar" aria-hidden="true"><i></i></div>
     <div class="vc-load" hidden>
       <div class="vc-load-title">VICE CITY</div>
@@ -266,10 +607,15 @@ export function startGame(options = {}) {
   const el = typeof opts.el === 'string' ? doc.querySelector(opts.el) : opts.el;
   if (!el) throw new Error('gtavc-web: falta { el } (el div donde montar el juego).');
 
-  const buildUrl = base(opts.buildUrl, '/build/');
-  const streamedUrl = base(opts.streamedUrl, '/streamed/');
-  const manifestUrl = opts.manifestUrl || '/manifest.json';
-  const assetsUrl = opts.assetsUrl === null ? null : base(opts.assetsUrl, '/vc/');
+  const live = opts.runMode === 'live';
+  const bucketUrl = live ? base(opts.bucketUrl, 'https://vicecity-data.carv-portfolio.workers.dev/') : null;
+  const buildUrl = bucketUrl ? bucketUrl + 'build/' : base(opts.buildUrl, '/build/');
+  const streamedUrl = bucketUrl ? bucketUrl + 'streamed/' : base(opts.streamedUrl, '/streamed/');
+  const manifestUrl = bucketUrl ? bucketUrl + 'manifest.json' : (opts.manifestUrl || '/manifest.json');
+  const assetsUrl = (bucketUrl || opts.assetsUrl === null) ? null : base(opts.assetsUrl, '/vc/');
+  const trailerUrl = live ? base(opts.bucketUrl, 'https://vicecity-data.carv-portfolio.workers.dev/') + 'trailers/vc.mp4' : null;
+  const introSrc = opts.intro === false ? null
+    : (opts.introUrl ? String(opts.introUrl) : (bucketUrl ? trailerUrl : 'intro/vc.mp4'));
   const traceUrl = opts.traceUrl || null;
   const recoilTraceId = null;   // Sin query param: id siempre automático.
   // Recoil siempre activo si hay endpoint de trazas: sin query param.
@@ -312,7 +658,7 @@ export function startGame(options = {}) {
 
   injectStyles(doc);
   el.classList.add('vc-root');
-  markup(el, opts.fill === 'parent' ? 'parent' : 'viewport');
+  markup(el, opts.fill === 'parent' ? 'parent' : 'viewport', !!introSrc);
 
   const canvas = el.querySelector('.vc-canvas');
   const barEl = el.querySelector('.vc-bar');
@@ -321,12 +667,28 @@ export function startGame(options = {}) {
   const loadBar = loadEl.querySelector('.vc-load-bar > i');
   const loadLabel = loadEl.querySelector('.vc-load-label');
   const msgEl = el.querySelector('.vc-msg');
+  const introEl = el.querySelector('.vc-intro');
+  const skipEl = el.querySelector('.vc-skip');
+
+  const touchParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('touch') : null;
+  const touchOn = touchParam === '1' ? true : touchParam === '0' ? false
+    : opts.touch === 'on' ? true : opts.touch === 'off' ? false : touchDetected();
+  const touch = createTouchControls({
+    root: el,
+    log,
+    enabled: touchOn,
+    iconBase: opts.touchIconsUrl,
+    sensitivity: opts.touchLookSensitivity,
+    getModule: () => (typeof Module !== 'undefined' ? Module : null),
+  });
+  touch.mount();
 
   const logLines = [];
-  const listeners = { progress: [], log: [], error: [], ready: [], audio: [], fullscreen: [], booted: [] };
+  const listeners = { progress: [], log: [], error: [], ready: [], audio: [], fullscreen: [], booted: [], intro: [] };
   const timers = [];
   let destroyed = false;
   let runtimeReady = false;
+  let dataOk = false;
   let audioUnlocked = false;
   let idleTimer = 0;
   let lastProgress = { phase: null, pct: 0, label: '', busy: false };
@@ -497,6 +859,72 @@ export function startGame(options = {}) {
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => engineOwnsScreen('done-timeout'), 400);
   }
+
+  // ---- portada: trailer + barra del top ----------------------------------
+  // El vídeo arranca en cuanto la página tiene el elemento montado (es local, no
+  // espera a nada). Omitir SOLO se habilita con los datos y el motor listos: sin
+  // eso, saltarse la intro dejaría al jugador mirando un canvas negro.
+  let introDone = false;
+  let introFellBack = false;
+  function updateSkip() {
+    if (skipEl) skipEl.disabled = !(dataOk && runtimeReady);
+  }
+  function endIntro(reason) {
+    if (introDone) return;
+    introDone = true;
+    window.removeEventListener('pointerdown', onIntroGesture, true);
+    window.removeEventListener('keydown', onIntroGesture, true);
+    if (introEl) {
+      try { introEl.pause(); } catch (e) {}
+      introEl.removeAttribute('src');
+      try { introEl.load(); } catch (e) {}
+      introEl.remove();
+    }
+    if (skipEl) skipEl.remove();
+    log('[lib] intro: ' + reason);
+    try { canvas.focus({ preventScroll: true }); } catch (e) {}
+    hideBar();
+    emit('intro', false);
+    if (opts.onIntro) opts.onIntro(false);
+  }
+  function onIntroGesture() {
+    if (!introEl || introDone || !introEl.muted) return;
+    introEl.muted = false;
+    const p = introEl.play();
+    if (p && p.catch) p.catch(() => {});
+  }
+  function playIntro() {
+    if (!introEl) return;
+    introEl.src = introSrc;
+    introEl.addEventListener('ended', () => endIntro('fin del video'));
+    introEl.addEventListener('error', () => {
+      if (live && trailerUrl && !introFellBack && introSrc !== trailerUrl) {
+        introFellBack = true;
+        log('[lib] intro: el video local no esta; se usa el del bucket');
+        introEl.src = trailerUrl;
+        const p = introEl.play();
+        if (p && p.catch) p.catch(() => endIntro('el video no se pudo cargar'));
+        return;
+      }
+      endIntro('el video no se pudo cargar');
+    });
+    introEl.addEventListener('playing', updateSkip);
+    introEl.addEventListener('canplay', updateSkip);
+    if (skipEl) skipEl.addEventListener('click', () => { if (!skipEl.disabled) endIntro('omitida por el jugador'); });
+    window.addEventListener('pointerdown', onIntroGesture, true);
+    window.addEventListener('keydown', onIntroGesture, true);
+    const started = introEl.play();
+    if (started && started.catch) {
+      started.catch(() => {
+        introEl.muted = true;
+        const again = introEl.play();
+        if (again && again.catch) again.catch(() => endIntro('reproduccion rechazada'));
+      });
+    }
+    emit('intro', true);
+    if (opts.onIntro) opts.onIntro(true);
+  }
+  playIntro();
 
   // ---- cola de trazas (lo que manda el motor C++) ------------------------
   // window.__odq lo llenan EM_ASM del motor y el pre-js. Aquí se envía por
@@ -744,6 +1172,8 @@ export function startGame(options = {}) {
   // comprobar que mide lo que cree: ficheros de disco ≠ lo que sirve la caché).
   window.__vcVersion = VERSION;
   window.__vcFrame = () => {
+    window.__vcFirstFrame = true;
+    try { touch.syncVisibility(); } catch (e) {}
     barTrace('on motivo=motor-primer-frame');
     log('[lib] el motor está pintando: se retira la barra de preparación.');
     engineOwnsScreen('motor-primer-frame');
@@ -767,6 +1197,23 @@ export function startGame(options = {}) {
     }
   };
   window.__vcLog = logLines;
+  window.__vcDataReady = () => !!(dataOk && runtimeReady);
+  window.__vcGalleryDownload = () => downloadAllGallery();
+  window.__vcGalleryClear = () => clearGallery();
+  window.__vcMusicImport = () => importMusic();
+  window.__vcMusicDeleteAll = () => deleteAllMusic();
+  window.__vcMusicDownloadAll = () => downloadAllMusic();
+  window.__vcMusicRescan = () => rescanUserMusic();
+  window.__vcMusicInfo = () => musicInfo();
+  window.__vcSaveManager = () => { window.__vcWebSaveManager = 1; };
+  window.__vcSaveDownload = (slot) => downloadSlot(Number(slot));
+  window.__vcSaveDownloadAll = () => downloadAll();
+  window.__vcSaveImport = () => importSavesFromPicker();
+  window.__vcWebSaveNoSpace = 0;
+  window.__vcWebSaveImported = 0;
+  window.__vcWebSaveManager = 0;
+  window.__vcWebSkinResult = 0;
+  window.__vcSkinImport = () => importSkinsFromPicker();
 
   // ---- audio: sin botón, se abre con el primer gesto ---------------------
   async function unlockAudio() {
@@ -843,13 +1290,17 @@ export function startGame(options = {}) {
   // enfocados de forma explícita.
   let wantLock = false;
   async function grabPointer() {
-    if (!opts.pointerLock) return;
+    if (!opts.pointerLock || touch.enabled) return;
     try { window.focus(); } catch (e) {}
     try { canvas.focus({ preventScroll: true }); } catch (e) {}
     if (doc.pointerLockElement === canvas) return;
     try { await canvas.requestPointerLock(); } catch (e) { log('pointer lock: ' + e); }
   }
   const onPointerDownCapture = (e) => {
+    if (e && e.target && touch.layer && touch.layer.contains(e.target)) {
+      if (opts.audio) unlockAudio();
+      return;
+    }
     if (e && e.target && e.target !== canvas && !canvas.contains(e.target)) return;
     wantLock = true;
     if (opts.audio) unlockAudio();
@@ -988,11 +1439,14 @@ export function startGame(options = {}) {
         try {
           FS.mkdir('/userfiles');
           FS.mount(IDBFS, {}, '/userfiles');
+          try { FS.mkdir('/MP3'); } catch (e) {}
+          try { FS.mount(IDBFS, {}, '/MP3'); } catch (e) {}
           // El juego NO espera solo: sin la dependencia leía MEMFS vacío
           // antes de que bajara IDB (carrera de lectura).
           if (typeof addRunDependency !== 'undefined') addRunDependency('idbfs-populate');
           FS.syncfs(true, (err) => {
             log(err ? '[err] IDBFS load: ' + err : 'IDBFS listo (guardados persistentes).');
+            try { restoreSkins(); } catch (e) {}
             try { if (typeof removeRunDependency !== 'undefined') removeRunDependency('idbfs-populate'); } catch (e) {}
           });
           setTimeout(() => { try { if (typeof removeRunDependency !== 'undefined') removeRunDependency('idbfs-populate'); } catch (e) {} }, 15000);
@@ -1016,6 +1470,7 @@ export function startGame(options = {}) {
       },
       onRuntimeInitialized: () => {
         runtimeReady = true;
+        updateSkip();
         log('Runtime WASM listo, arrancando juego…');
         // El motor avisa por __vcFrame en cuanto presenta su primer frame
         // (unos cientos de ms). Este plazo es solo la red por si esa señal no
@@ -1075,6 +1530,15 @@ export function startGame(options = {}) {
     enterFullscreen, exitFullscreen, toggleFullscreen,
     unlockAudio,
     audioActive: () => audioUnlocked,
+    openSaveManager: () => { window.__vcWebSaveManager = 1; },
+    importMusic, downloadSlot, downloadAll,
+    deleteAllMusic, downloadAllMusic, musicInfo, rescanUserMusic, importSavesFromPicker,
+    importSkinsFromPicker, skinInfo, restoreSkins,
+    dataReady: () => !!(dataOk && runtimeReady),
+    setTouchControls(on = true) { return touch.setEnabled(on); },
+    touchControls: () => touch.enabled,
+    touchContext: () => touch.context(),
+    skipIntro: () => endIntro('omitida por API'),
     on(evt, fn) {
       if (!listeners[evt]) throw new Error('gtavc-web: evento desconocido ' + evt);
       listeners[evt].push(fn);
@@ -1120,6 +1584,7 @@ export function startGame(options = {}) {
       doc.removeEventListener('visibilitychange', onVisibility);
       doc.removeEventListener('fullscreenchange', onFsChange);
       doc.removeEventListener('pointerlockchange', onPointerLockChange);
+      try { touch.destroy(); } catch (e) {}
       el.innerHTML = '';
       el.classList.remove('vc-root');
       window.__gameBooted = false;
@@ -1154,6 +1619,8 @@ export function startGame(options = {}) {
     }
 
     const d = await probeData();
+    dataOk = !!d.ok;
+    updateSkip();
     if (!d.ok) {
       handle.ok = false;
       const list = '<ul>' + d.missing.map((k) => `<li><code>${k}</code></li>`).join('') + '</ul>';

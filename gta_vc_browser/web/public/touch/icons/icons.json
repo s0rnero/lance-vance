@@ -1,0 +1,206 @@
+[
+  {
+    "name": "onfoot-run-jump",
+    "file": "onfoot-run-jump.svg",
+    "label": "Run/Jump",
+    "action": "Correr o saltar"
+  },
+  {
+    "name": "onfoot-punch",
+    "file": "onfoot-punch.svg",
+    "label": "Punch",
+    "action": "Ataque cuerpo a cuerpo"
+  },
+  {
+    "name": "onfoot-shoot",
+    "file": "onfoot-shoot.svg",
+    "label": "Shoot",
+    "action": "Disparar el arma actual"
+  },
+  {
+    "name": "onfoot-scope",
+    "file": "onfoot-scope.svg",
+    "label": "Scope",
+    "action": "Apuntar o usar el visor"
+  },
+  {
+    "name": "onfoot-throw",
+    "file": "onfoot-throw.svg",
+    "label": "Throw",
+    "action": "Lanzar granada u objeto"
+  },
+  {
+    "name": "onfoot-exit-shop",
+    "file": "onfoot-exit-shop.svg",
+    "label": "Exit Shop",
+    "action": "Salir de la tienda"
+  },
+  {
+    "name": "onfoot-enter-exit",
+    "file": "onfoot-enter-exit.svg",
+    "label": "Enter/Exit",
+    "action": "Entrar o salir del vehículo"
+  },
+  {
+    "name": "onfoot-menu",
+    "file": "onfoot-menu.svg",
+    "label": "Menu",
+    "action": "Pausa y menú"
+  },
+  {
+    "name": "vehicle-left",
+    "file": "vehicle-left.svg",
+    "label": "Left",
+    "action": "Girar a la izquierda"
+  },
+  {
+    "name": "vehicle-right",
+    "file": "vehicle-right.svg",
+    "label": "Right",
+    "action": "Girar a la derecha"
+  },
+  {
+    "name": "vehicle-accelerate",
+    "file": "vehicle-accelerate.svg",
+    "label": "Accelerate",
+    "action": "Acelerar"
+  },
+  {
+    "name": "vehicle-brake",
+    "file": "vehicle-brake.svg",
+    "label": "Brake",
+    "action": "Frenar o marcha atrás"
+  },
+  {
+    "name": "vehicle-handbrake",
+    "file": "vehicle-handbrake.svg",
+    "label": "Handbrake",
+    "action": "Freno de mano"
+  },
+  {
+    "name": "vehicle-rotate-left",
+    "file": "vehicle-rotate-left.svg",
+    "label": "Rotate Left",
+    "action": "Rotar la cámara a la izquierda"
+  },
+  {
+    "name": "vehicle-rotate-right",
+    "file": "vehicle-rotate-right.svg",
+    "label": "Rotate Right",
+    "action": "Rotar la cámara a la derecha"
+  },
+  {
+    "name": "vehicle-shoot",
+    "file": "vehicle-shoot.svg",
+    "label": "Shoot",
+    "action": "Disparar desde el vehículo"
+  },
+  {
+    "name": "vehicle-horn-siren",
+    "file": "vehicle-horn-siren.svg",
+    "label": "Horn/Siren",
+    "action": "Claxon o sirena"
+  },
+  {
+    "name": "vehicle-activate-mission",
+    "file": "vehicle-activate-mission.svg",
+    "label": "Activate Mission",
+    "action": "Acción contextual de misión"
+  },
+  {
+    "name": "vehicle-camera",
+    "file": "vehicle-camera.svg",
+    "label": "Camera",
+    "action": "Cambiar de cámara"
+  },
+  {
+    "name": "vehicle-exit-car",
+    "file": "vehicle-exit-car.png",
+    "label": "Exit Car",
+    "action": "Bajar del coche"
+  },
+  {
+    "name": "vehicle-exit-bike",
+    "file": "vehicle-exit-bike.png",
+    "label": "Exit Bike",
+    "action": "Bajar de la moto"
+  },
+  {
+    "name": "vehicle-exit-boat",
+    "file": "vehicle-exit-boat.png",
+    "label": "Exit Boat",
+    "action": "Bajar del bote"
+  },
+  {
+    "name": "vehicle-exit-heli",
+    "file": "vehicle-exit-heli.png",
+    "label": "Exit Helicopter",
+    "action": "Bajar del helicóptero"
+  },
+  {
+    "name": "vehicle-exit-plane",
+    "file": "vehicle-exit-plane.png",
+    "label": "Exit Plane",
+    "action": "Bajar del avión"
+  },
+  {
+    "name": "vehicle-exit-tank",
+    "file": "vehicle-exit-tank.png",
+    "label": "Exit Tank",
+    "action": "Bajar del tanque"
+  },
+  {
+    "name": "vehicle-enter-car",
+    "file": "vehicle-enter-car.png",
+    "label": "Enter Car",
+    "action": "Subir al coche"
+  },
+  {
+    "name": "vehicle-enter-bike",
+    "file": "vehicle-enter-bike.png",
+    "label": "Enter Bike",
+    "action": "Subir a la moto"
+  },
+  {
+    "name": "vehicle-enter-boat",
+    "file": "vehicle-enter-boat.png",
+    "label": "Enter Boat",
+    "action": "Subir al bote"
+  },
+  {
+    "name": "vehicle-enter-heli",
+    "file": "vehicle-enter-heli.png",
+    "label": "Enter Helicopter",
+    "action": "Subir al helicóptero"
+  },
+  {
+    "name": "vehicle-enter-plane",
+    "file": "vehicle-enter-plane.png",
+    "label": "Enter Plane",
+    "action": "Subir al avión"
+  },
+  {
+    "name": "vehicle-enter-tank",
+    "file": "vehicle-enter-tank.png",
+    "label": "Enter Tank",
+    "action": "Subir al tanque"
+  },
+  {
+    "name": "vehicle-fire-left",
+    "file": "vehicle-fire-left.png",
+    "label": "Drive-by Left",
+    "action": "Disparar por la izquierda"
+  },
+  {
+    "name": "vehicle-fire-center",
+    "file": "vehicle-fire-center.png",
+    "label": "Drive-by Forward",
+    "action": "Disparar al frente"
+  },
+  {
+    "name": "vehicle-fire-right",
+    "file": "vehicle-fire-right.png",
+    "label": "Drive-by Right",
+    "action": "Disparar por la derecha"
+  }
+]

@@ -9,6 +9,12 @@ Uso:
   python tools/gxt_menu_keys.py check <fichero.gxt> CLAVE [CLAVE ...]
   python tools/gxt_menu_keys.py check-src <fichero.gxt> <dir-src>
   python tools/gxt_menu_keys.py add <fichero.gxt> <claves.tsv> [--dry]
+  python tools/gxt_menu_keys.py set <fichero.gxt> <claves.tsv> [--dry]
+
+`add` solo escribe claves que NO existen (las existentes las salta); `set` hace lo
+contrario: re-escribe el texto de claves que YA estan en el par del menu, y falla
+si alguna no esta. Ambos dejan el prefijo de TDAT intacto, asi que los offsets de
+mision (TABL) de las claves que no se tocan siguen apuntando a su sitio.
 """
 import os
 import re
@@ -104,14 +110,25 @@ def rebuild(changed):
     return bytes(out)
 
 
-def write_pair(path, novos, dry=False):
+def write_pair(path, novos, dry=False, replace=False):
     chunks, tail = read_all(path)
     a, b = pair_with_anchor(chunks)
     rows = rows_of(chunks[a][1], chunks[b][1])
     existentes = all_keys(chunks)
-    omitidas = [k for k in novos if k in existentes]
-    for k in omitidas:
-        del novos[k]
+    if replace:
+        faltan = sorted(k for k in novos if k not in existentes)
+        if faltan:
+            raise SystemExit("ERROR: %s: no existen en el GXT: %s"
+                             % (path, " ".join(faltan)))
+        omitidas = []
+        # La fila vieja del par del menu se retira y la cadena nueva se escribe al
+        # final: el prefijo de TDAT no se toca, asi que lo demas sigue en su sitio.
+        filas = [fila for fila in rows if fila[0] not in novos]
+    else:
+        omitidas = [k for k in novos if k in existentes]
+        for k in omitidas:
+            del novos[k]
+        filas = list(rows)
     for k in novos:
         if len(k) > gx.MAXKEY:
             raise SystemExit("ERROR: clave '%s' > %d caracteres" % (k, gx.MAXKEY))
@@ -122,7 +139,6 @@ def write_pair(path, novos, dry=False):
         return 0
 
     tdat = bytearray(chunks[b][1])
-    filas = list(rows)
     for k in sorted(novos):
         off = len(tdat)
         valor = novos[k].encode("utf-16le") + b"\0\0"
@@ -146,8 +162,9 @@ def write_pair(path, novos, dry=False):
             print("  TABL: %d misiones reajustadas" % len(movidos))
 
     if dry:
-        print("%s: (dry) anadiria %d claves al par %d/%d -> %d bytes" % (
-            path, len(novos), a, b, len(blob)))
+        print("%s: (dry) %s %d claves al par %d/%d -> %d bytes" % (
+            path, "re-escribiria" if replace else "anadiria",
+            len(novos), a, b, len(blob)))
         return len(novos)
 
     tmp = path + ".tmp"
@@ -167,6 +184,8 @@ def write_pair(path, novos, dry=False):
                 raise SystemExit("ERROR: %s: cambia un par que no se tocaba" % path)
         ahora = keys_of(otro_chunks[a][1], otro_chunks[b][1])
         for k, _o, v in rows:
+            if k in novos:
+                continue	# esta se re-escribio a proposito (modo set)
             if ahora.get(k) != v.decode("utf-16le", "replace"):
                 raise SystemExit("ERROR: %s: se perdio '%s'" % (path, k))
         for k, v in novos.items():
@@ -236,6 +255,11 @@ def main():
         if len(argv) < 3:
             raise SystemExit(__doc__)
         write_pair(path, tsv_pairs(argv[2]), dry="--dry" in argv)
+        return 0
+    if cmd == "set":
+        if len(argv) < 3:
+            raise SystemExit(__doc__)
+        write_pair(path, tsv_pairs(argv[2]), dry="--dry" in argv, replace=True)
         return 0
     raise SystemExit(__doc__)
 

@@ -35,6 +35,12 @@ if [ ! -d gta_vc_browser/bootseed ]; then
   exit 1
 fi
 
+# El indice que usa el motor es el .dir hornado en reVC.data: si esa copia no
+# describe los ficheros que de verdad se sirven, dos modelos reclaman el mismo
+# sector y la build entrega datos corruptos al navegador. No se construye encima.
+python gta_vc_browser/tools/check_img_index.py   --mirror gta_vc_browser/bootseed/models/gta3.dir || exit 1
+python gta_vc_browser/tools/check_img_index.py   --img gta_vc_browser/streamed/anim/cuts.img   --mirror gta_vc_browser/bootseed/anim/cuts.dir || exit 1
+
 # emcc no entiende rutas estilo MSYS (/c/...) en --pre-js/--preload-file: en
 # Git Bash, usa la forma Windows (C:/...). En Linux/macOS `pwd -W` no existe y
 # el `||` deja la ruta normal.
@@ -51,6 +57,13 @@ export CPATH="$(pwd)/gta_vc_browser/include"
 PREJS="$REPO_FWD/gta_vc_browser/web/ondemand.js"
 PRELOAD="--preload-file $REPO_FWD/gta_vc_browser/bootseed@/"
 
+# SONDA DE ACCESOS (no esta aqui a proposito): -sSAFE_HEAP y
+# -sSTACK_OVERFLOW_CHECK sobre esta build dan `Aborted(segmentation fault)` en
+# el arranque (22:52Z del 07-11, con el juego en negro). El motor y librw hacen
+# lecturas sin alinear por todas partes (estructuras empaquetadas), y Asyncify
+# mueve la pila a proposito: los dos vigilantes se disparan con codigo sano.
+# Si hay que volver a instrumentar, que sea sobre una build de prueba aparte y
+# comprobando antes que arranca, no sobre la que juega el jugador.
 emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo \
   -DCMAKE_EXECUTABLE_SUFFIX=.html \
@@ -65,7 +78,7 @@ emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DLIBRW_GL3_GFXLIB=GLFW \
   -DLIBRW_TOOLS=OFF \
   -DLIBRW_EXAMPLES=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS="-sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=402653184 -sMAXIMUM_MEMORY=2147483648 -sFORCE_FILESYSTEM=1 -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576 -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
+  -DCMAKE_EXE_LINKER_FLAGS="-sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=402653184 -sMAXIMUM_MEMORY=2147483648 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuTap,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576 -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
 
 echo "--- configurado en $BUILD_DIR ---"
 if [ "$CONFIG_ONLY" -eq 1 ]; then exit 0; fi
