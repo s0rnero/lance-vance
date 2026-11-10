@@ -1,0 +1,268 @@
+[
+  {
+    "name": "onfoot-run-jump",
+    "source_px": [
+      36,
+      62,
+      82,
+      108
+    ],
+    "center": [
+      58.5,
+      84.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-run-jump.png"
+  },
+  {
+    "name": "onfoot-punch",
+    "source_px": [
+      184,
+      62,
+      230,
+      108
+    ],
+    "center": [
+      206.5,
+      85.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-punch.png"
+  },
+  {
+    "name": "onfoot-shoot",
+    "source_px": [
+      332,
+      62,
+      378,
+      108
+    ],
+    "center": [
+      354.5,
+      85.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-shoot.png"
+  },
+  {
+    "name": "onfoot-scope",
+    "source_px": [
+      480,
+      62,
+      526,
+      108
+    ],
+    "center": [
+      502.5,
+      85.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-scope.png"
+  },
+  {
+    "name": "onfoot-throw",
+    "source_px": [
+      36,
+      112,
+      82,
+      158
+    ],
+    "center": [
+      58.5,
+      134.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-throw.png"
+  },
+  {
+    "name": "onfoot-exit-shop",
+    "source_px": [
+      184,
+      112,
+      230,
+      158
+    ],
+    "center": [
+      206.5,
+      135.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-exit-shop.png"
+  },
+  {
+    "name": "onfoot-enter-exit",
+    "source_px": [
+      332,
+      112,
+      378,
+      158
+    ],
+    "center": [
+      354.5,
+      134.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-enter-exit.png"
+  },
+  {
+    "name": "onfoot-menu",
+    "source_px": [
+      480,
+      112,
+      526,
+      158
+    ],
+    "center": [
+      502.5,
+      135.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/onfoot-menu.png"
+  },
+  {
+    "name": "vehicle-left",
+    "source_px": [
+      36,
+      192,
+      82,
+      238
+    ],
+    "center": [
+      58.5,
+      215.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-left.png"
+  },
+  {
+    "name": "vehicle-right",
+    "source_px": [
+      184,
+      192,
+      230,
+      238
+    ],
+    "center": [
+      206.5,
+      215.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-right.png"
+  },
+  {
+    "name": "vehicle-accelerate",
+    "source_px": [
+      332,
+      192,
+      378,
+      238
+    ],
+    "center": [
+      354.5,
+      215.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-accelerate.png"
+  },
+  {
+    "name": "vehicle-brake",
+    "source_px": [
+      480,
+      192,
+      526,
+      238
+    ],
+    "center": [
+      502.5,
+      215.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-brake.png"
+  },
+  {
+    "name": "vehicle-handbrake",
+    "source_px": [
+      34,
+      242,
+      80,
+      288
+    ],
+    "center": [
+      57.5,
+      265.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-handbrake.png"
+  },
+  {
+    "name": "vehicle-rotate-left",
+    "source_px": [
+      184,
+      242,
+      230,
+      288
+    ],
+    "center": [
+      206.5,
+      265.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-rotate-left.png"
+  },
+  {
+    "name": "vehicle-rotate-right",
+    "source_px": [
+      332,
+      242,
+      378,
+      288
+    ],
+    "center": [
+      354.5,
+      265.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-rotate-right.png"
+  },
+  {
+    "name": "vehicle-shoot",
+    "source_px": [
+      480,
+      242,
+      526,
+      288
+    ],
+    "center": [
+      502.5,
+      265.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-shoot.png"
+  },
+  {
+    "name": "vehicle-horn-siren",
+    "source_px": [
+      36,
+      292,
+      82,
+      338
+    ],
+    "center": [
+      58.5,
+      314.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-horn-siren.png"
+  },
+  {
+    "name": "vehicle-activate-mission",
+    "source_px": [
+      184,
+      292,
+      230,
+      338
+    ],
+    "center": [
+      206.5,
+      315.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-activate-mission.png"
+  },
+  {
+    "name": "vehicle-camera",
+    "source_px": [
+      354,
+      292,
+      400,
+      338
+    ],
+    "center": [
+      377.5,
+      315.5
+    ],
+    "path": ".agents/tmp/57.0-icons/icons/vehicle-camera.png"
+  }
+]

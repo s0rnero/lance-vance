@@ -1,0 +1,5 @@
+WHO 0x480456 = func=0047fe8c FUN_0047fe8c size=3403 :: CALL 0x00473aa4
+WHO 0x4855A9 = func=004851c7 FUN_004851c7 size=2384 (noinsn)
+WHO 0x473AA4 = func=00473aa4 FUN_00473aa4 size=2846 :: PUSH EBX
+WHO 0x46DE00 = func=0046c58c FUN_0046c58c size=7092 (noinsn)
+WHO 0x46DE80 = func=0046c58c FUN_0046c58c size=7092 (noinsn)
