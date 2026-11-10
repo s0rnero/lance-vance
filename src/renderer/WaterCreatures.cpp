@@ -200,7 +200,13 @@ void CWaterCreatures::UpdateAll() {
 		case WATER_CREATURE_INIT: {
 			if ((playerPos - aWaterCreatures[i].m_pObj->GetPosition()).MagnitudeSqr() < SQR(75.0f)) {
 				if (aWaterCreatures[i].m_alpha < 255)
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+					// Los peces aparecian en 0,5 s a 120 FPS en vez de 2,1 s.
+					aWaterCreatures[i].m_alpha = Min(aWaterCreatures[i].m_alpha +
+						4 * (int)CTimer::GetLogicalFramesPassed(), 255);
+#else
 					aWaterCreatures[i].m_alpha = Min(aWaterCreatures[i].m_alpha + 4, 255);
+#endif
 				aWaterCreatures[i].m_pObj->SetRwObjectAlpha(aWaterCreatures[i].m_alpha);
 				CVector fwd = aWaterCreatures[i].m_pObj->GetRight();	// for some reason they used x for forward
 				fwd.Normalise();

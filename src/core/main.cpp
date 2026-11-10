@@ -1220,6 +1220,7 @@ ProcessSlowMode(void)
 	int16 leftTurnSignals = CPad::GetPad(0)->NewState.bLeftTurnSignals;
 	int16 rightTurnSignals = CPad::GetPad(0)->NewState.bRightTurnSignals;
 	int16 emergencyLights = CPad::GetPad(0)->NewState.bEmergencyLights;
+	int16 headlights = CPad::GetPad(0)->NewState.bHeadlights;
 #endif
 	int16 stop = true;
 	
@@ -1292,6 +1293,7 @@ ProcessSlowMode(void)
 	CPad::GetPad(0)->NewState.bLeftTurnSignals = leftTurnSignals;
 	CPad::GetPad(0)->NewState.bRightTurnSignals = rightTurnSignals;
 	CPad::GetPad(0)->NewState.bEmergencyLights = emergencyLights;
+	CPad::GetPad(0)->NewState.bHeadlights = headlights;
 #endif
 }
 

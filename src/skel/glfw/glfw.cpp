@@ -66,6 +66,30 @@ long _dwOperatingSystemVersion;
 #include <emscripten/html5.h>
 #include <emscripten/heap.h>
 #include <malloc.h>
+
+static void
+OdHeapProbe(void)
+{
+	void *blocks[64];
+	int n = 0, odNil = 0;
+	unsigned antes = (unsigned)(emscripten_get_heap_size() / 1048576);
+	for(int i = 0; i < 64; i++){
+		blocks[i] = malloc(1024*1024);
+		if(blocks[i] == nil){
+			odNil = 1;
+			break;
+		}
+		((char*)blocks[i])[0] = 1;
+		n++;
+	}
+	unsigned despues = (unsigned)(emscripten_get_heap_size() / 1048576);
+	for(int i = n-1; i >= 0; i--)
+		free(blocks[i]);
+	char t[160];
+	snprintf(t, sizeof t, "HEAPGROW antes=%uMB despues=%uMB bloques=%d crecio=%d nil=%d",
+		antes, despues, n, despues > antes, odNil);
+	ODTRACES(t);
+}
 #endif
 
 // This is defined on project-level, via premake5 or cmake
@@ -91,6 +115,8 @@ static RwBool		  WindowIconified = FALSE;
 int gWebFpsCap = 120;
 double gWebEngSum = 0.0, gWebEngMax = 0.0;
 int gWebEngN = 0;
+int gWebRafWin = 0;
+int gWebRafSkip = 0;
 
 static void
 WebRunTick(void)
@@ -2285,13 +2311,32 @@ InnerFrame(void)
 						odLastTickMs = odNow;
 					float odDelta = (float)(odNow - odLastTickMs);
 					odLastTickMs = odNow;
-					if (gWebFpsCap == 0)
-						WebRunTick();
-					else {
+					int odRaf = EM_ASM_INT({
+						try {
+							if ((window.__vcODBlock | 0) > 0) return -1;
+							return window.__vcRaf ? (window.__vcRaf.n | 0) : -1;
+						} catch (e) { return -1; }
+					});
+					bool odNewFrame = true;
+					if (odRaf >= 0) {
+						static int odRafLast = -1;
+						odNewFrame = (odRafLast < 0) || (odRaf != odRafLast);
+						odRafLast = odRaf;
+						if (!odNewFrame && odDelta > 100.0f)
+							odNewFrame = true;
+						if (odNewFrame)
+							gWebRafWin++;
+						else
+							gWebRafSkip++;
+					}
+					if (gWebFpsCap == 0) {
+						if (odNewFrame)
+							WebRunTick();
+					} else {
 						static float odFrameDebt = 0.0f;
 						float odFrameTime = 1000.0f / (float)gWebFpsCap;
 						odFrameDebt += odDelta;
-						if (odFrameDebt >= odFrameTime - 0.25f) {
+						if (odNewFrame && odFrameDebt >= odFrameTime - 0.25f) {
 							odFrameDebt -= odFrameTime;
 							if (odFrameDebt > odFrameTime)
 								odFrameDebt = odFrameTime;
@@ -2547,6 +2592,13 @@ EmscriptenTick(void)
 	              !CCutsceneMgr::IsRunning() && !CCutsceneMgr::IsCutsceneProcessing()) ? 1 : 0;
 	if ( (int)gGameState != lastState ) {
 		printf("[web] state %d -> %d @ tick %d\n", lastState, (int)gGameState, tickCount);
+		if ( (int)gGameState == GS_PLAYING_GAME && lastState != GS_PLAYING_GAME ) {
+			static int odPartIda = 0;
+			char odb[48];
+			odPartIda++;
+			snprintf(odb, sizeof odb, "PART ida=%d desde=%d", odPartIda, lastState);
+			ODTRACES(odb);
+		}
 		lastState = (int)gGameState;
 	}
 	if ( inGame != lastInGame ) {
@@ -2561,13 +2613,15 @@ EmscriptenTick(void)
 			static uint32 odLfLast = 0;
 			uint32 odLfNow = CTimer::GetLogicalFrameCounter();
 			uint32 odLf = odLfNow >= odLfLast ? odLfNow - odLfLast : 0;
-			snprintf(odft, sizeof odft, "WEBFT n=%d min=%.1f avg=%.1f max=%.1f step=%.3f cap=%d lf=%u sim=%d eng=%.1f/%.1f", odFtCount,
+			snprintf(odft, sizeof odft, "WEBFT n=%d min=%.1f avg=%.1f max=%.1f step=%.3f cap=%d lf=%u sim=%d eng=%.1f/%.1f raf=%d skip=%d", odFtCount,
 				odFtMin, odFtSum / odFtCount, odFtMax, CTimer::GetTimeStep(), gWebFpsCap, odLf, gWebEngN,
-				gWebEngN ? gWebEngSum / gWebEngN : 0.0, gWebEngMax);
+				gWebEngN ? gWebEngSum / gWebEngN : 0.0, gWebEngMax, gWebRafWin, gWebRafSkip);
 			odLfLast = odLfNow;
 			gWebEngSum = 0.0;
 			gWebEngMax = 0.0;
 			gWebEngN = 0;
+			gWebRafWin = 0;
+			gWebRafSkip = 0;
 			ODTRACES(odft);
 			odFtCount = 0;
 			odFtSum = 0.0;
@@ -2576,6 +2630,12 @@ EmscriptenTick(void)
 		}
 #ifdef __EMSCRIPTEN__
 		extern int gOdTexLive;
+		extern long long gOdTexBytes;
+		extern int gOdTexGenTotal;
+		extern int gOdTexDelTotal;
+		extern long long gOdTxdBytes;
+		extern int gOdTxdLive;
+		extern long long gOdTxdLiveBytes;
 		struct mallinfo odmi = mallinfo();
 		int odFsN = EM_ASM_INT({ return OD.census().n; });
 		int odFsMB = EM_ASM_INT({ return OD.census().mb; });
@@ -2594,17 +2654,18 @@ EmscriptenTick(void)
 			(unsigned)emscripten_get_heap_size(), (unsigned)odmi.uordblks,
 			odFsN, odFsMB, odLive, odEv, odEvMB, odFMB, odIdb, (int)CCutsceneMgr::IsRunning());
 		{
-			char odhb[240];
+			char odhb[448];
 			// `tex=` son las texturas GL vivas (creadas menos destruidas): si sube sin
 			// parar mientras se conduce, el motor no libera la GPU al descargar modelos.
 			snprintf(odhb, sizeof odhb,
-				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d ufs=%dMB heap=%uMB fade=%d canvas=%dx%d tex=%d mov=%d",
+				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d ufs=%dMB heap=%uMB used=%uMB free=%uMB fade=%d canvas=%dx%d tex=%d mov=%d texb=%lldMB texgen=%d texdel=%d txd=%d/%lldMB txdb=%lldMB",
 				(int)gGameState, inGame, (int)CCutsceneMgr::IsRunning(), (int)CCutsceneMgr::IsCutsceneProcessing(),
 				(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, odFsMB, odFsN, odEv, odEvMB, odFMB, odIdb, odUfs,
-				(unsigned)(emscripten_get_heap_size() / 1048576), (int)CDraw::FadeValue,
+				(unsigned)(emscripten_get_heap_size() / 1048576), (unsigned)(odmi.uordblks / 1048576), (unsigned)(odmi.fordblks / 1048576), (int)CDraw::FadeValue,
 				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.width : -1; }),
 				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.height : -1; }),
-				gOdTexLive, odMoving);
+				gOdTexLive, odMoving, (long long)(gOdTexBytes / 1048576), gOdTexGenTotal, gOdTexDelTotal,
+				gOdTxdLive, (long long)(gOdTxdBytes / 1048576), (long long)(gOdTxdLiveBytes / 1048576));
 			ODTRACES(odhb);
 		}
 		EM_ASM({
@@ -2855,6 +2916,8 @@ main(int argc, char *argv[])
 	initkeymap();
 
 #ifdef __EMSCRIPTEN__
+	if(EM_ASM_INT({ return /[?&]heapprobe=1/.test(location.search) ? 1 : 0; }))
+		OdHeapProbe();
 	OuterSetup();
 	emscripten_set_main_loop(EmscriptenTick, 0, 1);
 	return 0;

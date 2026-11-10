@@ -30,6 +30,10 @@
 #include "User.h"
 #include "World.h"
 #include "Zones.h"
+#ifdef __EMSCRIPTEN__
+#include "Timer.h"
+#include "ondemand.h"
+#endif
 
 int8 CRunningScript::ProcessCommands1200To1299(int32 command)
 {
@@ -894,6 +898,21 @@ int8 CRunningScript::ProcessCommands1300To1399(int32 command)
 	{
 		CollectParameters(&m_nIp, 2);
 		CPlayerInfo* pPlayerInfo = &CWorld::Players[ScriptParams[0]];
+#ifdef __EMSCRIPTEN__
+		// Unico escritor de la embriaguez: quien la pone y desde que script,
+		// para saber si el vaiven tras el skip es intencionado o un leftover.
+		{
+			static int s_lastDrunk = -1;
+			if (ScriptParams[1] != s_lastDrunk) {
+				s_lastDrunk = ScriptParams[1];
+				char t[192];
+				snprintf(t, sizeof t, "DRUNKSET val=%d player=%d ip=%u scr=%.8s frame=%u",
+					ScriptParams[1], ScriptParams[0], m_nIp, m_abScriptName,
+					CTimer::GetLogicalFrameCounter());
+				ODTRACES(t);
+			}
+		}
+#endif
 		pPlayerInfo->m_pPed->m_nDrunkenness = ScriptParams[1];
 		pPlayerInfo->m_pPed->m_nFadeDrunkenness = 0;
 		if (pPlayerInfo->m_pPed->m_nDrunkenness == 0)

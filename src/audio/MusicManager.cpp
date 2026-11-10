@@ -34,6 +34,60 @@ static void RetuneTrace(const char *kind, int presses, int counter, int veh)
 	snprintf(t, sizeof t, "RETUNE %s presses=%d cnt=%d veh=%d", kind, presses, counter, veh);
 	ODTRACES(t);
 }
+static void PsaTrace(const char *ev, int track, int playing)
+{
+	static int n = 0;
+	if (n >= 40) return;
+	n++;
+	char t[128];
+	snprintf(t, sizeof t, "PSA ev=%s track=%d playing=%d", ev, track, playing);
+	ODTRACES(t);
+}
+#endif
+
+#ifdef VICEEXT_RADIO_PSA_GUARD
+// CStream::Start() solo pide los buffers; el sonido llega en un Update() posterior.
+// Por eso la cota del anuncio se mide con el reloj de pared y no en ticks logicos.
+static uint32 odPsaArmedMs;
+static uint32 odPsaAnnounceRetryMs;
+static uint32 odPsaStationFailMs;
+
+// Rinde el anuncio y deja la emisora a punto de relanzarse: es exactamente el
+// restablecimiento que hace bajar y subir del coche cuando el anuncio casa la radio.
+static void
+odGiveUpAnnouncement(const char *ev, uint32 track)
+{
+	MusicManager.m_nAnnouncement = NO_TRACK;
+	MusicManager.m_bAnnouncementInProgress = FALSE;
+	g_bAnnouncementReadPosAlready = FALSE;
+	MusicManager.m_nNextTrack = NO_TRACK;
+	MusicManager.m_nPlayingTrack = NO_TRACK;
+	MusicManager.m_bTrackChangeStarted = FALSE;
+	MusicManager.m_bVerifyNextTrackStartedToPlay = FALSE;
+	MusicManager.m_nFrontendTrack = MusicManager.GetCarTuning();
+#ifdef __EMSCRIPTEN__
+	PsaTrace(ev, (int)track, (int)SampleManager.IsStreamPlaying());
+#endif
+}
+
+// Una emisora que no abre dejaba m_bTrackChangeStarted a TRUE para siempre:
+// m_nNextTrack ya no seguia a m_nFrontendTrack y cambiar de emisora no hacia nada.
+// Se apaga la emisora del coche para que el fichero roto no se reintente cada dos
+// frames; el jugador puede elegir otra a partir de aqui.
+static void
+odDeadStation(CVehicle *veh, uint32 track)
+{
+	MusicManager.m_bTrackChangeStarted = FALSE;
+	MusicManager.m_bVerifyNextTrackStartedToPlay = FALSE;
+	MusicManager.m_nNextTrack = NO_TRACK;
+	MusicManager.m_nPlayingTrack = NO_TRACK;
+	MusicManager.m_nFrontendTrack = NO_TRACK;
+	if (veh && veh->m_nRadioStation < NUM_RADIOS)
+		veh->m_nRadioStation = RADIO_OFF;
+#ifdef __EMSCRIPTEN__
+	PsaTrace("deadstation", (int)track, (int)SampleManager.IsStreamPlaying());
+#endif
+}
 #endif
 
 #if !defined FIX_BUGS && (defined RADIO_SCROLL_TO_PREV_STATION || defined RADIO_OFF_TEXT)
@@ -699,12 +753,20 @@ cMusicManager::ServiceGameMode()
 				if (CTimer::GetTimeInMilliseconds() - gRetuneStartMs > 600)
 					gRetuneCounter = 1;
 #endif
+#ifdef VICEEXT_AUDIO_WINDOWS_LOGICAL
+				// La secuencia de retune se gastaba en 0,17 s a 120 FPS y los pasos
+				// "== 19" y "== 1" se pisaban; se limita a un paso por tick logico.
+				if (CTimer::GetLogicalFramesPassed() != 0) {
+#endif
 				if(gRetuneCounter > 1)
 					gRetuneCounter--;
 				else if(gRetuneCounter == 1) {
 					m_bSetNextStation = TRUE;
 					gRetuneCounter = 0;
 				}
+#ifdef VICEEXT_AUDIO_WINDOWS_LOGICAL
+				}
+#endif
 			}
 #else
 			if (gNumRetunePresses != 0)
@@ -943,6 +1005,9 @@ cMusicManager::ComputeAmbienceVol(bool8 reset, uint8& outVolume)
 bool8
 cMusicManager::ServiceAnnouncement()
 {
+#ifdef VICEEXT_RADIO_PSA_GUARD
+	uint32 odPsaNow = CTimer::GetTimeInMillisecondsNonClipped();
+#endif
 	if (m_bAnnouncementInProgress) {
 		if (SampleManager.IsStreamPlaying())
 			m_nPlayingTrack = m_nNextTrack;
@@ -951,6 +1016,25 @@ cMusicManager::ServiceAnnouncement()
 			m_bAnnouncementInProgress = FALSE;
 			m_nPlayingTrack = NO_TRACK;
 		}
+#ifdef VICEEXT_RADIO_PSA_GUARD
+		// Sin sonido y con m_nPlayingTrack a NO_TRACK es el unico estado del que
+		// este bloque no sale por si solo: deja el anuncio "en curso" para siempre,
+		// y mientras lo esta ServiceGameMode corta el retune y no relanza emisora.
+		else if (odPsaNow - odPsaArmedMs > OD_PSA_SILENCE_MS)
+			odGiveUpAnnouncement("watchdog", m_nNextTrack);
+		else if (odPsaNow >= odPsaAnnounceRetryMs) {
+			SampleManager.SetStreamedFileLoopFlag(FALSE);
+			if (SampleManager.StartStreamedFile(m_nNextTrack, 0)) {
+				SampleManager.SetStreamedVolumeAndPan(MAX_VOLUME, 63, FALSE);
+				odPsaArmedMs = odPsaNow;
+				odPsaAnnounceRetryMs = 0u;
+#ifdef __EMSCRIPTEN__
+				PsaTrace("retryok", (int)m_nNextTrack, FALSE);
+#endif
+			} else
+				odPsaAnnounceRetryMs = odPsaNow + OD_PSA_ANNOUNCE_RETRY_MS;
+		}
+#endif
 		return TRUE;
 	} else if (SampleManager.IsStreamPlaying()) {
 		if (m_nPlayingTrack != NO_TRACK && !g_bAnnouncementReadPosAlready) {
@@ -965,7 +1049,17 @@ cMusicManager::ServiceAnnouncement()
 		m_nPlayingTrack = NO_TRACK;
 		m_nNextTrack = m_nAnnouncement;
 		SampleManager.SetStreamedFileLoopFlag(FALSE);
+#ifdef VICEEXT_RADIO_PSA_GUARD
+		bool8 odAnnounceStarted = SampleManager.StartStreamedFile(m_nNextTrack, 0);
+		if (!odAnnounceStarted)
+			odPsaAnnounceRetryMs = odPsaNow + OD_PSA_ANNOUNCE_RETRY_MS;
+		odPsaArmedMs = odPsaNow;
+#ifdef __EMSCRIPTEN__
+		PsaTrace(odAnnounceStarted ? "openok" : "openfail", (int)m_nNextTrack, FALSE);
+#endif
+#else
 		SampleManager.StartStreamedFile(m_nNextTrack, 0);
+#endif
 		SampleManager.SetStreamedVolumeAndPan(MAX_VOLUME, 63, FALSE);
 		m_bAnnouncementInProgress = TRUE;
 	}
@@ -1028,7 +1122,12 @@ cMusicManager::ServiceTrack(CVehicle *veh, CPed *ped)
 					uint32 pos = GetTrackStartPos(m_nNextTrack);
 					if (m_nNextTrack != NO_TRACK) {
 						SampleManager.SetStreamedFileLoopFlag(TRUE);
+#ifdef VICEEXT_RADIO_PSA_GUARD
+						uint32 odPsaNow = CTimer::GetTimeInMillisecondsNonClipped();
+						bool8 odStarted = SampleManager.StartStreamedFile(m_nNextTrack, pos);
+#else
 						SampleManager.StartStreamedFile(m_nNextTrack, pos);
+#endif
 						if (m_nFrontendTrack < STREAMED_SOUND_CITY_AMBIENT || m_nFrontendTrack > STREAMED_SOUND_AMBSIL_AMBIENT)
 						{
 							m_nVolumeLatency = 10;
@@ -1043,7 +1142,20 @@ cMusicManager::ServiceTrack(CVehicle *veh, CPed *ped)
 						}
 						if (m_nNextTrack < STREAMED_SOUND_CITY_AMBIENT)
 							m_nLastTrackServiceTime = CTimer::GetTimeInMillisecondsPauseMode();
+#ifdef VICEEXT_RADIO_PSA_GUARD
+						if (!odStarted) {
+							if (odPsaStationFailMs == 0u)
+								odPsaStationFailMs = odPsaNow;
+							else if (odPsaNow - odPsaStationFailMs > OD_PSA_STATION_DEAD_MS) {
+								odPsaStationFailMs = 0u;
+								odDeadStation(veh, m_nNextTrack);
+							}
+						} else
+							odPsaStationFailMs = 0u;
 						m_bVerifyNextTrackStartedToPlay = TRUE;
+#else
+						m_bVerifyNextTrackStartedToPlay = TRUE;
+#endif
 					}
 				}
 			} else {

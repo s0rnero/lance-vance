@@ -12,6 +12,10 @@
 #include "Camera.h"
 #include "MBlur.h"
 #include "postfx.h"
+#ifdef __EMSCRIPTEN__
+#include "Timer.h"
+#include "ondemand.h"
+#endif
 
 RwRaster *CPostFX::pFrontBuffer;
 RwRaster *CPostFX::pBackBuffer;
@@ -627,6 +631,34 @@ CPostFX::Render(RwCamera *cam, uint32 red, uint32 green, uint32 blue, uint32 blu
 		bJustInitialised = false;
 	}else
 		bJustInitialised = true;
+
+#ifdef __EMSCRIPTEN__
+	{
+		// El mareo que ve el jugador es alguno de estos cuatro; la fila dice cual,
+		// cuanto lleva activo y quien lo sostiene.
+		static uint32 s_odMareoNext;
+		static uint32 s_odMareoT0;
+		uint32 odNow = (uint32)emscripten_get_now();
+		bool odAbnormal = CMBlur::Drunkness > 0.001f || (int32)blur > 8 ||
+			type == MOTION_BLUR_SNIPER;
+		if (odAbnormal) {
+			if (s_odMareoT0 == 0)
+				s_odMareoT0 = odNow;
+			if (odNow >= s_odMareoNext) {
+				s_odMareoNext = odNow + 500u;
+				char odt[256];
+				snprintf(odt, sizeof odt, "MAREO ms=%u t=%u type=%d blur=%d add=%d drunk=%.3f trails=%d just=%d sw=%d fb=%d wide=%d red=%.1f zoom=%.3f",
+					odNow - s_odMareoT0, CTimer::GetTimeInMilliseconds(), type, (int32)blur, (int32)bluralpha,
+					CMBlur::Drunkness, UseTrailsMotionBlur(), bJustInitialised, EffectSwitch, pFrontBuffer != nil,
+					TheCamera.m_WideScreenOn, TheCamera.m_ScreenReductionPercentage, CDraw::GetCutsceneCameraZoom());
+				ODTRACES(odt);
+			}
+		} else {
+			s_odMareoT0 = 0;
+			s_odMareoNext = 0;
+		}
+	}
+#endif
 
 	POP_RENDERGROUP();
 

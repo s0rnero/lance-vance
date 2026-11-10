@@ -97,6 +97,7 @@ public:
 	bool    m_bCollisionChecksOn;
 	bool    m_bFixingBeta; //used for camera on a string
 	bool    m_bTheHeightFixerVehicleIsATrain;
+	bool    m_bNeedsSeeding;
 	bool    LookBehindCamWasInFront;
 	bool    LookingBehind;
 	bool    LookingLeft;

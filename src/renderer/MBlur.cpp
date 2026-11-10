@@ -485,16 +485,23 @@ CMBlur::OverlayRender(RwCamera *cam, RwRaster *raster, RwRGBA color, int32 type,
 			RwIm2DVertexSetIntRGBA(&Vertex[1], DrunkBlurRed, DrunkBlurGreen, DrunkBlurBlue, DrunkBlurAlpha);
 			RwIm2DVertexSetIntRGBA(&Vertex[2], DrunkBlurRed, DrunkBlurGreen, DrunkBlurBlue, DrunkBlurAlpha);
 			RwIm2DVertexSetIntRGBA(&Vertex[3], DrunkBlurRed, DrunkBlurGreen, DrunkBlurBlue, DrunkBlurAlpha);
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+			// La rampa de color del desenfoque era de un nivel por frame: el latido
+			// del mareo salia 4 veces mas rapido a 120 FPS.
+			int odPaso = (int)CTimer::GetLogicalFramesPassed();
+#else
+			int odPaso = 1;
+#endif
 			if(DrunkBlurIncrement){
-				if(DrunkBlurRed < 255) DrunkBlurRed++;
-				if(DrunkBlurGreen < 255) DrunkBlurGreen++;
-				if(DrunkBlurBlue < 255) DrunkBlurBlue++;
+				DrunkBlurRed = Min((int)DrunkBlurRed + odPaso, 255);
+				DrunkBlurGreen = Min((int)DrunkBlurGreen + odPaso, 255);
+				DrunkBlurBlue = Min((int)DrunkBlurBlue + odPaso, 255);
 				if(DrunkBlurRed == 255)
 					DrunkBlurIncrement = 0;
 			}else{
-				if(DrunkBlurRed > 128) DrunkBlurRed--;
-				if(DrunkBlurGreen > 128) DrunkBlurGreen--;
-				if(DrunkBlurBlue > 128) DrunkBlurBlue--;
+				DrunkBlurRed = Max((int)DrunkBlurRed - odPaso, 128);
+				DrunkBlurGreen = Max((int)DrunkBlurGreen - odPaso, 128);
+				DrunkBlurBlue = Max((int)DrunkBlurBlue - odPaso, 128);
 				if(DrunkBlurRed == 128)
 					DrunkBlurIncrement = 1;
 			}

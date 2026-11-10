@@ -4,6 +4,8 @@
 #include "Frontend.h"
 #include "Camera.h"
 #include "CutsceneMgr.h"
+#include "Timer.h"
+#include "ondemand.h"
 #include "WidescreenFixOptions.h"
 
 float CDraw::ms_fAspectRatio = DEFAULT_ASPECT_RATIO;
@@ -212,23 +214,37 @@ void
 CDraw::SetFOV(float fov)
 {
 #ifdef ASPECT_RATIO_SCALE
-	if (g_bWSPOptionDontTouchFOV)
+	if (CCutsceneMgr::IsRunning())
 		ms_fScaledFOV = fov;
-	else if (!CCutsceneMgr::IsRunning()) {
+	else if (g_bWSPOptionDontTouchFOV)
+		ms_fScaledFOV = fov;
+	else {
 #ifdef VICEEXT_WFP_FOV_MULTIPLIERS
 		ms_fScaledFOV = ConvertFOV(fov) * GetFOVMultiplier();
 #else
 		ms_fScaledFOV = ConvertFOV(fov);
 #endif
-		if (!TheCamera.m_WideScreenOn)
-			ms_fCutsceneCameraZoom = 1.0f;
-	} else {
-		// 30/10 (T55): la cinematica tambien pasa por ConvertFOV. Antes, con
-		// `CutsceneFOV` apagado, se metia el FOV horizontal de 4:3 tal cual en
-		// una camara 16:9 y la escena salia estirada en horizontal.
-		float fconverted = ConvertFOV(fov);
-		ms_fScaledFOV = g_bWSPOptionCutsceneFOV ? ConvertFOVforCutscene(fconverted) : fconverted;
 	}
+#ifdef VICEEXT_FOV_TRACE
+	{
+		// T28: antes este instrumento salia cada 250 ms aunque el valor no se
+		// moviera, y en una sesion de 5 minutos dejaba 1 295 lineas. Ahora nombra
+		// solo los cambios reales del valor publicado y los flancos de cinematica,
+		// que es exactamente lo que hay que ver para probar que el FOV no se mueve.
+		static float odFovLnVal = 0.0f;
+		static int odFovLnCut = -1;
+		int odFovLnCutAhora = CCutsceneMgr::IsRunning() ? 1 : 0;
+		if (Abs(ms_fScaledFOV - odFovLnVal) >= 0.05f || odFovLnCutAhora != odFovLnCut) {
+			char odt[112];
+			snprintf(odt, sizeof odt, "FOVLN raw=%.1f scaled=%.1f cut=%d mode=%d",
+				(double)fov, (double)ms_fScaledFOV, odFovLnCutAhora,
+				(int)TheCamera.Cams[TheCamera.ActiveCam].Mode);
+			ODTRACES(odt);
+			odFovLnCut = odFovLnCutAhora;
+			odFovLnVal = ms_fScaledFOV;
+		}
+	}
+#endif
 #endif
 	ms_fFOV = fov;
 }

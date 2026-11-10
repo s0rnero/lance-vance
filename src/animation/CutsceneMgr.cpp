@@ -4,6 +4,7 @@
 #include "CutsceneMgr.h"
 #include "Directory.h"
 #include "Camera.h"
+#include "MBlur.h"
 #include "Streaming.h"
 #include "FileMgr.h"
 #include "main.h"
@@ -300,6 +301,18 @@ void
 CCutsceneMgr::FinishCutscene()
 {
 	ms_wasCutsceneSkipped = true;
+#ifdef __EMSCRIPTEN__
+	{
+		char odt[280];
+		snprintf(odt, sizeof odt, "CUTSKIP fade=%d blurtype=%d mb=%d add=%d shake=%.2f red=%.1f wide=%d drunk=%.3f fov=%.1f sfov=%.1f zoom=%.3f mode=%d",
+			(int)CDraw::FadeValue, TheCamera.m_BlurType, TheCamera.m_motionBlur,
+			TheCamera.m_imotionBlurAddAlpha, TheCamera.m_fCamShakeForce,
+			TheCamera.m_ScreenReductionPercentage, TheCamera.m_WideScreenOn, CMBlur::Drunkness,
+			(double)TheCamera.Cams[TheCamera.ActiveCam].FOV, (double)CDraw::GetScaledFOV(),
+			(double)CDraw::GetCutsceneCameraZoom(), (int)TheCamera.Cams[TheCamera.ActiveCam].Mode);
+		ODTRACES(odt);
+	}
+#endif
 	if (bCamLoaded) {
 		CCutsceneMgr::ms_cutsceneTimer = TheCamera.GetCutSceneFinishTime() * 0.001f;
 		TheCamera.FinishCutscene();
@@ -308,22 +321,6 @@ CCutsceneMgr::FinishCutscene()
 	FindPlayerPed()->bIsVisible = true;
 	CWorld::Players[CWorld::PlayerInFocus].MakePlayerSafe(false);
 
-	// 30.0/T60: al saltar una cinemática el guion ya ha hecho FADEOUT y su
-	// FADEIN no siempre llega a ejecutarse; CDraw::FadeValue se queda en 255,
-	// `CCamera::ProcessFade` no lo toca porque m_bFading ya es false, y con el
-	// fade a tope el motor deja de dibujar la escena (dc=0). Síntoma: pantalla
-	// negra con el juego vivo y el jugador ya en la calle. Se devuelve la
-	// pantalla aquí, que es el único sitio que sabe que ha habido un salto.
-	if (CDraw::FadeValue > 0) {
-#ifdef __EMSCRIPTEN__
-		{
-			char odt[96];
-			snprintf(odt, sizeof odt, "CUTFADE skip fade=%d -> fadein", (int)CDraw::FadeValue);
-			ODTRACES(odt);
-		}
-#endif
-		TheCamera.Fade(0.5f, FADE_IN);
-	}
 }
 
 void
@@ -612,6 +609,9 @@ CCutsceneMgr::Update(void)
 				|| (CGame::playingIntro && CPad::GetPad(0)->GetStartJustDown())
 				|| CPad::GetPad(0)->GetLeftMouseJustDown()
 				|| CPad::GetPad(0)->GetEnterJustDown()
+#ifdef VICEEXT_TOUCH_CONTROLS
+				|| CPad::ConsumeTouchSkip()
+#endif
 				|| CPad::GetPad(0)->GetCharJustDown(' '))
 					FinishCutscene();
 		}

@@ -207,11 +207,25 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 	// Render Peds in vehicle before vehicle itself
 	if(e->IsVehicle()){
 		veh = (CVehicle*)e;
+#ifdef VICEEXT_VEH_FADE_SCALED
+		// Los montados se dibujaban con alpha plena mientras el coche todavia
+		// era transparente: un ped sentado en el aire durante la rampa de
+		// entrada del trafico. Por debajo de OD_SEAT_GHOST_ALPHA del coche no
+		// se ve ni un pixel, asi que tampoco a quien lo conduce.
+		if(CVisibilityPlugins::GetClumpAlpha((RpClump*)e->m_rwObject) >= OD_SEAT_GHOST_ALPHA) {
+			if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING)
+				veh->pDriver->Render();
+			for(i = 0; i < 8; i++)
+				if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING)
+					veh->pPassengers[i]->Render();
+		}
+#else
 		if(veh->pDriver && veh->pDriver->m_nPedState == PED_DRIVING)
 			veh->pDriver->Render();
 		for(i = 0; i < 8; i++)
 			if(veh->pPassengers[i] && veh->pPassengers[i]->m_nPedState == PED_DRIVING)
 				veh->pPassengers[i]->Render();
+#endif
 		SetCullMode(rwCULLMODECULLNONE);
 	}
 	e->Render();
@@ -836,28 +850,76 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 }
 
 #ifdef __EMSCRIPTEN__
+// Vigila cuanto tiempo lleva un edificio grande dibujando su LOD con el gemelo
+// hi-res sin cargar. LODSTUCK se repite cada 600 frames mientras dure; LODHEAL
+// marca el momento en que el gemelo por fin tiene geometria.
 static void
 OdLodLeftDiag(int32 model, CSimpleModelInfo *nonLOD, float dist)
 {
-	static int32 odVistos[48];
-	static int odNVistos;
-	static int odShown;
-	int i;
-	if (odNVistos >= (int)(sizeof odVistos / sizeof odVistos[0]))
-		return;
-	for (i = 0; i < odNVistos; i++)
-		if (odVistos[i] == model)
+	struct Slot {
+		int32 model;
+		int32 twin;
+		uint32 first;
+		uint32 last;
+		uint32 reportAt;
+		bool used;
+	};
+	static Slot slots[24];
+	static int stuckRows;
+	static int healRows;
+	uint32 frame = CTimer::GetLogicalFrameCounter();
+	char t[260];
+	int i, slot, twin;
+
+	for(i = 0; i < 24; i++)
+		if(slots[i].used && slots[i].model != model && frame - slots[i].last > 120u)
+			slots[i].used = false;	// el jugador se alejo: no es evidencia
+	slot = -1;
+	for(i = 0; i < 24; i++){
+		if(!slots[i].used){
+			if(slot < 0) slot = i;
+			continue;
+		}
+		if(slots[i].model != model) continue;
+		slots[i].last = frame;
+		if(nonLOD && nonLOD->GetRwObject()){
+			if(healRows < 40){
+				healRows++;
+				snprintf(t, sizeof t, "LODHEAL model=%d gemelo=%d frames=%u nreq=%d prio=%d",
+					model, slots[i].twin, frame - slots[i].first,
+					CStreaming::ms_numModelsRequested, CRenderer::m_loadingPriority ? 1 : 0);
+				ODTRACES(t);
+			}
+			slots[i].used = false;
+			if(slot < 0) slot = i;
 			return;
-	odVistos[odNVistos++] = model;
-	if (odShown >= 40)
+		}
+		if(frame >= slots[i].reportAt && stuckRows < 40){
+			stuckRows++;
+			slots[i].reportAt = frame + 600u;
+			snprintf(t, sizeof t,
+				"LODSTUCK model=%d gemelo=%d dist=%.1f frames=%u alpha=%d estado=%d nreq=%d prio=%d",
+				model, slots[i].twin, dist, frame - slots[i].first,
+				nonLOD ? nonLOD->m_alpha : -1,
+				CStreaming::ms_aInfoForModel[slots[i].twin].m_loadState,
+				CStreaming::ms_numModelsRequested, CRenderer::m_loadingPriority ? 1 : 0);
+			ODTRACES(t);
+		}
 		return;
-	odShown++;
-	char t[200];
-	snprintf(t, sizeof t, "LODLEFT model=%d dist=%.1f relacion=%d rwobj=%d alpha=%d",
-		model, dist, nonLOD != nil,
-		nonLOD ? (nonLOD->GetRwObject() != nil) : 0,
-		nonLOD ? nonLOD->m_alpha : -1);
-	ODTRACES(t);
+	}
+	if(slot < 0)
+		return;
+	twin = -1;
+	if(nonLOD && CModelInfo::GetModelInfo(nonLOD->GetModelName(), &twin) == nil)
+		return;
+	if(twin < 0)
+		return;
+	slots[slot].model = model;
+	slots[slot].twin = twin;
+	slots[slot].first = frame;
+	slots[slot].last = frame;
+	slots[slot].reportAt = frame + 180u;
+	slots[slot].used = true;
 }
 #endif
 
@@ -1547,7 +1609,11 @@ CRenderer::ScanSectorList(CPtrList *lists)
 				break;
 			case VIS_STREAMME:
 				if(!CStreaming::ms_disableStreaming)
+#ifdef __EMSCRIPTEN__
+					if(CStreaming::ms_numModelsRequested < 32)
+#else
 					if(!m_loadingPriority || CStreaming::ms_numModelsRequested < 10)
+#endif
 						CStreaming::RequestModel(ent->GetModelIndex(), 0);
 				break;
 			}

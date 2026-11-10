@@ -337,7 +337,42 @@ void CHud::Draw()
 		return;
 #endif
 
-	if (m_Wants_To_Draw_Hud && !TheCamera.m_WideScreenOn) {
+#ifdef __EMSCRIPTEN__
+	// Una fila por cambio de estado del porton del HUD, no por frame.
+	{
+		static int s_lastGate[8];
+		int gate[8];
+		gate[0] = m_Wants_To_Draw_Hud;
+		gate[1] = TheCamera.m_WideScreenOn;
+		gate[2] = CCutsceneMgr::IsRunning();
+		gate[3] = CCutsceneMgr::IsCutsceneProcessing();
+		gate[4] = CCutsceneMgr::WasCutsceneSkipped();
+		gate[5] = CGame::playingIntro;
+		gate[6] = CReplay::IsPlayingBack();
+		gate[7] = TheCamera.Cams[0].Mode;
+		bool changed = false;
+		for (int i = 0; i < 8; i++)
+			if (gate[i] != s_lastGate[i]) {
+				s_lastGate[i] = gate[i];
+				changed = true;
+			}
+		if (changed) {
+			static int n = 0;
+			if (n < 60) {
+				n++;
+				char t[192];
+				snprintf(t, sizeof t, "HUDGATE wants=%d wide=%d cutrun=%d cutproc=%d cutskip=%d intro=%d replay=%d cam=%d",
+					gate[0], gate[1], gate[2], gate[3], gate[4], gate[5], gate[6], gate[7]);
+				ODTRACES(t);
+			}
+		}
+	}
+#endif
+
+	// La cinematica tapa el HUD con la pantalla ancha; T117 apaga la ancha al
+	// saltarla y el HUD volvia con la mision aun sin empezar: se corta tambien
+	// por el estado de la cinematica.
+	if (m_Wants_To_Draw_Hud && !TheCamera.m_WideScreenOn && !CCutsceneMgr::IsRunning()) {
 		// unused statics in here
 		bool DrawCrossHair = false;
 		bool CrossHairHidesHud = false;
@@ -1053,8 +1088,14 @@ void CHud::Draw()
 					nMediaLevelCounter = 100;
 				}
 
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+				// El rotulo de emisora se apagaba en 0,83 s a 120 FPS en vez de 3,3 s.
+				if (nMediaLevelCounter != 0) {
+					nMediaLevelCounter -= CTimer::GetLogicalFramesPassed();
+#else
 				if (nMediaLevelCounter != 0) {
 					nMediaLevelCounter--;
+#endif
 					UnicodeMakeUpperCase(gUString, CStats::FindChaseString(fCurAttentionLevel));
 					CFont::PrintString(HUD_SCALE_FROM_RIGHT(110.0f), HUD_SCALE_Y(138.0f), gUString);
 				}
@@ -1311,10 +1352,19 @@ void CHud::Draw()
 
 				TimerOnLastFrame = true;
 
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+				// El parpadeo del cronometro duraba 0,42 s a 120 FPS en vez de 1,67 s.
+				if (TimerFlashTimer != 0) {
+					TimerFlashTimer += CTimer::GetLogicalFramesPassed();
+					if (TimerFlashTimer > 50)
+						TimerFlashTimer = 0;
+				}
+#else
 				if (TimerFlashTimer != 0) {
 					if (++TimerFlashTimer > 50)
 						TimerFlashTimer = 0;
 				}
+#endif
 
 				if (FRAMECOUNTER & 4 || TimerFlashTimer == 0) {
 					AsciiToUnicode(CUserDisplay::OnscnTimer.m_sClocks[0].m_aClockBuffer, sTimer);
@@ -1349,10 +1399,18 @@ void CHud::Draw()
 
 					CounterOnLastFrame[i] = true;
 
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+					if (CounterFlashTimer[i] != 0) {
+						CounterFlashTimer[i] += CTimer::GetLogicalFramesPassed();
+						if (CounterFlashTimer[i] > 50)
+							CounterFlashTimer[i] = 0;
+					}
+#else
 					if (CounterFlashTimer[i] != 0) {
 						if (++CounterFlashTimer[i] > 50)
 							CounterFlashTimer[i] = 0;
 					}
+#endif
 
 					if (FRAMECOUNTER & 4 || CounterFlashTimer[i] == 0) {
 						if (CUserDisplay::OnscnTimer.m_sCounters[i].m_nType == COUNTER_DISPLAY_NUMBER) {
@@ -1419,6 +1477,11 @@ void CHud::Draw()
 			if (FrontEndMenuManager.m_PrefsRadarMode != 1) {
 				CRect rect(0.0f, 0.0f, SCREEN_SCALE_X(RADAR_WIDTH), SCREEN_SCALE_Y(RADAR_HEIGHT));
 				
+#ifdef VICEEXT_TOUCH_CONTROLS
+				if (CPad::IsTouchControlsActive())
+					rect.Translate(SCREEN_SCALE_X_FIX(8.0f) + HUD_ANCHOR_OFFSET, SCREEN_SCALE_Y(12.0f));
+				else
+#endif
 				rect.Translate(SCREEN_SCALE_X_FIX(RADAR_LEFT) + HUD_ANCHOR_OFFSET, SCREEN_SCALE_FROM_BOTTOM(RADAR_BOTTOM + RADAR_HEIGHT));
 
 #ifdef FIX_BUGS
@@ -1727,7 +1790,20 @@ void CHud::Draw()
 					CFont::SetDropShadowPosition(0);
 					CFont::SetBackgroundColor(CRGBA(0, 0, 0, fAlpha * 0.9f));
 					CFont::SetColor(CRGBA(175, 175, 175, 255));
-					CFont::PrintString(SCREEN_SCALE_X(34.0f) + HUD_ANCHOR_OFFSET, SCREEN_SCALE_Y(28.0f + (150.0f - PagerXOffset) * 0.6f), m_HelpMessageToPrint);
+#ifdef VICEEXT_TOUCH_CONTROLS
+					if (CPad::IsTouchControlsActive()) {
+						const float touchLeft = SCREEN_SCALE_X(8.0f + RADAR_WIDTH + 10.0f);
+						const float touchTop = SCREEN_SCALE_Y(12.0f);
+						const float touchRight = Min(SCREEN_WIDTH - SCREEN_SCALE_X(16.0f), touchLeft + SCREEN_SCALE_X(220.0f));
+						const float touchBottom = touchTop + SCREEN_SCALE_Y(96.0f);
+						CSprite2d::DrawRect(CRect(touchLeft, touchTop, touchRight, touchBottom), CRGBA(0, 0, 0, (uint8)(fAlpha * 0.72f)));
+						CFont::SetBackgroundOff();
+						CFont::SetWrapx(touchRight - SCREEN_SCALE_X(10.0f));
+						CFont::SetColor(CRGBA(255, 255, 255, 255));
+						CFont::PrintString(touchLeft + SCREEN_SCALE_X(10.0f), touchTop + SCREEN_SCALE_Y(10.0f), m_HelpMessageToPrint);
+					} else
+#endif
+						CFont::PrintString(SCREEN_SCALE_X(34.0f) + HUD_ANCHOR_OFFSET, SCREEN_SCALE_Y(28.0f + (150.0f - PagerXOffset) * 0.6f), m_HelpMessageToPrint);
 					CFont::SetAlphaFade(255.0f);
 					CFont::SetWrapx(SCREEN_WIDTH);
 				}

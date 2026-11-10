@@ -322,6 +322,10 @@ void ReadFeatures(void)
 	bWantedStarsHideOnScreenWhenThereIsNoSearch = ReadAndGetFeature("WantedStarsHideOnScreenWhenThereIsNoSearch");
 	bRemoveMoneyZerosInTheHud = ReadAndGetFeature("RemoveMoneyZerosInTheHud");
 	bPlayerDoesntBounceAwayFromMovingCar = ReadAndGetFeature("PlayerDoesntBounceAwayFromMovingCar");
+	// StandardCarsUseTurnSignals ya no gobierna la ruta de lámpara propia del
+	// intermitente: en el port decide la lente medida costado a costado
+	// (Automobile.cpp, ADR-021). Se sigue leyendo porque lo escribe el
+	// features.ini del Vice Extended.
 	bStandardCarsUseTurnSignals = ReadAndGetFeature("StandardCarsUseTurnSignals");
 	bCameraShakeInVehicleAtHighSpeed = ReadAndGetFeature("CameraShakeInVehicleAtHighSpeed");
 	bMilitaryFiringFromTankAtPlayer = ReadAndGetFeature("MilitaryFiringFromTankAtPlayer");

@@ -53,6 +53,7 @@ public:
 
 	static void SetFOV(float fov);
 	static float GetFOV(void) { return ms_fFOV; }
+	static float GetCutsceneCameraZoom(void) { return ms_fCutsceneCameraZoom; }
 #ifdef ASPECT_RATIO_SCALE
 	static float GetScaledFOV(void) { return ms_fScaledFOV; }
 #else

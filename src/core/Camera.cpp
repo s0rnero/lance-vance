@@ -96,6 +96,36 @@ const float ZOOM_ONE_DISTANCE[] = { -0.6f, 0.05f, -3.2f, 0.05f, -2.41f };
 const float ZOOM_TWO_DISTANCE[] = { 1.9f, 1.4f, 0.65f, 1.9f, 6.49f };
 const float ZOOM_THREE_DISTANCE[] = { 15.9f, 15.9f, 15.9f, 15.9f, 25.25f };
 
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+// Plan 56.0 T4: el hueco de zoom que es primera persona DENTRO del vehiculo.
+// Vale para los dos: el clasico (camara en el hueco del asiento, mirando por el
+// salpicadero) y el real del port (camara en la cabeza del conductor), que en
+// un modelo sin interior se ven los dos flotando fuera de la carroceria.
+static bool
+ViceExtZoomIsFirstPerson(int zoom)
+{
+	return zoom == CAM_ZOOM_1STPRS
+#ifdef VICEEXT_FIRST_PERSON
+		|| zoom == CAM_ZOOM_REAL_1ST_PERSON
+#endif
+		;
+}
+
+// El siguiente hueco valido en la direccion `dir` (-1 sube, +1 baja) saltandose
+// los de primera persona. `dir` manda porque el anillo es circular: subiendo
+// desde el hueco 1a persona se sale por el final (cinematica) y bajando se sale
+// por detras (zoom 1).
+static int
+ViceExtSkipFirstPersonZoom(int zoom, int dir)
+{
+	if (!ViceExtZoomIsFirstPerson(zoom))
+		return zoom;
+	if (zoom == CAM_ZOOM_1STPRS)
+		return dir < 0 ? CAM_ZOOM_CINEMATIC : CAM_ZOOM_1;
+	return dir < 0 ? CAM_ZOOM_3 : CAM_ZOOM_CINEMATIC;
+}
+#endif
+
 #ifdef FREE_CAM
 const float LCS_ZOOM_ONE_DISTANCE[] = { -1.0f, -0.2f, -3.2f, 0.05f, -2.41f };
 const float LCS_ZOOM_TWO_DISTANCE[] = { 2.0f, 2.2f, 1.65f, 2.9f, 6.49f };
@@ -677,8 +707,15 @@ CCamera::Process(void)
 		m_bJustInitalised = false;
 	}
 	m_CameraSpeedSoFar += (GetPosition() - m_PreviousCameraPosition).Magnitude();
+#ifdef VICEEXT_CAM_WINDOWS_LOGICAL
+	// La ventana de 4 frames media la velocidad de camara en tiempo real;
+	// en ticks logicos el valor sale igual a 30 que a 120 FPS.
+	m_iNumFramesSoFar += CTimer::GetLogicalFramesPassed();
+	if(m_iNumFramesSoFar >= m_iWorkOutSpeedThisNumFrames){
+#else
 	m_iNumFramesSoFar++;
 	if(m_iNumFramesSoFar == m_iWorkOutSpeedThisNumFrames){
+#endif
 		m_CameraAverageSpeed = m_CameraSpeedSoFar / m_iWorkOutSpeedThisNumFrames;
 		m_CameraSpeedSoFar = 0.0f;
 		m_iNumFramesSoFar = 0;
@@ -786,6 +823,12 @@ CCamera::CamControl(void)
 					// disable topdown here
 					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
 						CarZoomIndicator--;
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+					// Plan 56.0 T4: en un modelo sin interior el hueco de la 1a
+					// persona no se ofrece: se salta en la direccion de la tecla.
+					if (((CVehicle*)pTargetEntity)->IsInteriorlessVehicle())
+						CarZoomIndicator = ViceExtSkipFirstPersonZoom(CarZoomIndicator, -1);
+#endif
 
 #ifdef VICEEXT_FIRST_PERSON
 					if (CarZoomIndicator == CAM_ZOOM_REAL_1ST_PERSON)
@@ -803,6 +846,10 @@ CCamera::CamControl(void)
 					CarZoomIndicator++;
 					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
 						CarZoomIndicator++;
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+					if (((CVehicle*)pTargetEntity)->IsInteriorlessVehicle())
+						CarZoomIndicator = ViceExtSkipFirstPersonZoom(CarZoomIndicator, +1);
+#endif
 
 #ifdef VICEEXT_FIRST_PERSON
 					if (CarZoomIndicator == CAM_ZOOM_REAL_1ST_PERSON)
@@ -822,6 +869,15 @@ CCamera::CamControl(void)
 					if(CarZoomIndicator < CAM_ZOOM_1STPRS) CarZoomIndicator = CAM_ZOOM_CINEMATIC;
 					else if(CarZoomIndicator > CAM_ZOOM_CINEMATIC) CarZoomIndicator = CAM_ZOOM_1STPRS;
 				}
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+				// Plan 56.0 T4: el reajuste de arriba y el sincronismo de la 1a
+				// persona real pueden dejar el indicador en un hueco que en este
+				// modelo no existe; aqui se corta tambien el caso "subo al autobus
+				// con la preferencia en 1a persona", que no pasa por la tecla.
+				if (((CVehicle*)pTargetEntity)->IsInteriorlessVehicle() &&
+				    ViceExtZoomIsFirstPerson(CarZoomIndicator))
+					CarZoomIndicator = CAM_ZOOM_1;
+#endif
 
 				if(m_bFailedCullZoneTestPreviously)
 					if(CarZoomIndicator != CAM_ZOOM_1STPRS && CarZoomIndicator != CAM_ZOOM_TOPDOWN)
@@ -2886,6 +2942,9 @@ CCamera::ProcessWideScreenOn(void)
 		m_ScreenReductionPercentage = 0.0f;
 		m_fFOV_Wide_Screen = 0.0f;
 		m_fWideScreenReductionAmount = 0.0f;
+		// El zoom solo se escribe en la rama contraria: sin esto el FOV de la
+		// cinematica se queda aplicado al juego entero.
+		CDraw::SetCutsceneCameraZoom(1.0f);
 #ifdef VICEEXT_WFP_CUTSCENE_BORDER_ANIM
 		s_fCutsceneBordersMult = 0.0f;
 		s_uiCutsceneBordersLastTick = 0;

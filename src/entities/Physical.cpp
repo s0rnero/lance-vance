@@ -20,118 +20,9 @@
 #include "Bike.h"
 #include "Pickups.h"
 #include "Physical.h"
+#include "ondemand.h"
 #ifdef VICEEXT_IMPROVED_TECH_PART
 #include "Explosion.h"
-#endif
-
-#ifdef __EMSCRIPTEN__
-#include "ondemand.h"
-
-static const char *
-ViceExtPushModelName(CPhysical *e)
-{
-	CBaseModelInfo *mi = CModelInfo::GetModelInfo(e->GetModelIndex());
-	return mi ? mi->GetModelName() : "?";
-}
-
-// Traza del empujon peaton<->vehiculo. Se escribe como mucho una vez cada
-// 100 ms por `via` (y dos por frame como tope), para que una sesion normal no
-// llene el odtrace.log. Los campos permiten comparar masa efectiva, impulso y
-// cambio de velocidad por evento a 30 y 120 FPS.
-static void
-ViceExtPushTrace(const char *via, const char *caso, CPhysical *A, CPhysical *B,
-	float massFactorA, float massFactorB, float mA, float mB,
-	float speedA, float speedB, float speedSum,
-	float impulseA, float impulseB,
-	const CVector &fA, const CVector &fB,
-	float pushScale, bool ispedcontactA, bool ispedcontactB)
-{
-	static uint32 s_odPushLastMs = 0;
-	static uint32 s_odPushLastFrame = 0;
-	static uint8 s_odPushFrameCount = 0;
-	static const char *s_odPushLastVia = nil;
-
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	uint32 frame = CTimer::GetFrameCounter();
-	if(frame != s_odPushLastFrame){
-		s_odPushLastFrame = frame;
-		s_odPushFrameCount = 0;
-	}
-	if(s_odPushFrameCount >= 2)
-		return;
-	if(s_odPushFrameCount > 0 && via == s_odPushLastVia && now - s_odPushLastMs < 100)
-		return;
-
-	s_odPushLastVia = via;
-	s_odPushLastMs = now;
-	s_odPushFrameCount++;
-
-	float dvAx = A->m_fMass > 0.0f ? fA.x / A->m_fMass : 0.0f;
-	float dvAy = A->m_fMass > 0.0f ? fA.y / A->m_fMass : 0.0f;
-	float dvAz = A->m_fMass > 0.0f ? fA.z / A->m_fMass : 0.0f;
-	float dvBx = B->m_fMass > 0.0f ? fB.x / B->m_fMass : 0.0f;
-	float dvBy = B->m_fMass > 0.0f ? fB.y / B->m_fMass : 0.0f;
-	float dvBz = B->m_fMass > 0.0f ? fB.z / B->m_fMass : 0.0f;
-
-	char t[640];
-	snprintf(t, sizeof t,
-		"VICEEXT push via=%s case=%s frame=%u t=%.2f dt=%.4f fix=%.3f "
-		"A=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f ped=%d player=%d "
-		"B=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f vehicle=%d "
-		"mfA=%.1f mfB=%.1f effA=%.0f effB=%.0f sA=%.3f sB=%.3f sSum=%.3f "
-		"impA=%.1f impB=%.1f fA=%.2f,%.2f,%.2f fB=%.2f,%.2f,%.2f "
-		"dvA=%.4f,%.4f,%.4f dvB=%.4f,%.4f,%.4f scale=%.3f "
-		"contactA=%d contactB=%d wallA=%d wallB=%d statusA=%d statusB=%d",
-		via, caso, (unsigned)frame, CTimer::GetTimeInMilliseconds() * 0.001f,
-		CTimer::GetTimeStep(), CTimer::GetTimeStepFix(),
-		ViceExtPushModelName(A), (int)A->GetModelIndex(), A->m_fMass, A->m_fTurnMass,
-		A->m_vecMoveSpeed.Magnitude(), A->IsPed() ? 1 : 0,
-		(A->IsPed() && ((CPed*)A)->IsPlayer()) ? 1 : 0,
-		ViceExtPushModelName(B), (int)B->GetModelIndex(), B->m_fMass, B->m_fTurnMass,
-		B->m_vecMoveSpeed.Magnitude(), B->IsVehicle() ? 1 : 0,
-		massFactorA, massFactorB, mA, mB, speedA, speedB, speedSum,
-		impulseA, impulseB, fA.x, fA.y, fA.z, fB.x, fB.y, fB.z,
-		dvAx, dvAy, dvAz, dvBx, dvBy, dvBz, pushScale,
-		ispedcontactA ? 1 : 0, ispedcontactB ? 1 : 0,
-		A->bHasHitWall ? 1 : 0, B->bHasHitWall ? 1 : 0,
-		(int)A->GetStatus(), (int)B->GetStatus());
-	ODTRACES(t);
-}
-
-// La correccion posicional de TestForCollision mueve al coche cuando el que
-// procesa la colision es el coche (A=vehiculo, B=peaton). Esta traza mide ese
-// desplazamiento aparte del impulso.
-static void
-ViceExtPushShiftTrace(CPhysical *car, CPhysical *ped, float shiftScale,
-	float depth, const CVector &shift, int numCollisions, bool secondShift)
-{
-	static uint32 s_odShiftLastMs = 0;
-	static const CPhysical *s_odShiftLastCar = nil;
-
-	uint32 now = CTimer::GetTimeInMilliseconds();
-	if(car == s_odShiftLastCar && now - s_odShiftLastMs < 100)
-		return;
-	s_odShiftLastCar = car;
-	s_odShiftLastMs = now;
-
-	float ratio = Min(1.0f, ped->m_fMass / Max(car->m_fMass, 1.0f));
-	char t[480];
-	snprintf(t, sizeof t,
-		"VICEEXT pushshift frame=%u t=%.2f dt=%.4f fix=%.3f "
-		"car=%s model=%d mass=%.0f turnmass=%.0f speed=%.2f "
-		"ped=%s model=%d mass=%.0f speed=%.2f "
-		"ratio=%.4f scale=%.4f depth=%.3f shift=%.4f,%.4f,%.4f mag=%.4f "
-		"ncol=%d second=%d",
-		(unsigned)CTimer::GetFrameCounter(), CTimer::GetTimeInMilliseconds() * 0.001f,
-		CTimer::GetTimeStep(), CTimer::GetTimeStepFix(),
-		ViceExtPushModelName(car), (int)car->GetModelIndex(), car->m_fMass,
-		car->m_fTurnMass, car->m_vecMoveSpeed.Magnitude(),
-		ViceExtPushModelName(ped), (int)ped->GetModelIndex(), ped->m_fMass,
-		ped->m_vecMoveSpeed.Magnitude(),
-		ratio, shiftScale, depth, shift.x, shift.y, shift.z, shift.Magnitude(),
-		numCollisions, secondShift ? 1 : 0);
-	ODTRACES(t);
-}
 #endif
 
 #ifdef WALLCLIMB_CHEAT
@@ -685,9 +576,36 @@ CPhysical::ApplyAirResistance(void)
 	}else if(GetStatus() != STATUS_GHOST){ 
 		float f = Pow(1.0f/Abs(1.0f + m_fAirResistance*0.5f*m_vecMoveSpeed.MagnitudeSqr()), CTimer::GetTimeStep());
 		m_vecMoveSpeed *= f;
+#ifdef VICEEXT_AIR_TURN_DAMPED
+		// Era el unico termino de la funcion que no se escalaba: a 120 FPS el
+		// giro libre de un vehiculo lanzado se apagaba 4 veces mas deprisa.
+		m_vecTurnSpeed *= Pow(OD_AIR_TURN_DAMP, CTimer::GetTimeStepFix());
+#else
 		m_vecTurnSpeed *= 0.99f;
+#endif
 	}
 }
+
+#if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
+// who: 1 = el peon le pega al coche, 2 = el coche le pega al peon. Va dentro
+// del bucle de colisiones, asi que esta limitada a 5 lineas por segundo.
+static uint32 odEmpujeNextReport;
+
+static void
+odTraceEmpuje(int who, CPhysical *veh, CPhysical *ped, float escala, float velAntes)
+{
+	uint32 odNow = CTimer::GetTimeInMilliseconds();
+	if (odNow < odEmpujeNextReport)
+		return;
+	odEmpujeNextReport = odNow + 200u;
+	char odT[200];
+	snprintf(odT, sizeof odT,
+		"EMPUJE who=%d vantes=%.3f vdespues=%.3f escala=%.3f pedvel=%.3f vehmasa=%.0f",
+		who, velAntes, veh->m_vecMoveSpeed.Magnitude(), escala,
+		ped->m_vecMoveSpeed.Magnitude(), veh->m_fMass);
+	ODTRACES(odT);
+}
+#endif
 
 bool
 CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, float &impulseB, const char *via)
@@ -901,6 +819,9 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 			impulseB = -(eB - speedB) * mB;
 			CVector fA = colpoint.normal*(impulseA/massFactorA);
 			CVector fB = colpoint.normal*(-impulseB/massFactorB);
+#if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
+			float odVelVehAntes = B->IsVehicle() ? B->m_vecMoveSpeed.Magnitude() : 0.0f;
+#endif
 			// El impulso se aplica una vez por actualizacion; a 120 fps se
 			// aplicaria cuatro veces por segundo mas que a la base de 30 Hz.
 			// GetTimeStepFix() vale 1.0 a 30 Hz y 0.25 a 120 Hz.
@@ -912,15 +833,17 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 			// respuesta sigue siendo la original.
 			const bool odPedIsMover = A->m_vecMoveSpeed.MagnitudeSqr() >
 				B->m_vecMoveSpeed.MagnitudeSqr() * 4.0f;
+#ifdef VICEEXT_PED_VS_CAR_PUSH
+			// Solo cuenta como "peon que empuja un coche parado" si el coche
+			// estaba casi quieto: si va en marcha es un atropello y la reaccion
+			// tiene que entrar, si no el coche se clavaba contra el NPC.
+			const bool odPedOnFootVsCar = B->IsVehicle() && !((CPed*)A)->bInVehicle && odPedIsMover &&
+				B->m_vecMoveSpeed.MagnitudeSqr() < OD_VEH_ALMOST_STOPPED_SQ;
+#else
 			const bool odPedOnFootVsCar = B->IsVehicle() && !((CPed*)A)->bInVehicle && odPedIsMover;
+#endif
 			fA *= odPushScale;
 			fB *= odPushScale;
-#ifdef __EMSCRIPTEN__
-			if(B->IsVehicle())
-				ViceExtPushTrace(via, "Aped_Bveh", A, B, massFactorA, massFactorB, mA, mB,
-					speedA, speedB, speedSum, impulseA, impulseB, fA, fB, odPushScale,
-					ispedcontactA, ispedcontactB);
-#endif
 			if(!A->bInfiniteMass){
 				if(fA.z < 0.0f) fA.z = 0.0f;
 				if(ispedcontactB){
@@ -929,9 +852,25 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 				}
 				A->ApplyMoveForce(fA);
 			}
-			if(!B->bInfiniteMass && !ispedcontactB && !odPedOnFootVsCar){
+			if(!B->bInfiniteMass && !ispedcontactB){
+#ifdef VICEEXT_PED_VS_CAR_PUSH
+				float odEscalaEmpuje = 1.0f;
+				if(odPedOnFootVsCar) {
+					fB *= OD_PUSH_VS_PED;
+					odEscalaEmpuje = OD_PUSH_VS_PED;
+				}
 				B->ApplyMoveForce(fB);
 				B->ApplyTurnForce(fB, pointposB);
+#if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
+				if(B->IsVehicle() && !((CPed*)A)->bInVehicle)
+					odTraceEmpuje(1, B, A, odEscalaEmpuje, odVelVehAntes);
+#endif
+#else
+				if(!odPedOnFootVsCar) {
+					B->ApplyMoveForce(fB);
+					B->ApplyTurnForce(fB, pointposB);
+				}
+#endif
 			}
 			return true;
 		}
@@ -956,25 +895,44 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 			impulseB = -(eB - speedB) * mB;
 			CVector fA = colpoint.normal*(impulseA/massFactorA);
 			CVector fB = colpoint.normal*(-impulseB/massFactorB);
+#if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
+			float odVelVehAntes = A->IsVehicle() ? A->m_vecMoveSpeed.Magnitude() : 0.0f;
+#endif
 			// Simetrico al caso A=ped: aqui A es el vehiculo y B el ped. Sin
 			// esta escala el coche recibe el impulso completo una vez por
 			// frame y a 120 fps se mueve cuatro veces mas facil.
 			const float odPushScale = A->IsVehicle() ? CTimer::GetTimeStepFix() : 1.0f;
 			const bool odPedIsMover = B->m_vecMoveSpeed.MagnitudeSqr() >
 				A->m_vecMoveSpeed.MagnitudeSqr() * 4.0f;
+#ifdef VICEEXT_PED_VS_CAR_PUSH
+			const bool odCarVsPedOnFoot = A->IsVehicle() && !((CPed*)B)->bInVehicle && odPedIsMover &&
+				A->m_vecMoveSpeed.MagnitudeSqr() < OD_VEH_ALMOST_STOPPED_SQ;
+#else
 			const bool odCarVsPedOnFoot = A->IsVehicle() && !((CPed*)B)->bInVehicle && odPedIsMover;
+#endif
 			fA *= odPushScale;
 			fB *= odPushScale;
-#ifdef __EMSCRIPTEN__
-			if(A->IsVehicle())
-				ViceExtPushTrace(via, "Aveh_Bped", A, B, massFactorA, massFactorB, mA, mB,
-					speedA, speedB, speedSum, impulseA, impulseB, fA, fB, odPushScale,
-					ispedcontactA, ispedcontactB);
-#endif
-			if(!A->bInfiniteMass && !ispedcontactA && !odCarVsPedOnFoot){
+			if(!A->bInfiniteMass && !ispedcontactA){
+#ifdef VICEEXT_PED_VS_CAR_PUSH
+				float odEscalaEmpuje = 1.0f;
+				if(odCarVsPedOnFoot) {
+					fA *= OD_PUSH_VS_PED;
+					odEscalaEmpuje = OD_PUSH_VS_PED;
+				}
 				if(fA.z < 0.0f) fA.z = 0.0f;
 				A->ApplyMoveForce(fA);
 				A->ApplyTurnForce(fA, pointposA);
+#if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
+				if(A->IsVehicle() && !((CPed*)B)->bInVehicle)
+					odTraceEmpuje(2, A, B, odEscalaEmpuje, odVelVehAntes);
+#endif
+#else
+				if(!odCarVsPedOnFoot) {
+					if(fA.z < 0.0f) fA.z = 0.0f;
+					A->ApplyMoveForce(fA);
+					A->ApplyTurnForce(fA, pointposA);
+				}
+#endif
 			}
 			if(!B->bInfiniteMass){
 				if(fB.z < 0.0f){
@@ -1520,18 +1478,25 @@ CPhysical::ProcessShiftSectorList(CPtrList *lists)
 			if (A->IsVehicle() && B->IsPed()) {
 				if (((CPed*)B)->bInVehicle)
 					odShiftScale = Min(1.0f, B->m_fMass / Max(A->m_fMass, 1.0f)) * CTimer::GetTimeStepFix();
+#ifdef VICEEXT_PED_VS_CAR_PUSH
+				else if (A->m_vecMoveSpeed.MagnitudeSqr() >= OD_VEH_ALMOST_STOPPED_SQ)
+					// Coche en marcha: si el peon no lo separa nada de la
+					// penetracion, el coche se queda montado encima y parece de
+					// hormigon. Se le devuelve una fraccion pequena segun la
+					// relacion de masas, no el 0 absoluto de antes.
+					odShiftScale = OD_SHIFT_VS_PED * (B->m_fMass / Max(A->m_fMass, 1.0f)) * CTimer::GetTimeStepFix();
+				else
+					odShiftScale = 0.0f;	// peaton a pie contra coche parado: no lo desplaza
+#else
 				else
 					odShiftScale = 0.0f;	// peaton a pie: no desplaza el coche
+#endif
 			}
 
 			mostColliding = 0;
 			for(j = 1; j < numCollisions; j++)
 				if (colpoints[j].GetDepth() > colpoints[mostColliding].GetDepth())
 					mostColliding = j;
-
-#ifdef __EMSCRIPTEN__
-			CVector odShiftBefore = shift;
-#endif
 
 			if(CWorld::bSecondShift)
 				for(j = 0; j < numCollisions; j++)					shift += colpoints[j].GetNormal() * colpoints[j].GetDepth() * 1.5f * odShiftScale / numCollisions;
@@ -1567,12 +1532,6 @@ CPhysical::ProcessShiftSectorList(CPtrList *lists)
 				else
 					shift += colpoints[mostColliding].GetNormal() * colpoints[mostColliding].GetDepth() * 0.2f * odShiftScale;
 			}
-
-#ifdef __EMSCRIPTEN__
-			if(A->IsVehicle() && B->IsPed())
-				ViceExtPushShiftTrace(A, B, odShiftScale, colpoints[mostColliding].GetDepth(),
-					shift - odShiftBefore, numCollisions, CWorld::bSecondShift);
-#endif
 
 			doShift = true;
 		}

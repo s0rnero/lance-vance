@@ -110,9 +110,81 @@ SetCullMode(uint32 mode)
 }
 
 #ifndef FINAL
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#define OD_RG_MAX 48
+static const char *s_rgName[OD_RG_MAX];
+static double s_rgMs[OD_RG_MAX];
+static uint32 s_rgN[OD_RG_MAX];
+static double s_rgT0[OD_RG_MAX];
+static int s_rgStack[OD_RG_MAX];
+static int s_rgCount;
+static int s_rgDepth;
+static uint32 s_rgEmitAt;
+
+static void
+OdGroupEmit(void)
+{
+	int order[OD_RG_MAX];
+	int n = 0;
+	for (int i = 0; i < s_rgCount; i++)
+		if (s_rgN[i] != 0u)
+			order[n++] = i;
+	for (int a = 1; a < n; a++)
+		for (int b = a; b > 0 && s_rgMs[order[b]] > s_rgMs[order[b - 1]]; b--) {
+			int tmp = order[b];
+			order[b] = order[b - 1];
+			order[b - 1] = tmp;
+		}
+	char t[420];
+	int off = snprintf(t, sizeof t, "RGPASS");
+	for (int a = 0; a < n && a < 12 && off < 380; a++)
+		off += snprintf(t + off, sizeof t - off, " %.2f=%s;", s_rgMs[order[a]] * 1000.0 / s_rgN[order[a]],
+		                        s_rgName[order[a]]);
+	if (off < (int)sizeof t)
+		ODTRACES(t);
+	for (int i = 0; i < s_rgCount; i++) {
+		s_rgMs[i] = 0.0;
+		s_rgN[i] = 0u;
+	}
+}
+
+static void
+OdGroupTick(void)
+{
+	uint32 now = (uint32)emscripten_get_now();
+	if (s_rgEmitAt != 0 && (uint32)(now - s_rgEmitAt) < 1000u)
+		return;
+	s_rgEmitAt = now;
+	if (s_rgCount != 0)
+		OdGroupEmit();
+	s_rgDepth = 0;
+}
+#endif
+
 void
 PushRendergroup(const char *name)
 {
+#ifdef __EMSCRIPTEN__
+	OdGroupTick();
+	if (s_rgDepth < OD_RG_MAX) {
+		int i;
+		for (i = 0; i < s_rgCount; i++)
+			if (s_rgName[i] == name)
+				break;
+		if (i == s_rgCount && s_rgCount < OD_RG_MAX) {
+			s_rgName[i] = name;
+			s_rgMs[i] = 0.0;
+			s_rgN[i] = 0u;
+			s_rgCount++;
+		}
+		if (i < s_rgCount) {
+			s_rgT0[s_rgDepth] = emscripten_get_now();
+			s_rgStack[s_rgDepth] = i;
+			s_rgDepth++;
+		}
+	}
+#endif
 	if(!bDebugRenderGroups)
 		return;
 #if defined(RW_OPENGL)
@@ -128,6 +200,17 @@ PushRendergroup(const char *name)
 void
 PopRendergroup(void)
 {
+#ifdef __EMSCRIPTEN__
+	if (s_rgDepth > 0) {
+		int slot = --s_rgDepth;
+		int i = s_rgStack[slot];
+		double d = emscripten_get_now() - s_rgT0[slot];
+		if (d >= 0.0 && d < 250.0) {
+			s_rgMs[i] += d;
+			s_rgN[i]++;
+		}
+	}
+#endif
 	if(!bDebugRenderGroups)
 		return;
 #if defined(RW_OPENGL)

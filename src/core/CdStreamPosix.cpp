@@ -260,6 +260,11 @@ OdDoRead(int img, void *buffer, uint32 sectorOffset, uint32 nSectors)
 				}
 			}
 #endif
+			// El unico deficit legitimo es la cola, cuando el fichero no llena el
+			// ultimo sector. Falta un sector entero y el indice promete mas de lo
+			// que hay: rellenar de zeros entregaria un modelo truncado al parser.
+			if (wantSeg - rd >= CDSTREAM_SECTOR_SIZE)
+				return STREAM_ERROR;
 			memset(dst + rd, 0, wantSeg - rd);
 		}
 		dst += wantSeg;
@@ -768,6 +773,7 @@ CdStreamAddImage(char const *path)
 					if (L->entries) {
 						int got = 0;
 						uint32 tot = 0;
+						uint32 dh = 2166136261u;
 						for (int k = 0; k < entries; k++) {
 							uint8 raw[32];
 							int r = 0;
@@ -779,6 +785,7 @@ CdStreamAddImage(char const *path)
 							memcpy(e->name, raw + 8, 24);
 							e->name[24] = '\0';
 							tot += e->sectors;
+							for (int h2 = 0; h2 < 32; h2++) { dh ^= raw[h2]; dh *= 16777619u; }
 							got++;
 						}
 						if (got > 0) {
@@ -786,6 +793,7 @@ CdStreamAddImage(char const *path)
 							L->nentries = got;
 							L->totalSectors = tot;
 							L->lastHit = -1;
+							{ char tb[160]; snprintf(tb, sizeof(tb), "DIRTAG %s n=%d total=%u h=%08x", dirf, got, tot, dh); ODTRACES(tb); }
 							gOdIsLoose[gNumImages] = true;
 							if (gImgFiles[gNumImages] != -1) close(gImgFiles[gNumImages]);
 							gImgFiles[gNumImages] = dfd; // ++ de abajo lo deja como los archive

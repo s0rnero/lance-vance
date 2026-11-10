@@ -11,7 +11,11 @@
 #include "crossplatform.h"
 #endif
 #ifdef __EMSCRIPTEN__
+#include <malloc.h>
+#include <emscripten/heap.h>
 #include "ondemand.h"
+int OdTxdCurrentSlot(void);
+const char *OdTxdCurrentName(void);
 #endif
 
 using namespace rw;
@@ -310,7 +314,25 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 	*tex = Texture::streamReadNative(stream);
 #ifdef LIBRW
 #ifdef __EMSCRIPTEN__
-	if (*tex == nil) {
+	if ((*tex)->raster) {
+		static int odN = 0;
+		odN++;
+		if(odN <= 200 || (odN % 200) == 0){
+			Raster *r = (*tex)->raster;
+			struct mallinfo mi = mallinfo();
+			char t[288];
+			snprintf(t, sizeof t,
+				"TXCONV txd=%d nom=%.19s tex=%.31s fmt=0x%x w=%d h=%d dep=%d lv=%d stride=%d alloc0=%lld usado=%u libre=%u total=%u",
+				OdTxdCurrentSlot(), OdTxdCurrentName(), (*tex)->name, r->format,
+				r->width, r->height, r->depth, r->getNumLevels(), r->originalStride,
+				(long long)r->originalStride * r->originalHeight,
+				(unsigned)mi.uordblks, (unsigned)mi.fordblks, (unsigned)emscripten_get_heap_size());
+			ODTRACES(t);
+		}
+	}
+#endif
+#ifdef __EMSCRIPTEN__
+	if (!*tex) {
 		static int n = 0;
 		if (n < 50) { n++; ODTRACES("hackRead tex NIL"); printf("[texconv] hackRead tex NIL\n"); }
 		return *tex != nil;

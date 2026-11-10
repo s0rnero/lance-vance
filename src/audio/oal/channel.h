@@ -21,6 +21,7 @@ class CChannel
 	float  Distances[2];
 	int32  LoopCount;
 	ALint  LoopPoints[2];
+	uint32 SfxTag;
 	ALint  LastProcessedOffset;
 	bool   bIs2D;
 public:
@@ -46,6 +47,7 @@ public:
 	void SetCurrentFreq(uint32 freq);
 	void SetLoopCount(int32 count);
 	void SetLoopPoints(ALint start, ALint end);
+	void SetSfxTag(uint32 sfx);
 	void SetPosition(float x, float y, float z);
 	void SetDistances(float max, float min);
 	void SetPan(int32 pan);

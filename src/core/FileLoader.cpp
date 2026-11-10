@@ -1,5 +1,10 @@
 #include "common.h"
 #include <ctype.h>
+#ifdef __EMSCRIPTEN__
+#include <malloc.h>
+#include <emscripten.h>
+#include <emscripten/heap.h>
+#endif
 #include "ondemand.h"
 #include "main.h"
 
@@ -178,11 +183,59 @@ struct ColHeader
 	uint32 size;
 };
 
+#ifdef __EMSCRIPTEN__
+static void
+OdColNote(const char *kind, const char *where, const char *name, uint32 chunk, uint32 size, const char *why)
+{
+	static int odBad = 0, odBig = 0;
+	int *n = strcmp(kind, "COLBIG") == 0 ? &odBig : &odBad;
+	(*n)++;
+	if(*n > 60 && (*n % 200) != 0)
+		return;
+	char t[224];
+	snprintf(t, sizeof t, "%s where=%s nom=%.24s chunk=%u size=%u work=%u motivo=%s",
+		kind, where, name ? name : "?", chunk, size, (unsigned)sizeof(work_buff), why);
+	ODTRACES(t);
+}
+
+static void
+OdColMem(const char *name, uint32 modelsize, const char *arr, int n, uint32 req, bool sample)
+{
+	static int odN = 0;
+	if(!sample && req < 64*1024)
+		return;
+	odN++;
+	if(odN > 5000 && (odN % 50) != 0)
+		return;
+	struct mallinfo mi = mallinfo();
+	char t[224];
+	snprintf(t, sizeof t, "COLMEM nom=%.24s size=%u arr=%s n=%d req=%u usado=%u libre=%u total=%u",
+		name ? name : "?", modelsize, arr, n, req,
+		(unsigned)mi.uordblks, (unsigned)mi.fordblks, (unsigned)emscripten_get_heap_size());
+	ODTRACES(t);
+}
+
+static void
+OdColMemFail(const char *name, uint32 modelsize, const char *arr, int n, uint32 req)
+{
+	static int odN = 0;
+	odN++;
+	if(odN > 60 && (odN % 200) != 0)
+		return;
+	struct mallinfo mi = mallinfo();
+	char t[224];
+	snprintf(t, sizeof t, "COLMEMFAIL nom=%.24s size=%u arr=%s n=%d req=%u libre=%u total=%u",
+		name ? name : "?", modelsize, arr, n, req,
+		(unsigned)mi.fordblks, (unsigned)emscripten_get_heap_size());
+	ODTRACES(t);
+}
+#endif
+
 void
 CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 {
 	int fd;
-	char modelname[24];
+	char modelname[25];
 	CBaseModelInfo *mi;
 	ColHeader header;
 
@@ -193,18 +246,44 @@ CFileLoader::LoadCollisionFile(const char *filename, uint8 colSlot)
 	assert(fd > 0);
 
 	while(CFileMgr::Read(fd, (char*)&header, sizeof(header))){
-		assert(header.ident == 'LLOC');
-		CFileMgr::Read(fd, (char*)work_buff, header.size);
+		if(header.ident != 'LLOC'){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBAD", "file", "?", header.size, 0, "ident");
+#endif
+			break;
+		}
+		if(header.size < 84 || header.size > 0x7FFFFFFFu){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBAD", "file", "?", header.size, 0, "chunk");
+#endif
+			break;
+		}
+		if(header.size > (uint32)sizeof(work_buff)){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBIG", "file", "?", header.size, 0, "buffer");
+#endif
+			if(!CFileMgr::Seek(fd, (int)header.size, SEEK_CUR))
+				break;
+			continue;
+		}
+		size_t got = CFileMgr::Read(fd, (char*)work_buff, header.size);
+		if(got != header.size){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBAD", "file", "?", header.size, (uint32)got, "short-read");
+#endif
+			break;
+		}
 		memcpy(modelname, work_buff, 24);
+		modelname[24] = '\0';
 
 		mi = CModelInfo::GetModelInfo(modelname, nil);
 		if(mi){
 			if(mi->GetColModel() && mi->DoesOwnColModel()){
-				LoadCollisionModel(work_buff+24, *mi->GetColModel(), modelname);
+				LoadCollisionModel(work_buff+24, *mi->GetColModel(), modelname, header.size);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff+24, *model, modelname);
+				LoadCollisionModel(work_buff+24, *model, modelname, header.size);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -222,7 +301,7 @@ bool
 CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlot)
 {
 	uint32 modelsize;
-	char modelname[24];
+	char modelname[25];
 	CBaseModelInfo *mi;
 	ColHeader *header;
 	int modelIndex;
@@ -232,7 +311,23 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		if(size < 32 || modelsize < 84 || modelsize > size - 8){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBAD", "first", "?", modelsize, size, modelsize < 84 ? "chunk<84" : "size");
+#endif
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
+		modelname[24] = '\0';
+		if(modelsize - 24 > (uint32)sizeof(work_buff)){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBIG", "first", modelname, modelsize, size, "buffer");
+#endif
+			uint32 step = modelsize + 8;
+			size -= step;
+			buffer += step;
+			continue;
+		}
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
@@ -244,7 +339,7 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 			CColStore::IncludeModelIndex(colSlot, modelIndex);
 			CColModel *model = new CColModel;
 			model->level = colSlot;
-			LoadCollisionModel(work_buff, *model, modelname);
+			LoadCollisionModel(work_buff, *model, modelname, modelsize);
 			mi->SetColModel(model, true);
 		}else{
 			debug("colmodel %s can't find a modelinfo\n", modelname);
@@ -253,11 +348,12 @@ CFileLoader::LoadCollisionFileFirstTime(uint8 *buffer, uint32 size, uint8 colSlo
 	return true;
 }
 
+
 bool
 CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 {
 	uint32 modelsize;
-	char modelname[24];
+	char modelname[25];
 	CBaseModelInfo *mi;
 	ColHeader *header;
 
@@ -266,7 +362,23 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		modelsize = header->size;
 		if(header->ident != 'LLOC')
 			return size-8 < CDSTREAM_SECTOR_SIZE;
+		if(size < 32 || modelsize < 84 || modelsize > size - 8){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBAD", "buffer", "?", modelsize, size, modelsize < 84 ? "chunk<84" : "size");
+#endif
+			return false;
+		}
 		memcpy(modelname, buffer+8, 24);
+		modelname[24] = '\0';
+		if(modelsize - 24 > (uint32)sizeof(work_buff)){
+#ifdef __EMSCRIPTEN__
+			OdColNote("COLBIG", "buffer", modelname, modelsize, size, "buffer");
+#endif
+			uint32 step = modelsize + 8;
+			size -= step;
+			buffer += step;
+			continue;
+		}
 		memcpy(work_buff, buffer+32, modelsize-24);
 		size -= 32 + (modelsize-24);
 		buffer += 32 + (modelsize-24);
@@ -276,11 +388,11 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 		mi = CModelInfo::GetModelInfo(modelname, CColStore::GetSlot(colSlot)->minIndex, CColStore::GetSlot(colSlot)->maxIndex);
 		if(mi){
 			if(mi->GetColModel()){
-				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname);
+				LoadCollisionModel(work_buff, *mi->GetColModel(), modelname, modelsize);
 			}else{
 				CColModel *model = new CColModel;
 				model->level = colSlot;
-				LoadCollisionModel(work_buff, *model, modelname);
+				LoadCollisionModel(work_buff, *model, modelname, modelsize);
 				mi->SetColModel(model, true);
 			}
 		}else{
@@ -290,10 +402,17 @@ CFileLoader::LoadCollisionFile(uint8 *buffer, uint32 size, uint8 colSlot)
 	return true;
 }
 
+
 void
-CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
+CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname, uint32 modelsize)
 {
 	int i;
+#ifdef __EMSCRIPTEN__
+	static uint32 odColSeq = 0;
+	bool odSample = modelsize >= 15*1024 || (odColSeq++ % 50) == 0;
+#else
+	(void)modelsize;
+#endif
 
 	model.boundingSphere.radius = *(float*)(buf);
 	model.boundingSphere.center.x = *(float*)(buf+4);
@@ -308,7 +427,16 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	model.numSpheres = *(int16*)(buf+40);
 	buf += 44;
 	if(model.numSpheres > 0){
+#ifdef __EMSCRIPTEN__
+		OdColMem(modelname, modelsize, "spheres", model.numSpheres, (uint32)model.numSpheres*sizeof(CColSphere), odSample);
+#endif
 		model.spheres = (CColSphere*)RwMalloc(model.numSpheres*sizeof(CColSphere));
+#ifdef __EMSCRIPTEN__
+		if(model.spheres == nil){
+			OdColMemFail(modelname, modelsize, "spheres", model.numSpheres, (uint32)model.numSpheres*sizeof(CColSphere));
+			return;
+		}
+#endif
 		REGISTER_MEMPTR(&model.spheres);
 		for(i = 0; i < model.numSpheres; i++){
 			model.spheres[i].Set(*(float*)buf, *(CVector*)(buf+4), buf[16], buf[17]);
@@ -334,7 +462,16 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	model.numBoxes = *(int16*)buf;
 	buf += 4;
 	if(model.numBoxes > 0){
+#ifdef __EMSCRIPTEN__
+		OdColMem(modelname, modelsize, "boxes", model.numBoxes, (uint32)model.numBoxes*sizeof(CColBox), odSample);
+#endif
 		model.boxes = (CColBox*)RwMalloc(model.numBoxes*sizeof(CColBox));
+#ifdef __EMSCRIPTEN__
+		if(model.boxes == nil){
+			OdColMemFail(modelname, modelsize, "boxes", model.numBoxes, (uint32)model.numBoxes*sizeof(CColBox));
+			return;
+		}
+#endif
 		REGISTER_MEMPTR(&model.boxes);
 		for(i = 0; i < model.numBoxes; i++){
 			model.boxes[i].Set(*(CVector*)buf, *(CVector*)(buf+12), buf[24], buf[25]);
@@ -346,7 +483,16 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	int32 numVertices = *(int16*)buf;
 	buf += 4;
 	if(numVertices > 0){
+#ifdef __EMSCRIPTEN__
+		OdColMem(modelname, modelsize, "vertices", numVertices, (uint32)numVertices*sizeof(CompressedVector), odSample);
+#endif
 		model.vertices = (CompressedVector*)RwMalloc(numVertices*sizeof(CompressedVector));
+#ifdef __EMSCRIPTEN__
+		if(model.vertices == nil){
+			OdColMemFail(modelname, modelsize, "vertices", numVertices, (uint32)numVertices*sizeof(CompressedVector));
+			return;
+		}
+#endif
 		REGISTER_MEMPTR(&model.vertices);
 		for(i = 0; i < numVertices; i++){
 			model.vertices[i].Set(*(float*)buf, *(float*)(buf+4), *(float*)(buf+8));
@@ -364,7 +510,16 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	model.numTriangles = *(int16*)buf;
 	buf += 4;
 	if(model.numTriangles > 0){
+#ifdef __EMSCRIPTEN__
+		OdColMem(modelname, modelsize, "triangles", model.numTriangles, (uint32)model.numTriangles*sizeof(CColTriangle), odSample);
+#endif
 		model.triangles = (CColTriangle*)RwMalloc(model.numTriangles*sizeof(CColTriangle));
+#ifdef __EMSCRIPTEN__
+		if(model.triangles == nil){
+			OdColMemFail(modelname, modelsize, "triangles", model.numTriangles, (uint32)model.numTriangles*sizeof(CColTriangle));
+			return;
+		}
+#endif
 		REGISTER_MEMPTR(&model.triangles);
 		for(i = 0; i < model.numTriangles; i++){
 			model.triangles[i].Set(*(int32*)buf, *(int32*)(buf+4), *(int32*)(buf+8), buf[12]);
@@ -373,6 +528,7 @@ CFileLoader::LoadCollisionModel(uint8 *buf, CColModel &model, char *modelname)
 	}else
 		model.triangles = nil;
 }
+
 
 static void
 GetNameAndLOD(char *nodename, char *name, int *n)

@@ -41,6 +41,12 @@ public:
 	uint32 m_carsCanDrive;
 	CColModel *m_hitColModel;
 	int8 radio1, radio2;
+#ifdef VICEEXT_SEAT_BY_PED_HEIGHT
+	// Centimetros (0..19) que hay que subir el anclaje del asiento para que la
+	// cabeza de este modelo quede a la altura de la del estandar (0.605). Los
+	// mide tools/ped_seat_height.py sobre los DFF servidos; 0 si ya es alto.
+	float m_seatLift = 0.0f;
+#endif
 #ifdef VICEEXT_PED_VARIATIONS
 	RwTexture* textureClothingVariations[MAX_VARIATIONS_TEXTURES];
 	RwTexture* textureShadeVariations[MAX_VARIATIONS_TEXTURES];

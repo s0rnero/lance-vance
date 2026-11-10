@@ -2,6 +2,12 @@
 
 #include "templates.h"
 
+#ifdef __EMSCRIPTEN__
+extern long long gOdTxdLiveBytes;
+int OdTxdCurrentSlot(void);
+const char *OdTxdCurrentName(void);
+#endif
+
 struct TxdDef {
 	RwTexDictionary *texDict;
 	int refCount;

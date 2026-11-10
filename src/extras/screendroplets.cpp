@@ -22,6 +22,8 @@
 #include "custompipes.h"
 #include "postfx.h"
 #include "screendroplets.h"
+#include <stdio.h>
+#include "ondemand.h"
 
 // for 640
 #define MAXSIZE 15
@@ -468,7 +470,21 @@ ScreenDroplets::RegisterSplash(CParticleObject *pobj)
 {
 	CVector dist = pobj->GetPosition() - ms_prevCamPos;
 	if(dist.MagnitudeSqr() < 50.0f){	// 20 originally
+#ifdef VICEEXT_SPLASH_LOGICAL
+		// Cada salto dentro y fuera del agua rearmaba el salpicado, y con el
+		// rearme seguido la lente se quedaba blanca durante toda la maniobra.
+		static uint32 odUltSplashMs = 0;
+		uint32 odAhora = CTimer::GetTimeInMillisecondsNonClipped();
+		if(ms_splashDuration < 0 || (uint32)(odAhora - odUltSplashMs) >= OD_SPLASH_REARM_MS){
+			odUltSplashMs = odAhora;
+			ms_splashDuration = OD_SPLASH_TICKS;
+			char odT[96];
+			snprintf(odT, sizeof odT, "SPLASH dur=%d d2=%.1f", OD_SPLASH_TICKS, dist.MagnitudeSqr());
+			ODTRACES(odT);
+		}
+#else
 		ms_splashDuration = 14;
+#endif
 		ms_splashObject = pobj;
 	}
 }
@@ -539,7 +555,16 @@ ScreenDroplets::SprayDrops(void)
 		125, 250, 500, 1000, 1000,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	};
+#ifdef VICEEXT_SPLASH_LOGICAL
+	// El presupuesto de gotas y la duracion se contaban en frames presentados:
+	// a 120 FPS salian 4 veces mas gotas por segundo y el salpicado duraba
+	// 0,12 s en vez de 0,47 s. Ahora un paso por tick logico.
+	int odSplashPaso = (int)CTimer::GetLogicalFramesPassed();
+	if(ms_splashDuration >= 0 && odSplashPaso != 0){
+#else
+	int odSplashPaso = 1;
 	if(ms_splashDuration >= 0){
+#endif
 		if(ms_numDrops < MAXDROPS) {
 			float numDropMult = 1.0f;
 			if(ms_splashObject){
@@ -556,7 +581,13 @@ ScreenDroplets::SprayDrops(void)
 					NewDrop(x, y, size, 10000.0f, false);
 				}
 		}
+#ifdef VICEEXT_SPLASH_LOGICAL
+		ms_splashDuration -= odSplashPaso;
+		if(ms_splashDuration < -1)
+			ms_splashDuration = -1;
+#else
 		ms_splashDuration--;
+#endif
 	}
 }
 

@@ -1766,8 +1766,10 @@ void CStream::Update()
 			if (buffersProcessed[0] != buffersProcessed[1]) {
 				static int desyncLog = 0;
 				if (++desyncLog % 300 == 1)
-					printf("[audio] sources desync, sigo con izquierdo (%d vs %d)\n",
-						(int)buffersProcessed[0], (int)buffersProcessed[1]);
+					printf("[audio] STREAMDSYNC file=%s act=%d loop=%d q0=%d p0=%d q1=%d p1=%d\n",
+						m_aFilename, (int)m_bActive, m_nLoopCount,
+						(int)totalBuffers[0], (int)buffersProcessed[0],
+						(int)totalBuffers[1], (int)buffersProcessed[1]);
 				buffersProcessed[1] = buffersProcessed[0];
 				totalBuffers[1] = totalBuffers[0];
 			}
@@ -1793,6 +1795,14 @@ void CStream::Update()
 			if (m_fillBuffers.empty() && m_queueBuffers.emptyNts()) // we already acquired stream mutex, which is enough for second thread. thus Nts variant
 #endif
 			{
+				{
+					static int s_streamLoopLog;
+					if (++s_streamLoopLog <= 60 || s_streamLoopLog % 200 == 0)
+						printf("[audio] STREAMLOOP file=%s act=%d loop=%d q0=%d p0=%d q1=%d p1=%d n=%d\n",
+							m_aFilename, (int)m_bActive, m_nLoopCount,
+							(int)totalBuffers[0], (int)buffersProcessed[0],
+							(int)totalBuffers[1], (int)buffersProcessed[1], s_streamLoopLog);
+					}
 				Setup(true, false);
 				BuffersShouldBeFilled(); // will also call SetPlay(true)
 				if (m_nLoopCount != 0)

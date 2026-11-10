@@ -5,6 +5,7 @@
 #include "Clock.h"
 #include "Stats.h"
 #include "VarConsole.h"
+#include "ondemand.h"
 
 _TODO("gbFastTime");
 bool gbFastTime;
@@ -19,6 +20,20 @@ uint32 CClock::ms_nMillisecondsPerGameMinute;
 uint32  CClock::ms_nLastClockTick;
 bool   CClock::ms_bClockHasBeenStored;
 
+#ifdef VICEEXT_CLOCK_CATCHUP
+// Acumulador de milisegundos reales todavia no descontados como minutos de
+// juego. Se cuenta con el timeline NO recortado de CTimer, porque el recortado
+// pierde todo lo que dure un frame por encima de 60 ms (Timer.cpp:163), que es
+// exactamente lo que valen los hitches de carga en WASM.
+static uint32 odClockCarryMs;
+static uint32 odClockLastNonClipped;
+#ifdef __EMSCRIPTEN__
+static uint32 odClockSimMinutes;
+static uint32 odClockBaseNonClipped;
+static uint32 odClockNextReport;
+#endif
+#endif
+
 #ifndef MASTER
 bool gbFreezeTime;
 #endif
@@ -32,6 +47,15 @@ CClock::Initialise(uint32 scale)
 	ms_nGameClockSeconds = 0;
 	ms_nMillisecondsPerGameMinute = scale;
 	ms_nLastClockTick = CTimer::GetTimeInMilliseconds();
+#ifdef VICEEXT_CLOCK_CATCHUP
+	odClockCarryMs = 0;
+	odClockLastNonClipped = CTimer::GetTimeInMillisecondsNonClipped();
+#ifdef __EMSCRIPTEN__
+	odClockSimMinutes = 0;
+	odClockBaseNonClipped = odClockLastNonClipped;
+	odClockNextReport = 0u;
+#endif
+#endif
 	ms_bClockHasBeenStored = false;
 	debug("CClock ready\n");
 #ifndef MASTER
@@ -47,6 +71,10 @@ CClock::Update(void)
 	{
 		ms_nGameClockMinutes += 8;
 		ms_nLastClockTick = CTimer::GetTimeInMilliseconds();
+#ifdef VICEEXT_CLOCK_CATCHUP
+		odClockLastNonClipped = CTimer::GetTimeInMillisecondsNonClipped();
+		odClockCarryMs = 0;
+#endif
 		
 		if(ms_nGameClockMinutes >= 60)
 		{
@@ -58,9 +86,68 @@ CClock::Update(void)
 		
 	}
 #ifndef MASTER
-	else if (gbFreezeTime)
+	else if (gbFreezeTime) {
 		ms_nLastClockTick = CTimer::GetTimeInMilliseconds();
+#ifdef VICEEXT_CLOCK_CATCHUP
+		odClockLastNonClipped = CTimer::GetTimeInMillisecondsNonClipped();
+		odClockCarryMs = 0;
 #endif
+	}
+#endif
+#ifdef VICEEXT_CLOCK_CATCHUP
+	else {
+		uint32 odNow = CTimer::GetTimeInMillisecondsNonClipped();
+		odClockCarryMs += odNow - odClockLastNonClipped;
+		odClockLastNonClipped = odNow;
+		// Antes se descontaba como mucho UN minuto por frame y sobre el timeline
+		// recortado, asi que cada hitch dejaba segundos de reloj fuera para
+		// siempre. Aqui se descuentan de golpe hasta OD_CLOCK_MAX_CATCHUP
+		// minutos; el tope existe para que una pausa larga no teletransporte la
+		// hora de la noche a la manana.
+		int odSteps = 0;
+		while (odSteps < OD_CLOCK_MAX_CATCHUP &&
+		       (gbFastTime || odClockCarryMs >= ms_nMillisecondsPerGameMinute)) {
+			if (odClockCarryMs >= ms_nMillisecondsPerGameMinute)
+				odClockCarryMs -= ms_nMillisecondsPerGameMinute;
+			else
+				odClockCarryMs = 0;	// gbFastTime: no hay tiempo real que descontar
+			odSteps++;
+			ms_nGameClockMinutes++;
+			if(ms_nGameClockMinutes >= 60)
+			{
+				ms_nGameClockHours++;
+				ms_nGameClockMinutes = 0;
+				if(ms_nGameClockHours >= 24)
+				{
+					CStats::DaysPassed++;
+					ms_nGameClockHours = 0;
+				}
+			}
+			if ( gbFastTime )
+				break;
+		}
+		// Lo que quede por encima de un minuto ya no se recupera nunca (tope
+		// cumplido): se recorta para que el reloj no persiga el tiempo real.
+		if (odClockCarryMs > ms_nMillisecondsPerGameMinute)
+			odClockCarryMs = ms_nMillisecondsPerGameMinute - 1u;
+		ms_nLastClockTick = CTimer::GetTimeInMilliseconds() - odClockCarryMs;
+#ifdef __EMSCRIPTEN__
+		odClockSimMinutes += odSteps;
+		if (CTimer::GetTimeInMilliseconds() >= odClockNextReport) {
+			uint32 odEsperado = odClockSimMinutes * ms_nMillisecondsPerGameMinute;
+			char odT[200];
+			snprintf(odT, sizeof odT,
+				"RELOJ sim=%u real_ms=%u esperado_ms=%u dif_ms=%d hora=%02d:%02d:%02d carry=%u fast=%d",
+				odClockSimMinutes, odNow - odClockBaseNonClipped, odEsperado,
+				(int)(odNow - odClockBaseNonClipped) - (int)odEsperado,
+				ms_nGameClockHours, ms_nGameClockMinutes, ms_nGameClockSeconds,
+				odClockCarryMs, gbFastTime ? 1 : 0);
+			ODTRACES(odT);
+			odClockNextReport = CTimer::GetTimeInMilliseconds() + 5000u;
+		}
+#endif
+	}
+#else
 	else if(CTimer::GetTimeInMilliseconds() - ms_nLastClockTick > ms_nMillisecondsPerGameMinute || gbFastTime)
 	{
 		ms_nGameClockMinutes++;
@@ -80,6 +167,7 @@ CClock::Update(void)
 			}
 		}
 	}
+#endif
 	ms_nGameClockSeconds = 60 * (CTimer::GetTimeInMilliseconds() - ms_nLastClockTick) / ms_nMillisecondsPerGameMinute;
 }
 

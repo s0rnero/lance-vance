@@ -31,6 +31,7 @@
 #include "MBlur.h"
 #include "screendroplets.h"
 #include "SaveBuf.h"
+#include "ondemand.h"
 
 uint8 CGameLogic::ActivePlayers;
 uint8 CGameLogic::ShortCutState;
@@ -375,6 +376,14 @@ CGameLogic::RestorePlayerStuffDuringResurrection(CPlayerPed *pPlayerPed, CVector
 	pPlayerPed->bIsVisible = true;
 	pPlayerPed->m_bloodyFootprintCountOrDeathTime = 0;
 	pPlayerPed->bDoBloodyFootprints = false;
+#ifdef __EMSCRIPTEN__
+	if (pPlayerPed->m_nDrunkenness || pPlayerPed->m_nFadeDrunkenness) {
+		char odDrunkW[96];
+		snprintf(odDrunkW, sizeof odDrunkW, "DRUNKW src=resurreccion val=%d fade=%d",
+			(int)pPlayerPed->m_nDrunkenness, (int)pPlayerPed->m_nFadeDrunkenness);
+		ODTRACES(odDrunkW);
+	}
+#endif
 	pPlayerPed->m_nDrunkenness = 0;
 	pPlayerPed->m_nFadeDrunkenness = 0;
 	CMBlur::ClearDrunkBlur();

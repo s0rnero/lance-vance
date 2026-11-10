@@ -129,6 +129,7 @@ void *gPlayerTalkData = 0;
 CChannel aChannel[NUM_CHANNELS];
 
 #ifdef __EMSCRIPTEN__
+#include <emscripten.h>
 #include <mpg123.h>
 static uint8 *odSfxData[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxBytes[TOTAL_AUDIO_SAMPLES];
@@ -1077,6 +1078,29 @@ _DeleteMP3Entries(void)
 	_pMP3List = NULL;
 }
 
+#ifdef __EMSCRIPTEN__
+extern "C" void EMSCRIPTEN_KEEPALIVE ViceExtRescanUserMusic(void)
+{
+	_DeleteMP3Entries();
+	nNumMP3s = 0;
+	_pMP3List = NULL;
+	_FindMP3s();
+	if ( nNumMP3s != 0 )
+	{
+		nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER] = 0;
+		for ( tMP3Entry *e = _pMP3List; e != NULL; e = e->pNext )
+		{
+			e->nTrackStreamPos = nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER];
+			nStreamLength[STREAMED_SOUND_RADIO_MP3_PLAYER] += e->nTrackLength;
+		}
+		_CurMP3Index = 0;
+		_CurMP3Pos = 0;
+	}
+	else
+		_CurMP3Pos = 0;
+}
+#endif
+
 static tMP3Entry *
 _GetMP3EntryByIndex(uint32 idx)
 {
@@ -1977,6 +2001,7 @@ OdSfxChannelDefer(uint32 nChannel, uint32 nSfx, int32 nFreq)
 	OdSfxChannelClear(nChannel);
 	aChannel[nChannel].SetSampleData(nil, 0, nFreq);
 	aChannel[nChannel].SetPitch(1.0f);
+	aChannel[nChannel].SetSfxTag(nSfx);
 	s_odChSfx[nChannel] = nSfx;
 	s_odChSince[nChannel] = CTimer::GetTimeInMilliseconds();
 	s_odChState[nChannel] = OD_CH_INIT;
@@ -2072,6 +2097,22 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 		TRACE("Stopping channel %d - really!!!", nChannel);
 		StopChannel(nChannel);
 	}
+#ifdef __EMSCRIPTEN__
+	// Y aqui muere el diferido pendiente, que StopChannel solo lo borra si el canal
+	// estaba sonando. Reanudarlo despues pondria un one-shot viejo sobre un canal con
+	// AL_LOOPING ya encendido por la muestra nueva: el bucle que oye el jugador.
+	if ( s_odChState[nChannel] != OD_CH_NONE ) {
+		static int odClashTrace = 0;
+		if ( odClashTrace < 40 ) {
+			odClashTrace++;
+			char t[128];
+			snprintf(t, sizeof t, "ODCHCLASH ch=%u pend=%u nuevo=%u estado=%u",
+				nChannel, s_odChSfx[nChannel], nSfx, (unsigned)s_odChState[nChannel]);
+			ODTRACES(t);
+		}
+		OdSfxChannelClear(nChannel);
+	}
+#endif
 	
 	aChannel[nChannel].Reset();
 	if ( aChannel[nChannel].HasSource() )
@@ -2081,6 +2122,7 @@ cSampleManager::InitialiseChannel(uint32 nChannel, uint32 nSfx, uint8 nBank)
 #endif
 		aChannel[nChannel].SetSampleData   ((void*)addr, m_aSamples[nSfx].nSize, m_aSamples[nSfx].nFrequency);
 		aChannel[nChannel].SetLoopPoints   (0, -1);
+		aChannel[nChannel].SetSfxTag       (nSfx);
 		aChannel[nChannel].SetPitch        (1.0f);
 #ifdef __EMSCRIPTEN__
 		{

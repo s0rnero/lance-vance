@@ -176,6 +176,13 @@ void CControllerConfigManager::LoadSettings(int32 file)
 			}
 		}
 	}
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	// Respaldo: una config guardada antes de existir esta accion deja la tecla
+	// en rsNULL (el fichero tiene una accion menos) y H nunca llegaria al
+	// motor. Mismo caso que se corrigio con V y C.
+	if (m_aSettings[VEHICLE_HEADLIGHTS][KEYBOARD].m_Key == rsNULL)
+		SetControllerKeyAssociatedWithAction(VEHICLE_HEADLIGHTS, 'H', KEYBOARD);
+#endif
 }
 
 void CControllerConfigManager::InitDefaultControlConfiguration()
@@ -218,6 +225,7 @@ void CControllerConfigManager::InitDefaultControlConfiguration()
 	SetControllerKeyAssociatedWithAction    (VEHICLE_LEFT_TURNSIGNALS,            'Z',		  KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_RIGHT_TURNSIGNALS,           'X',		  KEYBOARD);
 	SetControllerKeyAssociatedWithAction    (VEHICLE_EMERGENCYLIGHTS,             'Y',		  KEYBOARD);
+	SetControllerKeyAssociatedWithAction    (VEHICLE_HEADLIGHTS,                 'H',		  KEYBOARD);
 #endif
 
 	SetControllerKeyAssociatedWithAction    (TOGGLE_SUBMISSIONS,                  rsPLUS,     KEYBOARD);
@@ -690,6 +698,7 @@ void CControllerConfigManager::InitialiseControllerActionNameArray()
 	SETACTIONNAME(VEHICLE_LEFT_TURNSIGNALS);
 	SETACTIONNAME(VEHICLE_RIGHT_TURNSIGNALS);
 	SETACTIONNAME(VEHICLE_EMERGENCYLIGHTS);
+	SETACTIONNAME(VEHICLE_HEADLIGHTS);
 #endif
 
 #undef SETACTIONNAME
@@ -1038,6 +1047,8 @@ void CControllerConfigManager::AffectControllerStateOn_ButtonDown_Driving(int32 
 		state.bRightTurnSignals = 255;
 	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_EMERGENCYLIGHTS, type))
 		state.bEmergencyLights = 255;
+	if (button == GetControllerKeyAssociatedWithAction(VEHICLE_HEADLIGHTS, type))
+		state.bHeadlights = 255;
 #endif
 }
 
@@ -2015,6 +2026,7 @@ void CControllerConfigManager::DeleteMatchingVehicleControls(e_ControllerAction 
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_LEFT_TURNSIGNALS);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_RIGHT_TURNSIGNALS);
 		CLEAR_ACTION_IF_NEEDED(VEHICLE_EMERGENCYLIGHTS);
+		CLEAR_ACTION_IF_NEEDED(VEHICLE_HEADLIGHTS);
 #endif
 	}
 }
@@ -2090,6 +2102,7 @@ bool CControllerConfigManager::IsAnyVehicleActionAssignedToMouseKey(int32 key)
 		CHECK_ACTION(VEHICLE_LEFT_TURNSIGNALS);
 		CHECK_ACTION(VEHICLE_RIGHT_TURNSIGNALS);
 		CHECK_ACTION(VEHICLE_EMERGENCYLIGHTS);
+		CHECK_ACTION(VEHICLE_HEADLIGHTS);
 #endif
 	}
 	return false;
@@ -2226,6 +2239,7 @@ e_ControllerActionType CControllerConfigManager::GetActionType(e_ControllerActio
 	case VEHICLE_LEFT_TURNSIGNALS:
 	case VEHICLE_RIGHT_TURNSIGNALS:
 	case VEHICLE_EMERGENCYLIGHTS:
+	case VEHICLE_HEADLIGHTS:
 #endif
 		return ACTIONTYPE_VEHICLE;
 		break;
@@ -3207,6 +3221,46 @@ const char* KeyboardKeys[][MAX_CONTROLLERACTIONS] =
 
 void CControllerConfigManager::GetWideStringOfCommandKeys(uint16 action, wchar *text, uint16 leight)
 {
+#if defined VICEEXT_TOUCH_CONTROLS
+	if (CPad::IsTouchControlsActive()) {
+		const char *touchButton = nil;
+
+		switch (action) {
+		case PED_FIREWEAPON: touchButton = "boton de disparo"; break;
+		case PED_CYCLE_WEAPON_RIGHT:
+		case PED_CYCLE_WEAPON_LEFT: touchButton = "boton de cambiar arma"; break;
+		case VEHICLE_ENTER_EXIT: touchButton = "boton del coche"; break;
+		case CAMERA_CHANGE_VIEW_ALL_SITUATIONS: touchButton = "boton de camara"; break;
+		case PED_JUMPING: touchButton = "boton de salto"; break;
+		case PED_SPRINT: touchButton = "boton de correr"; break;
+		case PED_LOOKBEHIND: touchButton = "boton de mirar atras"; break;
+		case PED_DUCK: touchButton = "boton de agacharse"; break;
+		case PED_ANSWER_PHONE: touchButton = "boton del telefono"; break;
+		case PED_LOCK_TARGET: touchButton = "boton de apuntar"; break;
+		case PED_CYCLE_TARGET_LEFT:
+		case PED_CYCLE_TARGET_RIGHT: touchButton = "boton de objetivo"; break;
+		case PED_RELOAD: touchButton = "boton de recarga"; break;
+		case RADAR_ZOOM_OUT: touchButton = "boton del mapa"; break;
+		case VEHICLE_ACCELERATE: touchButton = "boton de acelerar"; break;
+		case VEHICLE_BRAKE: touchButton = "boton de frenar"; break;
+		case VEHICLE_HANDBRAKE: touchButton = "boton de freno de mano"; break;
+		case VEHICLE_HORN: touchButton = "boton del claxon"; break;
+		case VEHICLE_CHANGE_RADIO_STATION: touchButton = "boton de radio"; break;
+#ifdef BIND_VEHICLE_FIREWEAPON
+		case VEHICLE_FIREWEAPON: touchButton = "boton de disparo"; break;
+#endif
+		default: break;
+		}
+
+		if (touchButton) {
+			wchar wstr[32];
+			AsciiToUnicode(touchButton, wstr);
+			CMessages::WideStringCopy(text, wstr, leight);
+			return;
+		}
+	}
+#endif
+
 #ifdef DETECT_PAD_INPUT_SWITCH
 	if (CPad::GetPad(0)->IsAffectedByController) {
 		wchar wstr[16];

@@ -1,6 +1,7 @@
 #include "common.h"
 #include "PedArbiter.h"
 #include "ondemand.h"
+#include "Timer.h"
 
 #ifdef VICEEXT_PEDARBITER
 static ePedLane ms_aOwner[NUM_PEDCAPS];
@@ -116,5 +117,60 @@ ViceExtPedResetAll(void)
 		ms_apfnRelease[i] = nil;
 		ms_audRelease[i] = nil;
 	}
+#endif
+}
+
+bool
+ViceExtSplashGate(const char *sitio, int num, bool prioridad, float z)
+{
+#ifdef VICEEXT_SPLASH_REARM
+	static uint32 s_odSplashNext = 0;
+	static int s_odCalladas = 0;
+	uint32 odAhora = CTimer::GetTimeInMillisecondsNonClipped();
+	if (!prioridad && odAhora < s_odSplashNext && odAhora + 60000u >= s_odSplashNext) {
+		s_odCalladas++;
+		return false;
+	}
+	s_odSplashNext = odAhora + OD_SPLASH_EVENT_MS;
+#ifdef __EMSCRIPTEN__
+	{
+		char t[128];
+		snprintf(t, sizeof t, "SPLASH sitio=%s num=%d dur=%d calladas=%d z=%.1f",
+			sitio, num, OD_SPLASH_TICKS, s_odCalladas, (double)z);
+		ODTRACES(t);
+	}
+#endif
+	s_odCalladas = 0;
+	return true;
+#else
+	(void)sitio;
+	(void)num;
+	(void)prioridad;
+	(void)z;
+	return true;
+#endif
+}
+
+#ifdef VICEEXT_SWIM_MOD_BORDER
+static bool s_odFlota = false;
+#endif
+
+void
+ViceExtSetFlota(bool flota)
+{
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	s_odFlota = flota;
+#else
+	(void)flota;
+#endif
+}
+
+bool
+ViceExtFlota(void)
+{
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	return s_odFlota;
+#else
+	return false;
 #endif
 }

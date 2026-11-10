@@ -647,6 +647,14 @@ CPlayerPed::ReApplyMoveAnims(void)
 void
 CPlayerPed::SetInitialState(void)
 {
+#ifdef __EMSCRIPTEN__
+	if (m_nDrunkenness || m_nFadeDrunkenness) {
+		char odDrunkW[96];
+		snprintf(odDrunkW, sizeof odDrunkW, "DRUNKW src=initialstate val=%d fade=%d",
+			(int)m_nDrunkenness, (int)m_nFadeDrunkenness);
+		ODTRACES(odDrunkW);
+	}
+#endif
 	m_nDrunkenness = 0;
 	m_nFadeDrunkenness = 0;
 	CMBlur::ClearDrunkBlur();
@@ -2108,7 +2116,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		}
 	} else if (padUsed->GetWeapon() && m_nMoveState != PEDMOVE_SPRINT) {
 		if (m_nSelectedWepSlot == m_currentWeapon) {
-			if (m_pPointGunAt && FrontEndMenuManager.m_PrefsAutoaim) {
+			if (m_pPointGunAt && FrontEndMenuManager.m_PrefsAutoaim && (padUsed->IsAffectedByController || CPad::IsTouchControlsActive())) {
 				if (m_nPedState == PED_ATTACK) {
 					m_fAttackButtonCounter *= Pow(0.94f, CTimer::GetTimeStep());
 				} else {
@@ -2322,7 +2330,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 #endif
 
 #if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_FIRING_AND_AIMING
-	if (!FrontEndMenuManager.m_PrefsAutoaim)
+	if (!(FrontEndMenuManager.m_PrefsAutoaim && (CPad::GetPad(0)->IsAffectedByController || CPad::IsTouchControlsActive())))
 		return;
 	else {
 		if (CPad::GetPad(0)->GetTarget()) {
@@ -2721,6 +2729,25 @@ ViceExtSwimWake(CPed *ped, float medido, CRGBA const &color)
 }
 
 static bool s_odSwimVisualHidden = false;
+// La pose de caida que se ve es la de mas peso de las seis que el motor puede
+// estar mezclando; medir solo ANIM_STD_FALL daba el centinela -1,00 en todas
+// las muestras (T36).
+static float
+ViceExtSwimFallBlend(RpClump *clump)
+{
+	static const AnimationId odFallMedida[6] = {
+		ANIM_STD_FALL, ANIM_STD_FALL_GLIDE, ANIM_STD_JUMP_GLIDE, ANIM_STD_JUMP_LAUNCH,
+		ANIM_STD_FALL_LAND, ANIM_STD_FALL_ONBACK
+	};
+	float odMejor = 0.0f;
+	for (int odQ = 0; odQ < 6; odQ++) {
+		CAnimBlendAssociation *odQA = RpAnimBlendClumpGetAssociation(clump, odFallMedida[odQ]);
+		if (odQA && odQA->blendAmount > odMejor)
+			odMejor = odQA->blendAmount;
+	}
+	return odMejor;
+}
+
 static CVector s_odSwimLastPos(0.0f, 0.0f, 0.0f);
 static bool s_odSwimLastPosOk = false;
 static float s_odSwimMedido = 0.0f;
@@ -2784,6 +2811,9 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	// hasta despues de varios segundos de caida. Ahora se entra en el primer
 	// contacto si el fondo esta lo bastante profundo; las aguas someras siguen
 	// siendo para caminar.
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	// (T34) El fondo no se mira: la puerta de abajo usa el calado y la flotacion.
+#else
 	bool odDeepEnough = false;
 	if (odHasWater && bIsInWater && s_odSwimState == 0) {
 		// La profundidad se mide contra el fondo, no contra un rayo de 3 m:
@@ -2795,12 +2825,41 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 		if (odFoundGround)
 			odDeepEnough = (odLevelW - odGroundZ) > 1.0f;
 	}
+#endif
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	bool odFondoOk = false;
+	float odFondoZ = CWorld::FindGroundZFor3DCoord(GetPosition().x, GetPosition().y, GetPosition().z, &odFondoOk);
+	float odCalado = odHasWater ? (odLevelW - (GetPosition().z - FEET_OFFSET)) : 0.0f;
+	bool odApoyo = odFondoOk && (GetPosition().z - FEET_OFFSET - odFondoZ) <= OD_SWIM_FOOT_M;
+	float odVadeo = OD_SWIM_WADE_M - (s_odSwimState != 0 ? OD_SWIM_ENTER_M : 0.0f);
+	bool odDePie = odApoyo && odCalado < odVadeo;
+	bool odGuard = padUsed && !bInVehicle && !DyingOrDead()
+	    && !CReplay::IsPlayingBack()
+	    && odHasWater && !odDePie
+	    && (s_odSwimState != 0 ? odCalado > OD_SWIM_EXIT_M
+	                           : (odCalado > OD_SWIM_ENTER_M || ViceExtFlota()));
+#ifdef __EMSCRIPTEN__
+	{
+		static int s_odBordePrev = -1;
+		int odBorde = (odGuard ? 2 : 0) + (odDePie ? 1 : 0);
+		if (odBorde != s_odBordePrev) {
+			s_odBordePrev = odBorde;
+			char odB[160];
+			snprintf(odB, sizeof odB, "SWIMBORDER guard=%d depie=%d calado=%.2f centro=%.2f fondo=%.2f apoyo=%d z=%.2f nivel=%.2f",
+				odGuard ? 1 : 0, odDePie ? 1 : 0, (double)odCalado, (double)odDepth,
+				(double)odFondoZ, odApoyo ? 1 : 0, (double)GetPosition().z, (double)odLevelW);
+			ODTRACES(odB);
+		}
+	}
+#endif
+#else
 	bool odEntry = odHasWater && bIsInWater && odDeepEnough;
 	bool odGuard = padUsed && !bInVehicle && !DyingOrDead()
 	    && !CReplay::IsPlayingBack()
 	    && (s_odSwimState != 0
 	        ? (odHasWater && odDepth > 0.20f)
 	        : (odHasWater && (odDepth > 0.30f || odEntry)));
+#endif
 
 	int16 odLR = padUsed ? padUsed->GetPedWalkLeftRight() : 0;
 	int16 odUD = padUsed ? padUsed->GetPedWalkUpDown() : 0;
@@ -2808,6 +2867,51 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	float upDown = (float)odUD;
 	float padMove = CVector2D(leftRight, upDown).Magnitude();
 	bool odSprintBtn = padUsed && padUsed->GetSprint();
+
+#ifdef VICEEXT_SWIM_CLIMB_EXIT
+	// Los dos caminos de salida que pidio el jugador, mezclando el mod con el
+	// climbing que ya portamos. Se deciden ANTES de desmontar el nado para que
+	// la limpieza de abajo corra tal cual y solo haya que llamar a StartClimbing
+	// o mover al ped al reborde.
+	CColPoint odAde, odAtras, odSaltoB;
+	bool odTrepado = false;
+	bool odSubidito = false;
+	CVector odReborde(0.0f, 0.0f, 0.0f);
+	float odAlturaReborde = 0.0f;
+	if (odGuard && s_odSwimState != 0) {
+		if (padUsed->JumpJustDown() && CanPedClimbingThis(odAde, odAtras, odSaltoB, true)) {
+			// Desde el agua no se alcanza la altura de pie: el cuerpo no tiene
+			// donde apoyar el impulso, por eso la cota es OD_SWIM_CLIMB_MAX_M.
+			odAlturaReborde = odAde.point.z - odLevelW;
+			if (odAlturaReborde <= OD_SWIM_CLIMB_MAX_M)
+				odTrepado = true;
+		}
+		if (!odTrepado && padMove > 0.0f) {
+			// El subidito del mod: linea desde medio metro sobre el centro
+			// (alternativa 0,75) hacia donde mira, 1,5 m, contra edificios.
+			for (int odH = 0; odH < 2 && !odSubidito; odH++) {
+				float odSalto = odH == 0 ? 0.5f : 0.75f;
+				CVector odDesde = GetPosition();
+				odDesde.z += odSalto;
+				CVector odHasta = odDesde + GetForward() * OD_SWIM_HOP_FWD_M;
+				CColPoint odCol;
+				CEntity *odEnt = nil;
+				if (CWorld::ProcessLineOfSight(odDesde, odHasta, odCol, odEnt,
+						true, false, false, false, false, false)) {
+					float odAl = odCol.point.z - odLevelW;
+					if (odAl >= OD_SWIM_HOP_MIN_M && odAl <= OD_SWIM_HOP_MAX_M) {
+						odSubidito = true;
+						odAlturaReborde = odAl;
+						odReborde = odCol.point - GetForward() * 0.35f;
+						odReborde.z = odCol.point.z + FEET_OFFSET * 0.5f;
+					}
+				}
+			}
+		}
+		if (odTrepado || odSubidito)
+			odGuard = false;
+	}
+#endif
 
 	if (!odGuard) {
 		if (s_odSwimState != 0) {
@@ -2823,6 +2927,19 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			m_vecMoveSpeed.x = 0.0f;
 			m_vecMoveSpeed.y = 0.0f;
 			odSwimActive = false;
+#ifdef VICEEXT_SWIM_MOD_BORDER
+			// El mod funde las tres brazadas a -6.0 (1/6 s) y DEJA TERMINAR el
+			// jumpout; el corte seco que puse en el 49.1 no era el mod. La
+			// gravedad vuelve, que es lo que corta la sensacion de flotar.
+			for (int odS = 0; odS < 3; odS++) {
+				CAnimBlendAssociation *odSA = RpAnimBlendClumpGetAssociation(GetClump(), odSwimAnims[odS]);
+				if (odSA && odSA->blendDelta >= 0.0f) {
+					odSA->flags |= ASSOC_DELETEFADEDOUT;
+					odSA->blendDelta = OD_SWIM_FADE_OUT;
+				}
+			}
+			bAffectedByGravity = true;
+#else
 			for (int odS = 0; odS < 4; odS++) {
 				CAnimBlendAssociation *odSA = RpAnimBlendClumpGetAssociation(GetClump(), odSwimAnims[odS]);
 				if (odSA && odSA->blendDelta >= 0.0f) {
@@ -2830,10 +2947,45 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 					odSA->blendDelta = -4.0f;
 				}
 			}
+#endif
+#ifdef VICEEXT_SWIM_CLIMB_EXIT
+		if (odTrepado) {
+			StartClimbing(odAde, odAtras, odSaltoB);
+#ifdef __EMSCRIPTEN__
+			{
+				char t[112];
+				snprintf(t, sizeof t, "SWIMCLIMB ok=1 altura=%.2f z=%.1f nivel=%.2f",
+					(double)odAlturaReborde, (double)GetPosition().z, (double)odLevelW);
+				ODTRACES(t);
+			}
+#endif
+		} else if (odSubidito) {
+			SetPosition(odReborde);
+			m_vecMoveSpeed.x = 0.0f;
+			m_vecMoveSpeed.y = 0.0f;
+			m_vecMoveSpeed.z = 0.0f;
+#ifdef __EMSCRIPTEN__
+			{
+				char t[112];
+				snprintf(t, sizeof t, "SWIMHOP ok=1 altura=%.2f z=%.1f nivel=%.2f",
+					(double)odAlturaReborde, (double)GetPosition().z, (double)odLevelW);
+				ODTRACES(t);
+			}
+#endif
+		}
+#endif
 #ifdef __EMSCRIPTEN__
 			{
 				char t[96];
-				const char *motivo = (odHasWater && odDepth <= 0.45f) ? "somero" : (!bIsInWater ? "sin-contacto" : "sin-control");
+				const char *motivo =
+#ifdef VICEEXT_SWIM_CLIMB_EXIT
+					odTrepado ? "trepar" : (odSubidito ? "reborde" :
+#endif
+					odDePie ? "de-pie" : (odHasWater && odCalado <= 0.45f) ? "somero" : (!bIsInWater ? "sin-contacto" : "sin-control")
+#ifdef VICEEXT_SWIM_CLIMB_EXIT
+					)
+#endif
+				;
 				snprintf(t, sizeof t, "VICEEXT swim exit motivo=%s", motivo);
 				ODTRACES(t);
 				snprintf(t, sizeof t, "SWIM2 exit motivo=%s clip=%d", motivo, (int)ANIM_STD_SWIM_JUMPOUT);
@@ -2883,12 +3035,23 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 		ViceExtPedClaim(PEDLANE_NADO, PEDCAP_POSTURA);
 		ViceExtPedClaim(PEDLANE_NADO, PEDCAP_APUNTAR);
 		ViceExtPedClaim(PEDLANE_NADO, PEDCAP_ARMA);
+#ifdef VICEEXT_SWIM_MOD_BORDER
+		// Como el mod (0x56c0aa-0x56c0cc): el agua le sostiene y la caida se para
+		// en el mismo cuadro. Despues de pedir el carril y solo si es nuestro,
+		// porque con el nado apagado en el features.ini el que sostiene al ped
+		// sigue siendo el motor y apagarle la gravedad lo dejaria colgando.
+		if (ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO)) {
+			bAffectedByGravity = false;
+			m_vecMoveSpeed.z = 0.0f;
+		}
+#endif
 		{
 			for (int odF = 0; odF < 7; odF++) {
 				CAnimBlendAssociation *odFA = RpAnimBlendClumpGetAssociation(GetClump(), odFallAnims[odF]);
 				if (odFA && odFA->blendDelta >= 0.0f) {
 					odFA->flags |= ASSOC_DELETEFADEDOUT;
-					odFA->blendDelta = -4.0f;
+					odFA->blendAmount = 0.0f;
+					odFA->blendDelta = -1000.0f;
 				}
 			}
 		}
@@ -2902,6 +3065,11 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			odColor.blue = (uint8)((0.5f * CTimeCycle::GetDirectionalBlue() + CTimeCycle::GetAmbientBlue()) * 127.5f);
 			odColor.alpha = (uint8)CGeneral::GetRandomNumberInRange(48, 96);
 			int odN = 60 + (int)Min(140.0f, odEntrada * 30.0f);
+#ifdef VICEEXT_SPLASH_REARM
+			// El chapuzon del salto es el que el jugador espera ver: es de
+			// prioridad, entra siempre y deja el reloj armado para el de someras.
+			if (ViceExtSplashGate("entrada", odN, true, odPos.z)) {
+#endif
 			CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, odPos, CVector(0.0f, 0.0f, 0.1f),
 				0.0f, odN, odColor, true);
 			for (int odR = 0; odR < 4; odR++) {
@@ -2911,6 +3079,9 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 				CParticle::AddParticle(PARTICLE_RAIN_SPLASH_BIGGROW, odP,
 					CVector(0.0f, 0.0f, 0.0f), nil, 0.0f, odColor, 0, 0, 0, 0);
 			}
+#ifdef VICEEXT_SPLASH_REARM
+			}
+#endif
 		}
 #ifdef __EMSCRIPTEN__
 		{
@@ -2920,6 +3091,27 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 		}
 #endif
 	}
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	// T34, medido: el mod repasa CADA CUADRO mientras nada las animaciones de
+	// salto, caida y salida de coche y las manda fundir a -4.0 (los ocho ids de
+	// su tabla 0x6f0800). No es un corte de un solo cuadro: el motor vuelve a
+	// mezclar el FALL mientras el ped baja, y por eso aqui la brazada tardaba
+	// 0,8-2,0 s en pesar en vez de 0,25 s.
+	{
+		static const AnimationId odNadoAnims[9] = {
+			ANIM_STD_JUMP_LAUNCH, ANIM_STD_JUMP_GLIDE, ANIM_STD_FALL, ANIM_STD_FALL_GLIDE,
+			ANIM_STD_FALL_ONBACK, ANIM_STD_FALL_LAND, ANIM_STD_FALL_COLLAPSE,
+			ANIM_STD_ROLLOUT_LHS, ANIM_STD_ROLLOUT_RHS
+		};
+		for (int odK = 0; odK < 9; odK++) {
+			CAnimBlendAssociation *odKA = RpAnimBlendClumpGetAssociation(GetClump(), odNadoAnims[odK]);
+			if (odKA && odKA->blendDelta >= 0.0f) {
+				odKA->flags |= ASSOC_DELETEFADEDOUT;
+				odKA->blendDelta = OD_SWIM_FADE_CUT;
+			}
+		}
+	}
+#endif
 	bIsInTheAir = false;
 	bIsLanding = false;
 	ViceExtSwimWeaponFists(this, true);
@@ -2951,7 +3143,13 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 			ApplyMoveForce(GetForward() * 0.7f);
 		ApplyMoveForce(CVector(-m_vecMoveSpeed.x * 3.0f, -m_vecMoveSpeed.y * 3.0f, 0.0f));
 	} else {
+#ifdef VICEEXT_SWIM_LOGICAL
+		// Deriva->crucero pasaba de 10 s a 2,5 s a 120 FPS.
+		if (s_odSwimTicks <= VICEEXT_SWIM_SEREGA_TIMEOUT)
+			s_odSwimTicks += CTimer::GetLogicalFramesPassed();
+#else
 		if (s_odSwimTicks <= VICEEXT_SWIM_SEREGA_TIMEOUT) ++s_odSwimTicks;
+#endif
 		s_odSwimState = 1;
 		odLevel = (s_odSwimTicks > VICEEXT_SWIM_SEREGA_TIMEOUT)
 		    ? VICEEXT_SWIM_SEREGA_CRUISE : VICEEXT_SWIM_SEREGA_ENTRY;
@@ -2968,7 +3166,12 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 		float odZFast = 4.0f * CTimer::GetTimeStepInSeconds();
 		if (odZFast > odZMax)
 			odZMax = odZFast;
+#ifdef VICEEXT_SWIM_LOGICAL
+		// La ventana de entrada rapida duraba 167 ms a 120 FPS en vez de 667 ms.
+		s_odSwimEnterTicks += CTimer::GetLogicalFramesPassed();
+#else
 		s_odSwimEnterTicks++;
+#endif
 	}
 	CVector odPosNado = GetPosition();
 	odPosNado.z += (odDz > odZMax) ? odZMax : ((odDz < -odZMax) ? -odZMax : odDz);
@@ -2977,6 +3180,32 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 	m_fMoveSpeed = m_vecMoveSpeed.Magnitude2D() * GAME_SPEED_TO_METERS_PER_SECOND;
 
 	CAnimBlendAssociation *odSwimAssoc = CAnimManager::BlendAnimation(GetClump(), ASSOCGRP_PLAYERSWIM, odSwimAnim, 4.0f);
+	if (odSwimAssoc && s_odSwimEnterTicks <= 1) {
+		odSwimAssoc->blendAmount = 1.0f;
+		odSwimAssoc->blendDelta = 0.0f;
+	}
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	{
+		// La ventana de mezcla dura ~250 ms y la unica traza que la miraba salia a
+		// 1 Hz, o sea un muestra por rampa: no se podia decir si la brazada tardaba
+		// 0,25 s (como el mod) o un segundo. Rafaga cada 50 ms en el primer medio
+		// segundo despues de entrar al agua.
+		static uint32 s_odRampaNext = 0u;
+		uint32 odRampaAhora = CTimer::GetTimeInMilliseconds();
+		if (s_odSwimEnterTicks < 20 &&
+			(odRampaAhora >= s_odRampaNext || odRampaAhora + 60000u < s_odRampaNext)) {
+			s_odRampaNext = odRampaAhora + 50u;
+			char odT[128];
+			snprintf(odT, sizeof odT, "SWIMRAMPA sw=%.2f fall=%.2f idle=%.2f z=%.1f nivel=%.2f hondo=%.2f aire=%d",
+				(odSwimAssoc ? (double)odSwimAssoc->blendAmount : -1.0),
+				(double)ViceExtSwimFallBlend(GetClump()),
+				(double)(RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE) ?
+					RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_IDLE)->blendAmount : -1.0),
+				(double)GetPosition().z, (double)odLevelW, (double)odDepth, odAire);
+			ODTRACES(odT);
+		}
+	}
+#endif
 	float odMedido = 0.0f;
 	if (s_odSwimLastPosOk) {
 		CVector odAhora = GetPosition();
@@ -3117,6 +3346,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 					}
 				}
 			}
+			float odFallMejor = ViceExtSwimFallBlend(GetClump());
 			CVector odCamPos = TheCamera.GetPosition();
 			float odSuelo = -1.0f;
 			{
@@ -3138,7 +3368,7 @@ CPlayerPed::ViceExtSwimControl(CPad *padUsed)
 				m_fRotationCur, TheCamera.Orientation, TheCamera.Cams[TheCamera.ActiveCam].Beta,
 				0, 0, s_odLastDest,
 				(odSwimAssoc ? odSwimAssoc->blendAmount : -1.0f),
-				(RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL) ? RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FALL)->blendAmount : -1.0f),
+				odFallMejor,
 				(int)bIsInWater, odAire, m_vecMoveSpeed.z,
 				odLevelW, odDepth, (int)m_nSelectedWepSlot,
 		0.0f,
@@ -3180,6 +3410,64 @@ CPlayerPed::ViceExtPedAtTrace(void)
 	if (odFrame != s_odLastFrame) {
 		s_odWorld += CTimer::GetTimeStep() / 50.0f;
 		s_odLastFrame = odFrame;
+	}
+	// El vaiven de la camara: antes solo miraba a pie quieto (MODE_FOLLOWPED) y no
+	// salio ni una fila en dos partidas, asi que ahora barre cualquier modo con una
+	// ventana de 1 s y pide el RECORRIDO de cada angulo dentro de ella. La fila sale
+	// si la camara se ha movida sola (el palo de mirar no se ha tocado) y el
+	// recorrido es pequeno: esa es la firma del balanceo lento, no del giro intencionado.
+	{
+		static uint32 s_odCamWin = 0, s_odCamRows = 0;
+		static float s_odBetaMin, s_odBetaMax, s_odAlphaMin, s_odAlphaMax;
+		static float s_odDistMin, s_odDistMax, s_odLook;
+		CCam &odCam = TheCamera.Cams[TheCamera.ActiveCam];
+		if (s_odCamWin == 0) {
+			s_odCamWin = odNow + 1000u;
+			s_odBetaMin = s_odBetaMax = odCam.Beta;
+			s_odAlphaMin = s_odAlphaMax = odCam.Alpha;
+			s_odDistMin = s_odDistMax = odCam.Distance;
+			s_odLook = 0.0f;
+		}
+		if (odCam.Beta < s_odBetaMin) s_odBetaMin = odCam.Beta;
+		if (odCam.Beta > s_odBetaMax) s_odBetaMax = odCam.Beta;
+		if (odCam.Alpha < s_odAlphaMin) s_odAlphaMin = odCam.Alpha;
+		if (odCam.Alpha > s_odAlphaMax) s_odAlphaMax = odCam.Alpha;
+		if (odCam.Distance < s_odDistMin) s_odDistMin = odCam.Distance;
+		if (odCam.Distance > s_odDistMax) s_odDistMax = odCam.Distance;
+		s_odLook += Abs(CPad::GetPad(0)->GetCarGunLeftRight());
+		if (odNow >= s_odCamWin) {
+			float odDBeta = s_odBetaMax - s_odBetaMin;
+			float odDAlpha = s_odAlphaMax - s_odAlphaMin;
+			float odDDist = s_odDistMax - s_odDistMin;
+			if (s_odCamRows < 600u && s_odLook < 0.05f &&
+				((odDBeta > 0.03f && odDBeta < 0.8f) ||
+				 (odDAlpha > 0.03f && odDAlpha < 0.8f) ||
+				 (odDDist > 0.25f && odDDist < 4.0f))) {
+				s_odCamRows++;
+				CVehicle *odVeh = FindPlayerVehicle();
+				float odVel = odVeh ? odVeh->m_vecMoveSpeed.Magnitude2D()
+				                   : m_vecMoveSpeed.Magnitude2D();
+				CVector odP = GetPosition();
+				char tc[400];
+				snprintf(tc, sizeof tc,
+					"PEDCAM modo=%d vel=%.2f dbeta=%.3f dalpha=%.3f ddist=%.2f beta=%.3f alpha=%.3f dist=%.2f look=%.3f fov=%.1f dfov=%.1f zoom=%.3f lat=%.2f avoid=%.2f below=%d col=%d seed=%d mouse3=%d wide=%d red=%.0f shake=%.2f drunk=%.3f fade=%d",
+					(int)odCam.Mode, odVel, odDBeta, odDAlpha, odDDist, odCam.Beta,
+					odCam.Alpha, odCam.Distance, s_odLook, odCam.FOV, CDraw::GetFOV(),
+					CDraw::GetCutsceneCameraZoom(),
+					CVector2D(odCam.Source.x - odP.x, odCam.Source.y - odP.y).Magnitude(),
+					TheCamera.m_fAvoidTheGeometryProbsTimer, (int)odCam.bBelowMinDist,
+					(int)odCam.m_bCollisionChecksOn, (int)odCam.m_bNeedsSeeding,
+					(int)CCamera::m_bUseMouse3rdPerson, (int)TheCamera.m_WideScreenOn,
+					TheCamera.m_ScreenReductionPercentage, TheCamera.m_fCamShakeForce,
+					CMBlur::Drunkness, (int)CDraw::FadeValue);
+				ODTRACES(tc);
+			}
+			s_odCamWin = odNow + 1000u;
+			s_odBetaMin = s_odBetaMax = odCam.Beta;
+			s_odAlphaMin = s_odAlphaMax = odCam.Alpha;
+			s_odDistMin = s_odDistMax = odCam.Distance;
+			s_odLook = 0.0f;
+		}
 	}
 
 	if (odNow < s_odNextTrace && odNow + 60000 >= s_odNextTrace)
@@ -3355,9 +3643,24 @@ CPlayerPed::ProcessControl(void)
 
 	if (m_nFadeDrunkenness) {
 		uint32 odDrunkTicks = CTimer::GetLogicalFramesPassed();
-		if (m_nDrunkenness - odDrunkTicks > 0) {
+#ifdef VICEEXT_DRUNK_FADE_NO_WRAP
+		// uint8 - uint32 se hace sin signo: con embriaguez 0 y un tick
+		// pasado el resultado era 4294967295, el uint8 se llenaba con 255 y
+		// el jugador quedaba mareado del todo al acabar la mision o saltar la
+		// cinematica, que es cuando CMissionCleanup::Process arma el desvanecido.
+		bool odDrunkSiguiendo = odDrunkTicks < m_nDrunkenness;
+#else
+		bool odDrunkSiguiendo = m_nDrunkenness - odDrunkTicks > 0;
+#endif
+		if (odDrunkSiguiendo) {
 			m_nDrunkenness = uint8(m_nDrunkenness - odDrunkTicks);
 		} else {
+#ifdef __EMSCRIPTEN__
+			char odDrunkW[96];
+			snprintf(odDrunkW, sizeof odDrunkW, "DRUNKW src=fade-fin val=%d ticks=%u t=%u",
+				(int)m_nDrunkenness, odDrunkTicks, CTimer::GetTimeInMilliseconds());
+			ODTRACES(odDrunkW);
+#endif
 			m_nDrunkenness = 0;
 			CMBlur::ClearDrunkBlur();
 			m_nFadeDrunkenness = 0;
@@ -3365,6 +3668,16 @@ CPlayerPed::ProcessControl(void)
 	}
 	if (m_nDrunkenness != 0) {
 		CMBlur::SetDrunkBlur(m_nDrunkenness / 255.f);
+	} else if (CMBlur::Drunkness > 0.0f) {
+		// Drunkness es estatica y solo se escribe cuando hay embriaguez, asi que el
+		// temblor de camara y el fantasma del frame anterior sobrevivian a ella.
+		CMBlur::ClearDrunkBlur();
+#ifdef __EMSCRIPTEN__
+		char odDrunkT[120];
+		snprintf(odDrunkT, sizeof odDrunkT, "DRUNKCL embriag=%d desvanec=%d",
+			(int)m_nDrunkenness, (int)m_nFadeDrunkenness);
+		ODTRACES(odDrunkT);
+#endif
 	}
 #ifdef __EMSCRIPTEN__
 	if (1) {
@@ -4123,3 +4436,14 @@ CPlayerPed::DrawTriangleForMouseRecruitPed(void)
 	}
 }
 #endif
+
+extern "C" void ViceExtTouchAutoAim(void)
+{
+	CPlayerPed *ped = FindPlayerPed();
+	if (!ped || FindPlayerVehicle())
+		return;
+	CWeapon *weapon = ped->GetWeapon();
+	if (!weapon || weapon->m_eWeaponType == WEAPONTYPE_UNARMED || weapon->IsTypeMelee())
+		return;
+	ped->FindWeaponLockOnTarget();
+}

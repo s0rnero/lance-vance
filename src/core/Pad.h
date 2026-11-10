@@ -13,6 +13,25 @@ enum {
 	PLAYERCONTROL_SHORTCUT_TAXI = 256,
 };
 
+enum {
+	TOUCH_CROSS = 1 << 0,
+	TOUCH_SQUARE = 1 << 1,
+	TOUCH_CIRCLE = 1 << 2,
+	TOUCH_TRIANGLE = 1 << 3,
+	TOUCH_LEFT_SHOULDER1 = 1 << 4,
+	TOUCH_RIGHT_SHOULDER1 = 1 << 5,
+	TOUCH_LEFT_SHOULDER2 = 1 << 6,
+	TOUCH_RIGHT_SHOULDER2 = 1 << 7,
+	TOUCH_SELECT = 1 << 8,
+	TOUCH_START = 1 << 9,
+	TOUCH_DPAD_UP = 1 << 10,
+	TOUCH_DPAD_DOWN = 1 << 11,
+	TOUCH_DPAD_LEFT = 1 << 12,
+	TOUCH_DPAD_RIGHT = 1 << 13,
+	TOUCH_LEFT_SHOCK = 1 << 14,
+	TOUCH_RIGHT_SHOCK = 1 << 15,
+};
+
 class CControllerState
 {
 public:
@@ -30,7 +49,7 @@ public:
 	int16 bReload;
 #endif
 #if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
-	int16 bLeftTurnSignals, bRightTurnSignals, bEmergencyLights;
+	int16 bLeftTurnSignals, bRightTurnSignals, bEmergencyLights, bHeadlights;
 #endif
 	float GetLeftStickX(void) { return LeftStickX/32767.0f; };
 	float GetLeftStickY(void) { return LeftStickY/32767.0f; };
@@ -199,6 +218,12 @@ public:
 	static CMouseControllerState OldMouseControllerState;
 	static CMouseControllerState NewMouseControllerState;
 	static CMouseControllerState PCTempMouseControllerState;
+#if defined VICEEXT_TOUCH_CONTROLS
+	static CControllerState PCTempTouchState;
+	static bool bTouchControls;
+	static bool bTouchAutoAim;
+	static bool bTouchInput;
+#endif
 	
 	
 #ifdef GTA_PS2_STUFF
@@ -272,6 +297,7 @@ public:
 	bool LeftTurnSignalsJustDown();
 	bool RightTurnSignalsJustDown();
 	bool EmergencyLightsJustDown();
+	bool HeadlightsJustDown();
 #endif
 	bool CycleWeaponLeftJustDown(void);
 	bool CycleWeaponRightJustDown(void);
@@ -304,6 +330,21 @@ public:
 	static int32 *EditCodesForControls(int32 *pRsKeys, int32 nSize);
 	uint32 InputHowLongAgo(void);
 	void SetDrunkInputDelay(int32 delay) { DrunkDrivingBufferUsed = delay; }
+
+#if defined VICEEXT_TOUCH_CONTROLS
+	static void SetTouchControls(bool on);
+	static void SetTouchAutoAim(bool on);
+	static void AffectFromTouch(void);
+	static void TouchFrame(int leftX, int leftY, int rightX, int rightY, int lookX, int lookY, unsigned buttons);
+	static int TouchContext(void);
+	static void TouchSkip(void);
+	static bool ConsumeTouchSkip(void);
+	static void TouchCycleWeapon(int dir);
+	static void TouchCycleRadio(int dir);
+	static bool IsTouchControlsActive(void) { return bTouchControls; }
+	static bool IsTouchInputActive(void) { return bTouchControls && bTouchInput; }
+	static bool IsTouchAutoAim(void) { return bTouchControls && bTouchAutoAim; }
+#endif
 
 #ifdef XINPUT
 	static int XInputJoy1;

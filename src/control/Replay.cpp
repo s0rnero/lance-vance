@@ -269,6 +269,10 @@ void CReplay::EnableReplays(void)
 void PlayReplayFromHD(void);
 void CReplay::Update(void)
 {
+#ifdef __EMSCRIPTEN__
+	// Sin reproduccion alcanzable aqui (F1/F2/F3): grabar dereferencia clumps de peds ya liberados.
+	return;
+#endif
 	if (CCutsceneMgr::IsCutsceneProcessing() || CPad::GetPad(0)->ArePlayerControlsDisabled() || CScriptPaths::IsOneActive() || FrontEndMenuManager.GetIsMenuActive()) {
 		Init();
 		return;
@@ -417,6 +421,10 @@ void CReplay::GoToNextBlock(void)
 
 void CReplay::RecordParticle(tParticleType type, const CVector& vecPos, const CVector& vecDir, float fSize, const RwRGBA& color)
 {
+#ifdef __EMSCRIPTEN__
+	// Se llama por cada particula creada y, sin grabacion, no tiene consumidor.
+	return;
+#endif
 	if (Record.m_nOffset > REPLAYBUFFERSIZE - 16 - sizeof(tParticlePacket))
 		GoToNextBlock();
 	tParticlePacket* pp = (tParticlePacket*)&Record.m_pBase[Record.m_nOffset];

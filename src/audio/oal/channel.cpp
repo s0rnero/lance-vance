@@ -1,6 +1,7 @@
 #include "common.h"
 
 #ifdef AUDIO_OAL
+#include "ondemand.h"
 #include "channel.h"
 #include "sampman.h"
 
@@ -68,6 +69,7 @@ void CChannel::SetDefault()
 	LoopCount = 1;
 	LastProcessedOffset = UINT32_MAX;
 	LoopPoints[0] = 0; LoopPoints[1] = -1;
+	SfxTag = 0xFFFFFFFFu;
 	
 	Frequency = MAX_FREQ;
 }
@@ -131,8 +133,37 @@ void CChannel::Start()
 	}
 	else
 		alBufferData(alBuffers[id], AL_FORMAT_MONO16, Data, DataSize, Frequency);
-	if ( LoopPoints[0] != 0 && LoopPoints[0] != -1 )
-		alBufferiv(alBuffers[id], AL_LOOP_POINTS_SOFT, LoopPoints);
+	// El buffer se reutiliza entre samples: escribir los puntos solo cuando vienen pedidos
+	// hace que un loop herede la region del sample anterior y suene repetido mal.
+	ALint last = ALint(DataSize / 2) - 1;
+	if ( last > 0 )
+	{
+		ALint lp[2];
+		lp[0] = LoopPoints[0] > 0 ? LoopPoints[0] : 0;
+		if ( lp[0] > last ) lp[0] = last;
+		lp[1] = LoopPoints[1] > 0 && LoopPoints[1] < last ? LoopPoints[1] : last;
+		if ( lp[1] < lp[0] ) lp[1] = last;
+		alBufferiv(alBuffers[id], AL_LOOP_POINTS_SOFT, lp);
+#ifdef __EMSCRIPTEN__
+		// Muestreado hasta T117 (1 de cada 200): un bucle raro nunca llegaba a la fila.
+		// Ahora sale toda la familia de bucles, acotada por ritmo y por techo, y con la
+		// muestra que llena el canal: asi un "suena en bucle" se lee en una linea.
+		{
+			static uint32 s_odLoopPtsNext;
+			static uint32 s_odLoopPtsRows;
+			uint32 odNow = (uint32)emscripten_get_now();
+			if ( LoopCount != 1 && s_odLoopPtsRows < 600u && odNow >= s_odLoopPtsNext )
+			{
+				s_odLoopPtsRows++;
+				s_odLoopPtsNext = odNow + 120u;
+				char t[128];
+				snprintf(t, sizeof t, "LOOPSET ch=%u sfx=%u nsamp=%d lp=%d,%d freq=%d cnt=%d",
+					id, SfxTag, last + 1, lp[0], lp[1], Frequency, LoopCount);
+				ODTRACES(t);
+			}
+		}
+#endif
+	}
 	alSourcei(alSources[id], AL_BUFFER, alBuffers[id]);
 	alSourcePlay(alSources[id]);
 }
@@ -249,6 +280,11 @@ void CChannel::SetLoopPoints(ALint start, ALint end)
 {
 	LoopPoints[0] = start;
 	LoopPoints[1] = end;
+}
+
+void CChannel::SetSfxTag(uint32 sfx)
+{
+	SfxTag = sfx;
 }
 	
 void CChannel::SetPosition(float x, float y, float z)

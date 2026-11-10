@@ -1464,7 +1464,13 @@ cAudioManager::ProcessRainOnVehicle(cVehicleParams& params)
 {
 	if (params.m_fDistance < SQR(RAIN_ON_VEHICLE_MAX_DIST) && CWeather::Rain > 0.01f && (!CCullZones::CamNoRain() || !CCullZones::PlayerNoRain())) {
 		CVehicle *veh = params.m_pVehicle;
+#ifdef VICEEXT_AUDIO_WINDOWS_LOGICAL
+		// El contador subia por frame presentado: 60 eventos de lluvia por segundo
+		// a 120 FPS en vez de 15, y se comia canales. Se avanza en ticks logicos.
+		veh->m_bRainAudioCounter += (uint8)CTimer::GetLogicalFramesPassed();
+#else
 		veh->m_bRainAudioCounter++;
+#endif
 		if (veh->m_bRainAudioCounter >= 2) {
 			veh->m_bRainAudioCounter = 0;
 			CalculateDistance(params.m_bDistanceCalculated, params.m_fDistance);
@@ -9141,22 +9147,29 @@ cAudioManager::ProcessWeather(int32 id)
 	modifier = Min(1.0f, modifier);
 	wind = Max(CWeather::Wind, modifier);
 	if (wind > 0.0f && CObject::fDistToNearestTree < 75.0f) {
-		m_sQueueSample.m_nSampleIndex = SFX_PALM_TREE_LO;
-		m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_PALM_TREE_LO);
-		m_sQueueSample.m_nVolume = (m_anRandomTable[1] % 10 + 45.0f) * (75.0f - CObject::fDistToNearestTree) / 75.0f * wind;
-		m_sQueueSample.m_nCounter = 5;
-		m_sQueueSample.m_nBankIndex = SFX_BANK_0;
-		m_sQueueSample.m_nPriority = 1;
-		m_sQueueSample.m_nPan = 63;
-		m_sQueueSample.m_bIs2D = TRUE;
-		m_sQueueSample.m_nLoopCount = 0;
-		m_sQueueSample.m_bStatic = FALSE;
-		m_sQueueSample.m_nFramesToPlay = 7;
-		SET_SOUND_REVERB(FALSE);
-		SET_EMITTING_VOLUME(m_sQueueSample.m_nVolume);
-		SET_LOOP_OFFSETS(m_sQueueSample.m_nSampleIndex)
-		SET_SOUND_REFLECTION(FALSE);
-		AddSampleToRequestedQueue();
+		// Con viento apenas distinto de cero el volumen truncaba a 0 y el bucle se
+		// reencolaba cada frame en silencio: al estar siempre pedido nunca entraba en la
+		// ruta de liberacion y se comia un canal hasta que lo mataba el vigilante
+		// (LOOPKILL sfx=37 type=3 silentsec=25). ProcessEngineDamage ya usa este guard.
+		Vol = (m_anRandomTable[1] % 10 + 45.0f) * (75.0f - CObject::fDistToNearestTree) / 75.0f * wind;
+		if (Vol > 0) {
+			m_sQueueSample.m_nSampleIndex = SFX_PALM_TREE_LO;
+			m_sQueueSample.m_nFrequency = SampleManager.GetSampleBaseFrequency(SFX_PALM_TREE_LO);
+			m_sQueueSample.m_nVolume = Vol;
+			m_sQueueSample.m_nCounter = 5;
+			m_sQueueSample.m_nBankIndex = SFX_BANK_0;
+			m_sQueueSample.m_nPriority = 1;
+			m_sQueueSample.m_nPan = 63;
+			m_sQueueSample.m_bIs2D = TRUE;
+			m_sQueueSample.m_nLoopCount = 0;
+			m_sQueueSample.m_bStatic = FALSE;
+			m_sQueueSample.m_nFramesToPlay = 7;
+			SET_SOUND_REVERB(FALSE);
+			SET_EMITTING_VOLUME(m_sQueueSample.m_nVolume);
+			SET_LOOP_OFFSETS(m_sQueueSample.m_nSampleIndex)
+			SET_SOUND_REFLECTION(FALSE);
+			AddSampleToRequestedQueue();
+		}
 		CObject::fDistToNearestTree = 999999.9f;
 	}
 }

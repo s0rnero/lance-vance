@@ -13,6 +13,9 @@
 #include "ColStore.h"
 #include "VarConsole.h"
 #include "Pools.h"
+#ifdef __EMSCRIPTEN__
+#include "ondemand.h"
+#endif
 
 CPool<ColDef,ColDef> *CColStore::ms_pColPool;
 #ifndef MASTER
@@ -108,14 +111,33 @@ CColStore::LoadCol(int32 slot, uint8 *buffer, int32 bufsize)
 {
 	bool success;
 	ColDef *def = GetSlot(slot);
+#ifdef __EMSCRIPTEN__
+	{
+		char t[192];
+		snprintf(t, sizeof t, "COLCTX slot=%d nom=%.24s size=%d min=%d max=%d loaded=%d",
+			slot, def->name, bufsize, def->minIndex, def->maxIndex, (int)def->isLoaded);
+		ODTRACES(t);
+	}
+#endif
 	if(def->minIndex > def->maxIndex)
 		success = CFileLoader::LoadCollisionFileFirstTime(buffer, bufsize, slot);
 	else
 		success = CFileLoader::LoadCollisionFile(buffer, bufsize, slot);
 	if(success)
 		def->isLoaded = true;
-	else
+	else{
 		debug("Failed to load Collision\n");
+#ifdef __EMSCRIPTEN__
+		static int odN = 0;
+		odN++;
+		if(odN <= 60 || (odN % 200) == 0){
+			char t[192];
+			snprintf(t, sizeof t, "COLFAIL slot=%d nom=%.24s size=%d min=%d max=%d",
+				slot, def->name, bufsize, def->minIndex, def->maxIndex);
+			ODTRACES(t);
+		}
+#endif
+	}
 	return success;
 }
 

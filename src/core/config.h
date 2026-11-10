@@ -627,6 +627,9 @@ enum Config {
 #define VICEEXT_CLIMBING
 #define VICEEXT_ROCKET_LAUNCHER_THIRD_PERSON_AIM
 #endif
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_IMPROVED_MENU_AND_INPUT)
+#define VICEEXT_TOUCH_CONTROLS
+#endif
 #define VICEEXT_FIRING_AND_AIMING
 #define VICEEXT_FIRST_PERSON
 #define VICEEXT_PED_VARIATIONS
@@ -635,6 +638,13 @@ enum Config {
 #define VICEEXT_GPS
 #endif
 #define VICEEXT_IMPROVED_VEHICLES_2
+// Plan 58.0 T3/T4: lentes ambar pintadas en la carroceria (comparten material
+// con la pintura) que se encienden en su sitio con un atlas derivado <atlas>_lens,
+// sin mover ni crear geometria ni tintar el material. Tabla src/vehicles/
+// BodyLensTable.h generada por tools/gen_body_lens.py sobre los seis sitios
+// medidos del plan (esperant, boxville, fbiranch, mule, trash).
+#define VICEEXT_BODY_LENS
+#define VICEEXT_BODY_LENS_MAX	8
 #define VICEEXT_VOLANTE_GAIN		2.0f
 #define VICEEXT_IMPROVED_VEHICLES
 #define VICEEXT_EX_VCPD_WINTERGREEN
@@ -647,6 +657,96 @@ enum Config {
 #define VICEEXT_WANTED_PATHS
 
 #define VICEEXT_IS_HIGH_VEHICLE
+
+// Plan 56.0 T4: los vehiculos sin interior medido (src/vehicles/
+// NoInteriorModelTable.h) no admiten la 1a persona del coche, y al subir con la
+// preferencia puesta en ella se pasa a tercera.
+#define VICEEXT_NO_INTERIOR_CAMERA
+
+// Plan 56.0 T5: el charco de luz del suelo (faros y frenos) se ancla a la
+// lampara del modelo en vez de crecer con su longitud.
+#define VICEEXT_LIGHT_SHADOW_ANCHOR
+
+// Plan 48.0: lo que seguia dependiendo de los FPS y el asiento de los NPC.
+// Cada correccion se apaga con su define; las constantes se afinan aqui.
+#define VICEEXT_HORN_LOGICAL_TICK		// anillo del claxon muestreado a 30 Hz
+#define VICEEXT_HELI_SPIN_SCALED		// rotor: decaimiento escalado y rampa larga
+#define VICEEXT_VEH_FADE_SCALED			// alpha de vehiculos escalado + jinetes ocultos
+#define VICEEXT_CLOCK_CATCHUP			// el reloj recupera el tiempo de los hitches
+#define VICEEXT_PED_VS_CAR_PUSH			// empuje ped<->coche atenuado en vez de anulado
+// #define VICEEXT_SEAT_BY_PED_HEIGHT	// 49.0 T15: la compensacion por
+// altura hacia mal a los bajitos; todos los NPCs van en la misma postura.
+
+#define OD_HELI_RAMP				0.0005f	// con 0.001 el rotor tarda 3 s; ahora 6 s
+#define OD_HELI_RAMP_RC				0.0015f	// RC: la misma proporcion 3x
+#define OD_HELI_DECAY				0.0005f	// por tick de 30 Hz
+#define OD_VEH_FADE_IN				16.0f	// idem
+#define OD_VEH_FADE_OUT				8.0f
+#define OD_SEAT_GHOST_ALPHA			32	// por debajo el coche no se ve ni un pixel
+#define OD_CLOCK_MAX_CATCHUP			20	// minutos de juego recuperados de golpe
+#define OD_VEH_ALMOST_STOPPED_SQ		0.0004f	// (0.02)^2: por debajo, el coche no se mueve
+#define OD_PUSH_VS_PED				0.25f
+#define OD_SHIFT_VS_PED				0.15f
+
+// Plan 49.0: el censo de logica por frame (ADR-050). Cada correccion se
+// apaga con su define; las constantes se afinan aqui.
+#define VICEEXT_STICK_TIMESTEP_SCALED	// T1 giro y apuntado con mando escalados
+#define VICEEXT_AIR_TURN_DAMPED			// T2 amortiguacion del giro libre
+#define VICEEXT_STREAM_LOGICAL			// T4 cadencias de streaming por tick logico
+#define VICEEXT_SUSPENSION_SCALED		// T5 baches de suspension por tick logico
+#define VICEEXT_CAM_WINDOWS_LOGICAL		// T6 ventanas de camara por tick logico
+#define VICEEXT_SWIM_LOGICAL			// T7 temporizadores de nado por tick logico
+#define VICEEXT_BLOOD_LOGICAL			// T8 charcos de sangre uno por tick logico
+#define VICEEXT_HUD_WINDOWS_LOGICAL		// T9 parpadeos y rampas del HUD
+#define VICEEXT_AUDIO_WINDOWS_LOGICAL	// T10 lluvia, retune y reflexiones
+#define VICEEXT_SPLASH_LOGICAL			// T16 gotas de lente: duracion y presupuesto
+#define VICEEXT_ALLOC_GUARD				// T14 cota de texturas por TXD + trazas
+#define VICEEXT_TYRE_TRACE				// T12 sola traza del neumatico
+
+#define OD_AIR_TURN_DAMP		0.99f		// T2: factor por tick de 30 Hz
+#define OD_STREAM_VEH_FRAMES	350		// T4: ticks logicos entre recargas de clase
+#define OD_SPLASH_TICKS			14		// T16: duracion del salpicado, ticks logicos
+#define OD_SPLASH_REARM_MS		500u		// T16: minima espera entre dos salpicados
+#define OD_TXD_MAX_TEXTURES		512		// T14: mas de esto en un TXD es registro roto
+#define OD_TXD_TRACE_MIN_TEX	64		// T14: TXD grandes que se nombran en la traza
+#define OD_LOAD_TRACE_SECTORS	128		// T14: desde que tamano se traza la carga
+#define OD_SEAT_LIFT_ALL			0.0f		// T15: asiento uniforme; 0.0 = el de Tommy
+
+// Plan 50.0: el salto de la intro y el anuncio de puente al empezar la partida.
+#define VICEEXT_RADIO_PSA_GUARD		// T19: el anuncio no puede casar la radio
+
+#define OD_PSA_SILENCE_MS		2000u		// T19: ms de anuncio sin oir nada antes de rendirse
+#define OD_PSA_ANNOUNCE_RETRY_MS	250u		// T22: ms entre reintentos de abrir el aviso
+#define OD_PSA_STATION_DEAD_MS	8000u		// T22: ms de fallos seguidos antes de morir la emisora
+
+// Plan 49.1: los cinco puntos del jugador tras el 50.0-T1 (ADR-050).
+#define VICEEXT_FOV_TRACE			// T28: FOVLN publica el FOV escalado solo cuando cambia
+#define VICEEXT_DRUNK_FADE_NO_WRAP	// T24: el desvanecido de la embriaguez no desborda el uint8
+#define VICEEXT_CEILING_RAISED		// T25: el techo de vuelo vanilla se levanta al doble
+#define VICEEXT_SPLASH_REARM		// T23: un solo chapuzon por ventana en el agua somera
+#define VICEEXT_SWIM_MOD_BORDER		// T34: entrada/salida del agua como las mide el mod (REA)
+#define VICEEXT_SWIM_CLIMB_EXIT		// T34: salir del agua trepando, con el climbing que ya portamos
+
+// (T27 retiro OD_FOV_RAMP_MS: la rampa era la que producia el zoom visible)
+#define OD_VUELO_MS				250u	// T25: ms entre lineas VUELO
+#define OD_CEILING_Z_SCALE			0.5f	// T25: 0.5 = el techo vanilla al doble de alto; 1.0 = vanilla
+#define OD_SPLASH_EVENT_MS			450u	// T23: ms entre chapuzones del jugador
+#define OD_SWIM_FOOT_M			0.30f	// 52.0: suelo a menos de esto bajo los pies = apoyado
+#define OD_SWIM_WADE_M			1.60f	// 52.0: agua sobre los pies que se vadea de pie
+#define OD_SWIM_ENTER_M			0.30f	// 52.0: calado para entrar flotando
+#define OD_SWIM_EXIT_M			0.10f	// 52.0: calado para salir
+#define OD_SWIM_FADE_OUT			-6.0f	// T34: fundido de la brazada al salir (el del mod)
+#define OD_SWIM_FADE_CUT			-4.0f	// T34: corte por cuadro de salto/caida mientras nada
+#define OD_SWIM_CLIMB_MAX_M			1.20f	// T34: altura agarrable desde el agua (de pie son 2,25)
+#define OD_SWIM_HOP_MIN_M			0.35f	// T34: reborde mas bajo del subidito automatico
+#define OD_SWIM_HOP_MAX_M			0.90f	// T34: reborde mas alto del subidito automatico
+#define OD_SWIM_HOP_FWD_M			1.50f	// T34: hacia donde mira el reborde del subidito
+#ifdef __EMSCRIPTEN__
+#define VICEEXT_WEB_GALLERY
+#define VICEEXT_WEB_MUSIC_MANAGER
+#define VICEEXT_WEB_SAVE_MANAGER
+#define VICEEXT_WEB_SKINS
+#endif
 
 // Hud, frontend and radar
 #define PC_MENU

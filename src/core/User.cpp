@@ -9,6 +9,7 @@
 #include "Vehicle.h"
 #include "World.h"
 #include "Zones.h"
+#include "Timer.h"
 
 CPlaceName CUserDisplay::PlaceName;
 COnscreenTimer CUserDisplay::OnscnTimer;
@@ -41,8 +42,17 @@ CPlaceName::Process()
 	if (navigZone == m_pZone) {
 		if (defaultZone == m_pZone2 || m_pZone != nil) {
 			if (navigZone != nil || defaultZone != nil) {
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+				// El nombre de zona duraba 2,1 s a 120 FPS en vez de 8,3 s.
+				if (m_nAdditionalTimer != 0) {
+					m_nAdditionalTimer -= (int16)CTimer::GetLogicalFramesPassed();
+					if (m_nAdditionalTimer < 0)
+						m_nAdditionalTimer = 0;
+				}
+#else
 				if (m_nAdditionalTimer != 0)
 					m_nAdditionalTimer--;
+#endif
 			} else {
 				m_nAdditionalTimer = 0;
 				m_pZone = nil;

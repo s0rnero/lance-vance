@@ -338,7 +338,7 @@ public:
 	uint32 ComputeDopplerEffectedFrequency(uint32 oldFreq, float position1, float position2, float speedMultiplier);
 	int32 RandomDisplacement(uint32 seed);
 	void InterrogateAudioEntities(); // inlined
-	void AddSampleToRequestedQueue();
+	void AddSampleToRequestedQueueAt(uint32 prodLine);
 	void AddDetailsToRequestedOrderList(uint8 sample); // inlined in vc
 #ifdef AUDIO_REFLECTIONS
 	void AddReflectionsToRequestedQueue();
@@ -605,6 +605,13 @@ public:
 
 	float Sqrt(float v) const { return v <= 0.0f ? 0.0f : ::Sqrt(v); }
 };
+
+#ifdef __EMSCRIPTEN__
+	#define OD_AUDIO_PROD __LINE__
+#else
+	#define OD_AUDIO_PROD 0u
+#endif
+#define AddSampleToRequestedQueue() AddSampleToRequestedQueueAt(OD_AUDIO_PROD)
 
 /*
    Manual loop points are not on PS2 so let's have these macros to avoid massive ifndefs.

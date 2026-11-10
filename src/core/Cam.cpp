@@ -71,6 +71,7 @@ CCam::Init(void)
 	m_pLastCarEntered = nil;
 	m_pLastPedLookedAt = nil;
 	ResetStatics = true;
+	m_bNeedsSeeding = true;
 	Beta = 0.0f;
 	m_fTilt = 0.0f;
 	m_fTiltSpeed = 0.0f;
@@ -176,9 +177,17 @@ CCam::Process(void)
 	if(CamTargetEntity == nil)
 		CamTargetEntity = TheCamera.pTargetEntity;
 
+#ifdef VICEEXT_CAM_WINDOWS_LOGICAL
+	// La ventana de 9 frames se recorria una vez por frame presentado: a 120
+	// FPS la camara comprobaba oclusion 13 veces por segundo en vez de 3.
+	m_iFrameNumWereAt += CTimer::GetLogicalFramesPassed();
+	if(m_iFrameNumWereAt > m_iDoCollisionCheckEveryNumOfFrames)
+		m_iFrameNumWereAt = 1;
+#else
 	m_iFrameNumWereAt++;
 	if(m_iFrameNumWereAt > m_iDoCollisionCheckEveryNumOfFrames)
 		m_iFrameNumWereAt = 1;
+#endif
 	m_bCollisionChecksOn = m_iFrameNumWereAt == m_iDoCollisionChecksOnFrameNum;
 
 	if(m_bCamLookingAtVector){
@@ -207,7 +216,16 @@ CCam::Process(void)
 			TargetSpeedVar = Min(Sqrt(SQR(FwdSpeedX) + SQR(FwdSpeedY))/0.9f, 1.0f);
 		else
 			TargetSpeedVar = -Min(Sqrt(SQR(FwdSpeedX) + SQR(FwdSpeedY))/1.8f, 0.5f);
+#ifdef VICEEXT_CAM_WINDOWS_LOGICAL
+		// EMA sin escalar: a 120 FPS el zoom por velocidad convergia 4 veces
+		// antes. El Pow deja el 0.895 exacto a 30 Hz.
+		{
+			float odKeep = Pow(0.895f, CTimer::GetTimeStepFix());
+			SpeedVar = odKeep*SpeedVar + (1.0f - odKeep)*TargetSpeedVar;
+		}
+#else
 		SpeedVar = 0.895f*SpeedVar + 0.105*TargetSpeedVar;
+#endif
 	}else{
 		if(CamTargetEntity == FindPlayerPed()){
 			// Some fancy smoothing of player position and speed
@@ -1544,6 +1562,18 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		Rotating = false;
 		m_bCollisionChecksOn = true;
 		CPad::GetPad(0)->ClearMouseHistory();
+		if(m_bNeedsSeeding){
+			m_bNeedsSeeding = false;
+			Beta = TargetOrientation + PI;
+			Alpha = fDefaultAlphaOrient;
+			BetaSpeed = 0.0f;
+			AlphaSpeed = 0.0f;
+			Distance = TheCamera.m_fPedZoomValue + fAngleDist;
+			Front.x = Cos(Alpha) * -Cos(Beta);
+			Front.y = Cos(Alpha) * -Sin(Beta);
+			Front.z = Sin(Alpha);
+			Source = CameraTarget - Front*Distance;
+		}
 		ResetStatics = false;
 	}
 
@@ -1609,6 +1639,13 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
 		BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV/80.0f;
 		AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV/80.0f;
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+		// Igual que la rama que ya funciona: raton sin escalar, mando a 30 Hz.
+		if(UseMouse == false){
+			BetaOffset *= CTimer::GetTimeStepFix();
+			AlphaOffset *= CTimer::GetTimeStepFix();
+		}
+#endif
 #else
 		if(UseMouse){
 			BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV/80.0f;
@@ -2545,8 +2582,20 @@ CCam::Process_Rocket(const CVector &CameraTarget, float, float, float)
 		LookUpDown = CPad::GetPad(0)->SniperModeLookUpDown();
 	}
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+	// El raton ya llega como delta acumulado por evento; el stick es
+	// un nivel que se mantiene, asi que solo el stick se escala.
+	if(UseMouse){
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+	}else{
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f * CTimer::GetTimeStepFix();
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f * CTimer::GetTimeStepFix();
+	}
+#else
 	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
 	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#endif
 #else
 	if(UseMouse){
 		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
@@ -2652,8 +2701,20 @@ CCam::Process_M16_1stPerson(const CVector &CameraTarget, float, float, float)
 		LookUpDown = CPad::GetPad(0)->SniperModeLookUpDown();
 	}
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+	// El raton ya llega como delta acumulado por evento; el stick es
+	// un nivel que se mantiene, asi que solo el stick se escala.
+	if(UseMouse){
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+	}else{
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f * CTimer::GetTimeStepFix();
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f * CTimer::GetTimeStepFix();
+	}
+#else
 	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
 	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#endif
 #else
 	if(UseMouse){
 		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
@@ -3073,8 +3134,20 @@ CCam::Process_1rstPersonPedOnPC(const CVector&, float TargetOrientation, float, 
 			LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
 		}
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+		// El raton ya llega como delta acumulado por evento; el stick es
+		// un nivel que se mantiene, asi que solo el stick se escala.
+		if(UseMouse){
+			Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+			Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+		}else{
+			Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f * CTimer::GetTimeStepFix();
+			Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f * CTimer::GetTimeStepFix();
+		}
+#else
 		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
 		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#endif
 #else
 		if(UseMouse){
 			Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
@@ -3217,8 +3290,20 @@ CCam::Process_Sniper(const CVector &CameraTarget, float TargetOrientation, float
 		LookUpDown = CPad::GetPad(0)->SniperModeLookUpDown();
 	}
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+	// El raton ya llega como delta acumulado por evento; el stick es
+	// un nivel que se mantiene, asi que solo el stick se escala.
+	if(UseMouse){
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+	}else{
+		Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f * CTimer::GetTimeStepFix();
+		Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f * CTimer::GetTimeStepFix();
+	}
+#else
 	Beta += LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
 	Alpha += LookUpDown * TheCamera.m_fMouseAccelVertical * FOV / 80.0f;
+#endif
 #else
 	if(UseMouse){
 		Beta += TheCamera.m_fMouseAccelHorzntl * LookLeftRight * FOV/80.0f;
@@ -5919,8 +6004,15 @@ CCam::Process_FollowProjectile(const CVector& CameraTarget, float TargetOrientat
 		LookUpDown = CPad::GetPad(0)->LookAroundUpDown();
 	}
 
-	BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV / 80.0f;
+	BetaOffset = LookLeftRight * TheCamera.m_fMouseAccelHorzntl * FOV/80.0f;
 	AlphaOffset = LookUpDown * TheCamera.m_fMouseAccelVertical * FOV/80.0f;
+#ifdef VICEEXT_STICK_TIMESTEP_SCALED
+	// Igual que la rama que ya funciona: raton sin escalar, mando a 30 Hz.
+	if(CPad::GetPad(0)->IsAffectedByController){
+		BetaOffset *= CTimer::GetTimeStepFix();
+		AlphaOffset *= CTimer::GetTimeStepFix();
+	}
+#endif
 
 	Alpha += AlphaOffset;
 	Beta += BetaOffset;
@@ -6386,25 +6478,30 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 
 	static bool s_odCamCentrando = false;
 	static float s_odCamVelCentro = 0.0f;
+	static float s_odCamVelCentroY = 0.0f;
 	bool odPedido = false;
 	bool odAutoCentrar = false;
 	float odTargetBeta = 0.0f;
 	float odErrorBeta = 0.0f;
+	float odTargetAlpha = 0.0f;
+	float odErrorAlpha = 0.0f;
 	{
 		odTargetBeta = car->GetForward().Heading() - HALFPI;
 		odErrorBeta = odTargetBeta - Beta;
 		while (odErrorBeta >= PI) odErrorBeta -= 2*PI;
 		while (odErrorBeta < -PI) odErrorBeta += 2*PI;
+		odTargetAlpha = -zoomModeAlphaOffset;
+		odErrorAlpha = odTargetAlpha - Alpha;
 	}
 	bool odIdle = (uint32)(odNow - s_odCamLastLook) >= 1500u;
 	bool odAvance = DotProduct(car->GetForward(), car->m_vecMoveSpeed) > 0.02f;
 	bool odPuedeCentrar = odIdle && !odMirando && stickX == 0.0f && odAvance
 		&& TheCamera.m_uiTransitionState == 0;
 	if (odPuedeCentrar) {
-		if (!s_odCamCentrando && Abs(odErrorBeta) > DEGTORAD(3.0f)) {
+		if (!s_odCamCentrando && (Abs(odErrorBeta) > DEGTORAD(3.0f) || Abs(odErrorAlpha) > DEGTORAD(3.0f))) {
 			s_odCamCentrando = true;
 			odPedido = true;
-		} else if (s_odCamCentrando && Abs(odErrorBeta) < DEGTORAD(2.0f))
+		} else if (s_odCamCentrando && Abs(odErrorBeta) < DEGTORAD(2.0f) && Abs(odErrorAlpha) < DEGTORAD(2.0f))
 			s_odCamCentrando = false;
 	}
 	odAutoCentrar = s_odCamCentrando && odPuedeCentrar;
@@ -6457,9 +6554,10 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 			while (odErr >= PI) odErr -= 2*PI;
 			while (odErr < -PI) odErr += 2*PI;
 			char t[200];
-			snprintf(t, sizeof t, "camauto2 auto=%d pedido=%d schema=1 gen=1 frame=%u error=%.4f errdeg=%.2f beta=%.4f objetivo=%.4f vel=%.4f",
+			snprintf(t, sizeof t, "camauto2 auto=%d pedido=%d schema=2 gen=1 frame=%u error=%.4f errdeg=%.2f beta=%.4f objetivo=%.4f vel=%.4f erralpha=%.4f alphagrado=%.2f vely=%.4f",
 				odAutoCentrar ? 1 : 0, odPedido ? 1 : 0, (unsigned)CTimer::GetFrameCounter(),
-				odErr, odErr * (180.0f / PI), Beta, odTargetBeta, s_odCamVelCentro * 50.0f * (180.0f / PI));
+				odErr, odErr * (180.0f / PI), Beta, odTargetBeta, s_odCamVelCentro * 50.0f * (180.0f / PI),
+				odErrorAlpha, odErrorAlpha * (180.0f / PI), s_odCamVelCentroY * 50.0f * (180.0f / PI));
 			ODTRACES(t);
 			s_odCamTrazaUltimo = odAutoCentrar;
 			s_odCamTrazaSiguiente = odMs + 500u;
@@ -6524,6 +6622,11 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 		Alpha = maxAlphaAllowed;
 		AlphaSpeed = 0.0f;
 	}
+
+	if (odAutoCentrar)
+		WellBufferMe(odTargetAlpha, &Alpha, &s_odCamVelCentroY, 0.15f, 0.007f, true);
+	else
+		s_odCamVelCentroY = 0.0f;
 
 	// Prevent unsignificant angle changes
 	if (Abs(lastAlpha - Alpha) < 0.0001f)

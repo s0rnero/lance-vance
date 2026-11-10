@@ -24,6 +24,7 @@
 #include "CutsceneMgr.h"
 #include "Font.h"
 #include "Hud.h"
+#include "DMAudio.h"
 #include "Text.h"
 #include "Timer.h"
 #include "Record.h"
@@ -82,6 +83,13 @@ char CPad::KeyBoardCheatString[30];
 CMouseControllerState CPad::OldMouseControllerState;
 CMouseControllerState CPad::NewMouseControllerState;
 CMouseControllerState CPad::PCTempMouseControllerState;
+#if defined VICEEXT_TOUCH_CONTROLS
+CControllerState CPad::PCTempTouchState;
+bool CPad::bTouchControls;
+bool CPad::bTouchAutoAim;
+bool CPad::bTouchInput;
+static bool sTouchSkipRequested;
+#endif
 
 #ifdef DETECT_PAD_INPUT_SWITCH
 bool CPad::IsAffectedByController = false;
@@ -870,7 +878,7 @@ CControllerState::Clear(void)
 	bReload = 0;
 #endif
 #if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
-	bLeftTurnSignals = bRightTurnSignals = bEmergencyLights = 0;
+	bLeftTurnSignals = bRightTurnSignals = bEmergencyLights = bHeadlights = 0;
 #endif
 }
 
@@ -934,6 +942,9 @@ void CPad::Clear(bool bResetPlayerControls)
 	PCTempKeyState.Clear();
 	PCTempJoyState.Clear();
 	PCTempMouseState.Clear();
+#if defined VICEEXT_TOUCH_CONTROLS
+	PCTempTouchState.Clear();
+#endif
 
 	NewKeyState.Clear();
 	OldKeyState.Clear();
@@ -1230,6 +1241,7 @@ CControllerState CPad::ReconcileTwoControllersInput(CControllerState const &Stat
 	_RECONCILE_BUTTON(bLeftTurnSignals);
 	_RECONCILE_BUTTON(bRightTurnSignals);
 	_RECONCILE_BUTTON(bEmergencyLights);
+	_RECONCILE_BUTTON(bHeadlights);
 #endif
 	_RECONCILE_AXIS(LeftStickX);
 	_RECONCILE_AXIS(LeftStickY);
@@ -2062,10 +2074,12 @@ void CPad::AffectFromGamepadApi(uint32 pad)
 			index = gamepad.index;
 			break;
 		}
-	}
-
-	if (index != connectedIndex[pad]) {
+	}		if (index != connectedIndex[pad]) {
 		connectedIndex[pad] = index;
+		if (index != -1 && !FrontEndMenuManager.m_PrefsAutoaim) {
+			FrontEndMenuManager.m_PrefsAutoaim = true;
+			ODTRACES("VEX input autoaim default=1");
+		}
 		char t[200];
 		snprintf(t, sizeof t, "VEX input pad=%u gamepad=%d id=%.120s", pad, index, index == -1 ? "-" : gamepad.id);
 		ODTRACES(t);
@@ -2144,6 +2158,318 @@ void CPad::AffectFromGamepadApi(uint32 pad)
 }
 #endif
 
+#if defined VICEEXT_TOUCH_CONTROLS
+static int16 TouchClampAxis(int value)
+{
+	if (value > 128)
+		return 128;
+	if (value < -128)
+		return -128;
+	return (int16)value;
+}
+
+static int16 TouchMaxAxis(int16 a, int16 b)
+{
+	return Abs(a) >= Abs(b) ? a : b;
+}
+
+static void TouchMergeButton(int16 &dst, int16 src)
+{
+	if (src)
+		dst = src;
+}
+
+void CPad::TouchSkip(void)
+{
+	if (CCutsceneMgr::IsRunning())
+		sTouchSkipRequested = true;
+}
+
+bool CPad::ConsumeTouchSkip(void)
+{
+	if (!sTouchSkipRequested)
+		return false;
+	sTouchSkipRequested = false;
+	return true;
+}
+
+void CPad::TouchCycleWeapon(int dir)
+{
+	if (!dir)
+		return;
+
+	CPlayerPed *ped = FindPlayerPed();
+	if (!ped || FindPlayerVehicle())
+		return;
+
+	int slot = ped->m_nSelectedWepSlot;
+	if (slot < 0 || slot >= TOTAL_WEAPON_SLOTS)
+		slot = 0;
+
+	for (int i = 1; i <= TOTAL_WEAPON_SLOTS; i++) {
+		int next = (slot + (dir > 0 ? i : -i) + TOTAL_WEAPON_SLOTS * 2) % TOTAL_WEAPON_SLOTS;
+		if (next == WEAPONSLOT_UNARMED)
+			continue;
+		if (ped->HasWeaponSlot(next) && ped->GetWeapon(next).HasWeaponAmmoToBeUsed()) {
+			ped->SetCurrentWeapon(next);
+			return;
+		}
+	}
+}
+
+void CPad::TouchCycleRadio(int dir)
+{
+	if (!dir || !FindPlayerVehicle())
+		return;
+
+	int station = DMAudio.GetRadioInCar();
+	int last = DMAudio.IsMP3RadioChannelAvailable() ? USERTRACK : WAVE;
+	if (station < WILDSTYLE || station > last)
+		station = WILDSTYLE;
+
+	station += dir > 0 ? 1 : -1;
+	if (station > last)
+		station = WILDSTYLE;
+	if (station < WILDSTYLE)
+		station = last;
+
+	DMAudio.SetRadioInCar(station);
+	FrontEndMenuManager.m_PrefsRadioStation = station;
+}
+
+void CPad::SetTouchControls(bool on)
+{
+	if (bTouchControls == on)
+		return;
+	bTouchControls = on;
+	if (!on) {
+		bTouchAutoAim = false;
+		bTouchInput = false;
+		PCTempTouchState.Clear();
+	}
+	char t[96];
+	snprintf(t, sizeof t, "VEX touch enable=%d autoaim=%d", on ? 1 : 0, bTouchAutoAim ? 1 : 0);
+	ODTRACES(t);
+}
+
+void CPad::SetTouchAutoAim(bool on)
+{
+	bTouchAutoAim = on;
+	if (on && !FrontEndMenuManager.m_PrefsAutoaim) {
+		FrontEndMenuManager.m_PrefsAutoaim = true;
+		ODTRACES("VEX touch autoaim default=1");
+	}
+	char t[96];
+	snprintf(t, sizeof t, "VEX touch autoaim=%d", on ? 1 : 0);
+	ODTRACES(t);
+}
+
+void CPad::TouchFrame(int leftX, int leftY, int rightX, int rightY, int lookX, int lookY, unsigned buttons)
+{
+	PCTempTouchState.Clear();
+	PCTempTouchState.LeftStickX = TouchClampAxis(leftX);
+	PCTempTouchState.LeftStickY = TouchClampAxis(leftY);
+	PCTempTouchState.RightStickX = TouchClampAxis(rightX + lookX);
+	PCTempTouchState.RightStickY = TouchClampAxis(rightY + lookY);
+	PCTempTouchState.Cross = (buttons & TOUCH_CROSS) ? 255 : 0;
+	PCTempTouchState.Square = (buttons & TOUCH_SQUARE) ? 255 : 0;
+	PCTempTouchState.Circle = (buttons & TOUCH_CIRCLE) ? 255 : 0;
+	PCTempTouchState.Triangle = (buttons & TOUCH_TRIANGLE) ? 255 : 0;
+	PCTempTouchState.LeftShoulder1 = (buttons & TOUCH_LEFT_SHOULDER1) ? 255 : 0;
+	PCTempTouchState.RightShoulder1 = (buttons & TOUCH_RIGHT_SHOULDER1) ? 255 : 0;
+	PCTempTouchState.LeftShoulder2 = (buttons & TOUCH_LEFT_SHOULDER2) ? 255 : 0;
+	PCTempTouchState.RightShoulder2 = (buttons & TOUCH_RIGHT_SHOULDER2) ? 255 : 0;
+	PCTempTouchState.Select = (buttons & TOUCH_SELECT) ? 255 : 0;
+	PCTempTouchState.Start = (buttons & TOUCH_START) ? 255 : 0;
+	PCTempTouchState.DPadUp = (buttons & TOUCH_DPAD_UP) ? 255 : 0;
+	PCTempTouchState.DPadDown = (buttons & TOUCH_DPAD_DOWN) ? 255 : 0;
+	PCTempTouchState.DPadLeft = (buttons & TOUCH_DPAD_LEFT) ? 255 : 0;
+	PCTempTouchState.DPadRight = (buttons & TOUCH_DPAD_RIGHT) ? 255 : 0;
+	PCTempTouchState.LeftShock = (buttons & TOUCH_LEFT_SHOCK) ? 255 : 0;
+	PCTempTouchState.RightShock = (buttons & TOUCH_RIGHT_SHOCK) ? 255 : 0;
+	bTouchInput = leftX || leftY || rightX || rightY || lookX || lookY || buttons;
+}
+
+void CPad::AffectFromTouch(void)
+{
+	if (!bTouchControls)
+		return;
+	CControllerState &dst = GetPad(0)->PCTempJoyState;
+	const CControllerState &src = PCTempTouchState;
+	dst.LeftStickX = TouchMaxAxis(dst.LeftStickX, src.LeftStickX);
+	dst.LeftStickY = TouchMaxAxis(dst.LeftStickY, src.LeftStickY);
+	dst.RightStickX = TouchMaxAxis(dst.RightStickX, src.RightStickX);
+	dst.RightStickY = TouchMaxAxis(dst.RightStickY, src.RightStickY);
+	TouchMergeButton(dst.Cross, src.Cross);
+	TouchMergeButton(dst.Square, src.Square);
+	TouchMergeButton(dst.Circle, src.Circle);
+	TouchMergeButton(dst.Triangle, src.Triangle);
+	TouchMergeButton(dst.LeftShoulder1, src.LeftShoulder1);
+	TouchMergeButton(dst.RightShoulder1, src.RightShoulder1);
+	TouchMergeButton(dst.LeftShoulder2, src.LeftShoulder2);
+	TouchMergeButton(dst.RightShoulder2, src.RightShoulder2);
+	TouchMergeButton(dst.Select, src.Select);
+	TouchMergeButton(dst.Start, src.Start);
+	TouchMergeButton(dst.DPadUp, src.DPadUp);
+	TouchMergeButton(dst.DPadDown, src.DPadDown);
+	TouchMergeButton(dst.DPadLeft, src.DPadLeft);
+	TouchMergeButton(dst.DPadRight, src.DPadRight);
+	TouchMergeButton(dst.LeftShock, src.LeftShock);
+	TouchMergeButton(dst.RightShock, src.RightShock);
+}
+
+int CPad::TouchContext(void)
+{
+	int ctx = bTouchControls ? 1 : 0;
+	if (FindPlayerVehicle())
+		ctx |= 2;
+	if (FrontEndMenuManager.m_bMenuActive)
+		ctx |= 4;
+	CPed *ped = FindPlayerPed();
+	if (ped && ped->m_pPointGunAt)
+		ctx |= 8;
+	if (ped && ped->GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED) {
+		ctx |= 16;
+		if (!ped->GetWeapon()->IsTypeMelee())
+			ctx |= 32;
+	}
+	if (!FrontEndMenuManager.m_bGameNotLoaded && ped)
+		ctx |= 64;
+	if (CCutsceneMgr::IsRunning() || TheCamera.m_WideScreenOn)
+		ctx |= 128;
+	return ctx;
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchFrame(int leftX, int leftY, int rightX, int rightY, int lookX, int lookY, unsigned buttons)
+{
+	CPad::TouchFrame(leftX, leftY, rightX, rightY, lookX, lookY, buttons);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchSetEnabled(int on)
+{
+	CPad::SetTouchControls(on != 0);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchSetAutoaim(int on)
+{
+	CPad::SetTouchAutoAim(on != 0);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchContext(void)
+{
+	return CPad::TouchContext();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuTap(int nx, int ny)
+{
+	FrontEndMenuManager.TouchTap(nx, ny);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchSkip(void)
+{
+	CPad::TouchSkip();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchPause(void)
+{
+	if (!FrontEndMenuManager.m_bMenuActive)
+		FrontEndMenuManager.RequestFrontEndStartUp();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchOpenMap(void)
+{
+	FrontEndMenuManager.OpenTouchMap();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchWeapon(int dir)
+{
+	CPad::TouchCycleWeapon(dir);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchRadio(int dir)
+{
+	CPad::TouchCycleRadio(dir);
+}
+
+static int TouchVehicleKind(CVehicle *veh)
+{
+	if (!veh)
+		return 0;
+	if (veh->GetModelIndex() == MI_FIRETRUCK)
+		return 8;
+	if (veh->GetModelIndex() == MI_RHINO)
+		return 6;
+	switch (veh->m_vehType) {
+	case VEHICLE_TYPE_CAR: return 1;
+	case VEHICLE_TYPE_BIKE: return 2;
+	case VEHICLE_TYPE_BOAT: return 3;
+	case VEHICLE_TYPE_HELI: return 4;
+	case VEHICLE_TYPE_PLANE: return 5;
+	case VEHICLE_TYPE_TRAIN: return 7;
+	default: return 1;
+	}
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchVehicleType(void)
+{
+	return TouchVehicleKind(FindPlayerVehicle());
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchNearVehicleType(void)
+{
+	CPlayerPed *ped = FindPlayerPed();
+	if (!ped || FindPlayerVehicle())
+		return 0;
+	CVehicle *best = nil;
+	float bestDist = 12.0f;
+	for (int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--) {
+		CVehicle *veh = CPools::GetVehiclePool()->GetSlot(i);
+		if (!veh)
+			continue;
+		float dist = (veh->GetPosition() - ped->GetPosition()).Magnitude2D();
+		if (dist < bestDist) {
+			best = veh;
+			bestDist = dist;
+		}
+	}
+	return TouchVehicleKind(best);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchArmedVehicle(void)
+{
+	CVehicle *veh = FindPlayerVehicle();
+	if (!veh)
+		return 0;
+	switch (veh->GetModelIndex()) {
+	case MI_HUNTER:
+	case MI_SEASPAR:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchMissionVehicle(void)
+{
+	CVehicle *veh = FindPlayerVehicle();
+	if (!veh)
+		return 0;
+	if (veh->IsTaxi())
+		return 1;
+	switch (veh->GetModelIndex()) {
+	case MI_PIZZABOY:
+	case MI_AMBULAN:
+	case MI_FIRETRUCK:
+	case MI_HUNTER:
+	case MI_POLICE:
+	case MI_ENFORCER:
+		return 1;
+	default:
+		return 0;
+	}
+}
+#endif
+
 void CPad::UpdatePads(void)
 {
 	bool bUpdate = true;
@@ -2158,6 +2484,9 @@ void CPad::UpdatePads(void)
 #else
 	CapturePad(0);
 #endif
+#if defined VICEEXT_TOUCH_CONTROLS
+	CPad::AffectFromTouch();
+#endif
 
 	// Improve keyboard input latency part 1
 #ifdef FIX_BUGS
@@ -2167,6 +2496,13 @@ void CPad::UpdatePads(void)
 
 #ifdef DETECT_PAD_INPUT_SWITCH
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
+#if defined VICEEXT_TOUCH_CONTROLS
+	if (CPad::IsTouchInputActive()) {
+		IsAffectedByController = true;
+		CCamera::m_bUseMouse3rdPerson = false;
+		FrontEndMenuManager.m_ControlMethod = CONTROL_CLASSIC;
+	} else
+#endif
 	if (GetPad(0)->PCTempJoyState.CheckForInput()) {
 		IsAffectedByController = true;
 		CCamera::m_bUseMouse3rdPerson = false;
@@ -2185,7 +2521,7 @@ void CPad::UpdatePads(void)
 #ifdef DETECT_PAD_INPUT_SWITCH
 	}
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
-	if (IsAffectedByController && (GetPad(0)->PCTempKeyState.CheckForInput() || GetPad(0)->PCTempMouseState.CheckForInput())) {
+	if (IsAffectedByController && !CPad::IsTouchInputActive() && (GetPad(0)->PCTempKeyState.CheckForInput() || GetPad(0)->PCTempMouseState.CheckForInput())) {
 		IsAffectedByController = false;
 		CCamera::m_bUseMouse3rdPerson = true;
 		FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
@@ -2508,10 +2844,58 @@ void CPad::Update(int16 pad)
 	if (NewState.CheckForInput())
 		LastTimeTouched = CTimer::GetTimeInMilliseconds();
 	
+#ifdef VICEEXT_HORN_LOGICAL_TICK
+	// El anillo del claxon se llenaba con una muestra por frame presentado, asi
+	// que a 120 FPS sus 5 muestras cubrian 42 ms en vez de 166 y el doble toque
+	// que conmuta la sirena no llegaba a leerse nunca como toque corto. Se
+	// muestrea al ritmo de 30 Hz para el que se autoron los umbrales; tras un
+	// hitch se rellenan como mucho las 5 muestras de la ventana.
+	static uint32 odHornLastTick[MAX_PADS];
+#ifdef __EMSCRIPTEN__
+	static uint32 odHornPushes;
+	static uint32 odHornPrevPushMs;
+	static uint32 odHornIntervalMs;
+	static uint32 odHornNextReport;
+#endif
+	uint32 odHornCounter = CTimer::GetLogicalFrameCounter();
+	uint32 odHornTicks = odHornCounter - odHornLastTick[pad];
+	odHornLastTick[pad] = odHornCounter;
+	if (odHornTicks > (uint32)HORNHISTORY_SIZE)
+		odHornTicks = HORNHISTORY_SIZE;
+	for (uint32 odHornI = 0; odHornI < odHornTicks; odHornI++) {
+		if ( ++iCurrHornHistory >= HORNHISTORY_SIZE )
+			iCurrHornHistory = 0;
+		bHornHistory[iCurrHornHistory] = GetHorn();
+#ifdef __EMSCRIPTEN__
+		odHornPushes++;
+		uint32 odHornNow = CTimer::GetTimeInMilliseconds();
+		if (odHornPrevPushMs != 0u)
+			odHornIntervalMs = (odHornIntervalMs * 3u + odHornNow - odHornPrevPushMs) / 4u;
+		odHornPrevPushMs = odHornNow;
+#endif
+	}
+#ifdef __EMSCRIPTEN__
+	if (pad == 0 && CTimer::GetTimeInMilliseconds() >= odHornNextReport) {
+		odHornNextReport = CTimer::GetTimeInMilliseconds() + 5000u;
+		int odHornEnVentana = 0;
+		for (int odHornJ = 0; odHornJ < HORNHISTORY_SIZE; odHornJ++)
+			odHornEnVentana += bHornHistory[odHornJ] ? 1 : 0;
+		char odT[160];
+		snprintf(odT, sizeof odT,
+			"HORNHIST mps=%u intervalo_ms=%u ventana_ms=%u en_ventana=%d horn=%d",
+			odHornPushes / 5u, odHornIntervalMs,
+			odHornIntervalMs * (HORNHISTORY_SIZE - 1u),
+			odHornEnVentana, GetHorn() ? 1 : 0);
+		ODTRACES(odT);
+		odHornPushes = 0;
+	}
+#endif
+#else
 	if ( ++iCurrHornHistory >= HORNHISTORY_SIZE )
 		iCurrHornHistory = 0;
 
 	bHornHistory[iCurrHornHistory] = GetHorn();
+#endif
 
 	for (int32 i = DRUNK_STEERING_BUFFER_SIZE - 2; i >= 0; i--) {
 		SteeringLeftRightBuffer[i + 1] = SteeringLeftRightBuffer[i];
@@ -3359,6 +3743,14 @@ int32 CPad::GetWeapon(void)
 	if ( ArePlayerControlsDisabled() )
 		return false;
 
+#if defined VICEEXT_TOUCH_CONTROLS
+	if (IsTouchInputActive()) {
+		if (FindPlayerVehicle())
+			return NewState.Circle || NewState.LeftShoulder1;
+		return NewState.LeftShoulder1;
+	}
+#endif
+
 	switch (CURMODE)
 	{
 #ifdef VICEEXT_IMPROVED_MENU_AND_INPUT
@@ -3826,6 +4218,14 @@ bool CPad::EmergencyLightsJustDown()
 		return false;
 
 	return !!(NewState.bEmergencyLights && !OldState.bEmergencyLights);
+}
+
+bool CPad::HeadlightsJustDown()
+{
+	if (ArePlayerControlsDisabled())
+		return false;
+
+	return !!(NewState.bHeadlights && !OldState.bHeadlights);
 }
 #endif
 

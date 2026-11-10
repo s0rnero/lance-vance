@@ -710,7 +710,7 @@ public:
 	~CPed(void);
 
 #ifdef VICEEXT_CLIMBING
-	bool CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint);
+	bool CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint, bool desdeElAgua = false);
 	bool CheckObjectFrontPlayer(CColPoint& hitForwardPoint);
 	bool CheckObjectAbovePlayer(CColPoint& hitForwardPoint);
 	bool CheckPotentialClimbingPlaceFind(CColPoint hitForwardPoint, CColPoint& hitBackwardPoint);

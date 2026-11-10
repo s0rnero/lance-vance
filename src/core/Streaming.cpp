@@ -331,7 +331,8 @@ CStreaming::Update(void)
 
 	if(ms_channelError != -1){
 		RetryLoadFile(ms_channelError);
-		return;
+		if(ms_channelError != -1)
+			return;
 	}
 
 	if(CTimer::GetIsPaused())
@@ -401,6 +402,85 @@ CStreaming::Update(void)
 		if((si->m_flags & (STREAMFLAGS_KEEP_IN_MEMORY|STREAMFLAGS_PRIORITY)) == 0)
 			RemoveModel(si - ms_aInfoForModel);
 	}
+
+#ifdef __EMSCRIPTEN__
+	{
+		extern long long gOdTexBytes;
+		extern int gOdTexDelTotal;
+		extern int gOdTexLive;
+		extern int gOdTxdLive;
+		extern long long gOdTxdLiveBytes;
+		static uint32 odTexRel = 0;
+		if(gOdTexBytes > 512LL*1024*1024){
+			long long odTexB0 = gOdTexBytes;
+			int odEvict = 0, odFail = 0;
+			for(int i = 0; i < 2; i++){
+				if(!RemoveLeastUsedModel(STREAMFLAGS_20)){
+					odFail = 1;
+					break;
+				}
+				odEvict++;
+			}
+			odTexRel++;
+			if(odTexRel <= 60 || (odTexRel % 200) == 0){
+				long long odFreed = odTexB0 - gOdTexBytes;
+				if(odFreed < 0)
+					odFreed = 0;
+				char tt[320];
+				snprintf(tt, sizeof tt, "ODTEXREL n=%u texb=%lldMB texlive=%d txd=%d txdb=%lldMB del=%d evict=%d fail=%d freed=%lldKB mem=%uMB/%uMB veh=%d",
+					odTexRel, (long long)(gOdTexBytes / 1048576), gOdTexLive, gOdTxdLive,
+					(long long)(gOdTxdLiveBytes / 1048576), gOdTexDelTotal, odEvict, odFail,
+					(long long)(odFreed / 1024), (unsigned)(ms_memoryUsed / 1048576),
+					(unsigned)(ms_memoryAvailable / 1048576), ms_numVehiclesLoaded);
+				ODTRACES(tt);
+			}
+		}
+	}
+	{
+		static uint32 odHambreTick;
+		static uint8 odColaVez[NUMSTREAMINFO];
+		static uint8 odColaAvisado[NUMSTREAMINFO];
+		static uint32 odHambreN;
+		if(++odHambreTick % 300 == 0){
+			uint8 vez = (uint8)(odHambreTick / 300);
+			uint8 vezAnt = (uint8)(vez - 1);
+			for(CStreamingInfo *s = ms_startRequestedList.m_next; s != &ms_endRequestedList; s = s->m_next){
+				int32 id = s - ms_aInfoForModel;
+				if(id < 0 || id >= NUMSTREAMINFO)
+					continue;
+				if(odColaVez[id] == vezAnt && odColaAvisado[id] != vezAnt){
+					odHambreN++;
+					odColaAvisado[id] = vez;
+					if(odHambreN <= 60 || (odHambreN % 200) == 0){
+						const char *nombre = "?";
+						int32 txd = -1, txdEstado = -1;
+						if(id < STREAM_OFFSET_TXD){
+							CBaseModelInfo *odHmi = CModelInfo::GetModelInfo(id);
+							nombre = odHmi->GetModelName();
+							txd = odHmi->GetTxdSlot();
+							if(txd >= 0 && txd < TXDSTORESIZE)
+								txdEstado = (int32)ms_aInfoForModel[STREAM_OFFSET_TXD + txd].m_loadState;
+						}else if(id >= STREAM_OFFSET_TXD && id < STREAM_OFFSET_COL){
+							nombre = CTxdStore::GetTxdName(id - STREAM_OFFSET_TXD);
+						}else if(id >= STREAM_OFFSET_COL && id < STREAM_OFFSET_ANIM){
+							nombre = CColStore::GetColName(id - STREAM_OFFSET_COL);
+						}
+						char tt[224];
+						snprintf(tt, sizeof tt,
+							"ODHAMBRE n=%u id=%d nombre=%s estado=%d flags=0x%02X prio=%d txd=%d txdEstado=%d nreq=%d prioritarios=%d mem=%u/%uMB ch=%d,%d buf=%d",
+							odHambreN, id, nombre, (int32)s->m_loadState, (int32)s->m_flags,
+							(int32)s->IsPriority(), txd, txdEstado, ms_numModelsRequested,
+							ms_numPriorityRequests, (unsigned)(ms_memoryUsed / 1048576),
+							(unsigned)(ms_memoryAvailable / 1048576), (int32)ms_channel[0].state,
+							(int32)ms_channel[1].state, (int32)ms_bLoadingBigModel);
+						ODTRACES(tt);
+					}
+				}
+				odColaVez[id] = vez;
+			}
+		}
+	}
+#endif
 }
 
 void
@@ -539,6 +619,8 @@ RegisterAtomicMemPtrsCB(RpAtomic *atomic, void *data)
 #ifdef __EMSCRIPTEN__
 static int odLastFailId = -1;
 static uint32 odLastFailFrame = 0;
+static uint8 odStrikes[NUMSTREAMINFO];
+static uint32 odStrikeFrame[NUMSTREAMINFO];
 static bool
 OdCoolingDown(int32 streamId)
 {
@@ -548,6 +630,32 @@ OdCoolingDown(int32 streamId)
 	odLastFailId = streamId;
 	odLastFailFrame = fc;
 	return false;
+}
+
+// Un streamId que falla muchas veces seguidas tiene un indice o una rebanada
+// mala, no un fichero que tarda: seguir re-pidiendolo cada 30 frames reproduce
+// el mismo fallo y llena la cola de streaming. Los golpes decaen solos para que
+// una descarga pasajera no descarte el modelo para siempre.
+static bool
+OdStrikeOut(const char *name, int32 streamId, const char *what)
+{
+	uint32 fc = CTimer::GetLogicalFrameCounter();
+	if (fc - odStrikeFrame[streamId] > 600) {
+		odStrikeFrame[streamId] = fc;
+		odStrikes[streamId] = 0;
+	}
+	if (odStrikes[streamId] < 255)
+		odStrikes[streamId]++;
+	if (odStrikes[streamId] <= 3)
+		return false;
+	static int n = 0;
+	if (n < 20) {
+		n++;
+		char t[160];
+		snprintf(t, sizeof t, "RETRYCAP %s id=%d %s", name, streamId, what);
+		ODTRACES(t);
+	}
+	return true;
 }
 #endif
 
@@ -564,6 +672,21 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
 
 	cdsize = ms_aInfoForModel[streamId].GetCdSize();
+#ifdef VICEEXT_ALLOC_GUARD
+	// Traza de contexto para el crash del Hunter: la ultima linea ODLOAD antes
+	// del abort nombra el buffer que se iba a parsear.
+	if(cdsize >= OD_LOAD_TRACE_SECTORS){
+		static uint32 odLoadMs = 0;
+		uint32 odAhora = CTimer::GetTimeInMillisecondsNonClipped();
+		if((uint32)(odAhora - odLoadMs) >= 250u){
+			odLoadMs = odAhora;
+			char odT[128];
+			snprintf(odT, sizeof odT, "ODLOAD id=%d cds=%d nom=%s", streamId, cdsize,
+				streamId < STREAM_OFFSET_TXD ? CModelInfo::GetModelInfo(streamId)->GetModelName() : "-");
+			ODTRACES(odT);
+		}
+	}
+#endif
 	mem.start = (uint8*)buf;
 	mem.length = cdsize * CDSTREAM_SECTOR_SIZE;
 	stream = RwStreamOpen(rwSTREAMMEMORY, rwSTREAMREAD, &mem);
@@ -589,6 +712,42 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 			RwStreamClose(stream, &mem);
 			return false;
 		}
+
+#ifdef __EMSCRIPTEN__
+		// El BIN de un DFF declara en su segundo u32 los bytes que siguen al
+		// cabecero. Si pide mas de lo leido, la rebanada no es de este modelo y
+		// librw reserva el chunk contra un buffer corto: es el crash que salta
+		// al caminar por la ciudad con mucho streaming. Se rechaza antes de parsear.
+		{
+			uint32 head = 0, binSize = 0;
+			bool ok = stream != nil && mem.length >= 12;
+			if (ok) {
+				head = mem.start[0] | (mem.start[1] << 8) | (mem.start[2] << 16) | ((uint32)mem.start[3] << 24);
+				binSize = mem.start[4] | (mem.start[5] << 8) | (mem.start[6] << 16) | ((uint32)mem.start[7] << 24);
+				ok = head == 0x10 && binSize <= mem.length - 12;
+			}
+			if (!ok) {
+				{
+					static int n = 0;
+					if (n < 20) {
+						uint32 mPosn = 0, mSize = 0;
+						n++;
+						ms_aInfoForModel[streamId].GetCdPosnAndSize(mPosn, mSize);
+						char t[224];
+						snprintf(t, sizeof t, "DFFGARBAGE %s id=%d cds=%d memlen=%u head=%08x bin=%u posn=%u size=%u",
+							mi->GetModelName(), streamId, cdsize, mem.length, head, binSize, mPosn, mSize);
+						ODTRACES(t);
+					}
+				}
+				RemoveModel(streamId);
+				if (!OdCoolingDown(streamId) && !OdStrikeOut(mi->GetModelName(), streamId, "dff"))
+					ReRequestModel(streamId);
+				if (stream != nil)
+					RwStreamClose(stream, &mem);
+				return false;
+			}
+		}
+#endif
 
 		// Set Txd and anims to use
 		CTxdStore::AddRef(mi->GetTxdSlot());
@@ -656,7 +815,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 #endif
 			RemoveModel(streamId);
 #ifdef __EMSCRIPTEN__
-			if (!OdCoolingDown(streamId))
+			if (!OdCoolingDown(streamId) && !OdStrikeOut(CModelInfo::GetModelInfo(streamId)->GetModelName(), streamId, "model"))
 #endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -723,7 +882,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 				}
 				POP_MEMID();
 				RemoveModel(streamId);
-				if (!OdCoolingDown(streamId))
+				if (!OdCoolingDown(streamId) && !OdStrikeOut(CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD), streamId, "txd"))
 					ReRequestModel(streamId);
 				if (stream != nil)
 					RwStreamClose(stream, &mem);
@@ -756,7 +915,7 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 #endif
 			RemoveModel(streamId);
 #ifdef __EMSCRIPTEN__
-			if (!OdCoolingDown(streamId))
+			if (!OdCoolingDown(streamId) && !OdStrikeOut(CTxdStore::GetTxdName(streamId - STREAM_OFFSET_TXD), streamId, "txd"))
 #endif
 			ReRequestModel(streamId);
 			RwStreamClose(stream, &mem);
@@ -802,6 +961,9 @@ CStreaming::ConvertBufferToObject(int8 *buf, int32 streamId)
 	}
 
 	RwStreamClose(stream, &mem);
+#ifdef __EMSCRIPTEN__
+	odStrikes[streamId] = 0;
+#endif
 
 	if(streamId < STREAM_OFFSET_TXD){
 		// Model
@@ -1535,6 +1697,26 @@ found:
 	return true;
 }
 
+#ifdef __EMSCRIPTEN__
+static void
+OdTexEvict(const char *kind, int id, int refs)
+{
+	static int n = 0;
+	n++;
+	if(n > 60 && (n % 200) != 0)
+		return;
+	extern int gOdTexLive;
+	extern int gOdTxdLive;
+	extern long long gOdTxdLiveBytes;
+	extern long long gOdTexBytes;
+	char t[192];
+	snprintf(t, sizeof t, "ODTEXEV id=%d kind=%s refs=%d texb=%lldMB texlive=%d txd=%d txdb=%lldMB",
+		id, kind, refs, (long long)(gOdTexBytes / 1048576), gOdTexLive,
+		gOdTxdLive, (long long)(gOdTxdLiveBytes / 1048576));
+	ODTRACES(t);
+}
+#endif
+
 bool
 CStreaming::RemoveLeastUsedModel(uint32 excludeMask)
 {
@@ -1548,25 +1730,41 @@ CStreaming::RemoveLeastUsedModel(uint32 excludeMask)
 		if(streamId < STREAM_OFFSET_TXD){
 			if (CModelInfo::GetModelInfo(streamId)->GetNumRefs() == 0) {
 				RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+				OdTexEvict("model", streamId, 0);
+#endif
 				return true;
 			}
 		}else if(streamId >= STREAM_OFFSET_TXD && streamId < STREAM_OFFSET_COL){
-			if(CTxdStore::GetNumRefs(streamId - STREAM_OFFSET_TXD) == 0 &&
-			   !IsTxdUsedByRequestedModels(streamId - STREAM_OFFSET_TXD)){
+			int32 odRefs = CTxdStore::GetNumRefs(streamId - STREAM_OFFSET_TXD);
+			if(odRefs == 0 && !IsTxdUsedByRequestedModels(streamId - STREAM_OFFSET_TXD)){
 				RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+				OdTexEvict("txd", streamId, odRefs);
+#endif
 				return true;
 			}
 		}else if(streamId >= STREAM_OFFSET_ANIM){
 			assert(streamId < NUMSTREAMINFO);
-			if(CAnimManager::GetNumRefsToAnimBlock(streamId - STREAM_OFFSET_ANIM) == 0 &&
-			   !AreAnimsUsedByRequestedModels(streamId - STREAM_OFFSET_ANIM)){
+			int32 odRefs = CAnimManager::GetNumRefsToAnimBlock(streamId - STREAM_OFFSET_ANIM);
+			if(odRefs == 0 && !AreAnimsUsedByRequestedModels(streamId - STREAM_OFFSET_ANIM)){
 				RemoveModel(streamId);
+#ifdef __EMSCRIPTEN__
+				OdTexEvict("anim", streamId, odRefs);
+#endif
 				return true;
 			}
 		}
 	}
-	return (ms_numVehiclesLoaded > 7 || CGame::currArea != AREA_MAIN_MAP && ms_numVehiclesLoaded > 4) && RemoveLoadedVehicle();
+	if((ms_numVehiclesLoaded > 7 || CGame::currArea != AREA_MAIN_MAP && ms_numVehiclesLoaded > 4) && RemoveLoadedVehicle()){
+#ifdef __EMSCRIPTEN__
+		OdTexEvict("veh", -1, -1);
+#endif
+		return true;
+	}
+	return false;
 }
+
 
 void
 CStreaming::RemoveAllUnusedModels(void)
@@ -1913,12 +2111,14 @@ CStreaming::StreamVehiclesAndPeds(void)
 
 #ifdef __EMSCRIPTEN__
 	static uint32 odUltVehLoad = 0;
-	static uint32 odUltVehFrame = 0;
-	uint32 odVehFrameNow = CTimer::GetFrameCounter();
-	bool odTocaCargar = (uint32)(odVehFrameNow - odUltVehFrame) >= 350 &&
+	static uint32 odUltVehTick = 0;
+	uint32 odVehTickNow = CTimer::GetLogicalFrameCounter();
+	// La ventana de 350 frames presentados se cumplia a los 2,92 s a 120 FPS;
+	// en ticks logicos son los mismos 11,7 s que a 30 Hz.
+	bool odTocaCargar = (uint32)(odVehTickNow - odUltVehTick) >= OD_STREAM_VEH_FRAMES &&
 		(uint32)(CTimer::GetTimeInMilliseconds() - odUltVehLoad) >= 500;
 	if (odTocaCargar) {
-		odUltVehFrame = odVehFrameNow;
+		odUltVehTick = odVehTickNow;
 		odUltVehLoad = CTimer::GetTimeInMilliseconds();
 	}
 #else
@@ -2062,9 +2262,17 @@ CStreaming::StreamZoneModels(const CVector &pos)
 		timeBeforeNextLoad = 300;
 	}
 
+#ifdef VICEEXT_STREAM_LOGICAL
+	// El intercambio de modelos de peon se contaba en frames presentados:
+	// cada 2,5 s a 120 FPS en vez de cada 10 s.
+	if(timeBeforeNextLoad >= 0)
+		timeBeforeNextLoad -= CTimer::GetLogicalFramesPassed();
+	else{
+#else
 	if(timeBeforeNextLoad >= 0)
 		timeBeforeNextLoad--;
 	else{
+#endif
 		// Switch a ped
 		int oldMI;
 		// Find a ped to unload
@@ -2465,14 +2673,8 @@ CStreaming::RequestModelStream(int32 ch)
 		ms_channel[ch].streamIds[i] = -1;
 	// Now read the data
 	assert(!(ms_bLoadingBigModel && ch == 1));	// this would clobber the buffer
-#ifdef __EMSCRIPTEN__
-	odBlockingPush();
-#endif
 	if(CdStreamRead(ch, ms_pStreamingBuffer[ch], imgOffset+posn, totalSize) == STREAM_NONE)
 		debug("FUCKFUCKFUCK\n");
-#ifdef __EMSCRIPTEN__
-	odBlockingPop();
-#endif
 	ms_channel[ch].state = CHANNELSTATE_READING;
 	ms_channel[ch].field24 = 0;
 	ms_channel[ch].size = totalSize;
@@ -2601,6 +2803,12 @@ CStreaming::RetryLoadFile(int32 ch)
 #endif
 		ms_channel[ch].state = CHANNELSTATE_READING;
 		ms_channel[ch].field24 = -600;
+#ifdef __EMSCRIPTEN__
+		if(ProcessLoadingChannel(ch)){
+			ms_channelError = -1;
+			CTimer::SetCodePause(false);
+		}
+#endif
 		break;
 	case CHANNELSTATE_READING:
 		if(ProcessLoadingChannel(ch)){
@@ -2986,8 +3194,15 @@ CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)
 		dy = iy - CWorld::GetSectorIndexY(pos.y);
 		for(ix = ixmin; ix <= ixmax; ix++){
 
+#ifdef __EMSCRIPTEN__
+			// web: el backlog cronico del worker deja m_loadingPriority casi siempre a 1;
+			// respetar ese corte dejaba los gemelos hi-res de los edificios sin pedir nunca
+			if(ms_numModelsRequested > 32)
+				return;
+#else
 			if(CRenderer::m_loadingPriority && ms_numModelsRequested > 5)
 				return;
+#endif
 
 			dx = ix - CWorld::GetSectorIndexX(pos.x);
 			d = dx*dx + dy*dy;

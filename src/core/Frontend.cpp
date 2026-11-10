@@ -57,6 +57,65 @@ const CRGBA RADIO_SELECTOR_COLOR = SLIDEROFF_COLOR;
 const CRGBA INACTIVE_RADIO_COLOR(100, 100, 255, 100);
 const CRGBA SCROLLBAR_COLOR = LABEL_COLOR;
 
+static wchar ms_awWebSaveImported[128];
+
+static void
+BuildWebSaveImportedText(uint32 mask)
+{
+	char list[32];
+	int len = 0;
+	int count = 0;
+	for (int s = 1; s <= 9; s++) {
+		if (!(mask & (1u << s)))
+			continue;
+		if (len > 0 && len < 28) {
+			list[len++] = ',';
+			list[len++] = ' ';
+		}
+		if (len < 30)
+			list[len++] = (char)('0' + s);
+		count++;
+	}
+	list[len] = '\0';
+	wchar *msg = TheText.Get(count == 1 ? "FEM_GSK" : "FEM_GSL");
+	if (msg == nil)
+		msg = TheText.Get("FEM_GSL");
+	int n = 0;
+	for (const wchar *p = msg; p != nil && *p != '\0' && n < 120; p++)
+		ms_awWebSaveImported[n++] = *p;
+	if (n < 120)
+		ms_awWebSaveImported[n++] = ' ';
+	wchar wlist[32];
+	AsciiToUnicode(list, wlist);
+	for (const wchar *p = wlist; *p != '\0' && n < 126; p++)
+		ms_awWebSaveImported[n++] = *p;
+	ms_awWebSaveImported[n] = '\0';
+}
+
+static wchar ms_awWebSkinImported[128];
+
+static void
+BuildWebSkinImportedText(int result)
+{
+	int code = result / 1000;
+	int count = result % 1000;
+	wchar *msg = TheText.Get(code == 1 ? "FEM_SKO" : code == 2 ? "FEM_SKL" : "FEM_SKE");
+	if (msg == nil)
+		return;
+	int n = 0;
+	for (const wchar *p = msg; *p != '\0' && n < 110; p++)
+		ms_awWebSkinImported[n++] = *p;
+	if (code == 1) {
+		char num[16];
+		snprintf(num, sizeof num, " (%d)", count);
+		wchar wnum[16];
+		AsciiToUnicode(num, wnum);
+		for (const wchar *p = wnum; *p != '\0' && n < 126; p++)
+			ms_awWebSkinImported[n++] = *p;
+	}
+	ms_awWebSkinImported[n] = '\0';
+}
+
 #define MAP_MIN_SIZE 162.f
 #define MAP_SIZE_TO_ALLOW_X_MOVE 297.f
 
@@ -331,6 +390,30 @@ wchar* CMenuManager::m_pDialogText = nil;
 
 // --- Functions not in the game/inlined starts
 
+#ifdef SCROLLABLE_PAGES
+static bool
+IsBlankMenuRow(int32 screen, int32 row)
+{
+	if (hasNativeList(screen) || row < 0 || row >= NUM_MENUROWS)
+		return false;
+	return aScreens[screen].m_aEntries[row].m_Action == MENUACTION_LABEL
+		&& aScreens[screen].m_aEntries[row].m_EntryName[0] == '\0';
+}
+
+static int32
+SkipBlankMenuRows(int32 screen, int32 row, int32 dir, int32 count)
+{
+	for (int32 i = 0; i < count; i++) {
+		if (row < 0) row = count - 1;
+		else if (row >= count) row = 0;
+		if (!IsBlankMenuRow(screen, row))
+			return row;
+		row += dir;
+	}
+	return 0;
+}
+#endif
+
 inline void
 CMenuManager::ScrollUpListByOne() 
 {
@@ -341,7 +424,11 @@ CMenuManager::ScrollUpListByOne()
 			m_nScrollbarTopMargin -= SCROLLBAR_MAX_HEIGHT / m_nTotalListRow;
 		}
 	} else {
+#ifdef SCROLLABLE_PAGES
+		m_nSelectedListRow = SkipBlankMenuRows(m_nCurrScreen, m_nSelectedListRow - 1, -1, m_nTotalListRow);
+#else
 		m_nSelectedListRow--;
+#endif
 	}
 }
 
@@ -355,9 +442,13 @@ CMenuManager::ScrollDownListByOne()
 			m_nScrollbarTopMargin += SCROLLBAR_MAX_HEIGHT / m_nTotalListRow;
 		}
 	} else {
+#ifdef SCROLLABLE_PAGES
+		m_nSelectedListRow = SkipBlankMenuRows(m_nCurrScreen, m_nSelectedListRow + 1, 1, m_nTotalListRow);
+#else
 		if (m_nSelectedListRow < m_nTotalListRow - 1) {
 			m_nSelectedListRow++;
 		}
+#endif
 	}
 }
 
@@ -579,6 +670,9 @@ CMenuManager::CMenuManager()
 	m_PrefsLOD = CRenderer::ms_lodDistScale;
 	m_KeyPressedCode = -1;
 	m_bFrontEnd_ReloadObrTxtGxt = false;
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+	m_bWebSaveDownload = false;
+#endif
 	m_PrefsMP3BoostVolume = 0;
 	m_PrefsShowSubtitles = 0;
 	m_PrefsShowLegends = 1;
@@ -631,6 +725,8 @@ CMenuManager::CMenuManager()
 	m_nMouseOldPosX = m_nMousePosX;
 	m_nMouseOldPosY = m_nMousePosY;
 	m_bShowMouse = true;
+	m_bTouchMenuTap = false;
+	m_bTouchOpenMap = false;
 	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 
 	DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
@@ -1292,6 +1388,16 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 			else
 				str = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName);
 			break;
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+		case MENUPAGE_WEB_SAVE_IMPORTED:
+			str = ms_awWebSaveImported;
+			break;
+#endif
+#ifdef VICEEXT_WEB_SKINS
+		case MENUPAGE_WEB_SKIN_IMPORTED:
+			str = ms_awWebSkinImported;
+			break;
+#endif
 		default:
 			str = TheText.Get(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName);
 			break;
@@ -3256,7 +3362,11 @@ CMenuManager::DrawBackground(bool transitionCall)
 		}
 	}
 
-	if (m_bShowMouse) {
+	bool drawMouse = m_bShowMouse;
+#ifdef VICEEXT_TOUCH_CONTROLS
+	drawMouse = drawMouse && !CPad::IsTouchControlsActive();
+#endif
+	if (drawMouse) {
 		CRect mouse(0.0f, 0.0f, MENU_X(35.0f), MENU_Y(35.0f));
 		CRect shad(MENU_X(10.0f), MENU_Y(3.0f), MENU_X(45.0f), MENU_Y(38.0f));
 
@@ -3573,7 +3683,17 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 			|| m_nCurrExLayer == HOVEROPTION_BACK) {
 
 			m_nHoverOption = HOVEROPTION_BACK;
-		} else if ((strcmp(m_aSkinName, m_PrefsSkinFile) != 0
+		}
+#ifdef VICEEXT_WEB_SKINS
+		else if ((m_nMousePosX > MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT)
+			&& m_nMousePosX < MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT) + CFont::GetStringWidth(TheText.Get("FES_ISK"), true)
+			&& m_nMousePosY > SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 28)
+			&& m_nMousePosY < SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 58))
+			|| m_nCurrExLayer == HOVEROPTION_IMPORT_SKIN) {
+			m_nHoverOption = HOVEROPTION_IMPORT_SKIN;
+		}
+#endif
+		else if ((strcmp(m_aSkinName, m_PrefsSkinFile) != 0
 			&& m_nMousePosX > MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT)
 			&& m_nMousePosX < MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT) + CFont::GetStringWidth(TheText.Get("FES_SET"), true)
 			&& m_nMousePosY > SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 3)
@@ -3653,6 +3773,18 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 
 	// Use skin button
 	CFont::PrintString(MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT), SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 5), TheText.Get("FES_SET"));
+#ifdef VICEEXT_WEB_SKINS
+	CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
+	CFont::SetScale(MENU_X(0.9f), MENU_Y(0.9f));
+	if (m_nCurrExLayer == HOVEROPTION_IMPORT_SKIN)
+		CFont::SetColor(CRGBA(SELECTEDMENUOPTION_COLOR.r, SELECTEDMENUOPTION_COLOR.g, SELECTEDMENUOPTION_COLOR.b, FadeIn(255)));
+	else
+		CFont::SetColor(CRGBA(MENUOPTION_COLOR.r, MENUOPTION_COLOR.g, MENUOPTION_COLOR.b, FadeIn(255)));
+	CFont::SetRightJustifyOff();
+	CFont::SetDropShadowPosition(2);
+	CFont::SetDropColor(CRGBA(0, 0, 0, FadeIn(255)));
+	CFont::PrintString(MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT), SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 35), TheText.Get("FES_ISK"));
+#endif
 	CFont::SetDropShadowPosition(0);
 }
 
@@ -4901,8 +5033,17 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			m_nCurrExLayer = HOVEROPTION_LIST;
 			break;
 		case HOVEROPTION_LIST:
+#ifdef VICEEXT_WEB_SKINS
+			m_nCurrExLayer = m_nCurrScreen == MENUPAGE_SKIN_SELECT ? HOVEROPTION_IMPORT_SKIN : HOVEROPTION_USESKIN;
+#else
+			m_nCurrExLayer = HOVEROPTION_USESKIN;
+#endif
+			break;
+#ifdef VICEEXT_WEB_SKINS
+		case HOVEROPTION_IMPORT_SKIN:
 			m_nCurrExLayer = HOVEROPTION_USESKIN;
 			break;
+#endif
 		case HOVEROPTION_USESKIN:
 			m_nCurrExLayer = HOVEROPTION_BACK;
 		}
@@ -5036,6 +5177,12 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 				CWorld::Players[0].SetPlayerSkin(m_PrefsSkinFile);
 				SaveSettings();
 			}
+			break;
+#ifdef VICEEXT_WEB_SKINS
+		case HOVEROPTION_IMPORT_SKIN:
+			EM_ASM({ try { if (window.__vcSkinImport) window.__vcSkinImport(); } catch (e) {} });
+			break;
+#endif
 		}
 	}
 
@@ -5085,6 +5232,48 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			}
 		}
 	}
+}
+
+void
+CMenuManager::OpenTouchMap()
+{
+	if (m_bGameNotLoaded || TheCamera.m_WideScreenOn)
+		return;
+
+	if (m_bMenuActive) {
+		if (m_nCurrScreen != MENUPAGE_MAP)
+			SwitchToNewScreen(MENUPAGE_MAP);
+		return;
+	}
+
+	m_bTouchOpenMap = true;
+	m_bStartUpFrontEndRequested = true;
+}
+
+void
+CMenuManager::TouchTap(int nx, int ny)
+{
+	int32 x, y;
+
+	if (!m_bMenuActive || m_nMenuFadeAlpha != 255)
+		return;
+
+	x = (nx * SCREEN_WIDTH) / 10000;
+	y = (ny * SCREEN_HEIGHT) / 10000;
+	if (x < 0) x = 0;
+	if (x >= SCREEN_WIDTH) x = SCREEN_WIDTH - 1;
+	if (y < 0) y = 0;
+	if (y >= SCREEN_HEIGHT) y = SCREEN_HEIGHT - 1;
+
+	m_nMouseTempPosX = x;
+	m_nMouseTempPosY = y;
+	m_nMousePosX = x;
+	m_nMousePosY = y;
+	m_nMouseOldPosX = x - 1;
+	m_nMouseOldPosY = y - 1;
+	m_bShowMouse = true;
+	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
+	m_bTouchMenuTap = true;
 }
 
 void
@@ -5154,6 +5343,12 @@ CMenuManager::UserInput(void)
 			m_nOptionMouseHovering = oldOption;
 			m_nCurrOption = oldOption;
 		}
+	}
+
+	if (m_bTouchMenuTap) {
+		if (m_nHoverOption == HOVEROPTION_RANDOM_ITEM)
+			optionSelected = true;
+		m_bTouchMenuTap = false;
 	}
 
 	if (m_bShowMouse) {
@@ -5545,6 +5740,36 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 
 	if (pEditString || pControlEdit)
 		return;
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+	if (EM_ASM_INT({ return window.__vcWebSaveManager | 0; })) {
+		EM_ASM({ window.__vcWebSaveManager = 0; });
+		SwitchToNewScreen(MENUPAGE_WEB_SAVE_MANAGER);
+	}
+	if (m_nCurrScreen == MENUPAGE_WEB_SAVE_MANAGER && EM_ASM_INT({ return window.__vcWebSaveNoSpace === 1 ? 1 : 0; })) {
+		EM_ASM({ window.__vcWebSaveNoSpace = 0; });
+		SwitchToNewScreen(MENUPAGE_WEB_SAVE_NO_SPACE);
+	}
+	if (m_nCurrScreen == MENUPAGE_WEB_SAVE_MANAGER) {
+		int odImported = EM_ASM_INT({ return window.__vcWebSaveImported | 0; });
+		if (odImported != 0) {
+			EM_ASM({ window.__vcWebSaveImported = 0; });
+			BuildWebSaveImportedText((uint32)odImported);
+			SwitchToNewScreen(MENUPAGE_WEB_SAVE_IMPORTED);
+			m_nCurrOption = 1;
+		}
+	}
+#endif
+#ifdef VICEEXT_WEB_SKINS
+	if (m_nCurrScreen == MENUPAGE_SKIN_SELECT) {
+		int odSkin = EM_ASM_INT({ return window.__vcWebSkinResult | 0; });
+		if (odSkin != 0) {
+			EM_ASM({ window.__vcWebSkinResult = 0; });
+			BuildWebSkinImportedText(odSkin);
+			SwitchToNewScreen(MENUPAGE_WEB_SKIN_IMPORTED);
+			m_nCurrOption = 1;
+		}
+	}
+#endif
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
 	if (m_nCurrScreen == MENUPAGE_START_MENU || m_nCurrScreen == MENUPAGE_NEW_GAME || m_nCurrScreen == MENUPAGE_NEW_GAME_RELOAD) {
@@ -5565,6 +5790,9 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		if (m_nCurrOption == NUM_MENUROWS || (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action == MENUACTION_NOTHING)) {
 			m_nCurrOption = 0;
 		}
+#ifdef SCROLLABLE_PAGES
+		m_nCurrOption = SkipBlankMenuRows(m_nCurrScreen, m_nCurrOption, 1, GetOptionCount(m_nCurrScreen));
+#endif
 		if (oldOption != m_nCurrOption)
 			m_nOptionHighlightTransitionBlend = 0;
 	}
@@ -5579,6 +5807,9 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			}
 		} else {
 			m_nCurrOption--;
+#ifdef SCROLLABLE_PAGES
+			m_nCurrOption = SkipBlankMenuRows(m_nCurrScreen, m_nCurrOption, -1, GetOptionCount(m_nCurrScreen));
+#endif
 		}
 		if (oldOption != m_nCurrOption)
 			m_nOptionHighlightTransitionBlend = 0;
@@ -5614,6 +5845,12 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				m_nCurrExLayer = HOVEROPTION_BACK;
 				SaveSettings();
 				break;
+#ifdef VICEEXT_WEB_SKINS
+			case HOVEROPTION_IMPORT_SKIN:
+				m_nHoverOption = HOVEROPTION_NOT_HOVERING;
+				EM_ASM({ try { if (window.__vcSkinImport) window.__vcSkinImport(); } catch (e) {} });
+				break;
+#endif
 			case HOVEROPTION_BACK:
 			default:
 				goBack = true;
@@ -5636,6 +5873,10 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			case MENUACTION_CHANGEMENU:
 			case MENUACTION_YES:
 			case MENUACTION_NO:
+#ifdef VICEEXT_AUTOSAVE
+				if (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_TargetMenu == MENUPAGE_OTHER_SETTINGS)
+					aScreens[MENUPAGE_OTHER_SETTINGS].m_PreviousPage = m_nCurrScreen == MENUPAGE_START_MENU ? MENUPAGE_START_MENU : MENUPAGE_PAUSE_MENU;
+#endif
 				SwitchToNewScreen(aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_TargetMenu);
 				break;
 			case MENUACTION_RADIO:
@@ -5677,6 +5918,16 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 
 				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_AUTOSAVE) {
 					m_nCurrSaveSlot = saveSlot - SAVESLOT_1;
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+				if (m_bWebSaveDownload) {
+					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
+						EM_ASM({ try { if (window.__vcSaveDownload) window.__vcSaveDownload($0); } catch (e) {} }, m_nCurrSaveSlot + 1);
+					}
+					m_bWebSaveDownload = false;
+					SwitchToNewScreen(MENUPAGE_WEB_SAVE_MANAGER);
+					break;
+				}
+#endif
 					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
 						if (m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
 							SwitchToNewScreen(MENUPAGE_LOAD_SLOT_CONFIRM);
@@ -5687,6 +5938,39 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				}
 				break;
 			}
+#ifdef VICEEXT_WEB_GALLERY
+			case MENUACTION_WEB_GALLERY_DOWNLOAD:
+				EM_ASM({ try { if (window.__vcGalleryDownload) window.__vcGalleryDownload(); } catch (e) {} });
+				break;
+			case MENUACTION_WEB_GALLERY_DELETE:
+				EM_ASM({ try { if (window.__vcGalleryClear) window.__vcGalleryClear(); } catch (e) {} });
+				SwitchToNewScreen(MENUPAGE_WEB_GALLERY);
+				break;
+#endif
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+			case MENUACTION_WEB_MUSIC_IMPORT:
+				EM_ASM({ try { if (window.__vcMusicImport) window.__vcMusicImport(); } catch (e) {} });
+				break;
+			case MENUACTION_WEB_MUSIC_DOWNLOAD:
+				EM_ASM({ try { if (window.__vcMusicDownloadAll) window.__vcMusicDownloadAll(); } catch (e) {} });
+				break;
+			case MENUACTION_WEB_MUSIC_DELETE:
+				EM_ASM({ try { if (window.__vcMusicDeleteAll) window.__vcMusicDeleteAll(); } catch (e) {} });
+				SwitchToNewScreen(MENUPAGE_WEB_MUSIC);
+				break;
+#endif
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+			case MENUACTION_WEB_SAVE_DOWNLOAD_ONE:
+				SwitchToNewScreen(MENUPAGE_CHOOSE_LOAD_SLOT);
+				m_bWebSaveDownload = true;
+				break;
+			case MENUACTION_WEB_SAVE_DOWNLOAD_ALL:
+				EM_ASM({ try { if (window.__vcSaveDownloadAll) window.__vcSaveDownloadAll(); } catch (e) {} });
+				break;
+			case MENUACTION_WEB_SAVE_IMPORT:
+				EM_ASM({ try { if (window.__vcSaveImport) window.__vcSaveImport(); } catch (e) {} });
+				break;
+#endif
 			case MENUACTION_NEWGAME:
 				DoSettingsBeforeStartingAGame();
 #ifdef __EMSCRIPTEN__
@@ -6025,6 +6309,13 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 	}
 
 	if (goBack) {
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+		if (m_bWebSaveDownload && m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
+			m_bWebSaveDownload = false;
+			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_BACK, 0);
+			SwitchToNewScreen(MENUPAGE_WEB_SAVE_MANAGER);
+		} else
+#endif
 		if (m_NoEmptyBinding) {
 			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_BACK, 0);
 			SwitchToNewScreen(-2);
@@ -6651,7 +6942,7 @@ CMenuManager::SwitchMenuOnAndOff()
 		// Reminder: You need REGISTER_START_BUTTON defined to make it work.
 		if ((CPad::GetPad(0)->GetStartJustDown() || CPad::GetPad(0)->GetEscapeJustDown())
 			&& (!m_bMenuActive || m_nCurrScreen == MENUPAGE_PAUSE_MENU || m_nCurrScreen == MENUPAGE_CHOOSE_SAVE_SLOT || m_nCurrScreen == MENUPAGE_SAVE_CHEAT_WARNING)
-			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested
+			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested || m_bTouchOpenMap
 #ifdef REGISTER_START_BUTTON
 			|| CPad::GetPad(0)->GetStartJustDown() && !m_bGameNotLoaded
 #endif
@@ -6673,7 +6964,7 @@ CMenuManager::SwitchMenuOnAndOff()
 
 			if (m_bShutDownFrontEndRequested)
 				m_bMenuActive = false;
-			else if (m_bStartUpFrontEndRequested)
+			else if (m_bStartUpFrontEndRequested || m_bTouchOpenMap)
 				m_bMenuActive = true;
 			else
 				m_bMenuActive = !m_bMenuActive;
@@ -6692,6 +6983,10 @@ CMenuManager::SwitchMenuOnAndOff()
 				}
 				Initialise();
 				LoadAllTextures();
+				if (m_bTouchOpenMap) {
+					m_bTouchOpenMap = false;
+					SwitchToNewScreen(MENUPAGE_MAP);
+				}
 #ifdef FIX_BUGS
 				CPad::StopPadsShaking();
 #endif
@@ -6777,6 +7072,7 @@ CMenuManager::SwitchMenuOnAndOff()
 
 	m_bStartUpFrontEndRequested = false;
 	m_bShutDownFrontEndRequested = false;
+	m_bTouchOpenMap = false;
 
 #ifdef GAMEPAD_MENU
 	// Reset pad shaking.
@@ -8026,3 +8322,29 @@ CMenuManager::LoadController(int8 type)
 
 #undef GetBackJustUp
 #undef GetBackJustDown
+
+#ifdef __EMSCRIPTEN__
+extern "C" void EMSCRIPTEN_KEEPALIVE ViceExtRescanSaves(void)
+{
+	PcSaveHelper.PopulateSlotInfo();
+}
+
+#ifdef VICEEXT_WEB_SKINS
+extern "C" void EMSCRIPTEN_KEEPALIVE ViceExtRescanSkins(void)
+{
+	tSkinInfo *e = FrontEndMenuManager.m_pSkinListHead.nextSkin;
+	while (e) {
+		tSkinInfo *next = e->nextSkin;
+		delete e;
+		e = next;
+	}
+	FrontEndMenuManager.m_pSkinListHead.nextSkin = nil;
+	FrontEndMenuManager.m_pSelectedSkin = &FrontEndMenuManager.m_pSkinListHead;
+	FrontEndMenuManager.m_bSkinsEnumerated = false;
+	FrontEndMenuManager.m_nSkinsTotal = 0;
+	FrontEndMenuManager.m_nSelectedListRow = 0;
+	FrontEndMenuManager.m_nFirstVisibleRowOnList = 0;
+	FrontEndMenuManager.m_nCurrExLayer = HOVEROPTION_LIST;
+}
+#endif
+#endif

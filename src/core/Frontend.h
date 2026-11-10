@@ -247,8 +247,24 @@ enum eMenuScreen
 #ifdef VICEEXT_FIRST_PERSON
 	MENUPAGE_FIRST_PERSON,
 #endif
-#ifdef VICEEXT_WFP_OPTIONS
+#ifdef VICEEXT_WFP_MENU
 	MENUPAGE_WIDEFIX_SETTINGS,
+#endif
+#ifdef VICEEXT_WEB_GALLERY
+	MENUPAGE_WEB_GALLERY,
+	MENUPAGE_WEB_GALLERY_CONFIRM,
+#endif
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+	MENUPAGE_WEB_MUSIC,
+	MENUPAGE_WEB_MUSIC_CONFIRM,
+#endif
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+	MENUPAGE_WEB_SAVE_MANAGER,
+	MENUPAGE_WEB_SAVE_NO_SPACE,
+	MENUPAGE_WEB_SAVE_IMPORTED,
+#endif
+#ifdef VICEEXT_WEB_SKINS
+	MENUPAGE_WEB_SKIN_IMPORTED,
 #endif
 	MENUPAGES
 };
@@ -358,6 +374,20 @@ enum eMenuAction
 #ifdef VICEEXT_WEAPON_SIGHT
 	MENUACTION_WEAPONSIGHT,
 #endif
+#ifdef VICEEXT_WEB_GALLERY
+	MENUACTION_WEB_GALLERY_DOWNLOAD,
+	MENUACTION_WEB_GALLERY_DELETE,
+#endif
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+	MENUACTION_WEB_MUSIC_IMPORT,
+	MENUACTION_WEB_MUSIC_DOWNLOAD,
+	MENUACTION_WEB_MUSIC_DELETE,
+#endif
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+	MENUACTION_WEB_SAVE_DOWNLOAD_ONE,
+	MENUACTION_WEB_SAVE_DOWNLOAD_ALL,
+	MENUACTION_WEB_SAVE_IMPORT,
+#endif
 };
 
 enum eCheckHover
@@ -431,6 +461,9 @@ enum eCheckHover
 #ifdef VICEEXT_FIRST_PERSON
 	HOVEROPTION_INCREASE_FOV_FP,
 	HOVEROPTION_DECREASE_FOV_FP,
+#endif
+#ifdef VICEEXT_WEB_SKINS
+	HOVEROPTION_IMPORT_SKIN,
 #endif
 };
 
@@ -593,7 +626,7 @@ struct CMenuScreenCustom
 		uint8 m_Align;
 	} m_aEntries[NUM_MENUROWS];
 };
-extern CMenuScreenCustom aScreens[MENUPAGES];
+extern CMenuScreenCustom aScreens[];
 #endif
 
 struct MenuTrapezoid
@@ -742,6 +775,9 @@ public:
 	int32 m_nCurrScreen;
 	int32 m_nPrevScreen;
 	int32 m_nCurrSaveSlot;
+#ifdef VICEEXT_WEB_SAVE_MANAGER
+	bool m_bWebSaveDownload;
+#endif
 	uint32 m_LastScreenSwitch;
 	int32 m_nMenuFadeAlpha;
 	int32 m_nOptionHighlightTransitionBlend;
@@ -766,6 +802,8 @@ public:
 	int32 m_nMouseOldPosY;
 	int32 m_nHoverOption;
 	bool m_bShowMouse;
+	bool m_bTouchMenuTap;
+	bool m_bTouchOpenMap;
 	int32 m_nOptionMouseHovering;
 	bool m_bStartWaitingForKeyBind;
 	bool m_bWaitingForNewKeyBind;
@@ -945,6 +983,8 @@ public:
 	void Process();
 	void ProcessList(bool &optionSelected, bool &goBack);
 	void UserInput();
+	void TouchTap(int, int);
+	void OpenTouchMap();
 	void ProcessUserInput(uint8, uint8, uint8, uint8, int8);
 	void ChangeRadioStation(int8);
 	void ProcessFileActions();

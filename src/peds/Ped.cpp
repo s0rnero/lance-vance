@@ -645,6 +645,11 @@ void
 CPed::DeleteRwObject()
 {
 	CEntity::DeleteRwObject();
+#ifdef VICEEXT_PED_VARIATIONS
+	// Sin clump no se pinta; al recuperarlo, SetModelIndex vuelve a elegir variacion.
+	texClothingVariation = nullptr;
+	texShadeVariation = nullptr;
+#endif
 }
 
 void
@@ -827,6 +832,16 @@ odPedPoseTrace(CPed *ped, const char *evento)
 void
 CPed::SetMoveAnim(void)
 {
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	// T34b, medido en el binario del mod: alli el nadador vive en un estado propio
+	// y el motor NUNCA le mezcla el quieto/andar/correr. Aqui el ped se queda en
+	// PED_IDLE, asi que esta funcion volvia a pedir ANIM_STD_IDLE cada cuadro
+	// (`:929`, delta 4,0) y la brazada peleaba con ella: eso es el "le cuesta
+	// entrar en el agua» que queda despues de arreglar la puerta. Con el carril
+	// del nado puesto, el cuerpo le pertenece al clip de nado.
+	if (IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO))
+		return;
+#endif
 #ifdef VICEEXT_CROUCH // AI crouch
 	if (bIsDucking && !IsPlayer()) {
 		AssocGroupId crouchGroup = m_animGroup;
@@ -1934,6 +1949,14 @@ CPed::ProcessBuoyancy(void)
 	CVector buoyancyPoint;
 	CVector buoyancyImpulse;
 
+#ifdef VICEEXT_SWIM_MOD_BORDER
+	// T34: el flag de flotacion se resetea aqui y se pone dentro del bloque de
+	// agua, porque cuando el jugador ya nada el bloque de abajo se salta por
+	// `!odSwimmingPlayer` y la puerta del nado se quedaba con el valor viejo.
+	if (IsPlayer())
+		ViceExtSetFlota(false);
+#endif
+
 	if (DyingOrDead())
 		buoyancyLevel = 1.8f;
 
@@ -1955,6 +1978,10 @@ CPed::ProcessBuoyancy(void)
 		odSwimmingPlayer = IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO);
 #endif
 		bIsInWater = true;
+#ifdef VICEEXT_SWIM_MOD_BORDER
+		if (IsPlayer())
+			ViceExtSetFlota(buoyancyImpulse.z / m_fMass > GRAVITY * CTimer::GetTimeStep());
+#endif
 		if (!odSwimmingPlayer)
 			ApplyMoveForce(buoyancyImpulse);
 		if (!DyingOrDead()) {
@@ -1971,6 +1998,11 @@ CPed::ProcessBuoyancy(void)
 							bIsInTheAir = false;
 						}
 						pos.z = pos.z - 0.8f;
+#ifdef VICEEXT_SPLASH_REARM
+						// Salir del agua y pisar tierra seca es un evento de una sola
+						// vez: entra siempre y de paso arma el reloj del chapuzon.
+						if (!IsPlayer() || ViceExtSplashGate("seco", 50, true, pos.z))
+#endif
 						CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, pos, CVector(0.0f, 0.0f, 0.0f), 0.0f, 50, color, true);
 						m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 						SetPedState(PED_IDLE);
@@ -2008,15 +2040,25 @@ CPed::ProcessBuoyancy(void)
 					m_vecMoveSpeed.z = -0.02f;
 			} else {
 				m_vecMoveSpeed.z = -0.01f;
-				DMAudio.PlayOneShot(m_audioEntityId, SOUND_SPLASH, 0.0f);
-				CVector aBitForward = 2.2f * m_vecMoveSpeed + GetPosition();
-				float level = 0.0f;
-				if (CWaterLevel::GetWaterLevel(aBitForward, &level, false))
-					aBitForward.z = level;
+#ifdef VICEEXT_SPLASH_REARM
+				// En someras el peon sube y baja y cada bajada pedia un chapuzon
+				// nuevo (sonido + 200 puntos + las gotas de lente). El reloj deja
+				// uno solo por ventana, y solo cuando el chapuzon es del jugador:
+				// los NPCs siguen exactamente como estaban.
+				if (!IsPlayer() || ViceExtSplashGate("someras", 200, false, GetPosition().z)) {
+#endif
+					DMAudio.PlayOneShot(m_audioEntityId, SOUND_SPLASH, 0.0f);
+					CVector aBitForward = 2.2f * m_vecMoveSpeed + GetPosition();
+					float level = 0.0f;
+					if (CWaterLevel::GetWaterLevel(aBitForward, &level, false))
+						aBitForward.z = level;
 
-				CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, aBitForward, CVector(0.0f, 0.0f, 0.1f), 0.0f, 200, color, true);
-				nGenerateRaindrops = CTimer::GetTimeInMilliseconds() + 80;
-				nGenerateWaterCircles = CTimer::GetTimeInMilliseconds() + 100;
+					CParticleObject::AddObject(POBJECT_PED_WATER_SPLASH, aBitForward, CVector(0.0f, 0.0f, 0.1f), 0.0f, 200, color, true);
+					nGenerateRaindrops = CTimer::GetTimeInMilliseconds() + 80;
+					nGenerateWaterCircles = CTimer::GetTimeInMilliseconds() + 100;
+#ifdef VICEEXT_SPLASH_REARM
+				}
+#endif
 			}
 		}
 		if (nGenerateWaterCircles && CTimer::GetTimeInMilliseconds() >= nGenerateWaterCircles) {
@@ -3783,7 +3825,14 @@ CPed::PlayFootSteps(void)
 		}
 	}
 
+#ifdef VICEEXT_BLOOD_LOGICAL
+	// Un charco y un descuento de presupuesto por frame presentado: a 120 FPS
+	// salian hasta 4 veces mas manchas y la sangre se gastaba antes. Un paso
+	// por tick logico reproduce exactamente lo que ya hacian las sombras a 30 Hz.
+	if (IsPlayer() && !walkRunAssoc && bIsLanding && CTimer::GetLogicalFramesPassed() != 0) {
+#else
 	if (IsPlayer() && !walkRunAssoc && bIsLanding) {
+#endif
 		if (!footPosLok)
 			TransformToNode(footPosL, PED_FOOTL);
 
@@ -8610,6 +8659,27 @@ CPed::SetPedPositionInCar(void)
 		((CBike*)m_pMyVehicle)->CalculateLeanMatrix();
 		newMat = ((CBike*)m_pMyVehicle)->m_leanMatrix;
 	}
+#ifdef VICEEXT_SEAT_BY_PED_HEIGHT
+	float odSeatLift = 0.0f;
+#else
+	// 49.0 T15: el asiento no depende de la altura del ped; todos van iguales.
+	// OD_SEAT_LIFT_ALL es la unica palanca y 0.0 es la postura de Tommy.
+	float odSeatLift = OD_SEAT_LIFT_ALL;
+#endif
+#ifdef VICEEXT_SEAT_BY_PED_HEIGHT
+	// SetMatrix pone la CADERA del ped en el anclaje, y de cadera a coronilla
+	// hay mucha diferencia entre esqueletos: los bajitos asomaban por debajo
+	// del liston de la ventanilla. El Tommy es el modelo con el que se autoron
+	// los asientos (0.605), asi que el resto se sube lo que le falte. En motos
+	// no, ahi anclaje y postura ya van juntos, y se suma antes de la cuenta de
+	// la furgoneta para no rotar la compensacion con el respaldo.
+	if (!m_pMyVehicle->IsBike()) {
+		CPedModelInfo *odPedMi = (CPedModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+		if (odPedMi)
+			odSeatLift = odPedMi->m_seatLift;
+	}
+#endif
+	seatPos.z += odSeatLift;
 	newMat.GetPosition() += Multiply3x3(newMat, seatPos);
 	// Already done below (SetTranslate(0.0f, 0.0f, 0.0f))
 	// tempMat.SetUnity();
@@ -8634,6 +8704,39 @@ CPed::SetPedPositionInCar(void)
 	} else {
 		m_fRotationCur = m_pMyVehicle->GetForward().Heading();
 	}
+#ifdef __EMSCRIPTEN__
+	// Medida pura: la z que escribe el anclaje, tuya y de un NPC en el mismo asiento.
+	static uint32 s_odSillaN;
+	s_odSillaN++;
+	if (s_odSillaN <= 60u || s_odSillaN % 200u == 0u) {
+		int32 odSeat = -1;
+		if (m_pMyVehicle->pDriver == this)
+			odSeat = 0;
+		else {
+			for (int i = 0; i < ARRAY_SIZE(m_pMyVehicle->pPassengers); i++) {
+				if (m_pMyVehicle->pPassengers[i] == this) {
+					odSeat = i + 1;
+					break;
+				}
+			}
+		}
+		CBaseModelInfo *odMi = CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
+		const char *odNom = odMi ? odMi->GetModelName() : "?";
+		CBaseModelInfo *odPmi = CModelInfo::GetModelInfo(GetModelIndex());
+		const char *odPnom = odPmi ? odPmi->GetModelName() : "?";
+		float odAntes = GetPosition().z;
+		float odDesp = newMat.GetPosition().z;
+		char odT[240];
+		snprintf(odT, sizeof odT,
+			"SILLACAM mod=%d jug=%d seat=%d antes=%.3f desp=%.3f dl=%.3f sitz=%.3f vehz=%.3f est=%d mov=%d bajo=%d van=%d comp=%.3f pednom=%s nom=%s",
+			(int)m_pMyVehicle->GetModelIndex(), IsPlayer() ? 1 : 0, odSeat,
+			odAntes, odDesp, odDesp - odAntes, seatPos.z, m_pMyVehicle->GetPosition().z,
+			(int)m_nPedState, m_movingListNode != nil ? 1 : 0,
+			m_pMyVehicle->bLowVehicle ? 1 : 0, m_pMyVehicle->bIsVan ? 1 : 0,
+			odSeatLift, odPnom, odNom);
+		ODTRACES(odT);
+	}
+#endif
 	SetMatrix(newMat);
 }
 
@@ -10563,13 +10666,17 @@ CPed::Say(uint16 audio, int32 time)
 }
 
 #ifdef VICEEXT_CLIMBING
-bool CPed::CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint)
+bool CPed::CanPedClimbingThis(CColPoint& hitForwardPoint, CColPoint& hitBackwardPoint, CColPoint& hitJumpBPoint, bool desdeElAgua)
 {
 	if (!bEnableClimbing)
 		return false;
 
 #ifdef VICEEXT_SWIMMING
-	if (IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO))
+	// El nado apagaba el climbing de pie (correcto: nadando no se trepa igual).
+	// Pero la salida del agua ES climbing, y sin este permiso la consulta del
+	// reborde devolvía falso siempre: el trepar desde el agua no se activaba
+	// nunca. `desdeElAgua` lo pide el propio nado, que ya ha medido la altura.
+	if (!desdeElAgua && IsPlayer() && ViceExtPedOwns(PEDLANE_NADO, PEDCAP_MOVIMIENTO))
 		return false;
 #endif
 

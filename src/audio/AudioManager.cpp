@@ -17,6 +17,31 @@
 
 cAudioManager AudioManager;
 
+#ifdef __EMSCRIPTEN__
+// T115: censo por muestra y etiqueta del productor que pidio cada ranura.
+static struct {
+	uint32 reqs;
+	uint32 births;
+	uint32 ms;
+	uint32 maxLive;
+} odSfxCensus[TOTAL_AUDIO_SAMPLES];
+static uint16 odReqTag[NUM_SOUND_QUEUES][NUM_CHANNELS_GENERIC];
+static uint16 odLiveTag[NUM_CHANNELS_GENERIC];
+static uint16 odLiveCreate[NUM_CHANNELS_GENERIC];
+static uint32 odLiveSfx[NUM_CHANNELS_GENERIC];
+static uint32 odLiveT0[NUM_CHANNELS_GENERIC];
+static uint32 odLiveRefreshed[NUM_CHANNELS_GENERIC];
+static uint16 odLiveEnt[NUM_CHANNELS_GENERIC];
+static uint32 odReqsPrev[TOTAL_AUDIO_SAMPLES];
+static uint32 odBirthsPrev[TOTAL_AUDIO_SAMPLES];
+static uint32 odDumpT0;
+static uint32 odCensusNext;
+static uint32 odNewRows;
+static uint32 odDieRows;
+static uint32 odStuckRows;
+static bool odDumpAll;
+#endif
+
 #define SPEED_OF_SOUND 343.f
 #define TIME_SPENT 40
 
@@ -353,6 +378,10 @@ cAudioManager::ResetTimers(uint32 time)
 			ClearRequestedQueue();
 			m_nActiveQueue = 0;
 		}
+		// ClearActiveSamples olvida los slots pero no corta el OpenAL: un loop en curso se
+		// quedaba sonando sin nadie que lo vigilara.
+		for (uint8 i = 0; i < m_nActiveSamples; i++)
+			SampleManager.StopChannel(i);
 		ClearActiveSamples();
 		ClearMissionAudio(0);
 		ClearMissionAudio(1);
@@ -710,15 +739,21 @@ cAudioManager::InterrogateAudioEntities()
 }
 
 void
-cAudioManager::AddSampleToRequestedQueue()
+cAudioManager::AddSampleToRequestedQueueAt(uint32 prodLine)
 {
 	uint32 finalPriority;
 	uint8 sampleIndex;
+#ifndef __EMSCRIPTEN__
+	(void)prodLine;
+#endif
 #ifdef AUDIO_REFLECTIONS
 	bool8 bReflections;
 #endif
 
 	if (m_sQueueSample.m_nSampleIndex < TOTAL_AUDIO_SAMPLES) {
+#ifdef __EMSCRIPTEN__
+		odSfxCensus[m_sQueueSample.m_nSampleIndex].reqs++;
+#endif
 		finalPriority = m_sQueueSample.m_nPriority * (MAX_VOLUME - m_sQueueSample.m_nVolume);
 		sampleIndex = m_nRequestedCount[m_nActiveQueue];
 		if (sampleIndex >= m_nActiveSamples) {
@@ -751,6 +786,9 @@ cAudioManager::AddSampleToRequestedQueue()
 #endif
 
 		m_aRequestedQueue[m_nActiveQueue][sampleIndex] = m_sQueueSample;
+#ifdef __EMSCRIPTEN__
+		odReqTag[m_nActiveQueue][sampleIndex] = (uint16)prodLine;
+#endif
 
 		AddDetailsToRequestedOrderList(sampleIndex);
 #ifdef AUDIO_REFLECTIONS
@@ -1137,6 +1175,9 @@ cAudioManager::ProcessActiveQueues()
 
 	for (uint8 i = 0; i < m_nRequestedCount[m_nActiveQueue]; i++) {
 		tSound &sample = m_aRequestedQueue[m_nActiveQueue][m_aRequestedOrderList[m_nActiveQueue][i]];
+#ifdef __EMSCRIPTEN__
+		uint16 odReqTagHere = odReqTag[m_nActiveQueue][m_aRequestedOrderList[m_nActiveQueue][i]];
+#endif
 		if (sample.m_nSampleIndex != NO_SAMPLE) {
 			for (uint8 j = 0; j < m_nActiveSamples; j++) {
 				if (sample.m_nEntityIndex == m_asActiveSamples[j].m_nEntityIndex && sample.m_nCounter == m_asActiveSamples[j].m_nCounter &&
@@ -1160,6 +1201,14 @@ cAudioManager::ProcessActiveQueues()
 					sample.m_bIsBeingPlayed = TRUE;
 					m_asActiveSamples[j].m_bIsBeingPlayed = TRUE;
 					sample.m_nVolumeChange = -1;
+#ifdef __EMSCRIPTEN__
+					// Cancela el desvanecimiento cada frame; si ademas cambia el emisor, el
+					// bucle lo mantiene vivo un productor distinto del que lo creo.
+					if (odLiveTag[j] != odReqTagHere) {
+						odLiveTag[j] = odReqTagHere;
+						odLiveRefreshed[j]++;
+					}
+#endif
 					if (!sample.m_bStatic) {
 						if (sample.m_bIs2D) {
 							emittingVol = m_bDoubleVolume ? 2 * Min(63, sample.WORKING_VOLUME_FIELD) : sample.WORKING_VOLUME_FIELD;
@@ -1249,10 +1298,21 @@ cAudioManager::ProcessActiveQueues()
 	}
 	for (uint8 i = 0; i < m_nRequestedCount[m_nActiveQueue]; i++) {
 		tSound &sample = m_aRequestedQueue[m_nActiveQueue][m_aRequestedOrderList[m_nActiveQueue][i]];
+#ifdef __EMSCRIPTEN__
+		uint16 odReqTagHere = odReqTag[m_nActiveQueue][m_aRequestedOrderList[m_nActiveQueue][i]];
+#endif
 		if (!sample.m_bIsBeingPlayed && !sample.m_bIsPlayingFinished && m_asAudioEntities[sample.m_nEntityIndex].m_bIsUsed && sample.m_nSampleIndex < NO_SAMPLE) {
 #ifdef AUDIO_REFLECTIONS
 			if (sample.m_nCounter > 255 && sample.m_nLoopCount > 0 && sample.m_nReflectionDelay > 0) { // check if reflection
+#ifdef VICEEXT_AUDIO_WINDOWS_LOGICAL
+				// Retardo en ticks logicos. Es uint8, asi que se resta con cuenta para
+				// no dar la vuelta cuando el paso del hitch vale mas que lo que queda.
+				uint32 odRefPaso = CTimer::GetLogicalFramesPassed();
+				sample.m_nReflectionDelay = odRefPaso >= (uint32)sample.m_nReflectionDelay ?
+					0 : (uint8)(sample.m_nReflectionDelay - odRefPaso);
+#else
 				sample.m_nReflectionDelay--;
+#endif
 				sample.m_nFramesToPlay = 1;
 			} else
 #endif
@@ -1268,6 +1328,10 @@ cAudioManager::ProcessActiveQueues()
 							sample.m_nFramesToPlay = samplesToPlay / samplesPerFrame + 1;
 						}
 						memcpy(&m_asActiveSamples[k], &sample, sizeof(tSound));
+#ifdef __EMSCRIPTEN__
+						odLiveCreate[k] = odLiveTag[k] = odReqTagHere;
+						odLiveRefreshed[k] = 0;
+#endif
 						if (!m_asActiveSamples[k].m_bIs2D) {
 							TranslateEntity(&m_asActiveSamples[k].m_vecPos, &position);
 #ifndef EXTERNAL_3D_SOUND
@@ -1361,7 +1425,8 @@ cAudioManager::ProcessActiveQueues()
 
 #ifdef __EMSCRIPTEN__
 	{
-		static struct { uint8 on; uint32 t0, last, silent; } wl[NUM_CHANNELS];
+		static struct { uint8 on; uint32 t0, last, longT, silent, live; } wl[NUM_CHANNELS];
+		static int longRows;
 		uint32 now = CTimer::GetTimeInMilliseconds();
 		for (uint8 i = 0; i < m_nActiveSamples; i++) {
 			tSound &as = m_asActiveSamples[i];
@@ -1381,37 +1446,206 @@ cAudioManager::ProcessActiveQueues()
 				as.m_nEntityIndex = AEHANDLE_NONE;
 				wl[i].on = 0;
 				wl[i].silent = 0;
+				wl[i].live = 0;
 				continue;
 			}
+			// El loop de rozamiento cuelga de la entidad global de colision: hay que exigirle vida propia.
+			if (playingLoop && !m_bIsPaused && ent == m_nCollisionEntity) {
+				if (as.m_bIsBeingPlayed)
+					wl[i].live = now;
+				else if (wl[i].live != 0 && now - wl[i].live > 400u) {
+					char t[176];
+					snprintf(t, sizeof t, "LOOPCOLLIDE ch=%u sfx=%u ent=%d dursec=%u sincesi=%u",
+						i, (uint32)as.m_nSampleIndex, ent,
+						wl[i].on ? (now - wl[i].t0) / 1000 : 0, (now - wl[i].live) / 1000);
+					ODTRACES(t);
+					SampleManager.StopChannel(i);
+					as.m_nSampleIndex = NO_SAMPLE;
+					as.m_nEntityIndex = AEHANDLE_NONE;
+					wl[i].on = 0;
+					wl[i].silent = 0;
+					wl[i].live = 0;
+					continue;
+				}
+			}
 			if (playingLoop) {
+				if (!wl[i].on)
+					wl[i].on = 1, wl[i].t0 = now, wl[i].last = now, wl[i].longT = now, wl[i].silent = 0, wl[i].live = now;
 				if (as.m_nVolume == 0) {
 					if (wl[i].silent == 0) wl[i].silent = now;
 				} else
 					wl[i].silent = 0;
-			}
-			if (playingLoop && wl[i].silent != 0 && now - wl[i].silent > 25000) {
-				char t[176];
-				snprintf(t, sizeof t, "LOOPKILL ch=%u sfx=%u ent=%d type=%d dursec=%u silentsec=%u",
-					i, (uint32)as.m_nSampleIndex, ent, entType,
-					wl[i].on ? (now - wl[i].t0) / 1000 : 0, (now - wl[i].silent) / 1000);
-				ODTRACES(t);
-				SampleManager.StopChannel(i);
-				as.m_nSampleIndex = NO_SAMPLE;
-				as.m_nEntityIndex = AEHANDLE_NONE;
-				wl[i].on = 0;
-				wl[i].silent = 0;
-				continue;
-			}
-			if (playingLoop && !wl[i].on) {
-				wl[i].on = 1; wl[i].t0 = now; wl[i].last = now; wl[i].silent = 0;
+				if (wl[i].silent != 0 && now - wl[i].silent > 25000) {
+					char t[176];
+					snprintf(t, sizeof t, "LOOPKILL ch=%u sfx=%u ent=%d type=%d dursec=%u silentsec=%u",
+						i, (uint32)as.m_nSampleIndex, ent, entType,
+						(now - wl[i].t0) / 1000, (now - wl[i].silent) / 1000);
+					ODTRACES(t);
+					SampleManager.StopChannel(i);
+					as.m_nSampleIndex = NO_SAMPLE;
+					as.m_nEntityIndex = AEHANDLE_NONE;
+					wl[i].on = 0;
+					wl[i].silent = 0;
+					wl[i].live = 0;
+					continue;
+				}
+				// Ningun cerrojo mata el loop que oye el jugador: hay que verlo con nombre y numero.
+				if (now - wl[i].t0 > 8000u && now - wl[i].longT > 20000u && longRows < 40) {
+					longRows++;
+					wl[i].longT = now;
+					char t[256];
+					snprintf(t, sizeof t, "LOOPLONG ch=%u sfx=%u ent=%d type=%d dursec=%u vol=%d play=%d nsamp=%u create=%d prod=%d refresco=%d reqs=%u canalms=%u",
+						i, (uint32)as.m_nSampleIndex, ent, entType,
+						(now - wl[i].t0) / 1000, as.m_nVolume, as.m_bIsBeingPlayed,
+						SampleManager.GetSampleLength(as.m_nSampleIndex),
+						odLiveCreate[i], odLiveTag[i], odLiveRefreshed[i],
+						as.m_nSampleIndex < TOTAL_AUDIO_SAMPLES ? odSfxCensus[as.m_nSampleIndex].reqs : 0u,
+						odLiveT0[i] ? now - odLiveT0[i] : 0u);
+					ODTRACES(t);
+				}
 			} else if (wl[i].on) {
 				wl[i].on = 0;
 				wl[i].silent = 0;
+				wl[i].live = 0;
 			}
 		}
 	}
 #endif
 
+#ifdef __EMSCRIPTEN__
+// Censo de vida real de cada canal y volcado periodico de la tabla por muestra.
+{
+	uint32 now = CTimer::GetTimeInMilliseconds();
+	for (uint8 ch = 0; ch < m_nActiveSamples; ch++) {
+		tSound &a = m_asActiveSamples[ch];
+		if (a.m_nSampleIndex < TOTAL_AUDIO_SAMPLES) {
+			if (odLiveT0[ch] == 0 || odLiveSfx[ch] != a.m_nSampleIndex) {
+				odLiveSfx[ch] = a.m_nSampleIndex;
+				odLiveEnt[ch] = a.m_nEntityIndex;
+				odLiveT0[ch] = now ? now : 1u;
+				odSfxCensus[a.m_nSampleIndex].births++;
+				if (a.m_nLoopCount == 0 && odNewRows < 600u) {
+					odNewRows++;
+					char n[200];
+					snprintf(n, sizeof n, "SNDNEW ch=%u sfx=%u create=%d prod=%d ent=%d cnt=%d f2p=%d vol=%d freq=%u",
+						ch, a.m_nSampleIndex, odLiveCreate[ch], odLiveTag[ch], a.m_nEntityIndex,
+						a.m_nCounter, (int)a.m_nFramesToPlay, a.WORKING_VOLUME_FIELD, a.m_nFrequency);
+					ODTRACES(n);
+				}
+			} else if (a.m_nLoopCount != 0 && now >= odLiveT0[ch] + 8000u && odStuckRows < 60u) {
+				// Un no-loop vivo a los 8 s no lo ve ningun cerrojo: es un efecto pegado.
+				odStuckRows++;
+				char s[220];
+				snprintf(s, sizeof s, "SNDSTUCK ch=%u sfx=%u ms=%u create=%d prod=%d refresco=%d reqs=%u vol=%d f2p=%d cnt=%d ent=%d loop=%d",
+					ch, a.m_nSampleIndex, now - odLiveT0[ch], odLiveCreate[ch], odLiveTag[ch],
+					odLiveRefreshed[ch], odSfxCensus[a.m_nSampleIndex].reqs, a.WORKING_VOLUME_FIELD,
+					(int)a.m_nFramesToPlay, a.m_nCounter, a.m_nEntityIndex, a.m_nLoopCount);
+				ODTRACES(s);
+			}
+		} else if (odLiveT0[ch] != 0) {
+			uint32 live = now >= odLiveT0[ch] ? now - odLiveT0[ch] : 0u;
+			odSfxCensus[odLiveSfx[ch]].ms += live;
+			if (live > odSfxCensus[odLiveSfx[ch]].maxLive)
+				odSfxCensus[odLiveSfx[ch]].maxLive = live;
+			if (live >= 3000u && odDieRows < 200u) {
+				odDieRows++;
+				char d[220];
+				int32 odEnt = odLiveEnt[ch];
+				int odVivo = (odEnt >= 0 && odEnt < NUM_AUDIOENTITIES) ?
+					(int32)m_asAudioEntities[odEnt].m_bIsUsed : -1;
+				snprintf(d, sizeof d, "SNDDIE ch=%u sfx=%u ms=%u create=%d prod=%d refresco=%d reqs=%u births=%u ent=%d vivo=%d",
+					ch, odLiveSfx[ch], live, odLiveCreate[ch], odLiveTag[ch], odLiveRefreshed[ch],
+					odSfxCensus[odLiveSfx[ch]].reqs, odSfxCensus[odLiveSfx[ch]].births, odEnt, odVivo);
+				ODTRACES(d);
+			}
+			odLiveT0[ch] = 0;
+			odLiveRefreshed[ch] = 0;
+		}
+	}
+	if (odCensusNext == 0)
+		odCensusNext = now + 15000u;
+	if (now >= odCensusNext) {
+		odCensusNext = now + 15000u;
+		odDumpAll = EM_ASM_INT({ return window.__sfxDump ? 1 : 0; }, 0);
+		uint32 dt = odDumpT0 != 0 ? now - odDumpT0 : 15000u;
+		if (dt == 0)
+			dt = 15000u;
+		odDumpT0 = now;
+		uint32 topId[10];
+		uint32 topDelta[10];
+		int topN = 0;
+		uint32 brId[6];
+		uint32 brDelta[6];
+		int brN = 0;
+		uint32 distintos = 0;
+		for (uint32 s = 0; s < TOTAL_AUDIO_SAMPLES; s++) {
+			uint32 r = odSfxCensus[s].reqs;
+			if (r == 0) {
+				odReqsPrev[s] = 0;
+				odBirthsPrev[s] = 0;
+				continue;
+			}
+			distintos++;
+			uint32 dReqs = r - odReqsPrev[s];
+			uint32 dBirths = odSfxCensus[s].births - odBirthsPrev[s];
+			odReqsPrev[s] = r;
+			odBirthsPrev[s] = odSfxCensus[s].births;
+			// Nacimientos por ventana: un one-shot re-disparado sin parar suena como un bucle
+			// y ningun cerrojo de duracion lo ve, porque cada vida dura menos del umbral.
+			if (dBirths != 0) {
+				if (brN == 6 && dBirths <= brDelta[5])
+					;
+				else {
+					int p = brN < 6 ? brN : 5;
+					while (p > 0 && brDelta[p - 1] < dBirths) {
+						brDelta[p] = brDelta[p - 1];
+						brId[p] = brId[p - 1];
+						p--;
+					}
+					brDelta[p] = dBirths;
+					brId[p] = s;
+					if (brN < 6)
+						brN++;
+				}
+			}
+			if (topN == 10 && dReqs <= topDelta[9])
+				continue;
+			int p = topN < 10 ? topN : 9;
+			while (p > 0 && topDelta[p - 1] < dReqs) {
+				topDelta[p] = topDelta[p - 1];
+				topId[p] = topId[p - 1];
+				p--;
+			}
+			topDelta[p] = dReqs;
+			topId[p] = s;
+			if (topN < 10)
+				topN++;
+		}
+		char t[512];
+		int off = snprintf(t, sizeof t, "SNDTOP dt=%u distintos=%u rq=", dt, distintos);
+		for (int k = 0; k < topN && off < 340; k++)
+			off += snprintf(t + off, sizeof t - off, " %u:+%u/%ums", topId[k], topDelta[k], odSfxCensus[topId[k]].ms);
+		if (off < 400)
+			off += snprintf(t + off, sizeof t - off, " br=");
+		for (int k = 0; k < brN && off < 490; k++)
+			off += snprintf(t + off, sizeof t - off, " %u:+%u", brId[k], brDelta[k]);
+		ODTRACES(t);
+		if (odDumpAll) {
+			uint32 rows = 0;
+			for (uint32 s = 0; s < TOTAL_AUDIO_SAMPLES && rows < 400u; s++) {
+				if (odSfxCensus[s].reqs == 0)
+					continue;
+				rows++;
+				char l[120];
+				snprintf(l, sizeof l, "SNDLIST sfx=%u reqs=%u births=%u ms=%u max=%u",
+					s, odSfxCensus[s].reqs, odSfxCensus[s].births, odSfxCensus[s].ms, odSfxCensus[s].maxLive);
+				ODTRACES(l);
+			}
+			EM_ASM({ try { window.__sfxDump = 0; } catch (e) {} }, 0);
+		}
+	}
+}
+#endif
 #undef WORKING_VOLUME_FIELD
 }
 

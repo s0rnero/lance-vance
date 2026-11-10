@@ -2920,10 +2920,24 @@ float CCarCtrl::FindMaxSteerAngle(CVehicle* pVehicle)
 
 void CCarCtrl::SteerAIHeliTowardsTargetCoors(CAutomobile* pHeli)
 {
-	if (pHeli->m_aWheelSpeed[1] < 0.22f)
+	if (pHeli->m_aWheelSpeed[1] < 0.22f) {
 #ifdef VICEEXT_FIX_FV
-		pHeli->m_aWheelSpeed[1] += 0.001f * CTimer::GetTimeStep();
+		// heli de IA: misma rampa que CAutomobile::ProcessControlKeys
+		if (pHeli->GetModelIndex() == MI_RCRAIDER || pHeli->GetModelIndex() == MI_RCGOBLIN) {
+#ifdef VICEEXT_HELI_SPIN_SCALED
+			pHeli->m_aWheelSpeed[1] += OD_HELI_RAMP_RC * CTimer::GetTimeStep();
+#else
+			pHeli->m_aWheelSpeed[1] += 0.003f * CTimer::GetTimeStep();
 #endif
+		} else {
+#ifdef VICEEXT_HELI_SPIN_SCALED
+			pHeli->m_aWheelSpeed[1] += OD_HELI_RAMP * CTimer::GetTimeStep();
+#else
+			pHeli->m_aWheelSpeed[1] += 0.001f * CTimer::GetTimeStep();
+#endif
+		}
+#endif
+	}
 	if (pHeli->m_aWheelSpeed[1] < 0.15f)
 		return;
 	CVector2D vecToTarget = pHeli->AutoPilot.m_vecDestinationCoors - pHeli->GetPosition();

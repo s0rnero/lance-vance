@@ -663,7 +663,12 @@ void CScrollBar::Update()
 	else
 		m_fIntensity = 1.0f - 4.0f * (distanceFromCamera - 75.0f) / 100.0f;
 
+#ifdef VICEEXT_HUD_WINDOWS_LOGICAL
+	// La marquesina adelantaba un caracter cada 8 frames presentados.
+	m_Counter = (m_Counter + (int)CTimer::GetLogicalFramesPassed()) % 8;
+#else
 	m_Counter = (m_Counter + 1) % 8;
+#endif
 		
 	// if message is fully printed, load up the next one
 	if (m_Counter == 0 && ++m_MessageCurrentChar >= m_MessageLength)

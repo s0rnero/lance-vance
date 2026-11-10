@@ -3801,21 +3801,22 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 	// El disparo solo alcanza el torso si atraviesa un cristal: la chapa
 	// sigue parando balas, como en el juego original.
 	bool passesGlass = false;
+	bool frontGlass = false;
+	// frontGlass conserva el criterio original: el parabrisas solo se agrieta si la bala entra de delante.
 	CVector distVec = target - source;
 	if (veh->IsCar()) {
-		if (DotProduct(distVec, veh->GetForward()) < 0.0f && DotProduct(distVec, veh->GetUp()) <= 0.0f) {
-			CColModel *colModel = veh->GetColModel();
-			if (colModel->numTriangles > 0) {
-				CMatrix invVehMat;
-				Invert(veh->GetMatrix(), invVehMat);
-				CColLine localLine(invVehMat * shootLine.p0, invVehMat * shootLine.p1);
-				CCollision::CalculateTrianglePlanes(colModel);
-				for (int i = 0; i < colModel->numTriangles; i++) {
-					if (colModel->triangles[i].surface == SURFACE_GLASS &&
-						CCollision::TestLineTriangle(localLine, colModel->vertices, colModel->triangles[i], colModel->trianglePlanes[i])) {
-						passesGlass = true;
-						break;
-					}
+		frontGlass = DotProduct(distVec, veh->GetForward()) < 0.0f && DotProduct(distVec, veh->GetUp()) <= 0.0f;
+		CColModel *colModel = veh->GetColModel();
+		if (colModel->numTriangles > 0) {
+			CMatrix invVehMat;
+			Invert(veh->GetMatrix(), invVehMat);
+			CColLine localLine(invVehMat * shootLine.p0, invVehMat * shootLine.p1);
+			CCollision::CalculateTrianglePlanes(colModel);
+			for (int i = 0; i < colModel->numTriangles; i++) {
+				if (colModel->triangles[i].surface == SURFACE_GLASS &&
+					CCollision::TestLineTriangle(localLine, colModel->vertices, colModel->triangles[i], colModel->trianglePlanes[i])) {
+					passesGlass = true;
+					break;
 				}
 			}
 		}
@@ -3861,7 +3862,7 @@ CWeapon::CheckForShootingVehicleOccupant(CEntity **victim, CColPoint *point, eWe
 	CAutomobile *car = (CAutomobile*)veh;
 
 	// No need to damage windscreen if there isn't one.
-	if (passesGlass && car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN)) {
+	if (passesGlass && frontGlass && car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN)) {
 		if (car->Damage.GetPanelStatus(VEHPANEL_WINDSCREEN) == PANEL_STATUS_SMASHED2)
 			car->Damage.ProgressPanelDamage(VEHPANEL_WINDSCREEN);
 

@@ -408,6 +408,16 @@ void CMissionCleanup::Process()
 	CWorld::Players[0].m_pPed->m_pWanted->m_bIgnoredByCops = false;
 	CWorld::Players[0].m_pPed->m_pWanted->m_bIgnoredByEveryone = false;
 	CWorld::Players[0].MakePlayerSafe(false);
+#ifdef __EMSCRIPTEN__
+	{
+		char odDrunkW[120];
+		snprintf(odDrunkW, sizeof odDrunkW, "DRUNKW src=misioncleanup val=%d countdown=%d t=%u",
+			(int)CWorld::Players[0].m_pPed->m_nDrunkenness,
+			(int)CWorld::Players[0].m_pPed->m_nDrunkCountdown,
+			CTimer::GetTimeInMilliseconds());
+		ODTRACES(odDrunkW);
+	}
+#endif
 	CWorld::Players[0].m_pPed->m_nFadeDrunkenness = 1;
 	CWorld::Players[0].m_pPed->m_nDrunkCountdown = 0;
 	CPad::GetPad(0)->SetDrunkInputDelay(0);

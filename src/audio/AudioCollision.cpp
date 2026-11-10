@@ -7,6 +7,10 @@
 #include "AudioSamples.h"
 #include "SurfaceTable.h"
 #include "sampman.h"
+#ifdef __EMSCRIPTEN__
+#include "Timer.h"
+#include "ondemand.h"
+#endif
 
 void
 cAudioManager::ReportCollision(CEntity *entity1, CEntity *entity2, uint8 surface1, uint8 surface2, float collisionPower,
@@ -72,6 +76,57 @@ cAudioCollisionManager::AddCollisionToRequestedQueue()
 	m_bIndicesTable[i] = collisionsIndex;
 }
 
+#ifdef __EMSCRIPTEN__
+static bool
+OdColImpactLatched(const cAudioCollision &col)
+{
+	static const uint32 LATCH_MS = 250;
+
+	static CEntity *odE1[NUMAUDIOCOLLISIONS];
+	static CEntity *odE2[NUMAUDIOCOLLISIONS];
+	static uint8 odS1[NUMAUDIOCOLLISIONS];
+	static uint8 odS2[NUMAUDIOCOLLISIONS];
+	static uint32 odAt[NUMAUDIOCOLLISIONS];
+	static uint32 odNext;
+	static uint32 odSuppressed;
+
+	CEntity *e1 = col.m_pEntity1;
+	CEntity *e2 = col.m_pEntity2;
+	uint8 s1 = col.m_bSurface1;
+	uint8 s2 = col.m_bSurface2;
+	if(e1 > e2){
+		CEntity *swap = e1; e1 = e2; e2 = swap;
+	}
+	if(s1 > s2){
+		uint8 swap = s1; s1 = s2; s2 = swap;
+	}
+
+	uint32 now = CTimer::GetTimeInMilliseconds();
+	for(int i = 0; i < NUMAUDIOCOLLISIONS; i++){
+		if(odAt[i] == 0 || now - odAt[i] > LATCH_MS)
+			continue;
+		if(odE1[i] == e1 && odE2[i] == e2 && odS1[i] == s1 && odS2[i] == s2){
+			odSuppressed++;
+			if(odSuppressed <= 20 || (odSuppressed % 500) == 0){
+				char t[128];
+				snprintf(t, sizeof t, "ODCOLLATCH sup=%u s1=%u s2=%u edadms=%u",
+					odSuppressed, (uint32)s1, (uint32)s2, now - odAt[i]);
+				ODTRACES(t);
+			}
+			return true;
+		}
+	}
+
+	odE1[odNext] = e1;
+	odE2[odNext] = e2;
+	odS1[odNext] = s1;
+	odS2[odNext] = s2;
+	odAt[odNext] = now ? now : 1;
+	odNext = (odNext + 1) % NUMAUDIOCOLLISIONS;
+	return false;
+}
+#endif
+
 void
 cAudioManager::ServiceCollisions()
 {
@@ -127,7 +182,12 @@ cAudioManager::ServiceCollisions()
 					break;
 				}
 			}
+#ifdef __EMSCRIPTEN__
+			if(!OdColImpactLatched(m_sCollisionManager.m_asCollisions1[index]))
+				SetUpOneShotCollisionSound(m_sCollisionManager.m_asCollisions1[index]);
+#else
 			SetUpOneShotCollisionSound(m_sCollisionManager.m_asCollisions1[index]);
+#endif
 			SetUpLoopingCollisionSound(m_sCollisionManager.m_asCollisions1[index], j);
 		}
 	}

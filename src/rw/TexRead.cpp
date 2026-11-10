@@ -94,7 +94,23 @@ RwTexDictionaryGtaStreamRead(RwStream *stream)
 		return nil;
 	}
 	if(RwStreamRead(stream, &numTextures, sizeof(numTextures)) != sizeof(numTextures))
+	return nil;
+#ifdef VICEEXT_ALLOC_GUARD
+	// El recuento de texturas viene del fichero: un registro corrompido o un
+	// buffer desalineado puede pedir millones de texturas y reventar el monton
+	// mucho antes del EOF. Se rechaza aqui, que es donde aun se puede.
+	if(numTextures < 0 || numTextures > OD_TXD_MAX_TEXTURES){
+		static int odN = 0;
+		if(odN < 40){
+			odN++;
+			char odT[128];
+			snprintf(odT, sizeof odT, "TXDBAD ntext=%d dictpos=%u",
+				(int)numTextures, (unsigned)STREAMPOS(stream));
+			ODTRACES(odT);
+		}
 		return nil;
+	}
+#endif
 
 	texDict = RwTexDictionaryCreate();
 	if(texDict == nil)
@@ -146,7 +162,23 @@ RwTexDictionaryGtaStreamRead1(RwStream *stream, int32 *numTexturesOut, uint32 *s
 		return nil;
 	}
 	if(RwStreamRead(stream, &numTextures, sizeof(numTextures)) != sizeof(numTextures))
+	return nil;
+#ifdef VICEEXT_ALLOC_GUARD
+	// El recuento de texturas viene del fichero: un registro corrompido o un
+	// buffer desalineado puede pedir millones de texturas y reventar el monton
+	// mucho antes del EOF. Se rechaza aqui, que es donde aun se puede.
+	if(numTextures < 0 || numTextures > OD_TXD_MAX_TEXTURES){
+		static int odN = 0;
+		if(odN < 40){
+			odN++;
+			char odT[128];
+			snprintf(odT, sizeof odT, "TXDBAD ntext=%d dictpos=%u",
+				(int)numTextures, (unsigned)STREAMPOS(stream));
+			ODTRACES(odT);
+		}
 		return nil;
+	}
+#endif
 
 	texDict = RwTexDictionaryCreate();
 	if(texDict == nil)
