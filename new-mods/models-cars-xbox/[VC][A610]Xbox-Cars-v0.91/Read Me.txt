@@ -1,0 +1,28 @@
+XBOX Cars ~ VC ~ v0.91 ~ By yojo2 & ALMOST610
+
+Just run gta mod installer and it should lead you through the update (just select the locations as asked)
+
+NOTE: Please use a Clean Install of Vice City
+
+NOTE: At the main screen select the choice (3) the one between # #
+
+  o Install a Custom Vehicle into Vice City
+
+  o Install a Custom Vehicle into GTA3
+
+# o Install a Mod (with a script file) to GTA3 or Vice City #
+
+  o Restore a backup for GTA3 or Vice City (uninstall a mod\vehicle) 
+
+
+Credits:
+~ yojo2 : For converting all the Xbox Vehicles to PC, and also the wheels (with exception of Romero & Voodoo)
+~ SLAYERMAGGOT : For previously converting the Voodoo and Romero's Hearse (Which are included in this mod)
+~ ALMOST610 / ME : For taking over the mod and doing the current release and any future ones (Just working on the Vehicles)
+~ rmws. : For providing me with the Xbox Airtrain, Barracks & Rhino from GTA III (VC Did not have HQ Versions of these)
+~ Squirlkiller : For providing me with additional Xbox Models to replace corrupt ones.
+~ DimZet13 : Allowing me to Include his Xbox Bikes in this mod.
+~ cpmusick : The creator of GTA Mod Installer v5.0 beta & It's Scripting tool
+
+Bugs should be reported to the "Xbox Cars to PC" topic on GTA Forums.
+http://www.gtaforums.com/index.php?act=ST&f=53&t=465629&st=0
