@@ -241,6 +241,8 @@ public:
 	uint8 bEngineOn: 1; // For sound purposes. Parked cars have their engines switched off (so do destroyed cars)
 	uint8 bIsHandbrakeOn: 1; // How's the handbrake doing ?
 	uint8 bLightsOn: 1; // Are the lights switched on ?
+	uint8 bLightsForced: 1; // Did the player fix the lights with H ?
+	uint8 bLightsOverride: 1; // Value fixed by the player (ignores clock/weather)
 	uint8 bFreebies: 1; // Any freebies left in this vehicle ?
 
 	uint8 bIsVan: 1; // Is this vehicle a van (doors at back of vehicle)
@@ -417,6 +419,9 @@ public:
 	bool IsHighVehicle(void);
 #endif
 	bool IsOpenTopVehicle(void);
+#endif
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+	bool IsInteriorlessVehicle(void);
 #endif
 
 	void SetComponentAtomicAlpha(RpAtomic *atomic, int32 alpha);

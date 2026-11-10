@@ -148,6 +148,8 @@ CBike::CBike(int32 id, uint8 CreatedBy)
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	m_bIndicatorState[INDICATORS_LEFT] = false;
 	m_bIndicatorState[INDICATORS_RIGHT] = false;
+	m_bIndicatorLatched = false;
+	m_bIndicatorNpcHazard = false;
 #endif
 	m_fSteerAngle = 0.0f;
 	m_fWheelAngle = 0.0f;
@@ -1403,25 +1405,47 @@ CBike::ViceExtProcessTurnSignals(void)
 				m_bIndicatorState[INDICATORS_RIGHT] = true;
 			}
 		}
+		// Plan 51.1 E1: ningun apagado automatico (el parqueo del jugador se quita
+		// con su tecla); lo latcheado sobrevive a bajarse, que es lo que se pidio.
+		m_bIndicatorLatched = m_bIndicatorState[INDICATORS_LEFT] ||
+		                      m_bIndicatorState[INDICATORS_RIGHT];
 		return;
 	}
 
-	// NPC: misma regla que el mod, el angulo con el siguiente tramo del path.
-	// El port las fuerza (el features.ini del mod trae la clave a 0).
-	if (pDriver == nil || pDriver->IsPlayer() || pDriver->DyingOrDead() ||
-	    AutoPilot.m_nDrivingStyle == DRIVINGSTYLE_PLOUGH_THROUGH || bRenderScorched ||
-	    AutoPilot.m_nNextPathNodeInfo >= (uint32)ThePaths.m_numCarPathLinks) {
+	// NPC sin conductor (la moto quedo aparcada): lo que el jugador dejo
+	// latcheado sigue; lo demas se apaga, como en el mod. Plan 51.0 D4.
+	if (pDriver == nil || pDriver->IsPlayer()) {
+		if (!m_bIndicatorLatched) {
+			m_bIndicatorState[INDICATORS_LEFT] = false;
+			m_bIndicatorState[INDICATORS_RIGHT] = false;
+		}
+		return;
+	}
+
+	if (pDriver->DyingOrDead() ||
+	    AutoPilot.m_nDrivingStyle == DRIVINGSTYLE_PLOUGH_THROUGH || bRenderScorched) {
 		m_bIndicatorState[INDICATORS_LEFT] = false;
 		m_bIndicatorState[INDICATORS_RIGHT] = false;
+		m_bIndicatorNpcHazard = false;
 		return;
 	}
 
-	CVector2D vehicleRight = GetRight();
-	CVector2D nextPathLinkForward = AutoPilot.m_nNextDirection *
-		ThePaths.m_carPathLinks[AutoPilot.m_nNextPathNodeInfo].GetDirection();
-	float angle = DotProduct2D(vehicleRight, nextPathLinkForward);
-	m_bIndicatorState[INDICATORS_LEFT] = angle < -0.2f;
-	m_bIndicatorState[INDICATORS_RIGHT] = angle > 0.2f;
+	// Regla del trafico compartida con los coches (plan 51.0 D3): solo el giro que
+	// va a hacer en el cruce al que se acerca, y solo cuando ya se acerca. Antes
+	// era el angulo pelado con el tramo siguiente (umbral 0,2), que senalaba de mas.
+	bool odHazard = false;
+	int odSide = ViceExtNpcTurnSignalSide(this, &odHazard, nil, nil);
+	// Plan 51.1 E1: el que aparco con las de parqueo las apaga al volver a andar.
+	ViceExtNpcHazardTurnsOff(odHazard, &m_bIndicatorNpcHazard,
+	                         ((CVector2D)GetMoveSpeed()).Magnitude());
+	if (odHazard) {
+		// Va a pararse a bajarse: las dos luces de parqueo.
+		m_bIndicatorState[INDICATORS_LEFT] = true;
+		m_bIndicatorState[INDICATORS_RIGHT] = true;
+		return;
+	}
+	m_bIndicatorState[INDICATORS_LEFT] = odSide < 0;
+	m_bIndicatorState[INDICATORS_RIGHT] = odSide > 0;
 }
 
 static RwObject *
@@ -1454,26 +1478,39 @@ void
 CBike::ViceExtApplyIndicatorMaterials(void)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
-	const bool allowed = !bRenderScorched && GetStatus() != STATUS_WRECKED && m_fHealth >= 250.0f;
+	// Solo calcinado o explosionado cortan la instalacion (la misma regla que en
+	// los coches, ViceExtCarLampsAlive). La vida baja no apaga ninguna lente: un
+	// golpe en el manillar dejaba la moto a oscuras, que es el mismo defecto que
+	// el jugador reporto en los coches.
+	const bool allowed = !bRenderScorched && GetStatus() != STATUS_WRECKED;
 	const bool blink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
-	const bool leftOn = allowed && m_bIndicatorState[INDICATORS_LEFT] && blink;
-	const bool rightOn = allowed && m_bIndicatorState[INDICATORS_RIGHT] && blink;
+	const bool leftState = m_bIndicatorState[INDICATORS_LEFT];
+	const bool rightState = m_bIndicatorState[INDICATORS_RIGHT];
+	const bool leftOn = allowed && leftState && blink;
+	const bool rightOn = allowed && rightState && blink;
 
-	ViceExtSetIndicatorMaterial(m_aBikeNodes[BIKE_INDICATOR_LF], leftOn);
-	ViceExtSetIndicatorMaterial(m_aBikeNodes[BIKE_INDICATOR_LR], leftOn);
-	ViceExtSetIndicatorMaterial(m_aBikeNodes[BIKE_INDICATOR_RF], rightOn);
-	ViceExtSetIndicatorMaterial(m_aBikeNodes[BIKE_INDICATOR_RR], rightOn);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_LF, -1, m_aBikeNodes[BIKE_INDICATOR_LF], leftOn);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_LR, -1, m_aBikeNodes[BIKE_INDICATOR_LR], leftOn);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_RF, 1, m_aBikeNodes[BIKE_INDICATOR_RF], rightOn);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_RR, 1, m_aBikeNodes[BIKE_INDICATOR_RR], rightOn);
 
 	if (!allowed) {
-		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_HEADLIGHT_L], mi->lightsOffTexture, false);
-		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_TAILLIGHT_L], mi->lightsOffTexture, false);
+		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_HEADLIGHT_L], nil, false);
+		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_TAILLIGHT_L], nil, false);
 	} else {
-		// Sin nodo indicator_* no se enciende nada: no se inventa el
-		// parpadeo del faro/piloto. Las motos con lente naranja real se
-		// parchean con tools/indicator_audit.py --patch.
-		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_HEADLIGHT_L], bLightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, bLightsOn);
-		const bool tail = bLightsOn || m_fBrakePedal > 0.0f;
-		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_TAILLIGHT_L], tail ? mi->lightsOnTexture : mi->lightsOffTexture, tail);
+		// Disparador de los coches, portado a las motos (el mod no lo tiene en
+		// Bike.cpp: solo manchez y el delantero de pcj600 no tienen nodo
+		// indicator_* y son las dos filas TRIGGER de la tabla 42.1).
+		const bool noIndF = m_aBikeNodes[BIKE_INDICATOR_LF] == nil &&
+		                    m_aBikeNodes[BIKE_INDICATOR_RF] == nil;
+		const bool noIndR = m_aBikeNodes[BIKE_INDICATOR_LR] == nil &&
+		                    m_aBikeNodes[BIKE_INDICATOR_RR] == nil;
+		const bool both = (leftState || rightState) && blink;
+		const bool head = noIndF && (leftState || rightState) ? both : bLightsOn;
+		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_HEADLIGHT_L], ViceExtLampTexture(mi, head), head);
+		const bool tailBase = bLightsOn || m_fBrakePedal > 0.0f;
+		const bool tail = noIndR && (leftState || rightState) ? both : tailBase;
+		ViceExtSetBikeLightMaterial(m_aBikeNodes[BIKE_TAILLIGHT_L], ViceExtLampTexture(mi, tail), tail);
 	}
 }
 #endif
@@ -1481,9 +1518,6 @@ CBike::ViceExtApplyIndicatorMaterials(void)
 void
 CBike::PreRender(void)
 {
-#ifdef VICEEXT_IMPROVED_VEHICLES_2
-	ViceExtApplyIndicatorMaterials();
-#endif
 #ifdef VICEEXT_FIX_FV
 	int32 odPhase = (int32)m_fOdPhase;
 #else
@@ -1614,6 +1648,17 @@ CBike::PreRender(void)
 		m_randomSeed/25000.0f < CWeather::Foggyness ||
 		m_randomSeed/25000.0f < CWeather::WetRoads;
 	bool forceLightsOff = false;
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	// H fija las luces de la moto del jugador; al bajarse vuelve el automatico.
+	if(this == FindPlayerVehicle() && CPad::GetPad(0)->HeadlightsJustDown()){
+		bLightsForced = true;
+		bLightsOverride = !bLightsOn;
+	}
+	if(bLightsForced && pDriver != nil && pDriver->IsPlayer())
+		shouldLightsBeOn = bLightsOverride != 0;
+	else
+		bLightsForced = false;
+#endif
 	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
 #ifdef VICEEXT_IMPROVED_TECH_PART
 		if(GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_PLAYER_DISABLED){
@@ -1810,6 +1855,28 @@ CBike::PreRender(void)
 			CCoronas::UpdateCoronaCoors((uintptr)this + 14, light, 50.0f*TheCamera.LODDistMultiplier, 0.0f);
 		}
 	}
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	// Destello de las direccionales de la moto. Fuera del gate de arriba a
+	// proposito, igual que en los coches: ese gate exige bLightsOn y de dia el
+	// parpadeo no echaba nada de luz. El mod no lo tiene en Bike.cpp y el motor
+	// tampoco lo tenia, y por eso el faggio cambiaba el color de su lente ambar
+	// pero nunca sacaba destello. Solo echa corona la lente que la medida declara
+	// ambar; las claves de la tabla son las de coche (eCarNodes) y las motos del
+	// motor no llevan gestion de dano por lampara, asi que damage va a nil.
+	{
+		static const ViceExtIndSlot odBikeIndSlots[4] = {
+			{ BIKE_INDICATOR_LF, CAR_INDICATOR_LF, -1, VEHLIGHT_FRONT_LEFT },
+			{ BIKE_INDICATOR_RF, CAR_INDICATOR_RF, 1, VEHLIGHT_FRONT_RIGHT },
+			{ BIKE_INDICATOR_LR, CAR_INDICATOR_LR, -1, VEHLIGHT_REAR_LEFT },
+			{ BIKE_INDICATOR_RR, CAR_INDICATOR_RR, 1, VEHLIGHT_REAR_RIGHT }
+		};
+		// Plan 51.1 E2: el anclaje se resuelve en ViceExtIndicatorCoronas contra la
+		// LTM viva del propio nodo, que es la que lleva la inclinacion del chasis.
+		ViceExtIndicatorCoronas(this, nil, odBikeIndSlots, 4, m_aBikeNodes,
+			(uintptr)this + 40, m_bIndicatorState[INDICATORS_LEFT],
+			m_bIndicatorState[INDICATORS_RIGHT]);
+	}
+#endif
 
 
 	// Wheel particles
@@ -2029,6 +2096,10 @@ CBike::Render(void)
 
 	m_nSetPieceExtendedRangeTime = CTimer::GetTimeInMilliseconds() + 3000;
 	mi->SetVehicleColour(m_currentColour1, m_currentColour2);
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	// Los clones comparten materiales: aplicar el estado justo al dibujar esta moto.
+	ViceExtApplyIndicatorMaterials();
+#endif
 	CEntity::Render();
 }
 

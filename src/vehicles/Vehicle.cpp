@@ -125,6 +125,8 @@ CVehicle::CVehicle(uint8 CreatedBy)
 	m_nGunFiringTime = 0;
 	m_nTimeBlocked = 0;
 	bLightsOn = false;
+	bLightsForced = false;
+	bLightsOverride = false;
 	bVehicleColProcessed = false;
 	m_numPedsUseItAsCover = 0;
 	bIsCarParkVehicle = false;
@@ -274,6 +276,28 @@ CVehicle::GetHeightAboveRoad(void)
 	return -1.0f * GetColModel()->boundingBox.min.z;
 }
 
+#ifdef __EMSCRIPTEN__
+// Donde manda el techo y cuanto muerde: una linea cada OD_VUELO_MS mientras
+// el jugador pilota. El techo vanilla es la curva 10/(z-70), que empieza a
+// los 80 metros; con VICEEXT_CEILING_RAISED se evalua en z*OD_CEILING_Z_SCALE
+// (0.5 = el doble de alto) y VUELO dice el factor que se aplico de verdad.
+static void
+OdVuelo(CVehicle *veh, eFlightModel fm, float thrust, float factor)
+{
+	static uint32 s_odVueloNext;
+	uint32 odNow = CTimer::GetTimeInMillisecondsNonClipped();
+	if (odNow < s_odVueloNext)
+		return;
+	s_odVueloNext = odNow + OD_VUELO_MS;
+	char odT[160];
+	snprintf(odT, sizeof odT, "VUELO z=%.1f vz=%.2f thrust=%.3f factor=%.3f fm=%d modelo=%d fps=%.0f",
+		veh->GetPosition().z, veh->GetMoveSpeed().z, thrust, factor, (int)fm,
+		(int)veh->GetModelIndex(), 50.0f / Max(0.01f, CTimer::GetTimeStep()));
+	ODTRACES(odT);
+}
+#endif
+
+
 void
 CVehicle::FlyingControl(eFlightModel flightModel)
 {
@@ -311,9 +335,21 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 
 		impulse = (upImpulse*3.5f + 0.5f)*0.05f *
 			magic*m_fMass*CTimer::GetTimeStep();
-		if(GRAVITY*m_fMass*CTimer::GetTimeStep() < impulse &&
-		   GetPosition().z > 100.0f)
+#ifdef VICEEXT_CEILING_RAISED
+		float odTechoZ = GetPosition().z * OD_CEILING_Z_SCALE;
+#else
+		float odTechoZ = GetPosition().z;
+#endif
+		float odFactor = 1.0f;
+		if(GRAVITY*m_fMass*CTimer::GetTimeStep() < impulse && odTechoZ > 100.0f) {
 			impulse = 0.9f*GRAVITY*m_fMass*CTimer::GetTimeStep();
+			odFactor = 0.9f;
+		}
+#ifdef __EMSCRIPTEN__
+	if (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE)
+		OdVuelo(this, flightModel,
+			impulse / Max(0.01f, GRAVITY * m_fMass * CTimer::GetTimeStep()), odFactor);
+#endif
 		CVector com = Multiply3x3(GetMatrix(), m_vecCentreOfMass);
 		ApplyMoveForce(impulse*GetUp());
 		ApplyTurnForce(impulse*GetUp(), 2.0f*GetUp() + com);
@@ -423,16 +459,30 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		float fLift = DotProduct(GetMoveSpeed(), GetUp()) / Max(0.01f, GetMoveSpeed().Magnitude()); //accel*angle
 		float fLiftAccel = (pFlyingHandling->fFormLift - pFlyingHandling->fAttackLift * fLift) * SQR(fForwSpeed);
 		float fLiftImpulse = fLiftAccel * m_fMass * CTimer::GetTimeStep();
+		float odFactor = 1.0f;
+#ifdef VICEEXT_CEILING_RAISED
+		float odTechoZ = GetPosition().z * OD_CEILING_Z_SCALE;
+#else
+		float odTechoZ = GetPosition().z;
+#endif
 		if (GRAVITY * CTimer::GetTimeStep() * m_fMass < fLiftImpulse) {
-			if (flightModel == FLIGHT_MODEL_RCPLANE && GetPosition().z > 50.0f)
+			if (flightModel == FLIGHT_MODEL_RCPLANE && odTechoZ > 50.0f) {
 				fLiftImpulse = CTimer::GetTimeStep() * 0.9f*GRAVITY * m_fMass;
-			else if (flightModel == FLIGHT_MODEL_SEAPLANE && GetPosition().z > 80.0f)
+				odFactor = 0.9f;
+			} else if (flightModel == FLIGHT_MODEL_SEAPLANE && odTechoZ > 80.0f) {
 				fLiftImpulse = CTimer::GetTimeStep() * 0.9f*GRAVITY * m_fMass;
+				odFactor = 0.9f;
+			}
 #ifdef BETTER_ALLCARSAREDODO_CHEAT
 			else if(bAllDodosCheat && GetPosition().z > 170.0f)
 				fLiftImpulse = CTimer::GetTimeStep() * 0.9f * GRAVITY * m_fMass;
 #endif
 		}
+#ifdef __EMSCRIPTEN__
+		if (GetStatus() == STATUS_PLAYER || GetStatus() == STATUS_PLAYER_REMOTE)
+			OdVuelo(this, flightModel,
+				fLiftImpulse / Max(0.01f, GRAVITY * m_fMass * CTimer::GetTimeStep()), odFactor);
+#endif
 		ApplyMoveForce(fLiftImpulse * GetUp());
 
 		CVector vecResistance;
@@ -479,10 +529,20 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		}else
 			fThrust = flyingHandling->fThrust * fThrust + 0.95f;
 		fThrust -= flyingHandling->fThrustFallOff * fUpSpeed;
-		if(flightModel == FLIGHT_MODEL_RCHELI && GetPosition().z > 40.0f)
-			fThrust *= 10.0f/(GetPosition().z - 30.0f);
-		else if(GetPosition().z > 80.0f)
-			fThrust *= 10.0f/(GetPosition().z - 70.0f);
+#ifdef VICEEXT_CEILING_RAISED
+		float odTechoZ = GetPosition().z * OD_CEILING_Z_SCALE;
+#else
+		float odTechoZ = GetPosition().z;
+#endif
+		float odFactor = 1.0f;
+		if(flightModel == FLIGHT_MODEL_RCHELI && odTechoZ > 40.0f)
+			odFactor = 10.0f/(odTechoZ - 30.0f);
+		else if(odTechoZ > 80.0f)
+			odFactor = 10.0f/(odTechoZ - 70.0f);
+		fThrust *= odFactor;
+#ifdef __EMSCRIPTEN__
+		OdVuelo(this, flightModel, fThrust, odFactor);
+#endif
 		ApplyMoveForce(GRAVITY * GetUp() * fThrust * m_fMass * CTimer::GetTimeStep());
 
 		if (GetUp().z > 0.0f){
@@ -897,6 +957,22 @@ CVehicle::ProcessWheel(CVector &wheelFwd, CVector &wheelRight, CVector &wheelCon
 		fwd *= adhesion * tractionLoss / l;
 	}
 
+#ifdef VICEEXT_TYRE_TRACE
+	// Medida del neumatico: right es la fuerza lateral ya limitada por la
+	// adherencia. Con esto se decide si la nota comentada de arriba merece
+	// reabrirse. Va dentro del bucle de ruedas, asi que se limita a 5 lineas/s.
+	{
+		static uint32 odNeuMs = 0;
+		uint32 odAhora = CTimer::GetTimeInMillisecondsNonClipped();
+		if((uint32)(odAhora - odNeuMs) >= 200u){
+			odNeuMs = odAhora;
+			char odT[192];
+			snprintf(odT, sizeof odT, "NEUMATICO fwd=%.4f right=%.4f adh=%.4f ts=%.3f fps=%d",
+				fwd, right, adhesion, CTimer::GetTimeStep(), (int)CTimer::GetFrameCounter());
+			ODTRACES(odT);
+		}
+	}
+#endif
 	if(fwd != 0.0f || right != 0.0f){
 		CVector totalSpeed = fwd*wheelFwd + right*wheelRight;
 
@@ -2185,6 +2261,21 @@ void
 CVehicle::UpdateClumpAlpha(void)
 {
 	int clumpAlpha = CVisibilityPlugins::GetClumpAlpha((RpClump*)m_rwObject);
+#ifdef VICEEXT_VEH_FADE_SCALED
+	// Las rampas se contaban en frames: la cortinilla de un coche de trafico
+	// duraba 0.13 s a 120 FPS en vez de 0.53 s, y con 4 veces mas spawns por
+	// segundo el parpadeo salia mas a menudo. Se integra por segundo; el +0.5f
+	// redondea para que el alpha siga siendo entero y no se quede en 254.
+	if(bFadeOut){
+		clumpAlpha -= (int)(OD_VEH_FADE_OUT * CTimer::GetTimeStepFix() + 0.5f);
+		if(clumpAlpha < 0)
+			clumpAlpha = 0;
+	}else if(clumpAlpha < 255){
+		clumpAlpha += (int)(OD_VEH_FADE_IN * CTimer::GetTimeStepFix() + 0.5f);
+		if(clumpAlpha > 255)
+			clumpAlpha = 255;
+	}
+#else
 	if(bFadeOut){
 		clumpAlpha -= 8;
 		if(clumpAlpha < 0)
@@ -2194,6 +2285,7 @@ CVehicle::UpdateClumpAlpha(void)
 		if(clumpAlpha > 255)
 			clumpAlpha = 255;
 	}
+#endif
 	CVisibilityPlugins::SetClumpAlpha((RpClump*)m_rwObject, clumpAlpha);
 }
 
@@ -2473,6 +2565,30 @@ bool CVehicle::IsOpenTopVehicle(void)
 		return IsOpenTopCar();
 	else
 		return false;
+}
+#endif
+#ifdef VICEEXT_NO_INTERIOR_CAMERA
+// Plan 56.0 T4: el motor no tiene ninguna bandera de "tiene interior" (no existe
+// m_bNoInterior ni bit en el IDE, comprobado sobre src/modelinfo en el plan 56.0),
+// asi que la lista la produce una medida sobre los DFF servidos: las caras que
+// caen dentro del volumen por delante del asiento del conductor. El coach tiene
+// 6 y el rhino 11; el siguiente modelo de la flota tiene 24 y la mediana 113
+// (gta_vc_browser/tools/gen_no_interior.py). Sin geometria en ese volumen no hay
+// por donde mirar: la 1a persona se ve flotando fuera de la carroceria.
+#include "NoInteriorModelTable.h"
+
+bool
+CVehicle::IsInteriorlessVehicle(void)
+{
+	if (!IsCar())
+		return false;
+	char const *name = CModelInfo::GetModelInfo(GetModelIndex())->GetModelName();
+	if (name == nil)
+		return false;
+	for (uint32 i = 0; i < ARRAY_SIZE(s_odNoInteriorVehicles); i++)
+		if (strncasecmp(name, s_odNoInteriorVehicles[i], MAX_MODEL_NAME - 1) == 0)
+			return true;
+	return false;
 }
 #endif
 void

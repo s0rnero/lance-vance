@@ -8,8 +8,41 @@
 class CObject;
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
-// Compartido por coches y motos: cambia el material del intermitente.
-void ViceExtSetIndicatorMaterial(RwFrame *frame, bool on);
+// Compartido por coches y motos: cambia el material del intermitente. `node` y
+// `side` son la clave con la que la herramienta midio la lente (eCarNodes, tambien
+// en motos), de la que salen los materiales y el color que se pintan.
+void ViceExtSetIndicatorMaterial(CVehicle *veh, int node, int side, RwFrame *frame, bool on);
+// nil = el modelo no trae la lente genérica del mod, no se le cambia la textura.
+class CVehicleModelInfo;
+RwTexture *ViceExtLampTexture(CVehicleModelInfo *mi, bool on);
+// Ranura del barrido de destellos: un nodo de intermitente de un vehiculo, con la
+// clave con la que lo midio la herramienta (eCarNodes, tambien para las motos),
+// su costado y la lampara a la que pertenece.
+struct ViceExtIndSlot {
+	int8 frameIdx;
+	int8 tableNode;
+	int8 side;
+	int8 light;
+};
+// Destello de las lentes que la medida declara ambar, anclado en su geometria.
+// Un nodo cuya lente es el propio faro o el piloto no recibe corona nueva: ese
+// parpadea con su lampara (ruta Banshee). `damage` nil = sin dano por lampara.
+// En motos el ancla vive en el espacio del NODO de la lente y se transforma por
+// su LTM viva (plan 51.1 E2): la inclinacion de la moto se aplica al frame del
+// chasis, no a la matriz de la entidad, y con esta matriz el destello se quedaba
+// en la posicion de la lente sin tumbar. Los coches siguen con la entidad.
+void ViceExtIndicatorCoronas(CVehicle *veh, CDamageManager *damage,
+                             const ViceExtIndSlot *slots, int n, RwFrame **frames,
+                             uint32 idFirst, bool leftState, bool rightState);
+// Regla del trafico (plan 51.0 D3/D4), compartida por coches y motos para que
+// haya una sola IA. Lado a senalar: -1 izquierda, 0 nada, +1 derecha. `hazard` =
+// el NPC va a pararse a bajarse (luces de parqueo). `motivo` y `angle` alimentan
+// la traza P4 kind=turners. Parametros nil: admitidos.
+int ViceExtNpcTurnSignalSide(CVehicle *veh, bool *hazard, const char **motivo, float *angle);
+// El NPC que aparco con las luces de parqueo puestas las apaga al volver a andar
+// (plan 51.1 E1). `hadHazard` es la marca del vehiculo; devuelve true justo en el
+// frame del apagado, para que la traza lo nombre.
+bool ViceExtNpcHazardTurnsOff(bool hazardNow, bool *hadHazard, float speed);
 #endif
 
 enum {
@@ -144,6 +177,25 @@ public:
 	void ViceExtProcessTurnSignals(void);
 	void ViceExtApplyIndicatorMaterials(void);
 	bool m_bIndicatorState[2];
+	// Plan 51.0 D4 / 51.1 E1: `Latched` = el estado lo puso el jugador con la tecla,
+	// y por eso sobrevive a bajarse. `NpcHazard` = el NPC iba en luces de parqueo
+	// (se paro a bajarse); con esa marca el coche apaga al volver a andar por
+	// decision del trafico, no por velocidad.
+	bool m_bIndicatorLatched;
+	bool m_bIndicatorNpcHazard;
+#endif
+#ifdef VICEEXT_BODY_LENS
+	// Plan 58.0 T3: lentes ambar de carroceria resueltas por nombre de frame en
+	// SetupModelNodes (no estan en m_aCarNodes). Cada entrada apunta a su frame
+	// y a su fila de BodyLensTable.h; m_nBodyLens = filas de este modelo.
+	void ViceExtSetupBodyLens(void);
+	RwFrame *m_aBodyLensFrame[VICEEXT_BODY_LENS_MAX];
+	int16 m_aBodyLensRow[VICEEXT_BODY_LENS_MAX];
+	// 59.0: 1 si TODO el material de la fila es cara de lente (medido en el
+	// atomic). Solo entonces admite el tinte de la ruta del nodo: un material
+	// compartido con el panel se pintaria tambien la pintura del coche.
+	uint8 m_aBodyLensTint[VICEEXT_BODY_LENS_MAX];
+	uint8 m_nBodyLens;
 #endif
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	void ViceExtRotateSteeringWheel(void);

@@ -2,6 +2,10 @@
 
 #include "ClumpModelInfo.h"
 
+// Parejas atlas/atlas-derivado que admite cada modelo (plan 46.0 C1). Medido
+// sobre el arbol servido: un solo atlas lleva texelas de lente por coche.
+#define VICEEXT_LENS_ATLAS_PAIRS	4
+
 enum {
 	NUM_FIRST_MATERIALS = 50,
 	NUM_SECOND_MATERIALS = 50,
@@ -148,6 +152,14 @@ public:
 	RwTexture *lightsOnTexture;
 	RwTexture *serviceLightsOffTexture;
 	RwTexture *serviceLightsOnTexture;
+	// Plan 46.0 C1: parejas (atlas de lente, atlas de lente derivado) del TXD
+	// del modelo. El derivado es `<atlas>_lens` y solo difiere del original en
+	// las texelas sin matiz dentro de los footprints de las lentes; enlazarlo
+	// por puntero y no por nombre deja fuera cualquier material que no dibuje
+	// lente. Cero parejas = el modelo no tiene atlas derivado = nada cambia.
+	RwTexture *indicatorLensOff[VICEEXT_LENS_ATLAS_PAIRS];
+	RwTexture *indicatorLensOn[VICEEXT_LENS_ATLAS_PAIRS];
+	uint8 numIndicatorLensAtlases;
 	bool bNewLights;
 	tNewLightsData newLightsData;
 #endif
@@ -201,6 +213,7 @@ public:
 
 	static RpAtomic *SetEnvironmentMapCB(RpAtomic *atomic, void *data);
 	static RpMaterial *SetDefaultEnvironmentMapCB(RpMaterial *material, void *data);
+	static RpMaterial *AddSpecularEnvironmentMapCB(RpMaterial *material, void *data);
 	static RpMaterial *GetMatFXEffectMaterialCB(RpMaterial *material, void *data);
 	void SetEnvironmentMap(void);
 	static void LoadEnvironmentMaps(void);

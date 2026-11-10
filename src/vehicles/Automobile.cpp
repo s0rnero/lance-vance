@@ -216,6 +216,8 @@ CAutomobile::CAutomobile(int32 id, uint8 CreatedBy)
 	bHeliDestroyed = false;
 	m_bIndicatorState[INDICATORS_LEFT] = false;
 	m_bIndicatorState[INDICATORS_RIGHT] = false;
+	m_bIndicatorLatched = false;
+	m_bIndicatorNpcHazard = false;
 	m_fVelocityChangeForAudio = 0.0f;
 	m_hydraulicState = 0;
 
@@ -837,7 +839,13 @@ CAutomobile::ProcessControl(void)
 			else if(Damage.GetWheelStatus(i) == WHEEL_STATUS_BURST){
 				// wheel more bumpy the faster we are
 				if(CGeneral::GetRandomNumberInRange(0, (uint16)(40*fwdSpeed) + 98) < 100){
+#ifdef VICEEXT_SUSPENSION_SCALED
+					// El ratio de muelle es una cantidad de tiempo: sin escalar el coche
+					// subia el bache de rueda pinchada 4 veces mas rapido a 120 FPS.
+					m_aSuspensionSpringRatio[i] += 0.3f*CTimer::GetTimeStepFix()*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
+#else
 					m_aSuspensionSpringRatio[i] += 0.3f*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
+#endif
 					if(m_aSuspensionSpringRatio[i] > 1.0f)
 						m_aSuspensionSpringRatio[i] = 1.0f;
 				}
@@ -846,7 +854,11 @@ CAutomobile::ProcessControl(void)
 				fwdSpeed *= 0.7f;
 				float f = 1.0f - fwdSpeed/0.3f - 0.7f*CWeather::WetRoads;
 				f = Max(f, 0.4f);
+#ifdef VICEEXT_SUSPENSION_SCALED
+				m_aSuspensionSpringRatio[i] += 0.35f*f*CTimer::GetTimeStepFix()*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
+#else
 				m_aSuspensionSpringRatio[i] += 0.35f*f*(m_aSuspensionLineLength[i]-m_aSuspensionSpringLength[i])/m_aSuspensionSpringLength[i];
+#endif
 				if(m_aSuspensionSpringRatio[i] > 1.0f)
 					m_aSuspensionSpringRatio[i] = 1.0f;
 			}
@@ -1487,7 +1499,13 @@ CAutomobile::ProcessControl(void)
 		if(GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE && GetStatus() != STATUS_PHYSICS){
 			if(IsRealHeli()){
 				bEngineOn = false;
+#ifdef VICEEXT_HELI_SPIN_SCALED
+				// El rotor de un heli aparcado bajaba 0.0005 por FRAME: a 120 FPS
+				// se paraba cuatro veces mas rapido en tiempo real.
+				m_aWheelSpeed[1] = Max(m_aWheelSpeed[1] - OD_HELI_DECAY * CTimer::GetTimeStepFix(), 0.0f);
+#else
 				m_aWheelSpeed[1] = Max(m_aWheelSpeed[1]-0.0005f, 0.0f);
+#endif
 				if(GetModelIndex() != MI_RCRAIDER && GetModelIndex() != MI_RCGOBLIN)
 					if(m_aWheelSpeed[1] < 0.154f && m_aWheelSpeed[1] > 0.0044f)
 						playRotorSound = true;
@@ -1507,12 +1525,25 @@ CAutomobile::ProcessControl(void)
 #endif
 			{
 #ifdef VICEEXT_FIX_FV
+				// Rampa de arranque del rotor. Ya iba escalada por timestep, o
+				// sea que no era un bug de FPS: el mod la puso en 3 s y eso es
+				// lo que hace que arranque "casi instantaneo". Se alarga con
+				// OD_HELI_RAMP (6 s) y el umbral de despegue sigue en 0.15f.
+#ifdef VICEEXT_HELI_SPIN_SCALED
+				if (m_aWheelSpeed[1] < 0.22f && !bIsInWater) {
+					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
+						m_aWheelSpeed[1] += OD_HELI_RAMP_RC * CTimer::GetTimeStep();
+					else
+						m_aWheelSpeed[1] += OD_HELI_RAMP * CTimer::GetTimeStep();
+				}
+#else
 				if (m_aWheelSpeed[1] < 0.22f && !bIsInWater) {
 					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
 						m_aWheelSpeed[1] += 0.003f * CTimer::GetTimeStep();
 					else
 						m_aWheelSpeed[1] += 0.001f * CTimer::GetTimeStep();
 				}
+#endif
 #endif
 
 				// Fly
@@ -1885,6 +1916,104 @@ static int s_viceExtTurnNpcBudget = 0;
 static void ViceExtP4TurnersEmit(CVehicle *car, int odIsPlayer, int odSide, int odFound, const char *odMotivo, float odSteer, float odAnchorErr);
 #endif
 
+// Plan 51.0 D3: la regla del mod (Automobile.cpp:3731-3741 de upstream-gta-extended)
+// mira solo el angulo con el tramo siguiente y lo mira durante TODO el tramo, asi
+// que senala desde que el coche pasa el nodo anterior hasta que llega al cruce; el
+// port ademas habia aflojado el umbral a 0,2 (11,5 grados), con lo que encendia
+// intermitentes en curvas que no son esquina. Tres puertas AND: cruce de verdad,
+// giro de verdad (el umbral del mod) y aproximacion de verdad.
+#define VICEEXT_IND_TURN_DOT		0.5f	// el umbral del mod, ~30 grados
+#define VICEEXT_IND_JUNCTION_LINKS	3	// nodo con >= 3 enlaces: cruce o esquina
+#define VICEEXT_IND_TURN_AHEAD_FRAC	0.55f	// ultima fraccion del tramo que se senala
+#define VICEEXT_IND_TURN_AHEAD_MIN	8.0f	// suelo de la ventana de aproximacion
+// Plan 51.0 D4: por debajo de esto el coche esta parado; sirve para el parqueo del
+// NPC que va a bajarse y para la transicion parado->andando que quita el parqueo.
+#define VICEEXT_IND_STOP_SPEED		0.02f
+
+// Lado que debe senalar un NPC (-1 izquierda, 0 nada, +1 derecha). Compartido por
+// coches y motos para que la regla del trafico sea una sola. `hazard` = va a
+// pararse a bajarse (los dos costados). `motivo` y `angle` son para la traza.
+int
+ViceExtNpcTurnSignalSide(CVehicle *veh, bool *hazard, const char **motivo, float *angleOut)
+{
+	if (hazard)
+		*hazard = false;
+	if (motivo)
+		*motivo = "ia-sin";
+	if (angleOut)
+		*angleOut = 0.0f;
+
+	// Va a pararse a bajarse: senal de la que usa el motor para soltar el coche
+	// (MISSION_NONE con el conductor dentro => freno de mano en CarCtrl.cpp:2691,
+	// o el ped ya en PED_EXIT_CAR). El jugador pidio las luces de parqueo aqui.
+	if (veh->pDriver != nil && !veh->pDriver->IsPlayer() &&
+	    ((CVector2D)veh->GetMoveSpeed()).Magnitude() < VICEEXT_IND_STOP_SPEED &&
+	    (veh->AutoPilot.m_nCarMission == MISSION_NONE ||
+	     veh->pDriver->GetPedState() == PED_EXIT_CAR)) {
+		if (hazard)
+			*hazard = true;
+		if (motivo)
+			*motivo = "parqueo";
+		return 0;
+	}
+
+	CAutoPilot &ap = veh->AutoPilot;
+	if (ap.m_nCurrentRouteNode < 0 || ap.m_nNextRouteNode < 0 ||
+	    ap.m_nCurrentRouteNode >= ThePaths.m_numPathNodes ||
+	    ap.m_nNextRouteNode >= ThePaths.m_numPathNodes ||
+	    ap.m_nNextPathNodeInfo >= (uint32)ThePaths.m_numCarPathLinks)
+		return 0;
+
+	// El nodo al que va el coche (m_nNextRouteNode) es la siguiente interseccion:
+	// la ruta avanza al cumplirse el tiempo de curva (CarCtrl.cpp:1288) y al
+	// avanzar se rotan prev/current/next (CarCtrl.cpp:2065-2066).
+	CPathNode &junction = ThePaths.m_pathNodes[ap.m_nNextRouteNode];
+	if (junction.numLinks < VICEEXT_IND_JUNCTION_LINKS) {
+		if (motivo)
+			*motivo = "no-cruce";
+		return 0;	// curva o tramo: no hay esquina donde girar
+	}
+
+	CVector2D nextLink = ap.m_nNextDirection *
+		ThePaths.m_carPathLinks[ap.m_nNextPathNodeInfo].GetDirection();
+	float angle = DotProduct2D(veh->GetRight(), nextLink);
+	if (angleOut)
+		*angleOut = angle;
+	if (angle > -VICEEXT_IND_TURN_DOT && angle < VICEEXT_IND_TURN_DOT) {
+		if (motivo)
+			*motivo = "recto";
+		return 0;	// pasa de largo por el cruce
+	}
+
+	CVector junctionPos = junction.GetPosition();
+	float seg = (junctionPos - ThePaths.m_pathNodes[ap.m_nCurrentRouteNode].GetPosition()).Magnitude2D();
+	if ((junctionPos - veh->GetPosition()).Magnitude2D() >
+	    Max(VICEEXT_IND_TURN_AHEAD_MIN, VICEEXT_IND_TURN_AHEAD_FRAC*seg)) {
+		if (motivo)
+			*motivo = "lejos";
+		return 0;	// aun lejos de la esquina
+	}
+
+	if (motivo)
+		*motivo = "ia";
+	return angle > 0.0f ? 1 : -1;
+}
+
+// Plan 51.1 E1 (corrige como se leyo D4): lo que el jugador pidio NO es que las
+// luces de parqueo se apaguen solas al acelerar -eso no lo dijo nunca-. Lo que
+// pidio es que el NPC que aparco con ellas puestas tenga el criterio de apagarlas
+// al volver a andar. `hadHazard` es la marca del vehiculo de que el frame anterior
+// iba en parqueo de NPC; con ella el apagado es una decision explícita y se ve en
+// la traza (`parqueo-apagando`) en vez de depender de que el angulo del path ya no
+// dé. El parqueo del jugador solo se apaga con su tecla.
+bool
+ViceExtNpcHazardTurnsOff(bool hazardNow, bool *hadHazard, float speed)
+{
+	bool turnOff = !hazardNow && *hadHazard && speed >= VICEEXT_IND_STOP_SPEED;
+	*hadHazard = hazardNow;
+	return turnOff;
+}
+
 void
 CAutomobile::ViceExtProcessTurnSignals(void)
 {
@@ -1898,11 +2027,18 @@ CAutomobile::ViceExtProcessTurnSignals(void)
 	const bool odNpcSignals = true;
 	if (!odIsPlayer) {
 		if (pDriver == nil || pDriver->IsPlayer()) {
+			// Plan 51.0 D4: el mod apaga aqui, y por eso el intermitente se
+			// moria en cuanto el jugador se bajaba. Lo que el jugador latcheo
+			// con la tecla se conserva (pidio que «deben mantenerse siempre
+			// activas hasta que se desactiven presionando el boton»); lo que
+			// llevaba un NPC y se bajo se apaga, que es lo del mod.
+			if (!m_bIndicatorLatched) {
 #ifdef __EMSCRIPTEN__
-			ViceExtP4TurnersEmit(this, 0, 0, 0, "sinconductor", 0.0f, 0.0f);
+				ViceExtP4TurnersEmit(this, 0, 0, 0, "sinconductor", 0.0f, 0.0f);
 #endif
-			m_bIndicatorState[INDICATORS_LEFT] = false;
-			m_bIndicatorState[INDICATORS_RIGHT] = false;
+				m_bIndicatorState[INDICATORS_LEFT] = false;
+				m_bIndicatorState[INDICATORS_RIGHT] = false;
+			}
 			return;	// aparcado o sin conductor
 		}
 		if ((TheCamera.GetPosition() - GetPosition()).Magnitude() > 40.0f) {
@@ -1953,35 +2089,46 @@ CAutomobile::ViceExtProcessTurnSignals(void)
 				m_bIndicatorState[INDICATORS_RIGHT] = true;
 			}
 		}
-		side = m_bIndicatorState[INDICATORS_LEFT] ? -1 : (m_bIndicatorState[INDICATORS_RIGHT] ? +1 : 0);
 		odMotivo = "boton";
+		// Plan 51.1 E1: NINGUN apagado automatico aqui (el parqueo del jugador se
+		// quita con su tecla). Lo que si sube: lo latcheado sobrevive a bajarse.
+		m_bIndicatorLatched = m_bIndicatorState[INDICATORS_LEFT] ||
+		                      m_bIndicatorState[INDICATORS_RIGHT];
+		side = m_bIndicatorState[INDICATORS_LEFT] ? -1 : (m_bIndicatorState[INDICATORS_RIGHT] ? +1 : 0);
 	} else {
-		// Misma regla que el mod: el intermitente sale del angulo entre la
-		// derecha del coche y el siguiente tramo del path, no del volante
-		// instantaneo (que casi nunca pasaba del umbral y por eso los NPC
-		// no lo encendian).
-		if (!odNpcSignals || pDriver == nil || pDriver->DyingOrDead() ||
-		    AutoPilot.m_nDrivingStyle >= DRIVINGSTYLE_PLOUGH_THROUGH || bRenderScorched ||
-		    AutoPilot.m_nNextPathNodeInfo >= (uint32)ThePaths.m_numCarPathLinks) {
+		// Regla del trafico (plan 51.0 D3): solo el giro que el NPC va a hacer en
+		// el cruce al que se acerca, y solo cuando ya se acerca. El angulo sigue
+		// siendo el del mod (derecha del coche contra el tramo siguiente), no el
+		// volante instantaneo.
+		bool odHazard = false;
+		float odSpeed = ((CVector2D)GetMoveSpeed()).Magnitude();
+		if (!odNpcSignals || pDriver->DyingOrDead() ||
+		    AutoPilot.m_nDrivingStyle >= DRIVINGSTYLE_PLOUGH_THROUGH || bRenderScorched) {
 			m_bIndicatorState[INDICATORS_LEFT] = false;
 			m_bIndicatorState[INDICATORS_RIGHT] = false;
+			m_bIndicatorNpcHazard = false;
 			side = 0;
 			odMotivo = "ia-sin";
 		} else {
-			CVector2D vehicleRight = GetRight();
-			CVector2D nextPathLinkForward = AutoPilot.m_nNextDirection *
-				ThePaths.m_carPathLinks[AutoPilot.m_nNextPathNodeInfo].GetDirection();
-			float angle = DotProduct2D(vehicleRight, nextPathLinkForward);
-			m_bIndicatorState[INDICATORS_LEFT] = angle < -0.2f;
-			m_bIndicatorState[INDICATORS_RIGHT] = angle > 0.2f;
-			side = m_bIndicatorState[INDICATORS_LEFT] ? -1 : (m_bIndicatorState[INDICATORS_RIGHT] ? +1 : 0);
-			steer = angle;
-			odMotivo = "ia";
+			side = ViceExtNpcTurnSignalSide(this, &odHazard, &odMotivo, &steer);
+			// Plan 51.1 E1: el NPC que aparco con ellas puestas las apaga al volver
+			// a andar; es su decision, no un corte por velocidad.
+			if (ViceExtNpcHazardTurnsOff(odHazard, &m_bIndicatorNpcHazard, odSpeed))
+				odMotivo = "parqueo-apagando";
+			if (odHazard) {
+				// Va a pararse a bajarse: las dos luces de parqueo.
+				m_bIndicatorState[INDICATORS_LEFT] = true;
+				m_bIndicatorState[INDICATORS_RIGHT] = true;
+			} else {
+				m_bIndicatorState[INDICATORS_LEFT] = side < 0;
+				m_bIndicatorState[INDICATORS_RIGHT] = side > 0;
+			}
 		}
+		m_bIndicatorLatched = false;
 	}
 	if (side == 0) {
 #ifdef __EMSCRIPTEN__
-		ViceExtP4TurnersEmit(this, odIsPlayer ? 1 : 0, 0, 0, "nointerruptor", steer, 0.0f);
+		ViceExtP4TurnersEmit(this, odIsPlayer ? 1 : 0, 0, 0, odMotivo, steer, 0.0f);
 #endif
 		return;
 	}
@@ -2171,74 +2318,1097 @@ CAutomobile::ViceExtRotateSteeringWheel(void)
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 static void ViceExtSetLightMaterial(RwFrame *frame, RwTexture *tex, bool on);
+#include "IndicatorLensTable.h"
+#ifdef VICEEXT_BODY_LENS
+#include "BodyLensTable.h"
+#endif
+
+// Regla única de lámpara viva. La consultan los materiales y las coronas para
+// que ninguna de las dos rutas deje pintada una lente que la otra ya apagó:
+// hasta aquí el faro roto seguía con ambient 10 y textura encendida aunque su
+// corona estuviera cortada, y así es como se veía «pintado pero sin destello».
+static bool
+ViceExtCarLampsAlive(CVehicle *veh)
+{
+	// Solo dos estados cortan la instalación entera: calcinado y ya explosionado.
+	// La vida baja NO apaga ninguna lente: con el umbral de 650 (el de humo) un
+	// golpe en una puerta dejaba el coche sin faros, y el jugador lo pidió como
+	// defecto. Cada lámpara responde de su propio Damage.GetLightStatus
+	// (ViceExtLampAlive), que es la regla del mod y la que tiene sentido: la luz
+	// se apaga cuando se rompe ESA lupa, no cuando se abolla el coche.
+	return !veh->bRenderScorched && veh->GetStatus() != STATUS_WRECKED;
+}
+
+static bool
+ViceExtLampAlive(CAutomobile *car, eLights light)
+{
+	return ViceExtCarLampsAlive(car) &&
+	       car->Damage.GetLightStatus(light) == LIGHT_STATUS_OK;
+}
+
+// Rompe una lupa concreta. El motor solo tiene cuatro estados de luz por coche
+// (delante/tras x izquierda/derecha) mientras el mod lleva catorce por nodo, así
+// que cada estado nuestro representa el lado de un extremo: es el resumen fiel,
+// no una lupa extra inventada.
+static void
+ViceExtBreakLamp(CAutomobile *car, eLights light)
+{
+	if (car->Damage.GetLightStatus(light) == LIGHT_STATUS_OK)
+		car->Damage.SetLightStatus(light, LIGHT_STATUS_BROKEN);
+}
+
+// Ancla real de la lente de un intermitente, en coordenadas del coche. El Vice
+// Extended ancla sus coronas en mi->m_positions[CAR_POS_INDICATORS_*], tramas
+// que solo traen 22 de los 3473 DFF del juego: en un coche vanilla esa posición
+// es (0,0,0) y el destello salía en el centro del capó. Aquí se mide la
+// geometría del propio nodo, separando por costado porque hay modelos (Moonbeam)
+// cuyo nodo indicator_l/indicator_r guarda las dos lentes y su centro de masa cae
+// sobre la línea central. Se cachea por modelo, nodo y costado: la geometría es
+// compartida entre instancias, así que el recorrido de vértices cuesta una vez.
+// Un mismo nodo puede guardar la lente partida en varios atomics: en landstal y
+// esperant el ámbar se reparte entre el parachoques alto y el bajo, y en packer
+// una lente vive en y=5.84 y otra en y=1.68. Fusionarlas echaba el centro de masa
+// al medio del lateral y de ahí el destello «flotando en la caja», así que se
+// mide UN grupo por racimo y cada racimo echa su propio destello. El racimo es la
+// misma unidad que mide la herramienta (caras de lente unidas por vértice, dentro
+// del nodo y del costado: indicator_lens45._components), así que la fila n-ésima
+// de la tabla es el grupo n-ésimo del barrido y el color empareja sin adivinar.
+// Medido en la flota servida tras el split del plan 45.0, sobre sus 166 celdas:
+// 106 con un racimo, 36 con dos, 16 con tres, 4 con cuatro y 4 con cinco; un
+// hipotético sexto racimo se fusiona en el último.
+enum ViceExtIndKind {
+	ODIND_UNKNOWN = 0,	// todavia sin medir en este modelo
+	ODIND_NONE,			// el modelo no tiene nodo en ese costado
+	ODIND_OWN,			// el nodo guarda el propio faro blanco o el piloto rojo
+	ODIND_AMBER			// lente ambar medida: su destello es legitimo
+};
+enum { ODIND_MAXGROUP = 5 };
+
+// Que es la lente que guarda un nodo de intermitente. Decide si ese costado
+// echara un destello propio o si el parpadeo lo hace su faro o su piloto (la
+// ruta del Banshee), y sale de la medida cara a cara de la herramienta
+// (gen_indicator_lens.py), no de una suposicion del motor.
+struct ViceExtIndAnchor {
+	int16 model;
+	int8 node;		// eCarNodes: la misma clave con la que la herramienta midio la lente
+	int8 side;
+	int8 kind;		// ViceExtIndKind, cacheable sin necesitar la geometria
+	int8 fixed;		// 0 = ancla sin medir, 1 = hay grupos medidos, -1 = sin ancla (no reintentar)
+	int8 nGroup;	// racimos con lente en este costado: 1..5 (medido en la flota)
+	uint8 rgb[ODIND_MAXGROUP][3];
+	int8 hasCol[ODIND_MAXGROUP];
+	CVector local[ODIND_MAXGROUP];
+	float spread[ODIND_MAXGROUP];
+	// Area ambar medida del racimo en cm2: de aqui sale el tamano del destello,
+	// que con el spread geometrico media tambien el bisel apagado del panel.
+	uint16 areaCm2[ODIND_MAXGROUP];
+	// Que pinta el parpadeo de material en esta celda. `paintMats` es la union de
+	// las mascaras de la tabla: medido en las 166 celdas servidas, los racimos de
+	// una misma celda comparten mascara, asi que la union no anade ningun material.
+	// `paintAtlas` dice si los texelos de esa lente son el atlas blanco del mod:
+	// solo entonces cabe escribir el ambar en el color del material. Con textura
+	// propia el tono YA esta en el pixel y pintar el material multiplicaria los dos
+	// ambares, dejando la lente mas oscura que el dato.
+	uint32 paintMats;
+	uint8 paintAtlas;
+	uint8 paintRgb[3];
+};
+// 8 claves por modelo como mucho (4 pares de nodo x 2 costados), asi que el
+// array cubre todos los modelos del juego: si se llenara, cada frame volveria a
+// barrer la geometria de los modelos que no cupieran. Es de solo-append y nunca
+// se reordena, asi que un puntero a una ranura sigue valiendo despues.
+static ViceExtIndAnchor s_odIndAnchor[1024];
+static int s_odIndAnchorN;
+
+// Ranura del cache de este (modelo, nodo, costado). Con create=false solo mira.
+static ViceExtIndAnchor *
+ViceExtIndAnchorSlot(CVehicle *veh, int node, int side, bool create)
+{
+	const int16 model = veh->GetModelIndex();
+	for (int i = 0; i < s_odIndAnchorN; i++) {
+		if (s_odIndAnchor[i].model == model && s_odIndAnchor[i].node == node &&
+		    s_odIndAnchor[i].side == side)
+			return &s_odIndAnchor[i];
+	}
+	if (!create || s_odIndAnchorN >= (int)ARRAY_SIZE(s_odIndAnchor))
+		return nil;
+	ViceExtIndAnchor &a = s_odIndAnchor[s_odIndAnchorN++];
+	a.model = model;
+	a.node = node;
+	a.side = side;
+	a.kind = ODIND_UNKNOWN;
+	a.fixed = 0;
+	a.nGroup = 0;
+	for (int g = 0; g < ODIND_MAXGROUP; g++) {
+		a.hasCol[g] = 0;
+		a.rgb[g][0] = a.rgb[g][1] = a.rgb[g][2] = 0;
+		a.local[g] = CVector(0.0f, 0.0f, 0.0f);
+		a.spread[g] = 0.0f;
+		a.areaCm2[g] = 0;
+	}
+	a.paintMats = 0;
+	a.paintAtlas = 0;
+	a.paintRgb[0] = a.paintRgb[1] = a.paintRgb[2] = 0;
+	return &a;
+}
+
+// Textura de carroceria pintable: si un nodo de intermitente incluye caras con
+// esta textura son panel del coche, no lente. En Hermes el nodo indicator_lf trae
+// 2 caras de lente y 14 de panel; contando todas, el centro de masa caia en medio
+// del capot y ahi salia el destello (lo que el jugador llamo «se enciende casi al
+// centro del coche»). Las caras del panel se descartan.
+static bool
+ViceExtIsBodyTexture(RwTexture *tex)
+{
+	if (tex == nil)
+		return false;
+	char low[33];
+	int i = 0;
+	for (; i < 32 && tex->name[i] != '\0'; i++)
+		low[i] = tolower(tex->name[i]);
+	low[i] = '\0';
+	return strstr(low, "body") != nil;
+}
+
+// Un atomic del nodo con caras de lente en este costado. Cada grupo se mide y se
+// dibuja aparte: es la lente partida entre parachoques y salpicadero.
+struct ViceExtIndGroup {
+	int n;
+	CVector sum, lo, hi;
+};
+
+struct ViceExtIndScan {
+	int side;
+	int nGroup;
+	CMatrix toCar;	// del sistema del clump (raiz de los nodos) al del coche
+	ViceExtIndGroup g[ODIND_MAXGROUP];
+};
+
+static void
+ViceExtIndGroupAdd(ViceExtIndGroup *grp, const CVector &p)
+{
+	if (grp->n == 0)
+		grp->lo = grp->hi = p;
+	else {
+		grp->lo.x = Min(grp->lo.x, p.x); grp->hi.x = Max(grp->hi.x, p.x);
+		grp->lo.y = Min(grp->lo.y, p.y); grp->hi.y = Max(grp->hi.y, p.y);
+		grp->lo.z = Min(grp->lo.z, p.z); grp->hi.z = Max(grp->hi.z, p.z);
+	}
+	grp->sum += p;
+	grp->n++;
+}
+
+static void
+ViceExtIndGroupMerge(ViceExtIndGroup *dst, const ViceExtIndGroup &src)
+{
+	dst->lo.x = Min(dst->lo.x, src.lo.x); dst->hi.x = Max(dst->hi.x, src.hi.x);
+	dst->lo.y = Min(dst->lo.y, src.lo.y); dst->hi.y = Max(dst->hi.y, src.hi.y);
+	dst->lo.z = Min(dst->lo.z, src.lo.z); dst->hi.z = Max(dst->hi.z, src.hi.z);
+	dst->sum += src.sum;
+	dst->n += src.n;
+}
+
+// Racimos del atomic que se esta barriendo: caras de lente unidas porque
+// comparten un vertice. Es la misma unidad que mide la herramienta, cuya clave
+// es (gi, v) porque el indice de vertice solo vale dentro de su geometry, y por
+// eso aqui el array es por atomic. Soldar solo con las caras de lente de ESTE
+// costado, como hace `node_faces`: si se soldaran primero las dos lentes del
+// paradero, el centro de masa cairia en la linea central y el destello del
+// costado derecho saldria en medio del coche (lo que se veia en Moonbeam).
+// 4096 vertices es el techo que se racima; por encima el atomic se mide como un
+// solo grupo, la conducta anterior, y solo pasa en geometrias de carroceria.
+enum { ODIND_MAXVERT = 4096 };
+static int16 s_odIndPar[ODIND_MAXVERT];
+static int16 s_odIndRoot[ODIND_MAXGROUP];
+
+static int
+ViceExtIndFind(int i)
+{
+	while (s_odIndPar[i] != i) {
+		s_odIndPar[i] = s_odIndPar[s_odIndPar[i]];
+		i = s_odIndPar[i];
+	}
+	return i;
+}
+
+static RwObject *
+ViceExtIndScanCB(RwObject *object, void *data)
+{
+	if (RwObjectGetType(object) != rpATOMIC)
+		return object;
+	ViceExtIndScan *scan = (ViceExtIndScan*)data;
+	RpGeometry *geo = RpAtomicGetGeometry((RpAtomic*)object);
+	if (geo == nil || geo->numMorphTargets < 1 || geo->morphTargets[0].vertices == nil)
+		return object;
+
+	uint32 lens = 0;
+	for (int32 m = 0; m < geo->matList.numMaterials && m < 32; m++) {
+		RpMaterial *mat = geo->matList.materials[m];
+		if (mat == nil || ViceExtIsBodyTexture(mat->texture))
+			continue;
+		lens |= 1u << m;
+	}
+	if (lens == 0)
+		lens = ~0u;	// el nodo entero es panel: mejor medir que no dibujar nada
+
+	ViceExtIndGroup loc[ODIND_MAXGROUP];
+	for (int g = 0; g < ODIND_MAXGROUP; g++) {
+		loc[g].n = 0;
+		loc[g].sum = CVector(0.0f, 0.0f, 0.0f);
+		loc[g].lo = CVector(0.0f, 0.0f, 0.0f);
+		loc[g].hi = CVector(0.0f, 0.0f, 0.0f);
+	}
+	int nloc = 0;
+
+	const CMatrix lm(RwFrameGetLTM(RpAtomicGetFrame((RpAtomic*)object)));
+	const CMatrix &toCar = scan->toCar;
+	RwV3d *verts = geo->morphTargets[0].vertices;
+	const bool racimar = geo->triangles != nil && geo->numVertices > 0 &&
+		geo->numVertices <= ODIND_MAXVERT;
+
+	if (racimar) {
+		for (int32 i = 0; i < geo->numVertices; i++)
+			s_odIndPar[i] = (int16)i;
+		// Paso 1: soldar. Paso 2: acumular en el orden de la primera cara de cada
+		// componente, que es el orden en que la herramienta emite sus filas.
+		for (int pass = 0; pass < 2; pass++) {
+			for (int32 i = 0; i < geo->numTriangles; i++) {
+				int32 m = geo->triangles[i].matId;
+				if (m < 0 || m >= 32 || (lens & (1u << m)) == 0)
+					continue;
+				RwV3d *a = &verts[geo->triangles[i].v[0]];
+				RwV3d *b = &verts[geo->triangles[i].v[1]];
+				RwV3d *c = &verts[geo->triangles[i].v[2]];
+				// El baricentro de la cara, no el vertice: los vertices se comparten con el
+				// panel y arrastrarian el ancla. Es la misma medida que hizo la herramienta.
+				CVector p = toCar * (lm * CVector((a->x + b->x + c->x)/3.0f,
+				                                  (a->y + b->y + c->y)/3.0f,
+				                                  (a->z + b->z + c->z)/3.0f));
+				if (scan->side != 0 && (p.x < 0.0f) != (scan->side < 0))
+					continue;	// la lente del otro costado
+				if (pass == 0) {
+					int r = ViceExtIndFind(geo->triangles[i].v[0]);
+					int v = ViceExtIndFind(geo->triangles[i].v[1]);
+					if (r != v)
+						s_odIndPar[v] = (int16)r;
+					v = ViceExtIndFind(geo->triangles[i].v[2]);
+					if (r != v)
+						s_odIndPar[v] = (int16)r;
+					continue;
+				}
+				const int16 root = (int16)ViceExtIndFind(geo->triangles[i].v[0]);
+				int j = 0;
+				for (; j < nloc; j++) {
+					if (s_odIndRoot[j] == root)
+						break;
+				}
+				if (j == nloc) {
+					if (nloc < ODIND_MAXGROUP) {
+						s_odIndRoot[nloc++] = root;
+					} else {
+						// Un sexto racimo en la misma geometry se fusiona en el ultimo.
+						j = ODIND_MAXGROUP - 1;
+					}
+				}
+				ViceExtIndGroupAdd(&loc[j], p);
+			}
+		}
+	} else if (geo->triangles == nil) {	// geometria nativa: sin triangulos, medir vertices
+		for (int32 i = 0; i < geo->numVertices; i++) {
+			CVector p = toCar * (lm * CVector(verts[i].x, verts[i].y, verts[i].z));
+			if (scan->side != 0 && (p.x < 0.0f) != (scan->side < 0))
+				continue;
+			ViceExtIndGroupAdd(&loc[0], p);
+		}
+		if (loc[0].n > 0)
+			nloc = 1;
+	} else {
+		// Geometry mas alla del techo de vertices: un solo grupo, la conducta
+		// anterior. Racimar aqui seria quedarse sin ancla y sin destello, y el
+		// techo solo lo alcanzan las geometrias de carroceria, no las lentes.
+		for (int32 i = 0; i < geo->numTriangles; i++) {
+			int32 m = geo->triangles[i].matId;
+			if (m < 0 || m >= 32 || (lens & (1u << m)) == 0)
+				continue;
+			RwV3d *a = &verts[geo->triangles[i].v[0]];
+			RwV3d *b = &verts[geo->triangles[i].v[1]];
+			RwV3d *c = &verts[geo->triangles[i].v[2]];
+			CVector p = toCar * (lm * CVector((a->x + b->x + c->x)/3.0f,
+			                                  (a->y + b->y + c->y)/3.0f,
+			                                  (a->z + b->z + c->z)/3.0f));
+			if (scan->side != 0 && (p.x < 0.0f) != (scan->side < 0))
+				continue;
+			ViceExtIndGroupAdd(&loc[0], p);
+		}
+		if (loc[0].n > 0)
+			nloc = 1;
+	}
+
+	for (int j = 0; j < nloc; j++) {
+		if (loc[j].n == 0)
+			continue;	// este racimo no tiene lente en este costado
+		if (scan->nGroup < ODIND_MAXGROUP)
+			scan->g[scan->nGroup++] = loc[j];
+		else
+			ViceExtIndGroupMerge(&scan->g[ODIND_MAXGROUP-1], loc[j]);
+	}
+	return object;
+}
+
+// Fila medida cara a cara sobre la textura de la lente (herramienta
+// gen_indicator_lens.py). El material del DFF es blanco en estos modelos: el tono
+// vive en los pixels, y la textura ya esta en la GPU, asi que el motor no puede
+// leerla. Sin esta tabla el destello sale blanco sobre una lente ambar o roja, y
+// sin el flag `amber` el motor no sabria que nodo es un faro y cual una direccional.
+// `occ` es el numero de racimo dentro del mismo (modelo, nodo, costado): la tabla
+// emite las filas por celda en el orden en que la herramienta recorrio atomics y
+// caras, y el barrido del motor racima igual (mismo orden), asi que la fila
+// n-esima es la medida del racimo n-esimo. `xyz` de la fila es lo que lo
+// comprueba: si el orden no cuadra se elige la fila mas cerca de la lente medida.
+// Si el modelo resultara tener mas racimos que filas, el racimo de mas alla usa
+// la ultima medida (la de mas cerca) en vez de inventar un color.
+static const ViceExtIndLens *
+ViceExtMeasuredLensRow(CVehicle *veh, int node, int side, int occ)
+{
+	CBaseModelInfo *bi = CModelInfo::GetModelInfo(veh->GetModelIndex());
+	if (bi == nil)
+		return nil;
+	const char *nm = bi->GetModelName();
+	const ViceExtIndLens *last = nil;
+	int seen = 0;
+	for (uint32 i = 0; i < ARRAY_SIZE(s_odIndLens); i++) {
+		if (s_odIndLens[i].node == node && s_odIndLens[i].side == side &&
+		    !CGeneral::faststricmp(s_odIndLens[i].name, nm)) {
+			last = &s_odIndLens[i];
+			if (++seen > occ)
+				return last;
+		}
+	}
+	return last;
+}
+
+// Fila de la celda cuyo centroide medido este mas cerca de `c` (coordenadas del
+// coche), con la distancia maximo- eje devuelta en `inout`. Nil si ninguna llega.
+static const ViceExtIndLens *
+ViceExtMeasuredLensNearest(CVehicle *veh, int node, int side, const CVector &c,
+                          float *inout)
+{
+	CBaseModelInfo *bi = CModelInfo::GetModelInfo(veh->GetModelIndex());
+	if (bi == nil)
+		return nil;
+	const char *nm = bi->GetModelName();
+	const ViceExtIndLens *best = nil;
+	for (uint32 i = 0; i < ARRAY_SIZE(s_odIndLens); i++) {
+		const ViceExtIndLens &r = s_odIndLens[i];
+		if (r.node != node || r.side != side || CGeneral::faststricmp(r.name, nm))
+			continue;
+		const float dx = Abs(r.xyz[0]*0.01f - c.x);
+		const float dy = Abs(r.xyz[1]*0.01f - c.y);
+		const float dz = Abs(r.xyz[2]*0.01f - c.z);
+		const float d = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+		if (d >= inout[0])
+			continue;
+		inout[0] = d;
+		best = &r;
+	}
+	return best;
+}
+
+// Resumen medido de la CELDA (modelo, nodo, costado): si algun racimo suyo es
+// ambar, que materiales son lente y cual es el color del racimo ambar mas grande.
+// Antes la clase se leia solo de la fila 0, y con la tabla por racimo la fila 0
+// puede ser el piloto rojo soldado al mismo atomic: la celda perdia el destello
+// aunque su lente ambar estuviera medida en la fila 1 (stinger trasero).
+static void
+ViceExtMeasuredLensCell(CVehicle *veh, int node, int side, int *amber,
+                        uint32 *mats, uint8 *atlas, uint8 *rgb)
+{
+	CBaseModelInfo *bi = CModelInfo::GetModelInfo(veh->GetModelIndex());
+	if (bi == nil)
+		return;
+	const char *nm = bi->GetModelName();
+	uint16 best = 0;
+	for (uint32 i = 0; i < ARRAY_SIZE(s_odIndLens); i++) {
+		const ViceExtIndLens &r = s_odIndLens[i];
+		if (r.node != node || r.side != side || CGeneral::faststricmp(r.name, nm))
+			continue;
+		*mats |= r.mats;
+		if (!r.amber)
+			continue;
+		*amber = 1;
+		if (r.area_cm2 < best)
+			continue;
+		best = r.area_cm2;
+		atlas[0] = r.atlas;
+		rgb[0] = r.rgb[0];
+		rgb[1] = r.rgb[1];
+		rgb[2] = r.rgb[2];
+	}
+}
+
+// El material del primer atomic del nodo, solo para la traza INDCORONA: el color
+// del destello ya no sale de aqui, sale de la fila medida de la tabla.
+#ifdef __EMSCRIPTEN__
+static RpMaterial *
+ViceExtIndicatorLensMaterial(RwFrame *frame)
+{
+	RpAtomic *atomic = (RpAtomic*)GetFirstObject(frame);
+	if (atomic == nil || atomic->geometry == nil ||
+	    atomic->geometry->matList.numMaterials <= 0)
+		return nil;
+	return atomic->geometry->matList.materials[0];
+}
+#endif
+
+// Clase de la lente de un nodo, cacheada por (modelo, nodo, costado). Ambar solo
+// si ALGUN racimo medido de la celda lo declara (amber=1). Todo lo demas es el
+// faro blanco o el piloto rojo del coche: esos parpadean con su propia lampara
+// (ruta Banshee) y no reciben ningun destello nuevo, que es lo que el jugador
+// pidio. Una celda sin fila tampoco es ambar: el generador cubre los 166 costados
+// con racimo de lente, asi que sin fila no hay lente medida que pinte; antes se
+// inventaba el ambar aqui mirando la textura 'lights' y en ViceExtIndicatorCorona
+// con {255,127,0}.
+// Con el veredicto se cachea lo que necesita el parpadeo de material (mascara,
+// atlas y color), que tampoco requiere tocar la geometria: asi la ruta de
+// materiales resuelve en el mismo cache que la ruta de destellos.
+static int
+ViceExtIndicatorLensKind(CVehicle *veh, int node, int side, RwFrame *frame)
+{
+	ViceExtIndAnchor *slot = ViceExtIndAnchorSlot(veh, node, side, false);
+	if (slot != nil && slot->kind != ODIND_UNKNOWN)
+		return slot->kind;
+
+	int kind;
+	int amber = 0;
+	uint32 mats = 0;
+	uint8 atlas = 0;
+	uint8 rgb[3] = { 0, 0, 0 };
+	if (frame == nil)
+		kind = ODIND_NONE;
+	else {
+		ViceExtMeasuredLensCell(veh, node, side, &amber, &mats, &atlas, rgb);
+		kind = amber ? ODIND_AMBER : ODIND_OWN;
+	}
+	slot = ViceExtIndAnchorSlot(veh, node, side, true);
+	if (slot != nil) {
+		slot->kind = kind;
+		slot->paintMats = mats;
+		slot->paintAtlas = atlas;
+		slot->paintRgb[0] = rgb[0];
+		slot->paintRgb[1] = rgb[1];
+		slot->paintRgb[2] = rgb[2];
+	}
+	return kind;
+}
+
+// Un costado tiene direccional de verdad cuando alguno de sus nodos guarda una
+// lente ambar medida. Si no, el parpadeo lo hace la lampara de ese costado (el
+// faro blanco o el piloto rojo), que es la ruta del Banshee del mod: apaga y
+// enciende el destello que el coche ya tiene, sin anadir ninguno.
+static bool
+ViceExtSideHasAmberLens(CAutomobile *car, eCarNodes n1, eCarNodes n2, int side)
+{
+#ifdef VICEEXT_BODY_LENS
+	// Una lente de carroceria declarada para este eje/costado ya es direccional
+	// ambar: el faro/piloto de ese costado no debe parpadear tambien (si no,
+	// doble destello). Solo cuenta si el frame se resolvio en SetupModelNodes.
+	for (int i = 0; i < car->m_nBodyLens; i++) {
+		const ViceExtBodyLens &r = s_odBodyLens[car->m_aBodyLensRow[i]];
+		if (r.side == side && (r.node == n1 || r.node == n2))
+			return true;
+	}
+#endif
+	return ViceExtIndicatorLensKind(car, n1, side, car->m_aCarNodes[n1]) == ODIND_AMBER ||
+	       ViceExtIndicatorLensKind(car, n2, side, car->m_aCarNodes[n2]) == ODIND_AMBER;
+}
+
+// Anclas de la lente de este (nodo, costado), en coordenadas del vehiculo, con su
+// tamano y su color medidos, un grupo por atomic con lente. Nil si el nodo no tiene
+// una lente medible (y entonces el costado usa su propia lampara). La puerta de
+// plausibilidad se aplica grupo a grupo: el tramo rechazado se cae, la celda
+// sigue valiendo con los que pasan.
+static const ViceExtIndAnchor *
+ViceExtIndicatorAnchor(CVehicle *veh, int node, int side, RwFrame *frame)
+{
+	ViceExtIndAnchor *slot = ViceExtIndAnchorSlot(veh, node, side, false);
+	if (slot != nil && slot->fixed == 1)
+		return slot;
+	if (slot != nil && slot->fixed == -1)
+		return nil;		// ya se ve que no habia lente: no volver a barrer
+	if (frame == nil)
+		return nil;
+
+	// La ancla se mide contra la raiz del clump, no contra la matriz de la
+	// entidad. Invert(car->GetMatrix()) salio algunas veces de una matriz todavia
+	// sin escribir y el resultado (una posicion de mundo) quedo cacheado para
+	// siempre: la traza INDCORONA del jugador daba local=510.15,-161.11,-12.04 en
+	// el costado derecho y de ahi el «solo parpadea el izquierdo». El LTM del
+	// atomic y el de la raiz salen del mismo barrido de la jerarquia, asi que la
+	// transformacion de mundo se cancela sola y queda el offset real de la lente
+	// este la raiz puesta o no.
+	RwFrame *root = frame;
+	while (RwFrameGetParent(root) != nil)
+		root = RwFrameGetParent(root);
+	ViceExtIndScan scan;
+	scan.side = side;
+	scan.nGroup = 0;
+	scan.toCar = Invert(CMatrix(RwFrameGetLTM(root)));
+	RwFrameForAllObjects(frame, ViceExtIndScanCB, &scan);
+	if (slot == nil)
+		slot = ViceExtIndAnchorSlot(veh, node, side, true);
+	if (slot == nil)
+		return nil;		// cache llena: mejor no pintar que barrer la geometria cada frame
+	for (int i = 0; i < scan.nGroup && slot->nGroup < ODIND_MAXGROUP; i++) {
+		const CVector c = scan.g[i].sum * (1.0f/scan.g[i].n);
+		const float s = 0.5f*(scan.g[i].hi - scan.g[i].lo).Magnitude();
+		// Plausibilidad: una lente vive dentro de la caja del vehiculo. Fuera de esa
+		// caja el barrido midio otra cosa (jerarquia sin sincronizar, nodo que en
+		// realidad es panel) y no se cachea como ancla: mejor el destello ausente y
+		// la lampara propia que un flash a cientos de metros del coche.
+		// Los limites salen de medir las 162 celdas ambar del arbol servido
+		// (gate_t110.py): max |x|=1.48 (packer), |y|=6.90 (packer detras), |z|=1.09
+		// (securica), spread 2.18 (packer delante). El envenenamiento que esta puerta
+		// corta era de 161..631 m, tres ordenes de magnitud mas alla. Sin limite
+		// inferior: 19 de esas 162 lentes son UN triangulo y su spread es 0 exacto;
+		// el tamano de la corona ya se clampa por abajo en ViceExtIndicatorCorona.
+		if (Abs(c.x) > 2.5f || Abs(c.y) > 9.0f || Abs(c.z) > 2.5f || s > 4.0f)
+			continue;
+		const int g = slot->nGroup;
+		// La fila es la del racimo medido (i), no la del hueco que ocupa en el
+		// cache: si un tramo se rechaza, el siguiente conserva su color. El barrido
+		// y la herramienta raciman igual (mismo orden de atomics y de caras), asi
+		// que la fila n-esima es el racimo n-esimo; `xyz` lo comprueba y, si el
+		// orden no cuadra, se toma la fila cuyo centroide si esta junto a la lente
+		// que se acaba de medir. Mejor el color de la lente de ao donde este que el
+		// de la fila que toca por orden.
+		const ViceExtIndLens *row = ViceExtMeasuredLensRow(veh, node, side, i);
+		if (row != nil) {
+			float dmin = 0.25f;	// 25 cm: el racimo mas pequeno medido es de 4 cm
+			const float dx = Abs(row->xyz[0]*0.01f - c.x);
+			const float dy = Abs(row->xyz[1]*0.01f - c.y);
+			const float dz = Abs(row->xyz[2]*0.01f - c.z);
+			const float d = dx > dy ? (dx > dz ? dx : dz) : (dy > dz ? dy : dz);
+			if (d > dmin) {
+				const ViceExtIndLens *alt = ViceExtMeasuredLensNearest(veh, node, side, c, &dmin);
+				if (alt != nil)
+					row = alt;
+			}
+		}
+		slot->local[g] = c;
+		slot->spread[g] = s;
+		slot->hasCol[g] = row != nil ? 1 : 0;
+		if (row != nil) {
+			slot->rgb[g][0] = row->rgb[0];
+			slot->rgb[g][1] = row->rgb[1];
+			slot->rgb[g][2] = row->rgb[2];
+			slot->areaCm2[g] = row->area_cm2;
+		} else {
+			slot->rgb[g][0] = slot->rgb[g][1] = slot->rgb[g][2] = 0;
+			slot->areaCm2[g] = 0;
+		}
+		slot->nGroup++;
+	}
+	if (veh->IsBike()) {
+		// Plan 51.1 E2: en la moto la inclinacion vive en el frame del CHASIS
+		// (Bike.cpp:2030-2038: mat.SetRotateX(-0.05*|lean|); mat.RotateY(lean)), no
+		// en la matriz de la entidad. La medida de arriba esta en espacio de la RAIZ,
+		// asi que el render la multiplicaba por GetMatrix() y el destello se quedaba
+		// en la posicion de la lente sin tumbar: en una curva el disco salia por el
+		// aire, al lado de la moto (captura del jugador del 07/11). Se re-expresa en
+		// el espacio del propio nodo de la lente con rel = Invert(N_scan) * R_scan:
+		// es un cociente de la misma jerarquia y del mismo barrido, asi que no depende
+		// de que la colocacion de mundo estuviera escrita (el envenenamiento que el
+		// comentario de arriba descarta) y al render basta con la LTM viva del nodo.
+		// La puerta de plausibilidad y el cotejo con `xyz` de la tabla ya se hicieron
+		// en espacio de raiz, que es el espacio de la tabla.
+		const CMatrix rel = Invert(CMatrix(RwFrameGetLTM(frame))) * CMatrix(RwFrameGetLTM(root));
+		for (int g = 0; g < slot->nGroup; g++)
+			slot->local[g] = rel * slot->local[g];
+	}
+	if (slot->nGroup == 0) {
+		slot->fixed = -1;
+		return nil;
+	}
+	slot->fixed = 1;
+	return slot;
+}
+
+// Destello de una lente de intermitente: una corona aditiva, que es lo único que
+// se ve por encima del techo de brillo del shader (el color de material se clampa
+// a 1 y el sol de día ya lo deja saturado; por eso el cambio de tono solo se nota
+// de noche). El color sale siempre de la fila medida de la tabla de lentes: el
+// ámbar del mod está en el dato, no en una constante. Que ODIND_AMBER implique
+// fila hace que `measured` llegue aqui en todo destello; sin fila no se pinta
+// ninguno, porque no hay color que inventar. En el medio ciclo apagado se
+// actualiza la coordenada en vez de no registrar nada, para que la corona se
+// apague desvaneciendo y siga al coche mientras se desvanece (igual que el mod).
+// Plan 46.0 C2: el render de coronas RESTA siempre `nearDist` a la coordenada
+// del sprite (Coronas.cpp:359) y el default del motor son 1,5 m, asi que el
+// destello se planta 1,5 m por delante de la lente y se ve flotando sobre el
+// capo. Medido sobre malla real (lamp46r.py --mult 2.5, 48 lentes en 14
+// modelos, lamp46r.final.txt): con 1,5 m el 12 %/35 %/45 % del disco (vistas
+// frente/lado 55/lado 75) cae a mas de 10 cm por delante de la lente; con
+// 0,10 m es 0,0 % en las tres y el disco sigue visible (lo que tapa es
+// carroceria que de verdad tapa: 13 %/34 %/46 %). 0 m se comeria el
+// 50 %/61 %/63 % porque la carroceria avanza una mediana de 9,4 cm por delante
+// del plano de la lente. `useNearDist` sigue
+// en false: solo gobernaria el fundido de 35-50 m, que aqui no interesa.
+// Desviacion del binario del mod (el mod no pasa el argumento) -> ADR-021.
+#define VICEEXT_IND_NEAR	0.10f
+
+// Plan 51.0 D1: el disco estaba 3,4 veces grande. Medido con ind47_glow.py sobre
+// la captura del mod jugado en local (339x124; escala 0,58 cm/px por el ancho del
+// coche, 0,565 cm/px por la lente de 6,7 cm, y las dos escalas cuadran): el
+// destello llega a radio 11 px = 6,4 cm a media altura y 19 px = 11,0 cm en el
+// borde visible, sobre una lente de 11-12 px de ancho => radio del sprite
+// ~ 1,6 x el diametro de la lente. En la captura del build servido (1041x547,
+// 0,64 cm/px) ese mismo racimo da 22 cm a media altura y >=38 cm en el borde.
+// Con las 244 filas ambar de la tabla: la mediana del tamano baja de 0,272 a
+// 0,174 m y el maximo de 0,55 a 0,24 m. El suelo 0,09 deja visibles las lentes
+// pequenas (32 racimos de diametro < 5,6 cm) y el techo 0,24 recorta 49.
+#define VICEEXT_IND_SIZE_MULT	1.6f
+#define VICEEXT_IND_SIZE_MIN	0.09f
+#define VICEEXT_IND_SIZE_MAX	0.24f
+
+static void
+ViceExtIndicatorCorona(uint32 id, const CVector &pos, float spread, float areaCm2,
+                       const uint8 *measured, bool on)
+{
+	// El tamano sale del area ambar medida (diametro del disco equivalente), no de
+	// la caja del racimo: la caja media tambien el bisel apagado y, con la lente
+	// partida en racimos pequenos, echaba coronas del tamano del guardabarros.
+	// La misma ventana que el spread, para no cambiar el aspecto de lo que ya iba
+	// bien; el area es 0 en los modelos sin medida de area y entonces queda el spread.
+	const float dia = areaCm2 > 0.0f ? 0.02f*Sqrt(areaCm2/3.1415927f) : spread;
+	const float size = Clamp(dia*VICEEXT_IND_SIZE_MULT,
+	                         VICEEXT_IND_SIZE_MIN, VICEEXT_IND_SIZE_MAX);
+	const float drawDist = 50.0f*TheCamera.LODDistMultiplier;
+	if (!on) {
+		CCoronas::UpdateCoronaCoors(id, pos, drawDist, 0.0f);
+		return;
+	}
+	if (measured == nil)
+		return;
+	uint8 r = measured[0], g = measured[1], b = measured[2];
+	// El destello es aditivo y con el sol de dia compite contra el techo de brillo
+	// del shader: se lleva al máximo manteniendo el matiz medido, que es lo unico
+	// que lo hace visible sin inventar un color que la lente no tiene.
+	uint8 hi = Max(r, Max(g, b));
+	if (hi > 0 && hi < 255) {
+		r = (uint8)((int)r*255/hi);
+		g = (uint8)((int)g*255/hi);
+		b = (uint8)((int)b*255/hi);
+	}
+	CCoronas::RegisterCorona(id, r, g, b, 255, pos, size, drawDist,
+		CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f,
+		false, VICEEXT_IND_NEAR);
+}
+
+// Destellos de las lentes de intermitente de un vehiculo (coches y motos).
+// Solo echa corona la lente que la medida declara ambar: un nodo cuya lente es el
+// propio faro blanco o el piloto rojo NO recibe ningun destello nuevo, porque ese
+// destello ya existe (el de la lampara) y ya parpadea con el giro, que es la ruta
+// del Banshee y lo que el jugador pidio explicitamente. `damage` nil = el vehiculo
+// no lleva gestion de dano por lampara (las motos del motor) y entonces solo
+// manda el estado global del coche.
+void
+ViceExtIndicatorCoronas(CVehicle *veh, CDamageManager *damage,
+                        const ViceExtIndSlot *slots, int n, RwFrame **frames,
+                        uint32 idFirst, bool leftState, bool rightState)
+{
+	const bool blink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
+	const bool allowed = ViceExtCarLampsAlive(veh);
+#ifdef __EMSCRIPTEN__
+	// Una rafaga por segundo, pero con TODOS los grupos de TODOS los nodos del
+	// coche del jugador: es como se ve en el log que el Landstalker echa dos
+	// anclas por costado delante y el Packer deja de tener el destello flotando.
+	static uint32 odNextIndTraza = 0;
+	const uint32 odNow = CTimer::GetTimeInMilliseconds();
+	const bool odTrace = veh == FindPlayerVehicle() && odNow >= odNextIndTraza;
+	bool odEmitted = false;
+#endif
+	for (int k = 0; k < n; k++) {
+		const ViceExtIndSlot &s = slots[k];
+		RwFrame *frame = frames[s.frameIdx];
+		if (frame == nil)
+			continue;
+		if (ViceExtIndicatorLensKind(veh, s.tableNode, s.side, frame) != ODIND_AMBER)
+			continue;
+		const ViceExtIndAnchor *anch = ViceExtIndicatorAnchor(veh, s.tableNode, s.side, frame);
+		if (anch == nil)
+			continue;
+		const bool state = s.side < 0 ? leftState : rightState;
+		const bool lampOk = damage == nil ||
+			damage->GetLightStatus((eLights)s.light) == LIGHT_STATUS_OK;
+		const bool on = allowed && state && blink && lampOk;
+		// Plan 51.1 E2: en la moto el ancla esta guardada en el espacio del propio
+		// nodo de la lente (ver ViceExtIndicatorAnchor), asi que se transforma por su
+		// LTM viva: la inclinacion se aplica al frame del chasis (Bike.cpp:2030-2038)
+		// y no a la matriz de la entidad, y con esta el destello se quedaba donde se
+		// veria la lente sin tumbar. El nodo cuelga del chasis: el barrido de la
+		// medida recorre los atomics DE ESTE NODO, asi que su LTM es la que lleva
+		// la lente. En los coches no cambia nada: su nodo no se mueve del chasis.
+		const CMatrix vehMat = veh->IsBike() ? CMatrix(RwFrameGetLTM(frame))
+		                                     : veh->GetMatrix();
+		// El id del grupo g es idFirst + g*n + k mientras hay sitio en la banda de
+		// los dos primeros tramos: con n=8 (coches) son +40..+47 y +48..+55, y con
+		// n=4 (motos) +40..+43 y +44..+47, ranuras medidas como libres en la familia
+		// this+n de src/vehicles. El TERCER racimo en adelante no puede seguir ese
+		// stepped: +56..+63 y +64..+71 pisarian las coronas de faro y piloto del
+		// mismo coche ((uintptr)this+60..+69 en CCoronas::RegisterCorona de esta
+		// misma funcion), y dos efectos con el mismo id comparten ranura: el destello
+		// del racimo 3 se comia el del freno. De +100 hacia arriba no hay nada
+		// declarado en el arbol, asi que los racimos 3..5 viven ahi.
+		for (int g = 0; g < anch->nGroup; g++) {
+			const uint8 *measured = anch->hasCol[g] ? anch->rgb[g] : nil;
+			const uint32 id = g < 2 ? idFirst + g*n + k
+			                        : idFirst + 60 + (g-2)*n + k;
+			ViceExtIndicatorCorona(id, vehMat * anch->local[g],
+			                       anch->spread[g], anch->areaCm2[g], measured, on);
+#ifdef __EMSCRIPTEN__
+			if (odTrace && state) {
+				odEmitted = true;
+				char odLensTxt[16] = "-";
+				if (measured)
+					snprintf(odLensTxt, sizeof odLensTxt, "%d,%d,%d",
+						measured[0], measured[1], measured[2]);
+				RpMaterial *mat = ViceExtIndicatorLensMaterial(frame);
+				RwTexture *tex = mat != nil ? mat->texture : nil;
+				CBaseModelInfo *odBi = CModelInfo::GetModelInfo(veh->GetModelIndex());
+				char odT[260];
+				snprintf(odT, sizeof odT, "INDCORONA k=%d g=%d/ng=%d model=%d nombre=%s on=%d local=%.2f,%.2f,%.2f spread=%.2f tex=%s med=%s luces=%d salud=%.0f",
+					k, g, (int)anch->nGroup, (int)veh->GetModelIndex(),
+					odBi ? odBi->GetModelName() : "?",
+					on ? 1 : 0, anch->local[g].x, anch->local[g].y, anch->local[g].z,
+					anch->spread[g], tex ? tex->name : "-", odLensTxt,
+					veh->bLightsOn ? 1 : 0, veh->m_fHealth);
+				ODTRACES(odT);
+			}
+#endif
+		}
+	}
+#ifdef __EMSCRIPTEN__
+	if (odEmitted)
+		odNextIndTraza = odNow + 1000;
+#endif
+}
+
+// Nil = no tocar la textura del material. 'lightson' solo existe en los
+// rediseños que lo publican con su faro genérico (25 de los 115 servidos); en
+// el resto RpMaterialSetTexture dejaría el material con la lente ajena y no hay
+// forma de recuperar la suya, que es la que parpadea en su color.
+RwTexture *
+ViceExtLampTexture(CVehicleModelInfo *mi, bool on)
+{
+	if(mi->lightsOnTexture == nil)
+		return nil;
+	return on ? mi->lightsOnTexture : mi->lightsOffTexture;
+}
+
+// El nodo puede tener la lente repartida en varios atomics (los racimos de una
+// lente partida entre parachoques y salpicadero) y en varios materiales (el
+// cristal con su textura y el marco con la de carroceria). `GetCurrentAtomicObjectCB`
+// se queda con un solo atomic y leer solo materials[0] deja el resto sin
+// parpadear: media lente oscura. Los datos del mod usan un atomic y un material
+// por nodo, asi que recorrerlos todos no cambia la conducta de esos modelos.
+// Lo que el parpadeo escribe en los materiales de un nodo, todo salido de la
+// tabla medida: que materiales son lente, si su textura es el atlas blanco del
+// mod y que color tiene la lente. Nil de fila = nada declarado = no tocar color.
+struct ViceExtIndPaint {
+	bool on;
+	// Plan 58.0 T3: fila de CARROCERIA. El material se comparte con la pintura
+	// del panel, asi que no se sube el ambient (iluminaria medio panel) ni se
+	// tinte el color: solo se cambia la textura por su atlas derivado, y solo
+	// en los materiales de la mascara `mats` de la fila.
+	bool body;
+	uint8 tint;
+	uint32 mats;
+	uint8 atlas;
+	uint8 rgb[3];
+	// Plan 46.0 C1: las parejas atlas/atlas-derivado del modelo (nil si no
+	// existe). Se aplican por puntero, de modo que solo cambian los materiales
+	// que dibujan con el atlas de lente y nada mas.
+	uint8 numLens;
+	RwTexture *lensOff[VICEEXT_LENS_ATLAS_PAIRS];
+	RwTexture *lensOn[VICEEXT_LENS_ATLAS_PAIRS];
+};
+
+static RwObject *
+ViceExtIndicatorAtomicCB(RwObject *object, void *data)
+{
+	if (RwObjectGetType(object) != rpATOMIC)
+		return object;
+	RpGeometry *geometry = RpAtomicGetGeometry((RpAtomic*)object);
+	if (geometry != nil && geometry->matList.numMaterials > 0) {
+		const ViceExtIndPaint &p = *(const ViceExtIndPaint*)data;
+		// Mascara de lente: la misma formula que usa el barrido de anclas
+		// (ViceExtIndScanCB). Se excluye la carroceria solo cuando el nodo trae otra
+		// textura; si todo el atomic es panel, eso es lo que Rockstar nombro
+		// indicator_* y se deja (cuban, stinger y zebra tienen su lente pintada con
+		// la textura de body). Sin esta mascara el Hermes encendia 14 caras de
+		// capon por 2 de lente.
+		uint32 lens = 0;
+		if (p.body) {
+			lens = p.mats;
+		} else {
+			for (int32 m = 0; m < geometry->matList.numMaterials && m < 32; m++) {
+				RpMaterial *material = geometry->matList.materials[m];
+				if (material == nil || ViceExtIsBodyTexture(material->texture))
+					continue;
+				lens |= 1u << m;
+			}
+			if (lens == 0)
+				lens = ~0u;
+		}
+		for (int32 i = 0; i < geometry->matList.numMaterials; i++) {
+			if (i >= 32 || (lens & (1u << i)) == 0)
+				continue;
+			RpMaterial *material = geometry->matList.materials[i];
+			if (material == nil)
+				continue;
+			// En carroceria con material compartido el ambient no se toca:
+			// sube el ambient iluminaria el panel entero (plan 58.0 T3).
+			if (!p.body || p.tint)
+				material->surfaceProps.ambient = p.on ? 10.0f : 1.0f;
+			// Plan 46.0 C1: la textura se cambia ANTES de la puerta del color,
+			// que es de invencion y no de dato. Solo en el flanco encendido: con
+			// la lampara apagada el material vuelve a su atlas original, asi que
+			// el aspecto OFF sigue siendo bit a bit el de siempre. Idempotente:
+			// si ya lleva la textura pedida no se escribe. En carroceria solo se
+			// cambia el material de la mascara de la fila (p.mats).
+			if (p.numLens && (!p.body || (p.mats & (1u << i)))) {
+				for (int32 l = 0; l < p.numLens; l++) {
+					RwTexture *from = p.on ? p.lensOff[l] : p.lensOn[l];
+					if (material->texture == from) {
+						RpMaterialSetTexture(material, p.on ? p.lensOn[l] : p.lensOff[l]);
+						break;
+					}
+				}
+			}
+			// El tono SOLO donde la medida lo permite: el material ha de ser uno de
+			// los que la fila declara lente (p.mats) y la lente ha de pintarse sobre
+			// el atlas blanco del mod (p.atlas). Con textura propia el pixel ya trae
+			// el ambar y escribirlo en el material lo multiplicaria: la lente saldria
+			// mas oscura que el dato. Antes la puerta era el NOMBRE de la textura
+			// ('lights'), y dejaba sin pintar el `lightson` de los 25 redisenos que
+			// si publican su atlas.
+			if ((p.mats & (1u << i)) == 0 || p.atlas == 0)
+				continue;
+			// Apagado = el mismo color medido al 150/255, la relacion del par
+			// (255,225,0)/(150,125,0) del binario del mod, para que la lente no
+			// desaparezca del todo entre destellos.
+			const int k = p.on ? 255 : 150;
+			const RwRGBA col = { (uint8)(p.rgb[0]*k/255), (uint8)(p.rgb[1]*k/255),
+			                     (uint8)(p.rgb[2]*k/255), 255 };
+			RpMaterialSetColor(material, &col);
+		}
+	}
+	return object;
+}
 
 void
-ViceExtSetIndicatorMaterial(RwFrame *frame, bool on)
+ViceExtSetIndicatorMaterial(CVehicle *veh, int node, int side, RwFrame *frame, bool on)
 {
 	if (frame == nil)
 		return;
-	RpAtomic *atomic = nil;
-	RwFrameForAllObjects(frame, GetCurrentAtomicObjectCB, &atomic);
-	if (atomic == nil || RpAtomicGetGeometry(atomic) == nil)
+	// La clase resuelve (y cachea) la fila de la celda; sin fila no hay color ni
+	// materiales que pintar y el parpadeo se queda en el ambient de siempre.
+	ViceExtIndPaint p;
+	p.on = on;
+	p.body = false;
+	p.tint = 0;
+	p.mats = 0;
+	p.atlas = 0;
+	p.rgb[0] = p.rgb[1] = p.rgb[2] = 0;
+	// Las parejas de atlas vienen resueltas por modelo en SetClump; cero = el
+	// modelo no tiene atlas derivado y el parpadeo no toca texturas.
+	CVehicleModelInfo *odMi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
+	p.numLens = odMi != nil ? odMi->numIndicatorLensAtlases : 0;
+	for (int32 l = 0; l < p.numLens; l++) {
+		p.lensOff[l] = odMi->indicatorLensOff[l];
+		p.lensOn[l] = odMi->indicatorLensOn[l];
+	}
+	int amber = 0;
+	int kind = ODIND_AMBER;
+	ViceExtIndAnchor *slot = ViceExtIndAnchorSlot(veh, node, side, true);
+	if (slot != nil) {
+		if (slot->kind == ODIND_UNKNOWN)
+			ViceExtIndicatorLensKind(veh, node, side, frame);
+		kind = slot->kind;
+		p.mats = slot->paintMats;
+		p.atlas = slot->paintAtlas;
+		p.rgb[0] = slot->paintRgb[0];
+		p.rgb[1] = slot->paintRgb[1];
+		p.rgb[2] = slot->paintRgb[2];
+	} else {
+		// Cache de anclas lleno: la medida se lee en la tabla, cuesta un barrido de
+		// 262 filas y solo ocurre en los modelos que no cupieron.
+		ViceExtMeasuredLensCell(veh, node, side, &amber, &p.mats, &p.atlas, p.rgb);
+		kind = amber ? ODIND_AMBER : ODIND_NONE;
+	}
+	if (kind != ODIND_AMBER)
 		return;
-	RpGeometry *geometry = RpAtomicGetGeometry(atomic);
-	if (geometry->matList.numMaterials == 0)
-		return;
-	RpMaterial *material = geometry->matList.materials[0];
-	if (material == nil)
-		return;
-	material->surfaceProps.ambient = on ? 10.0f : 1.0f;
-	const RwRGBA onColor = { 255, 225, 0, 255 };
-	const RwRGBA offColor = { 150, 125, 0, 255 };
-	RpMaterialSetColor(material, on ? &onColor : &offColor);
+	RwFrameForAllObjects(frame, ViceExtIndicatorAtomicCB, &p);
 }
+
+#ifdef VICEEXT_BODY_LENS
+// Pintado de una lente de CARROCERIA (plan 58.0 T3). Reusa el callback de los
+// nodos con la bandera `body`: cambia la textura del material de la fila por su
+// atlas derivado `<atlas>_lens`. Con `tint` (59.0, medido en SetupModelNodes)
+// tambien sube el ambient al ambar medido, igual que hace la ruta del nodo: es
+// lo que enciende la otra mitad de la cara, la que vive en `chassis_hi`, cuando
+// ese material es exclusivo de la lente. Si el material se comparte con el
+// panel, `tint` vale 0 y sigue siendo solo textura: el derivado no diferencia
+// del original mas que en las texelas de la lente, asi que el aspecto OFF no
+// se toca.
+static void
+ViceExtSetBodyLensMaterial(CAutomobile *car, const ViceExtBodyLens &r, RwFrame *frame,
+                           bool on, bool tint)
+{
+	if (frame == nil)
+		return;
+	ViceExtIndPaint p;
+	p.on = on;
+	p.body = true;
+	p.mats = r.mats;
+	p.tint = tint ? 1 : 0;
+	p.atlas = tint ? 1 : 0;		// prohibido tintar el material compartido
+	p.rgb[0] = p.rgb[1] = p.rgb[2] = 0;
+	if (tint) {
+		p.rgb[0] = r.rgb[0];
+		p.rgb[1] = r.rgb[1];
+		p.rgb[2] = r.rgb[2];
+	}
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(car->GetModelIndex());
+	p.numLens = mi != nil ? mi->numIndicatorLensAtlases : 0;
+	for (int32 l = 0; l < p.numLens; l++) {
+		p.lensOff[l] = mi->indicatorLensOff[l];
+		p.lensOn[l] = mi->indicatorLensOn[l];
+	}
+	RwFrameForAllObjects(frame, ViceExtIndicatorAtomicCB, &p);
+}
+
+// Un nodo de intermitente es delantero si su enum es LF/RF (tambien los 2_*).
+static bool
+ViceExtBodyLensFront(int node)
+{
+	return node == CAR_INDICATOR_LF || node == CAR_INDICATOR_RF ||
+	       node == CAR_INDICATOR_2_LF || node == CAR_INDICATOR_2_RF;
+}
+
+// Destellos de las lentes de carroceria: una corona por fila, en el centroide
+// medido (xyz de la tabla) y con el color ambar medido, usando la misma corona
+// aditiva de los nodos (ViceExtIndicatorCorona, nearDist 0.10 del 46.0 C2 y
+// tamano 1.6 x diametro del 51.0 D1). Banda de ids (uintptr)this + 120 + i:
+// libre para estos modelos, cuyo barrido de nodos no llega al tramo +100..+123
+// de los racimos 3..5 (tienen como mucho un grupo de lente por nodo).
+static void
+ViceExtBodyLensCoronas(CAutomobile *car, bool leftState, bool rightState)
+{
+	if (car->m_nBodyLens == 0)
+		return;
+	const bool blink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
+	const bool allowed = ViceExtCarLampsAlive(car);
+	const CMatrix &vehMat = car->GetMatrix();
+	for (int i = 0; i < car->m_nBodyLens; i++) {
+		const ViceExtBodyLens &r = s_odBodyLens[car->m_aBodyLensRow[i]];
+		if (ViceExtIndicatorLensKind(car, r.node, r.side, car->m_aCarNodes[r.node]) == ODIND_AMBER)
+			continue;
+		const bool front = ViceExtBodyLensFront(r.node);
+		const bool state = r.side < 0 ? leftState : rightState;
+		const eLights light = front
+			? (r.side < 0 ? VEHLIGHT_FRONT_LEFT : VEHLIGHT_FRONT_RIGHT)
+			: (r.side < 0 ? VEHLIGHT_REAR_LEFT : VEHLIGHT_REAR_RIGHT);
+		const bool lampOk = car->Damage.GetLightStatus(light) == LIGHT_STATUS_OK;
+		const bool on = allowed && state && blink && lampOk;
+		const CVector pos = vehMat * CVector(r.xyz[0]*0.01f, r.xyz[1]*0.01f, r.xyz[2]*0.01f);
+		const uint32 id = (uint32)((uintptr)car + 120 + i);
+		ViceExtIndicatorCorona(id, pos, 0.0f, (float)r.area_cm2, r.rgb, on);
+	}
+}
+#endif
 
 void
 CAutomobile::ViceExtApplyIndicatorMaterials(void)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
-	const bool allowed = !bRenderScorched && GetStatus() != STATUS_WRECKED && m_fHealth >= 250.0f;
+	const bool allowed = ViceExtCarLampsAlive(this);
 	const bool blink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
-	const bool leftOn = allowed && m_bIndicatorState[INDICATORS_LEFT] && blink;
-	const bool rightOn = allowed && m_bIndicatorState[INDICATORS_RIGHT] && blink;
+	const bool leftState = m_bIndicatorState[INDICATORS_LEFT];
+	const bool rightState = m_bIndicatorState[INDICATORS_RIGHT];
+	const bool leftOn = allowed && leftState && blink;
+	const bool rightOn = allowed && rightState && blink;
 
-	// Nodos indicator_* reales: mismo color y ambient que el mod.
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_LF], leftOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_LR], leftOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_2_LF], leftOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_2_LR], leftOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_RF], rightOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_RR], rightOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_2_RF], rightOn);
-	ViceExtSetIndicatorMaterial(m_aCarNodes[CAR_INDICATOR_2_RR], rightOn);
+	// Cada nodo responde de la lente de su costado: un golpe en un lado rompe esa
+	// pilota y la del otro lado sigue parpadeando.
+	const bool frontL = ViceExtLampAlive(this, VEHLIGHT_FRONT_LEFT);
+	const bool frontR = ViceExtLampAlive(this, VEHLIGHT_FRONT_RIGHT);
+	const bool rearL  = ViceExtLampAlive(this, VEHLIGHT_REAR_LEFT);
+	const bool rearR  = ViceExtLampAlive(this, VEHLIGHT_REAR_RIGHT);
 
-	// Coches sin nodo indicator_*: el mod usa la textura lights/lightson del
-	// faro o piloto, no una corona inventada. Si el modelo no tiene ese atomic
-	// (p. ej. Faggio) no se enciende nada: no se anade una luz que el modelo no
-	// tiene.
+	// Nodos indicator_* reales: mismo color y ambient que el mod, con el color y
+	// los materiales que declara la tabla medida por racimo.
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_LF, -1, m_aCarNodes[CAR_INDICATOR_LF], leftOn && frontL);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_LR, -1, m_aCarNodes[CAR_INDICATOR_LR], leftOn && rearL);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_2_LF, -1, m_aCarNodes[CAR_INDICATOR_2_LF], leftOn && frontL);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_2_LR, -1, m_aCarNodes[CAR_INDICATOR_2_LR], leftOn && rearL);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_RF, 1, m_aCarNodes[CAR_INDICATOR_RF], rightOn && frontR);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_RR, 1, m_aCarNodes[CAR_INDICATOR_RR], rightOn && rearR);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_2_RF, 1, m_aCarNodes[CAR_INDICATOR_2_RF], rightOn && frontR);
+	ViceExtSetIndicatorMaterial(this, CAR_INDICATOR_2_RR, 1, m_aCarNodes[CAR_INDICATOR_2_RR], rightOn && rearR);
+
+#ifdef VICEEXT_BODY_LENS
+	// Lentes de carroceria (plan 58.0 T3): cada fila pinta SU frame con su
+	// mascara de material y el atlas derivado del modelo, en el costado que le
+	// toca. Mismo disparador que los nodos (estado + blink + lampara viva).
+	for (int i = 0; i < m_nBodyLens; i++) {
+		const ViceExtBodyLens &r = s_odBodyLens[m_aBodyLensRow[i]];
+		const bool front = ViceExtBodyLensFront(r.node);
+		const bool sideOn = r.side < 0 ? leftOn : rightOn;
+		const bool lampOk = front ? (r.side < 0 ? frontL : frontR)
+		                          : (r.side < 0 ? rearL : rearR);
+		ViceExtSetBodyLensMaterial(this, r, m_aBodyLensFrame[i], sideOn && lampOk,
+		                          m_aBodyLensTint[i] != 0);
+	}
+#endif
+
+	// Disparador del mod (Automobile.cpp:3775 y :3805 del Vice Extended): un
+	// costado que no tiene una lente ambar parpadea con su propio faro o piloto.
+	// El mod decide por «no hay nodo»; aqui se decide por «no hay ambar medido»,
+	// que es la misma regla que usa el barrido de coronas, para que el material y
+	// el destello no se contradigan: un nodo que guarda el faro blanco no es una
+	// direccional, y pintarlo de ámbar seria inventar (plan 42.1, regla matriz).
+	const bool amberLf = ViceExtSideHasAmberLens(this, CAR_INDICATOR_LF, CAR_INDICATOR_2_LF, -1);
+	const bool amberRf = ViceExtSideHasAmberLens(this, CAR_INDICATOR_RF, CAR_INDICATOR_2_RF, 1);
+	const bool amberLr = ViceExtSideHasAmberLens(this, CAR_INDICATOR_LR, CAR_INDICATOR_2_LR, -1);
+	const bool amberRr = ViceExtSideHasAmberLens(this, CAR_INDICATOR_RR, CAR_INDICATOR_2_RR, 1);
 
 	if (!allowed) {
-		// Un coche calcinado no conserva ninguna lente encendida, aunque el
-		// material se hubiera quedado en lightsOn al explosionar.
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], mi->lightsOffTexture, false);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], mi->lightsOffTexture, false);
+		// Un coche calcinado o ya en humo no conserva ninguna lente encendida,
+		// aunque el material se hubiera quedado en lightsOn al explosionar.
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], nil, false);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], nil, false);
 	} else {
-		// Sin nodo indicator_* no se enciende nada: el modelo no tiene un
-		// sector ambar aislado y no se inventa el parpadeo del faro/piloto.
-		// Los coches con lente naranja real se parchean con
-		// tools/indicator_audit.py --patch, que crea esos nodos.
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], bLightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, bLightsOn);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], bLightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, bLightsOn);
+		// El faro y el piloto parpadean cuando el costado no tiene una lente ambar
+		// (disparador del mod, Automobile.cpp:3775/3805). Con lente ambar, el
+		// parpadeo lo hace ese nodo y la lámpara sigue su estado normal.
+		const bool headL = ((!amberLf && leftState) ? blink : bLightsOn) && frontL;
+		const bool headR = ((!amberRf && rightState) ? blink : bLightsOn) && frontR;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], ViceExtLampTexture(mi, headL), headL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], ViceExtLampTexture(mi, headR), headR);
 
 		const bool tailBase = bLightsOn || (!mi->bNewLights && m_fBrakePedal > 0.0f);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], tailBase ? mi->lightsOnTexture : mi->lightsOffTexture, tailBase);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], tailBase ? mi->lightsOnTexture : mi->lightsOffTexture, tailBase);
+		const bool tailL = ((!amberLr && leftState) ? blink : tailBase) && rearL;
+		const bool tailR = ((!amberRr && rightState) ? blink : tailBase) && rearR;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], ViceExtLampTexture(mi, tailL), tailL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], ViceExtLampTexture(mi, tailR), tailR);
 	}
 
 }
@@ -2395,6 +3565,34 @@ CAutomobile::Teleport(CVector pos)
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 static void ViceExtSetLightMaterial(RwFrame *frame, RwTexture *tex, bool on);
+#endif
+
+#ifdef VICEEXT_LIGHT_SHADOW_ANCHOR
+// Plan 56.0 T5: donde vive la cota del desplazamiento del charco de luz, una
+// sola vez, porque faros y frenos tienen que anclarse cada uno a SU lampara.
+// El valor vanilla era `yb de la lampara + constante` sumado a una posicion a la
+// que YA se le habia aplicado la lampara (`lightR = GetMatrix() * tailLightPos`),
+// asi que la longitud del modelo entraba dos veces: en un turismo (yb de piloto
+// entre -1,8 y -2,5, medido en los 115 modelos del IDE) eso da lo que el jugador
+// aprobo en el plan 42, pero en un vehiculo de 11 m el charco de freno caia 3,45
+// m detras del autobus y el de faros empezaba 3,67 m delante de sus faros. La
+// quad aditiva va CENTRADA en la posicion que se pasa, con semiextension
+// 8,0/4,5 m delante de los faros y 1,0/1,0 en los frenos (`CastShadowEntityXY`,
+// src/renderer/Shadows.cpp:1628), luego lo que hay que atar es el desplazamiento
+// y no la extension. Tampoco se escala por longitud de caja: eso habria movido a
+// toda la flota. Cotas medidas modelo a modelo con
+// `C:\tmp\iav42\topes56t5.py`: [6,9] en los faros (el borde cercano del charco
+// queda a 1,0 m del faro como maximo) y [-2,2] en los frenos. Cambian 23 modelos
+// -18 de ellos mas de 0,5 m, todos largos: coach, bus, packer, trash, trash2,
+// firetruk, linerun, barracks, flatbed, yankee, stretch, romero, hunter y los
+// aereos/barcos- y 5 se mueven 12 cm o menos; las seis referencias del jugador
+// conservan su valor exacto (police 8,29/-0,62, sabre 8,52/-0,76, cabbie
+// 8,74/-0,75, rancher 8,58/-0,69, sandking 8,47/-0,31, benson 8,60/-1,53).
+static float
+ViceExtLightShadowOffset(float lampY, float base, float lo, float hi)
+{
+	return Clamp(lampY + base, lo, hi);
+}
 #endif
 
 void
@@ -3016,6 +4214,18 @@ CAutomobile::PreRender(void)
 		m_randomSeed/25000.0f < CWeather::Foggyness ||
 		m_randomSeed/25000.0f < CWeather::WetRoads;
 	bool forceLightsOff = false;
+#if defined VICEEXT_IMPROVED_MENU_AND_INPUT && defined VICEEXT_IMPROVED_VEHICLES_2
+	// H fija las luces del coche del jugador e ignora hora y clima. Al bajarse
+	// se suelta el override y vuelve el encendido automatico.
+	if(this == FindPlayerVehicle() && CPad::GetPad(0)->HeadlightsJustDown()){
+		bLightsForced = true;
+		bLightsOverride = !bLightsOn;
+	}
+	if(bLightsForced && pDriver != nil && pDriver->IsPlayer())
+		shouldLightsBeOn = bLightsOverride != 0;
+	else
+		bLightsForced = false;
+#endif
 	if(!forceLightsOff && shouldLightsBeOn != bLightsOn && GetStatus() != STATUS_WRECKED){
 #ifdef VICEEXT_IMPROVED_TECH_PART
 		if(GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_PLAYER_DISABLED){
@@ -3033,7 +4243,14 @@ CAutomobile::PreRender(void)
 	// Un coche calcinado no debe conservar ninguna luz: al explosionar queda
 	// en STATUS_WRECKED con m_fBrakePedal = 0.05 para que no ruede, y esa
 	// pizca de freno encendia los stops si no se cortaba aqui.
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	// Con Vice Extended la regla es la unica que manda en materiales y coronas
+	// (ViceExtCarLampsAlive): solo calcinado o explosionado cortan la instalacion.
+	// El dano por golpe se aplica lente a lente (ViceExtLampAlive).
+	const bool lightsAllowed = ViceExtCarLampsAlive(this);
+#else
 	const bool lightsAllowed = !bRenderScorched && GetStatus() != STATUS_WRECKED;
+#endif
 	if (!lightsAllowed)
 		bLightsOn = false;
 
@@ -3049,18 +4266,26 @@ CAutomobile::PreRender(void)
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	if(mi->bNewLights){
 		const bool headlightsOn = bLightsOn && lightsAllowed;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], headlightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, headlightsOn);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], headlightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, headlightsOn);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], headlightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, headlightsOn);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], headlightsOn ? mi->lightsOnTexture : mi->lightsOffTexture, headlightsOn);
+		// La lente rota se apaga tambien en el material, no solo en la corona:
+		// si no, el faro quedaba pintado como encendido sin destello.
+		const bool frontL = ViceExtLampAlive(this, VEHLIGHT_FRONT_LEFT);
+		const bool frontR = ViceExtLampAlive(this, VEHLIGHT_FRONT_RIGHT);
+		const bool rearL = ViceExtLampAlive(this, VEHLIGHT_REAR_LEFT);
+		const bool rearR = ViceExtLampAlive(this, VEHLIGHT_REAR_RIGHT);
+		const bool headOnL = headlightsOn && frontL;
+		const bool headOnR = headlightsOn && frontR;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], ViceExtLampTexture(mi, headOnL), headOnL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], ViceExtLampTexture(mi, headOnR), headOnR);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], ViceExtLampTexture(mi, headlightsOn && rearL), headlightsOn && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], ViceExtLampTexture(mi, headlightsOn && rearR), headlightsOn && rearR);
 
 		bool reversing = m_fGasPedal < 0.0f && lightsAllowed;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], reversing ? mi->lightsOnTexture : mi->lightsOffTexture, reversing);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], reversing ? mi->lightsOnTexture : mi->lightsOffTexture, reversing);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], ViceExtLampTexture(mi, reversing && rearL), reversing && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], ViceExtLampTexture(mi, reversing && rearR), reversing && rearR);
 
 		bool braking = GetStatus() != STATUS_ABANDONED && m_fBrakePedal > 0.0f && lightsAllowed;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], braking ? mi->lightsOnTexture : mi->lightsOffTexture, braking);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], braking ? mi->lightsOnTexture : mi->lightsOffTexture, braking);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], ViceExtLampTexture(mi, braking && rearL), braking && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], ViceExtLampTexture(mi, braking && rearR), braking && rearR);
 	}
 
 	if(UsesSiren() && mi->serviceLightsOffTexture && mi->serviceLightsOnTexture){
@@ -3125,7 +4350,68 @@ CAutomobile::PreRender(void)
 	}
 #endif
 
-	if(bEngineOn && bLightsOn || alarmOn || alarmOff){
+#ifdef __EMSCRIPTEN__
+	// El Glendale usa luces clasicas sin mallas de faro independientes.
+	// Registrar su estado al conducirlo permite distinguir encendido de dibujo.
+	if(GetModelIndex() == MI_GLENDALE && this == FindPlayerVehicle()){
+		static uint32 odNextGlendaleLightTrace = 0;
+		static int32 odGlendaleLightTraces = 0;
+		uint32 now = CTimer::GetTimeInMilliseconds();
+		if(odGlendaleLightTraces < 20 && now >= odNextGlendaleLightTrace){
+			odNextGlendaleLightTrace = now + 2000;
+			odGlendaleLightTraces++;
+			char trace[192];
+			snprintf(trace, sizeof trace, "GLENDALE_LUCES hora=%02d:%02d motor=%d luces=%d dano=%d,%d nuevas=%d sinCuadro=%d",
+				CClock::GetHours(), CClock::GetMinutes(), bEngineOn ? 1 : 0, bLightsOn ? 1 : 0,
+				(int)Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT), (int)Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT),
+				mi->bNewLights ? 1 : 0, (int)g_bWSPOptionNoLightSquare);
+			ODTRACES(trace);
+		}
+	}
+#endif
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+	// Los cuatro booleanos del Vice Extended (Automobile.cpp:8495-8503 del mod,
+	// y su gemelo 7856-7864 en la rama de luces rediseñadas): un costado que no
+	// tiene una direccional ambar usa su propio faro o piloto como intermitente,
+	// y la corona de esa lámpara tiene que parpadear con él. El mod decide por
+	// «no hay nodo»; aqui se decide por «no hay ambar medido», que es la regla que
+	// manda en materiales, en la tabla de lentes y en el barrido de coronas: asi
+	// un nodo que guarda el faro blanco no recibe un destello rojo o blanco
+	// nuevo, solo se apaga y se enciende el que el coche ya tenia.
+	// El byte del features.ini ya no decide esta ruta. En el binario enviado
+	// (ViceEx.exe, FUN_00612670 = CAutomobile::DoVehicleLights) solo la copia
+	// vieja pasa por ese flag; la rama bNewLights calcula los cuatro booleanos
+	// sin leer el ini. Ese flag del mod existe porque su `lights.c` pinta el
+	// intermitente en el MATERIAL de la lámpara, y la copia vieja necesita el
+	// ini para saber si tiene materiales que tocar. Aqui la puerta es el dato
+	// medido costado a costado, y los 90 modelos sin nodo de lámpara propio si
+	// pueden parpadear por destello y sombra, que no dependen de su geometría.
+	// Desviación `local addition` registrada en ADR-021.
+	const bool odBlink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
+	const bool odIndLeft = m_bIndicatorState[INDICATORS_LEFT] && lightsAllowed;
+	const bool odIndRight = m_bIndicatorState[INDICATORS_RIGHT] && lightsAllowed;
+	const bool odAmberLf = ViceExtSideHasAmberLens(this, CAR_INDICATOR_LF, CAR_INDICATOR_2_LF, -1);
+	const bool odAmberRf = ViceExtSideHasAmberLens(this, CAR_INDICATOR_RF, CAR_INDICATOR_2_RF, 1);
+	const bool odAmberLr = ViceExtSideHasAmberLens(this, CAR_INDICATOR_LR, CAR_INDICATOR_2_LR, -1);
+	const bool odAmberRr = ViceExtSideHasAmberLens(this, CAR_INDICATOR_RR, CAR_INDICATOR_2_RR, 1);
+	const bool odLikeFwdL = odIndLeft && !odAmberLf;
+	const bool odLikeFwdR = odIndRight && !odAmberRf;
+	const bool odLikeBackL = odIndLeft && !odAmberLr;
+	const bool odLikeBackR = odIndRight && !odAmberRr;
+	const bool odFwdOnL = odLikeFwdL ? odBlink : bLightsOn;
+	const bool odFwdOnR = odLikeFwdR ? odBlink : bLightsOn;
+	const bool odBackOnL = odLikeBackL ? odBlink : bLightsOn;
+	const bool odBackOnR = odLikeBackR ? odBlink : bLightsOn;
+	// Luces de suelo y luz de carretera del jugador: se mantienen con la regla
+	// vanilla (faros de verdad), porque si no un simple guiño de intermitente de
+	// dia barreria la calzada con un foco que no esta encendido.
+	const bool odLampGlare = bLightsOn || alarmOn;
+#else
+	const bool odFwdOnL = bLightsOn, odFwdOnR = bLightsOn;
+	const bool odBackOnL = bLightsOn, odBackOnR = bLightsOn;
+	const bool odLampGlare = bLightsOn || alarmOn;
+#endif
+	if(bEngineOn && (bLightsOn || odFwdOnL || odFwdOnR || odBackOnL || odBackOnR) || alarmOn || alarmOff){
 		CVector lookVector = GetPosition() - TheCamera.GetPosition();
 		float camDist = lookVector.Magnitude();
 		if(camDist != 0.0f)
@@ -3159,23 +4445,23 @@ CAutomobile::PreRender(void)
 			if(behindness < -0.97f && camDist < 30.0f && !mi->bNewLights){
 				// Directly in front and not too far away
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 						CCoronas::RegisterCorona((uintptr)this + 6, 150, 150, 195, 255,
 							lightL, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 						CCoronas::RegisterCorona((uintptr)this + 7, 150, 150, 195, 255,
 							lightR, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}else{
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 						CCoronas::RegisterCorona((uintptr)this + 6, 160, 160, 140, 255,
 							lightL, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 						CCoronas::RegisterCorona((uintptr)this + 7, 160, 160, 140, 255,
 							lightR, 1.2f, 45.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_HEADLIGHT, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3184,35 +4470,35 @@ CAutomobile::PreRender(void)
 			}
 
 			if(alarmOff){
-				if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+				if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 					CCoronas::RegisterCorona((uintptr)this, 0, 0, 0, 0,
 						lightL, size, 0.0f,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-				if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+				if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 					CCoronas::RegisterCorona((uintptr)this + 1, 0, 0, 0, 0,
 						lightR, size, 0.0f,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 			}else{
 				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 						CCoronas::RegisterCorona((uintptr)this, 190*intensity, 190*intensity, 255*intensity, 255,
 							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
 							mi->bNewLights ? CCoronas::TYPE_NORMAL : CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, mi->bNewLights ? CCoronas::STREAK_OFF : CCoronas::STREAK_ON, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 						CCoronas::RegisterCorona((uintptr)this + 1, 190*intensity, 190*intensity, 255*intensity, 255,
 							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
 							mi->bNewLights ? CCoronas::TYPE_NORMAL : CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, mi->bNewLights ? CCoronas::STREAK_OFF : CCoronas::STREAK_ON, angle);
 				}else{
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 						CCoronas::RegisterCorona((uintptr)this, 210*intensity, 210*intensity, 195*intensity, 255,
 							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
 							mi->bNewLights ? CCoronas::TYPE_NORMAL : CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, mi->bNewLights ? CCoronas::STREAK_OFF : CCoronas::STREAK_ON, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 						CCoronas::RegisterCorona((uintptr)this + 1, 210*intensity, 210*intensity, 195*intensity, 255,
 							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
 							mi->bNewLights ? CCoronas::TYPE_NORMAL : CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3221,16 +4507,16 @@ CAutomobile::PreRender(void)
 			}
 		}else{
 			// Behind car
-			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 				CCoronas::UpdateCoronaCoors((uintptr)this, lightL, 50.0f*TheCamera.LODDistMultiplier, angle);
-			if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+			if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 				CCoronas::UpdateCoronaCoors((uintptr)this + 1, lightR, 50.0f*TheCamera.LODDistMultiplier, angle);
 		}
 
 		// bright lights
-		if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && !bNoBrightHeadLights && !mi->bNewLights && !g_bWSPOptionNoLightSquare)
+		if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odLampGlare && !bNoBrightHeadLights && !mi->bNewLights && !g_bWSPOptionNoLightSquare)
 			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->FrontLights + BRIGHTLIGHT_FRONT);
-		if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && !bNoBrightHeadLights && !mi->bNewLights && !g_bWSPOptionNoLightSquare)
+		if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odLampGlare && !bNoBrightHeadLights && !mi->bNewLights && !g_bWSPOptionNoLightSquare)
 			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->FrontLights + BRIGHTLIGHT_FRONT);
 
 		// Taillights
@@ -3250,12 +4536,12 @@ CAutomobile::PreRender(void)
 				// reversing
 				intensity += 0.4f;
 				size += 0.3f;
-				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
+				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odBackOnL)
 					CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 128*intensity, 128*intensity, 255,
 						lightL, size, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-				if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
+				if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odBackOnR)
 					CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 128*intensity, 128*intensity, 255,
 						lightR, size, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3278,12 +4564,12 @@ CAutomobile::PreRender(void)
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
 				}else{
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odBackOnL)
 						CCoronas::RegisterCorona((uintptr)this + 14, 128*intensity, 0, 0, 255,
 							lightL, size, 50.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 							CCoronas::LOSCHECK_OFF, CCoronas::STREAK_ON, angle);
-					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odBackOnR)
 						CCoronas::RegisterCorona((uintptr)this + 15, 128*intensity, 0, 0, 255,
 							lightR, size, 50.0f*TheCamera.LODDistMultiplier,
 							CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3293,31 +4579,36 @@ CAutomobile::PreRender(void)
 		}else{
 			// In front of car
 			// missing LODDistMultiplier probably a BUG
-			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
+			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odBackOnL)
 				CCoronas::UpdateCoronaCoors((uintptr)this + 14, lightL, 50.0f, angle);
-			if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
+			if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odBackOnR)
 				CCoronas::UpdateCoronaCoors((uintptr)this + 15, lightR, 50.0f, angle);
 		}
 
 		// bright lights
-		if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && !g_bWSPOptionNoLightSquare)
+		if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odLampGlare && !g_bWSPOptionNoLightSquare)
 			CBrightLights::RegisterOne(lightL, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
-		if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && !g_bWSPOptionNoLightSquare)
+		if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odLampGlare && !g_bWSPOptionNoLightSquare)
 			CBrightLights::RegisterOne(lightR, GetUp(), GetRight(), GetForward(), pHandling->RearLights + BRIGHTLIGHT_REAR);
 
 		// Light shadows
 		if(!alarmOff){
 			CVector2D fwd(GetForward());
 			fwd.Normalise();
+			// Las cotas y su medida estan en ViceExtLightShadowOffset (T5).
+#ifdef VICEEXT_LIGHT_SHADOW_ANCHOR
+			float f = ViceExtLightShadowOffset(tailLightPos.y, 2.0f, -2.0f, 2.0f);
+#else
 			float f = tailLightPos.y + 2.0f;
-			if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK) {
+#endif
+			if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odBackOnR) {
 				lightR += CVector(f * fwd.x, f * fwd.y, 2.0f);
 				if(m_fGasPedal < 0.0f)
 					CShadows::StoreCarLightShadow(this, (uintptr)this + 27, gpShadowExplosionTex, &lightR, 1.0f, 0.0f, 0.0f, -1.0f, 35, 35, 35, 4.0f);
 				else
 					CShadows::StoreCarLightShadow(this, (uintptr)this + 27, gpShadowExplosionTex, &lightR, 1.0f, 0.0f, 0.0f, -1.0f, 35, 0, 0, 4.0f);
 			}
-			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK) {
+			if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odBackOnL) {
 				lightL += CVector(f * fwd.x, f * fwd.y, 2.0f);
 				if(m_fGasPedal < 0.0f)
 					CShadows::StoreCarLightShadow(this, (uintptr)this + 29, gpShadowExplosionTex, &lightL, 1.0f, 0.0f, 0.0f, -1.0f, 35, 35, 35, 4.0f);
@@ -3328,22 +4619,26 @@ CAutomobile::PreRender(void)
 			lightR = GetMatrix() * headLightPos;
 			lightL = lightR;
 			lightL -= GetRight() * 2.0f * headLightPos.x;
+#ifdef VICEEXT_LIGHT_SHADOW_ANCHOR
+			f = ViceExtLightShadowOffset(headLightPos.y, 6.0f, 6.0f, 9.0f);
+#else
 			f = headLightPos.y + 6.0f;
+#endif
 
-			if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK) {
+			if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR) {
 				lightR += CVector(f * fwd.x, f * fwd.y, 2.0f);
 				CShadows::StoreCarLightShadow(this, (uintptr)this + 22, gpShadowHeadLightsTex, &lightR, 8.0f * fwd.x, 8.0f * fwd.y,
 					4.5f * fwd.y, -4.5f * fwd.x, 45, 45, 45, 7.0f);
 			}
 
-			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK) {
+			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL) {
 				lightL += CVector(f * fwd.x, f * fwd.y, 2.0f);
 				CShadows::StoreCarLightShadow(this, (uintptr)this + 25, gpShadowHeadLightsTex, &lightL, 8.0f * fwd.x, 8.0f * fwd.y,
 					4.5f * fwd.y, -4.5f * fwd.x, 45, 45, 45, 7.0f);
 			}
 		}
 
-		if(this == FindPlayerVehicle() && !alarmOff){
+		if(this == FindPlayerVehicle() && !alarmOff && odLampGlare){
 			if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK ||
 			   Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
 				CPointLights::AddLight(CPointLights::LIGHT_DIRECTIONAL, GetPosition(), GetForward(),
@@ -3423,6 +4718,36 @@ CAutomobile::PreRender(void)
 		}
 	}
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
+	// Destello de las lentes de intermitente que el modelo tiene como nodo propio.
+	// Va fuera del gate principal a proposito, pero no por el motivo que se creyo
+	// al escribir esto: el bloque analogue del mod tampoco exige bLightsOn (M10 del
+	// plan 42.1 y lights.c:566-660 en el ViceEx.exe; cuelga de mi->bNewLights y se
+	// ejecuta despues de cerrarse la cadena if/else if). AQUI la razon es otra:
+	// este port lo saca del gate porque el gate principal pide bEngineOn, y un coche
+	// aparcado con el intermitente puesto debe seguir echando su destello.
+	// Dentro del barrido solo echa corona la lente ambar medida; los nodos que
+	// guardan el propio faro o piloto quedan fuera, y ese costado parpadea con la
+	// corona de su lampara (mas arriba, odFwdOn*/odBackOn*).
+	{
+		static const ViceExtIndSlot odIndSlots[8] = {
+			{ CAR_INDICATOR_LF, CAR_INDICATOR_LF, -1, VEHLIGHT_FRONT_LEFT },
+			{ CAR_INDICATOR_RF, CAR_INDICATOR_RF, 1, VEHLIGHT_FRONT_RIGHT },
+			{ CAR_INDICATOR_LR, CAR_INDICATOR_LR, -1, VEHLIGHT_REAR_LEFT },
+			{ CAR_INDICATOR_RR, CAR_INDICATOR_RR, 1, VEHLIGHT_REAR_RIGHT },
+			{ CAR_INDICATOR_2_LF, CAR_INDICATOR_2_LF, -1, VEHLIGHT_FRONT_LEFT },
+			{ CAR_INDICATOR_2_RF, CAR_INDICATOR_2_RF, 1, VEHLIGHT_FRONT_RIGHT },
+			{ CAR_INDICATOR_2_LR, CAR_INDICATOR_2_LR, -1, VEHLIGHT_REAR_LEFT },
+			{ CAR_INDICATOR_2_RR, CAR_INDICATOR_2_RR, 1, VEHLIGHT_REAR_RIGHT }
+		};
+		ViceExtIndicatorCoronas(this, &Damage, odIndSlots, 8, m_aCarNodes,
+			(uintptr)this + 40, odIndLeft, odIndRight);
+#ifdef VICEEXT_BODY_LENS
+		// Destello de las lentes ambar pintadas en la carroceria (plan 58.0 T3):
+		// una corona por fila medida, en su centroide y con su color. Va fuera
+		// del gate de bLightsOn igual que el barrido de nodos.
+		ViceExtBodyLensCoronas(this, odIndLeft, odIndRight);
+#endif
+	}
 #ifdef __EMSCRIPTEN__
 	{
 		static bool odLuzVisto[256] = { false };
@@ -3468,22 +4793,42 @@ CAutomobile::PreRender(void)
 		if(!headLight2.IsZero()){
 			lightR = GetMatrix() * headLight2;
 			lightL = lightR - GetRight()*2.0f*headLight2.x;
+			// Segunda corona del mismo faro: el binario (lights.c:725-829, ids
+			// this+26/27) la mueve el mismo estado que la primera, o sea
+			// bLeft/RightFwdLightsOn. Dejarla en bLightsOn dejaba en el Banshee un
+			// destello fijo detras del que si parpadeaba: dos focos blancos por
+			// lado y uno de ellos nunca se apagaba.
 			if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) < 0.0f &&
-			   (TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON || this != FindPlayerVehicle()) && bLightsOn){
-				if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+			   (TheCamera.Cams[TheCamera.ActiveCam].Mode != CCam::MODE_1STPERSON || this != FindPlayerVehicle())){
+				if(alarmOff){
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 60, 0, 0, 0, 0,
+						lightL, frontSize, 0.0f,
+						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 61, 0, 0, 0, 0,
+						lightR, frontSize, 0.0f,
+						CCoronas::TYPE_STREAK, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+				}else if(pHandling->Flags & HANDLING_HALOGEN_LIGHTS){
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 					CCoronas::RegisterCorona((uintptr)this + 60, 190*frontIntensity, 190*frontIntensity, 255*frontIntensity, 255,
 						lightL, frontSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 					CCoronas::RegisterCorona((uintptr)this + 61, 190*frontIntensity, 190*frontIntensity, 255*frontIntensity, 255,
 						lightR, frontSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
 				}else{
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK && odFwdOnL)
 					CCoronas::RegisterCorona((uintptr)this + 60, 210*frontIntensity, 210*frontIntensity, 195*frontIntensity, 255,
 						lightL, frontSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK && odFwdOnR)
 					CCoronas::RegisterCorona((uintptr)this + 61, 210*frontIntensity, 210*frontIntensity, 195*frontIntensity, 255,
 						lightR, frontSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3496,15 +4841,32 @@ CAutomobile::PreRender(void)
 		if(!tailLight2.IsZero()){
 			lightR = GetMatrix() * tailLight2;
 			lightL = lightR - GetRight()*2.0f*tailLight2.x;
-			if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f && bLightsOn){
-				CCoronas::RegisterCorona((uintptr)this + 62, 128*rearIntensity, 0, 0, 255,
-					lightL, rearSize, 50.0f*TheCamera.LODDistMultiplier,
-					CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
-				CCoronas::RegisterCorona((uintptr)this + 63, 128*rearIntensity, 0, 0, 255,
-					lightR, rearSize, 50.0f*TheCamera.LODDistMultiplier,
-					CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
-					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+			// Igual que arriba: el binario (lights.c:883-949, ids this+28/29) usa
+			// bLeft/RightBackLightsOn, no bLightsOn.
+			if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f){
+				if(alarmOff){
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 62, 0, 0, 0, 0,
+						lightL, rearSize, 0.0f,
+						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
+					CCoronas::RegisterCorona((uintptr)this + 63, 0, 0, 0, 0,
+						lightR, rearSize, 0.0f,
+						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+				}else{
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK && odBackOnL)
+					CCoronas::RegisterCorona((uintptr)this + 62, 128*rearIntensity, 0, 0, 255,
+						lightL, rearSize, 50.0f*TheCamera.LODDistMultiplier,
+						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK && odBackOnR)
+					CCoronas::RegisterCorona((uintptr)this + 63, 128*rearIntensity, 0, 0, 255,
+						lightR, rearSize, 50.0f*TheCamera.LODDistMultiplier,
+						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+				}
 			}
 		}
 
@@ -3514,11 +4876,14 @@ CAutomobile::PreRender(void)
 				continue;
 			lightR = GetMatrix() * revPos;
 			lightL = lightR - GetRight()*2.0f*revPos.x;
-			if(m_fGasPedal < 0.0f && DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f){
+			if(m_fGasPedal < 0.0f && lightsAllowed &&
+			   DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f){
+				if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
 				CCoronas::RegisterCorona((uintptr)this + 64 + r*2, 128*rearIntensity, 128*rearIntensity, 128*rearIntensity, 255,
 					lightL, rearSize, 50.0f*TheCamera.LODDistMultiplier,
 					CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 					CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+				if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
 				CCoronas::RegisterCorona((uintptr)this + 65 + r*2, 128*rearIntensity, 128*rearIntensity, 128*rearIntensity, 255,
 					lightR, rearSize, 50.0f*TheCamera.LODDistMultiplier,
 					CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -3534,10 +4899,12 @@ CAutomobile::PreRender(void)
 				lightR = GetMatrix() * brakePos;
 				lightL = lightR - GetRight()*2.0f*brakePos.x;
 				if(DotProduct(lightR-TheCamera.GetPosition(), GetForward()) > 0.0f){
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
 					CCoronas::RegisterCorona((uintptr)this + 68 + b*2, 128*rearIntensity, 0, 0, 255,
 						lightL, rearSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 						CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, angle);
+					if(Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
 					CCoronas::RegisterCorona((uintptr)this + 69 + b*2, 128*rearIntensity, 0, 0, 255,
 						lightR, rearSize, 50.0f*TheCamera.LODDistMultiplier,
 						CCoronas::TYPE_NORMAL, CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
@@ -4029,42 +5396,12 @@ CAutomobile::PreRender(void)
 	}
 }
 
-#ifdef __EMSCRIPTEN__
-static RpAtomic *
-ViceExtAtomTraceCB(RpAtomic *atomic, void *data)
-{
-	const char *odN = GetFrameNodeName(RpAtomicGetFrame(atomic));
-	char t[168];
-	snprintf(t, sizeof t, "VEHATOM n=%s ren=%d id=0x%x",
-		odN ? odN : "?",
-		(RpAtomicGetFlags(atomic) & rpATOMICRENDER) ? 1 : 0,
-		(unsigned int)CVisibilityPlugins::GetAtomicId(atomic));
-	ODTRACES(t);
-	return atomic;
-}
-#endif
-
 void
 CAutomobile::Render(void)
 {
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 
 	mi->SetVehicleColour(m_currentColour1, m_currentColour2);
-
-#ifdef __EMSCRIPTEN__
-	{
-		static uint32 odNextAtom = 0;
-		uint32 odNow = CTimer::GetTimeInMilliseconds();
-		float odD2 = (TheCamera.GetPosition() - GetPosition()).MagnitudeSqr();
-		if(odD2 < 64.0f && (odNow >= odNextAtom || odNow + 60000 < odNextAtom)){
-			odNextAtom = odNow + 1000;
-			char t[96];
-			snprintf(t, sizeof t, "VEHATOM cabecera modelo=%d d=%.1f", GetModelIndex(), Sqrt(odD2));
-			ODTRACES(t);
-			RpClumpForAllAtomics(GetClump(), ViceExtAtomTraceCB, nil);
-		}
-	}
-#endif
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	ViceExtApplyIndicatorMaterials();
@@ -5517,12 +6854,22 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 				GetComponentWorldPosition(CAR_BUMP_FRONT, pos);
 				dmgDrawCarCollidingParticles(pos, impulse*damageMultiplier);
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
+				// El mod solo apaga una lupa si esa lupa VIVE en la pieza golpeada:
+				// newLightsData sale del dummy padre del nodo en el propio DFF. En el
+				// arbol servido son 6 modelos con el faro en el parachoques delantero
+				// y 14 con luces en el ala; el resto cuelga del chasis, asi que un
+				// toque de morro NO les apaga nada. Sin esta puerta el port rompía
+				// los dos faros con cualquier golpe de parachoques (el «daño
+				// demasiado exagerado» del jugador).
 				if(Damage.ApplyDamage(COMPONENT_BUMPER_FRONT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)){
 					SetBumperDamage(CAR_BUMP_FRONT, VEHBUMPER_FRONT);
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_LEFT, LIGHT_STATUS_BROKEN);
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_RIGHT, LIGHT_STATUS_BROKEN);
+					CVehicleModelInfo *mi = GetModelInfo();
+					if(mi->newLightsData.bBumperHeadlights ||
+					   mi->newLightsData.bBumperForwardIndicators1 ||
+					   mi->newLightsData.bBumperForwardIndicators2){
+						ViceExtBreakLamp(this, VEHLIGHT_FRONT_LEFT);
+						ViceExtBreakLamp(this, VEHLIGHT_FRONT_RIGHT);
+					}
 				}
 #else
 				if(Damage.ApplyDamage(COMPONENT_BUMPER_FRONT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
@@ -5537,12 +6884,12 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 						SetDoorDamage(CAR_BONNET, DOOR_BONNET);
 				}
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
-				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue) {
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_LEFT, LIGHT_STATUS_BROKEN);
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_RIGHT, LIGHT_STATUS_BROKEN);
-				}
+				// Un dado por lupa, como el mod (una linea por lampara), en vez de
+				// un dado compartido que apagaba las dos del frente de golpe.
+				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue)
+					ViceExtBreakLamp(this, VEHLIGHT_FRONT_LEFT);
+				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue)
+					ViceExtBreakLamp(this, VEHLIGHT_FRONT_RIGHT);
 #endif
 				break;
 
@@ -5552,10 +6899,15 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 				if(Damage.ApplyDamage(COMPONENT_BUMPER_REAR, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)){
 					SetBumperDamage(CAR_BUMP_REAR, VEHBUMPER_REAR);
-					if (Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_REAR_LEFT, LIGHT_STATUS_BROKEN);
-					if (Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_REAR_RIGHT, LIGHT_STATUS_BROKEN);
+					CVehicleModelInfo *mi = GetModelInfo();
+					if(mi->newLightsData.bBumperTaillights ||
+					   mi->newLightsData.bBumperRearIndicators1 ||
+					   mi->newLightsData.bBumperRearIndicators2 ||
+					   mi->newLightsData.bBumperBrakelights ||
+					   mi->newLightsData.bBumperReversinglights){
+						ViceExtBreakLamp(this, VEHLIGHT_REAR_LEFT);
+						ViceExtBreakLamp(this, VEHLIGHT_REAR_RIGHT);
+					}
 				}
 #else
 				if(Damage.ApplyDamage(COMPONENT_BUMPER_REAR, impulse*impulseMult, pHandling->fCollisionDamageMultiplier))
@@ -5569,12 +6921,10 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 						SetDoorDamage(CAR_BOOT, DOOR_BOOT);
 				}
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
-				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue) {
-					if (Damage.GetLightStatus(VEHLIGHT_REAR_LEFT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_REAR_LEFT, LIGHT_STATUS_BROKEN);
-					if (Damage.GetLightStatus(VEHLIGHT_REAR_RIGHT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_REAR_RIGHT, LIGHT_STATUS_BROKEN);
-				}
+				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue)
+					ViceExtBreakLamp(this, VEHLIGHT_REAR_LEFT);
+				if (CGeneral::GetRandomNumberInRange(0.0f, maxImpulse) > comparedValue)
+					ViceExtBreakLamp(this, VEHLIGHT_REAR_RIGHT);
 #endif
 				break;
 
@@ -5609,8 +6959,13 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_LEFT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)) {
 					SetPanelDamage(CAR_WING_LF, VEHPANEL_FRONT_LEFT);
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_LEFT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_LEFT, LIGHT_STATUS_BROKEN);
+					// Mismo criterio que el mod: el ala solo apaga la lupa que cuelga
+					// de ella (bWingHeadlights / bWingIndicators*), y solo de su lado.
+					CVehicleModelInfo *mi = GetModelInfo();
+					if (mi->newLightsData.bWingHeadlights ||
+					    mi->newLightsData.bWingIndicators1 ||
+					    mi->newLightsData.bWingIndicators2)
+						ViceExtBreakLamp(this, VEHLIGHT_FRONT_LEFT);
 #endif
 				}
 				break;
@@ -5620,8 +6975,11 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 				if(Damage.ApplyDamage(COMPONENT_PANEL_FRONT_RIGHT, impulse*impulseMult, pHandling->fCollisionDamageMultiplier)) {
 					SetPanelDamage(CAR_WING_RF, VEHPANEL_FRONT_RIGHT);
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
-					if (Damage.GetLightStatus(VEHLIGHT_FRONT_RIGHT) == LIGHT_STATUS_OK)
-						Damage.SetLightStatus(VEHLIGHT_FRONT_RIGHT, LIGHT_STATUS_BROKEN);
+					CVehicleModelInfo *mi = GetModelInfo();
+					if (mi->newLightsData.bWingHeadlights ||
+					    mi->newLightsData.bWingIndicators1 ||
+					    mi->newLightsData.bWingIndicators2)
+						ViceExtBreakLamp(this, VEHLIGHT_FRONT_RIGHT);
 #endif
 				}
 				break;
@@ -7500,6 +8858,245 @@ CAutomobile::SetComponentVisibility(RwFrame *frame, uint32 flags)
 	RwFrameForAllChildren(frame, SetVehicleAtomicVisibilityRecurseCB, (void*)flags);
 }
 
+#ifdef VICEEXT_BODY_LENS
+// Busca un frame de carroceria por nombre en la jerarquia del clump. Los frames
+// de carroceria (chassis_hi, wing_*_hi_ok, bump_front_hi_ok) NO estan en
+// m_aCarNodes, asi que se resuelven aqui, una vez por vehiculo (plan 58.0 T3).
+struct ViceExtBodyLensFind {
+	const char *name;
+	RwFrame *found;
+};
+static RwFrame *
+ViceExtBodyLensFindCB(RwFrame *frame, void *data)
+{
+	ViceExtBodyLensFind *f = (ViceExtBodyLensFind*)data;
+	const char *n = GetFrameNodeName(frame);
+	if (n != nil && !CGeneral::faststricmp(n, f->name)) {
+		f->found = frame;
+		return nil;
+	}
+	RwFrameForAllChildren(frame, ViceExtBodyLensFindCB, data);
+	return f->found ? nil : frame;
+}
+
+// Plan 58.2: la busqueda por nombre fallo en el fbiranch (el log del jugador dio
+// `BODYLENS model=fbiranch filas=2` de 6): cuatro frames de carroceria no
+// aparecieron por nombre en la jerarquia en runtime. Respaldo sin nombres: el
+// atomic cuyo centroide de los materiales de la fila cae donde la fila dice que
+// esta la lente (xyz medido, tolerancia 0,35 m). La posicion es la medida del
+// DFF, asi que no depende de plugins de nombre ni de copias del clump.
+struct ViceExtBodyLensByPos {
+	const ViceExtBodyLens *row;
+	RwFrame *found;
+	int32 tris;
+	float dist;
+};
+static RpAtomic *
+ViceExtBodyLensByPosCB(RpAtomic *atomic, void *data)
+{
+	ViceExtBodyLensByPos *s = (ViceExtBodyLensByPos*)data;
+	RpGeometry *geo = RpAtomicGetGeometry(atomic);
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	if (geo == nil || frame == nil || geo->numMorphTargets < 1 ||
+	    geo->morphTargets[0].vertices == nil)
+		return atomic;
+	const char *fn = GetFrameNodeName(frame);
+	if (fn != nil && strstr(fn, "_dam") != nil)
+		return atomic;
+	const RwMatrix *m = RwFrameGetLTM(frame);
+	const RwV3d *verts = geo->morphTargets[0].vertices;
+	const float tx = s->row->xyz[0]*0.01f;
+	const float ty = s->row->xyz[1]*0.01f;
+	const float tz = s->row->xyz[2]*0.01f;
+	int hits = 0;
+	float best = 1000.0f;
+	for (int32 t = 0; t < geo->numTriangles; t++) {
+		if (!(s->row->mats & (1u << geo->triangles[t].matId)))
+			continue;
+		float cx = 0.0f, cy = 0.0f, cz = 0.0f;
+		for (int k = 0; k < 3; k++) {
+			const RwV3d &v = verts[geo->triangles[t].v[k]];
+			cx += m->right.x*v.x + m->up.x*v.y + m->at.x*v.z + m->pos.x;
+			cy += m->right.y*v.x + m->up.y*v.y + m->at.y*v.z + m->pos.y;
+			cz += m->right.z*v.x + m->up.z*v.y + m->at.z*v.z + m->pos.z;
+		}
+		const float dx = cx/3.0f - tx;
+		const float dy = cy/3.0f - ty;
+		const float dz = cz/3.0f - tz;
+		const float d2 = dx*dx + dy*dy + dz*dz;
+		if (d2 <= 0.25f*0.25f) {
+			hits++;
+			const float d = (float)sqrt(d2);
+			if (d < best) best = d;
+		}
+	}
+	if (hits > s->tris || (hits == s->tris && hits > 0 && best < s->dist)) {
+		s->found = frame;
+		s->tris = hits;
+		s->dist = best;
+	}
+	return atomic;
+}
+
+// 59.0: el tinte de la ruta del nodo (ambient medido, 255 encendido / 150
+// apagado) solo vale si TODO lo que pinta ese material es lente. No lo decide
+// el nombre sino la geometria medida: en rumpo el rectangulo UV de la lente lo
+// pisan tambien doce caras del material del capo, y un material compartido
+// teñido encenderia la pintura del coche, que es exactamente la invencion que
+// el jugador rechazo. "Es lente" = su centroide cae a <= 0,35 m de alguna de
+// las lentes medidas del modelo (el material 5 de rumpo guarda la delantera Y
+// la trasera del mismo costado: ambas son lente y ambas parpadean juntas).
+// Se mide sobre los mismos atomics que luego pinta ViceExtSetBodyLensMaterial.
+#define VICEEXT_BODY_LENS_CENTROS 24
+struct ViceExtBodyLensExclusive {
+	uint32 mats;
+	int16 xyz[VICEEXT_BODY_LENS_CENTROS][3];
+	int n;
+	int32 dentro;
+	int32 fuera;
+};
+static RwObject *
+ViceExtBodyLensExclusiveCB(RwObject *obj, void *data)
+{
+	ViceExtBodyLensExclusive *e = (ViceExtBodyLensExclusive*)data;
+	RpAtomic *atomic = (RpAtomic*)obj;
+	RpGeometry *geo = RpAtomicGetGeometry(atomic);
+	RwFrame *frame = RpAtomicGetFrame(atomic);
+	if (geo == nil || frame == nil || geo->numMorphTargets < 1 ||
+	    geo->morphTargets[0].vertices == nil)
+		return obj;
+	const RwMatrix *m = RwFrameGetLTM(frame);
+	const RwV3d *verts = geo->morphTargets[0].vertices;
+	for (int32 t = 0; t < geo->numTriangles; t++) {
+		if (!(e->mats & (1u << geo->triangles[t].matId)))
+			continue;
+		float cx = 0.0f, cy = 0.0f, cz = 0.0f;
+		for (int k = 0; k < 3; k++) {
+			const RwV3d &v = verts[geo->triangles[t].v[k]];
+			cx += m->right.x*v.x + m->up.x*v.y + m->at.x*v.z + m->pos.x;
+			cy += m->right.y*v.x + m->up.y*v.y + m->at.y*v.z + m->pos.y;
+			cz += m->right.z*v.x + m->up.z*v.y + m->at.z*v.z + m->pos.z;
+		}
+		cx /= 3.0f;
+		cy /= 3.0f;
+		cz /= 3.0f;
+		int lente = 0;
+		for (int i = 0; i < e->n && !lente; i++) {
+			const float dx = cx - e->xyz[i][0]*0.01f;
+			const float dy = cy - e->xyz[i][1]*0.01f;
+			const float dz = cz - e->xyz[i][2]*0.01f;
+			if (dx*dx + dy*dy + dz*dz <= 0.35f*0.35f)
+				lente = 1;
+		}
+		if (lente)
+			e->dentro++;
+		else
+			e->fuera++;
+	}
+	return obj;
+}
+#endif
+
+void
+CAutomobile::ViceExtSetupBodyLens(void)
+{
+#ifdef VICEEXT_BODY_LENS
+	m_nBodyLens = 0;
+	for (int i = 0; i < VICEEXT_BODY_LENS_MAX; i++) {
+		m_aBodyLensFrame[i] = nil;
+		m_aBodyLensRow[i] = -1;
+		m_aBodyLensTint[i] = 0;
+	}
+	CBaseModelInfo *bi = CModelInfo::GetModelInfo(GetModelIndex());
+	const char *nm = bi != nil ? bi->GetModelName() : nil;
+	if (nm == nil)
+		return;
+	RwFrameUpdateObjects(RpClumpGetFrame(GetClump()));
+	// Centros de las lentes medidas de este modelo: sirven para decidir si un
+	// material de carrocería es exclusivo de lente (59.0, ver el callback).
+	int16 centros[VICEEXT_BODY_LENS_CENTROS][3];
+	int ncentros = 0;
+	for (uint32 k = 0; k < ARRAY_SIZE(s_odBodyLens) && ncentros < VICEEXT_BODY_LENS_CENTROS; k++) {
+		if (CGeneral::faststricmp(s_odBodyLens[k].name, nm))
+			continue;
+		centros[ncentros][0] = s_odBodyLens[k].xyz[0];
+		centros[ncentros][1] = s_odBodyLens[k].xyz[1];
+		centros[ncentros][2] = s_odBodyLens[k].xyz[2];
+		ncentros++;
+	}
+	for (uint32 i = 0; i < ARRAY_SIZE(s_odBodyLens) && m_nBodyLens < VICEEXT_BODY_LENS_MAX; i++) {
+		const ViceExtBodyLens &r = s_odBodyLens[i];
+		if (CGeneral::faststricmp(r.name, nm))
+			continue;
+		ViceExtBodyLensByPos s;
+		s.row = &r;
+		s.found = nil;
+		s.tris = 0;
+		s.dist = 1000.0f;
+		RpClumpForAllAtomics(GetClump(), ViceExtBodyLensByPosCB, &s);
+		RwFrame *found = s.found;
+		if (found == nil) {
+			ViceExtBodyLensFind f;
+			f.name = r.frame;
+			f.found = nil;
+			RwFrameForAllChildren(RpClumpGetFrame(GetClump()), ViceExtBodyLensFindCB, &f);
+			found = f.found;
+		}
+		uint8 tint = 0;
+		int32 ndentro = 0, nfuera = 0;
+		if (found != nil && ncentros > 0) {
+			ViceExtBodyLensExclusive e;
+			e.mats = r.mats;
+			e.n = ncentros;
+			for (int k = 0; k < ncentros; k++) {
+				e.xyz[k][0] = centros[k][0];
+				e.xyz[k][1] = centros[k][1];
+				e.xyz[k][2] = centros[k][2];
+			}
+			e.dentro = 0;
+			e.fuera = 0;
+			RwFrameForAllObjects(found, ViceExtBodyLensExclusiveCB, &e);
+			ndentro = e.dentro;
+			nfuera = e.fuera;
+			tint = (ndentro > 0 && nfuera == 0) ? 1 : 0;
+		}
+#ifdef __EMSCRIPTEN__
+		{
+			char t[200];
+			const char *rfn = found ? GetFrameNodeName(found) : nil;
+			snprintf(t, sizeof t, "BODYLENSROW model=%s frame=%s tris=%d dist=%.3f "
+			         "excl=%d/%d tint=%d %s",
+			         nm, rfn ? rfn : r.frame, (int)s.tris, s.dist,
+			         (int)ndentro, (int)nfuera, (int)tint, found ? "ok" : "falta");
+			ODTRACES(t);
+		}
+#endif
+		if (found == nil)
+			continue;	// sin frame no hay lente que pintar: no se declara
+		m_aBodyLensFrame[m_nBodyLens] = found;
+		m_aBodyLensRow[m_nBodyLens] = (int16)i;
+		m_aBodyLensTint[m_nBodyLens] = tint;
+		m_nBodyLens++;
+	}
+#ifdef __EMSCRIPTEN__
+	{
+		char t[160];
+		snprintf(t, sizeof t, "BODYLENS model=%s filas=%d", nm, (int)m_nBodyLens);
+		ODTRACES(t);
+	}
+	{
+		char t[160];
+		snprintf(t, sizeof t, "AMBERGATE model=%s lf=%d rf=%d lr=%d rr=%d", nm,
+		         ViceExtSideHasAmberLens(this, CAR_INDICATOR_LF, CAR_INDICATOR_2_LF, -1) ? 1 : 0,
+		         ViceExtSideHasAmberLens(this, CAR_INDICATOR_RF, CAR_INDICATOR_2_RF, 1) ? 1 : 0,
+		         ViceExtSideHasAmberLens(this, CAR_INDICATOR_LR, CAR_INDICATOR_2_LR, -1) ? 1 : 0,
+		         ViceExtSideHasAmberLens(this, CAR_INDICATOR_RR, CAR_INDICATOR_2_RR, 1) ? 1 : 0);
+		ODTRACES(t);
+	}
+#endif
+#endif
+}
+
 void
 CAutomobile::SetupModelNodes(void)
 {
@@ -7507,6 +9104,9 @@ CAutomobile::SetupModelNodes(void)
 	for(i = 0; i < NUM_CAR_NODES; i++)
 		m_aCarNodes[i] = nil;
 	CClumpModelInfo::FillFrameArray(GetClump(), m_aCarNodes);
+#ifdef VICEEXT_BODY_LENS
+	ViceExtSetupBodyLens();
+#endif
 }
 
 void

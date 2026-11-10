@@ -98,6 +98,11 @@ public:
 	tWheelState m_aWheelState[2];
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	bool m_bIndicatorState[2];
+	// Plan 51.0 D4 / 51.1 E1, igual que en los coches: latch del jugador que
+	// sobrevive a bajarse, y marca de que el NPC iba en luces de parqueo (las
+	// apaga el solo al volver a andar).
+	bool m_bIndicatorLatched;
+	bool m_bIndicatorNpcHazard;
 	void ViceExtProcessTurnSignals(void);
 	void ViceExtApplyIndicatorMaterials(void);
 #endif

@@ -249,6 +249,11 @@ CVehicleModelInfo::CVehicleModelInfo(void)
 	lightsOnTexture = nil;
 	serviceLightsOffTexture = nil;
 	serviceLightsOnTexture = nil;
+	for(i = 0; i < VICEEXT_LENS_ATLAS_PAIRS; i++){
+		indicatorLensOff[i] = nil;
+		indicatorLensOn[i] = nil;
+	}
+	numIndicatorLensAtlases = 0;
 	newLightsData = tNewLightsData();
 #endif
 }
@@ -358,75 +363,186 @@ SetWheelRendererCB(RwObject *object, void *data)
 }
 
 #ifdef __EMSCRIPTEN__
+// La malla (chunk 0x50E) de muchos vehiculos del mod se convirtio con indices
+// sustituidos por 0, el marcador de costura del conversor. El vertice 0 es el
+// origen del coche, asi que esos triangulos se estiran hasta el centro del
+// modelo (se ven dentro de la cabina, en puertas y en el capo). La lista de
+// triangulos del DFF si es fiel al modelo: se reconstruye la malla desde ella
+// una vez, al cargar el vehiculo, en lugar de parchear coches a mano.
+static bool
+OdVehicleGeometryValid(RpGeometry *geo)
+{
+	if(geo->triangles == nil || geo->meshHeader == nil || (geo->flags & rpGEOMETRYNATIVE))
+		return false;
+	if(geo->numTriangles <= 0 || geo->numTriangles > 1333333 ||
+	   geo->numVertices <= 0 || geo->numVertices > 65535 || geo->matList.numMaterials <= 0)
+		return false;
+	for(int32 t = 0; t < geo->numTriangles; t++){
+		rw::Triangle *tri = &geo->triangles[t];
+		if(tri->matId >= geo->matList.numMaterials || geo->matList.materials[tri->matId] == nil ||
+		   tri->v[0] >= geo->numVertices || tri->v[1] >= geo->numVertices || tri->v[2] >= geo->numVertices)
+			return false;
+	}
+	return true;
+}
+
+// Meshes de la malla reconstruida: solo los materiales que tienen triangulos.
+// Un mesh con 0 indices rompe el instanciado (findMinVertAndNumVertices), asi
+// que no se puede usar Geometry::buildMeshes tal cual.
+static int32
+OdVehicleUsedMaterials(RpGeometry *geo, bool *used)
+{
+	int32 count = 0;
+	for(int32 m = 0; m < geo->matList.numMaterials; m++){
+		used[m] = false;
+		for(int32 t = 0; t < geo->numTriangles; t++)
+			if(geo->triangles[t].matId == m){
+				used[m] = true;
+				count++;
+				break;
+			}
+	}
+	return count;
+}
+
+static bool
+OdVehicleMeshMatches(RpGeometry *geo, bool *used, int32 usedCount)
+{
+	rw::MeshHeader *header = geo->meshHeader;
+	if(header->flags != 0 || header->numMeshes != usedCount ||
+	   header->totalIndices != (uint32)geo->numTriangles*3)
+		return false;
+	rw::Mesh *meshes = header->getMeshes();
+	int32 slot = 0;
+	for(int32 m = 0; m < geo->matList.numMaterials; m++){
+		if(!used[m])
+			continue;
+		rw::Mesh *mesh = &meshes[slot++];
+		if(mesh->material != geo->matList.materials[m] || mesh->indices == nil)
+			return false;
+		uint32 index = 0;
+		for(int32 t = 0; t < geo->numTriangles; t++){
+			rw::Triangle *tri = &geo->triangles[t];
+			if(tri->matId != m)
+				continue;
+			if(index + 2 >= mesh->numIndices ||
+			   mesh->indices[index] != tri->v[0] ||
+			   mesh->indices[index + 1] != tri->v[1] ||
+			   mesh->indices[index + 2] != tri->v[2])
+				return false;
+			index += 3;
+		}
+		if(index != mesh->numIndices)
+			return false;
+	}
+	return true;
+}
+
+// Devuelve true si hubo que reconstruir la malla (el modelo estaba corrupto).
+static bool
+OdRebuildVehicleMesh(RpGeometry *geo)
+{
+	bool *used = rwNewT(bool, geo->matList.numMaterials, rw::MEMDUR_EVENT | rw::ID_GEOMETRY);
+	int32 usedCount = OdVehicleUsedMaterials(geo, used);
+	bool matches = OdVehicleMeshMatches(geo, used, usedCount);
+	if(!matches){
+		rwFree(geo->meshHeader);
+		geo->meshHeader = nil;
+		geo->flags &= ~rw::Geometry::TRISTRIP;
+		rw::MeshHeader *header = geo->allocateMeshes(usedCount, (uint32)geo->numTriangles*3, false);
+		rw::Mesh *meshes = header->getMeshes();
+		int32 slot = 0;
+		for(int32 m = 0; m < geo->matList.numMaterials; m++){
+			if(!used[m])
+				continue;
+			int32 count = 0;
+			for(int32 t = 0; t < geo->numTriangles; t++)
+				if(geo->triangles[t].matId == m)
+					count += 3;
+			meshes[slot].material = geo->matList.materials[m];
+			meshes[slot].numIndices = count;
+			slot++;
+		}
+		header->setupIndices();
+		slot = 0;
+		for(int32 m = 0; m < geo->matList.numMaterials; m++){
+			if(!used[m])
+				continue;
+			uint32 index = 0;
+			for(int32 t = 0; t < geo->numTriangles; t++){
+				rw::Triangle *tri = &geo->triangles[t];
+				if(tri->matId != m)
+					continue;
+				meshes[slot].indices[index++] = tri->v[0];
+				meshes[slot].indices[index++] = tri->v[1];
+				meshes[slot].indices[index++] = tri->v[2];
+			}
+			slot++;
+		}
+	}
+	rwFree(used);
+	return !matches;
+}
+
 static RpAtomic*
 OdRepairVehicleMesh(RpAtomic *atomic, void *data)
 {
 	RpGeometry *geo = RpAtomicGetGeometry(atomic);
-	if(geo == nil || geo->triangles == nil || geo->meshHeader == nil ||
-	   (geo->flags & rpGEOMETRYNATIVE) || geo->meshHeader->flags != 0 ||
-	   geo->numTriangles <= 0 || geo->numVertices <= 0 ||
-	   geo->meshHeader->totalIndices != (uint32)geo->numTriangles * 3)
+	if(geo == nil || !OdVehicleGeometryValid(geo))
 		return atomic;
-	rw::MeshHeader *header = geo->meshHeader;
-	rw::Mesh *meshes = header->getMeshes();
-	int32 mismatches = 0;
-	bool signature = false;
-	for(uint32 m = 0; m < header->numMeshes; m++){
-		rw::Mesh *mesh = &meshes[m];
-		int32 matId = geo->matList.findIndex(mesh->material);
-		if(matId < 0 || mesh->indices == nil)
-			return atomic;
-		for(uint32 n = 0; n < m; n++)
-			if(meshes[n].material == mesh->material)
-				return atomic;
-		uint32 index = 0;
-		int32 meshMismatches = 0;
-		for(int32 t = 0; t < geo->numTriangles; t++){
-			rw::Triangle *tri = &geo->triangles[t];
-			if(tri->matId != matId)
-				continue;
-			for(int32 v = 0; v < 3; v++, index++){
-				if(index >= mesh->numIndices || tri->v[v] >= geo->numVertices)
-					return atomic;
-				if(mesh->indices[index] != tri->v[v]){
-					if(index >= 16 || (index & 1) || (meshMismatches && mesh->indices[index] != 0))
-						return atomic;
-					meshMismatches++;
-					mismatches++;
-				}
-			}
+	if(OdRebuildVehicleMesh(geo)){
+		static int32 odReported = 0;
+		if(odReported < 256){
+			RwFrame *frame = RpAtomicGetFrame(atomic);
+			const char *name = frame ? GetFrameNodeName(frame) : nil;
+			char message[192];
+			snprintf(message, sizeof message, "VEHMESH reconstruida modelo=%s atomic=%s tris=%d",
+				(const char*)data, name ? name : "?", geo->numTriangles);
+			ODTRACES(message);
+			odReported++;
 		}
-		if(index != mesh->numIndices)
-			return atomic;
-		if(meshMismatches >= 2)
-			signature = true;
-	}
-	if(!signature)
-		return atomic;
-	for(uint32 m = 0; m < header->numMeshes; m++){
-		rw::Mesh *mesh = &meshes[m];
-		int32 matId = geo->matList.findIndex(mesh->material);
-		uint32 index = 0;
-		for(int32 t = 0; t < geo->numTriangles; t++){
-			rw::Triangle *tri = &geo->triangles[t];
-			if(tri->matId != matId)
-				continue;
-			for(int32 v = 0; v < 3; v++, index++)
-				if(mesh->indices[index] != tri->v[v])
-					mesh->indices[index] = tri->v[v];
-		}
-	}
-	static int32 odReported = 0;
-	if(odReported < 256){
-		RwFrame *frame = RpAtomicGetFrame(atomic);
-		const char *name = frame ? GetFrameNodeName(frame) : nil;
-		char message[192];
-		snprintf(message, sizeof message, "CABINA38 reparacion modelo=%s atomic=%s indices=%d",
-			(const char*)data, name ? name : "?", mismatches);
-		ODTRACES(message);
-		odReported++;
 	}
 	return atomic;
+}
+#endif
+
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+struct ViceExtLensAtlasData {
+	RwTexDictionary *txd;
+	RwTexture *off[VICEEXT_LENS_ATLAS_PAIRS];
+	RwTexture *on[VICEEXT_LENS_ATLAS_PAIRS];
+	uint8 num;
+};
+
+// El motor pinta POR material, asi que una cara de lente cuyo UV cae a medias
+// entre la lente y el cromado del MISMO atlas sale media apagada por mucho
+// color que se le escriba (plan 46.0 C1). El dato derivado se llama
+// `<atlas>_lens` y aqui se empareja con su original una vez por modelo; se
+// guarda el PUNTERO del original porque es lo que deja fuera cualquier material
+// que no dibuja con ese atlas (el parachoques comparte atlas con la lente, y
+// sus texelas si re-tienen: enlazarlo por nombre lo pintaria de ambar).
+static RwTexture *
+ViceExtLensAtlasCB(RwTexture *texture, void *data)
+{
+	ViceExtLensAtlasData *d = (ViceExtLensAtlasData*)data;
+	static const char suffix[] = "_lens";
+	const size_t slen = sizeof(suffix) - 1;
+	const char *name = (const char*)texture->name;
+	size_t len = strlen(name);
+	char base[32];
+	if(texture == nil || d->num >= VICEEXT_LENS_ATLAS_PAIRS ||
+	   len <= slen || len - slen >= sizeof(base) ||
+	   memcmp(name + len - slen, suffix, slen) != 0)
+		return texture;
+	memcpy(base, name, len - slen);
+	base[len - slen] = '\0';
+	RwTexture *off = RwTexDictionaryFindNamedTexture(d->txd, base);
+	if(off == nil)
+		return texture;
+	d->off[d->num] = off;
+	d->on[d->num] = texture;
+	d->num++;
+	return texture;
 }
 #endif
 
@@ -450,6 +566,15 @@ CVehicleModelInfo::SetClump(RpClump *clump)
 		lightsOnTexture = RwTexDictionaryFindNamedTexture(modelTxd, "lightson");
 		serviceLightsOffTexture = RwTexDictionaryFindNamedTexture(modelTxd, "servicelights");
 		serviceLightsOnTexture = RwTexDictionaryFindNamedTexture(modelTxd, "servicelightson");
+		ViceExtLensAtlasData lens;
+		lens.txd = modelTxd;
+		lens.num = 0;
+		RwTexDictionaryForAllTextures(modelTxd, ViceExtLensAtlasCB, &lens);
+		numIndicatorLensAtlases = lens.num;
+		for(int32 i = 0; i < VICEEXT_LENS_ATLAS_PAIRS; i++){
+			indicatorLensOff[i] = i < lens.num ? lens.off[i] : nil;
+			indicatorLensOn[i] = i < lens.num ? lens.on[i] : nil;
+		}
 	}
 #endif
 
@@ -1460,6 +1585,23 @@ CVehicleModelInfo::GetMatFXEffectMaterialCB(RpMaterial *material, void *data)
 }
 
 RpMaterial*
+CVehicleModelInfo::AddSpecularEnvironmentMapCB(RpMaterial *material, void *data)
+{
+	if(RpMatFXMaterialGetEffects(material) != rpMATFXEFFECTNULL)
+		return material;
+	if(RpMaterialGetTexture(material) == nil || material->surfaceProps.specular < 0.25f)
+		return material;
+	if(CustomPipes::EnvMapTex == nil)
+		return material;
+
+	RpMatFXMaterialSetEffects(material, rpMATFXEFFECTENVMAP);
+	RpMatFXMaterialSetupEnvMap(material, (RwTexture*)CustomPipes::EnvMapTex,
+		pMatFxIdentityFrame, false, material->surfaceProps.specular);
+	*(int*)data = rpMATFXEFFECTENVMAP;
+	return material;
+}
+
+RpMaterial*
 CVehicleModelInfo::SetDefaultEnvironmentMapCB(RpMaterial *material, void *data)
 {
 	if(RpMatFXMaterialGetEffects(material) == rpMATFXEFFECTENVMAP){
@@ -1488,6 +1630,8 @@ CVehicleModelInfo::SetEnvironmentMapCB(RpAtomic *atomic, void *data)
 	geo = RpAtomicGetGeometry(atomic);
 	fx = rpMATFXEFFECTNULL;
 	RpGeometryForAllMaterials(geo, GetMatFXEffectMaterialCB, &fx);
+	if(fx == rpMATFXEFFECTNULL)
+		RpGeometryForAllMaterials(geo, AddSpecularEnvironmentMapCB, &fx);
 	if(fx != rpMATFXEFFECTNULL){
 		RpMatFXAtomicEnableEffects(atomic);
 		RpGeometryForAllMaterials(geo, SetDefaultEnvironmentMapCB, data);
