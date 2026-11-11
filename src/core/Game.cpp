@@ -3,6 +3,7 @@
 #include "ViceExtFeatures.h"
 #include "platform.h"
 #include "ondemand.h"
+#include "RwHelper.h"
 #include "crossplatform.h"
 #include "Lists.h"
 #include "PlayerInfo.h"
@@ -1251,6 +1252,9 @@ extern void OdWebMark(int);
 void CGame::Process(void) 
 {
 	ODMARK(0);
+#ifdef __EMSCRIPTEN__
+	PedClumpSweep(0);
+#endif
 	CPad::UpdatePads();
 #ifdef USE_CUSTOM_ALLOCATOR
 	ProcessTidyUpMemory();
@@ -1273,8 +1277,13 @@ void CGame::Process(void)
 	}
 #endif
 	uint32 startTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond();
+	PUSH_RENDERGROUP("Logic.streaming");
 	CStreaming::Update();
+	POP_RENDERGROUP();
 	ODMARK(1);
+#ifdef __EMSCRIPTEN__
+	PedClumpSweep(2);
+#endif
 	uint32 processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 	CWindModifiers::Number = 0;
 	if (!CTimer::GetIsPaused())
@@ -1301,6 +1310,9 @@ void CGame::Process(void)
 		CTheScripts::Process();
 		POP_MEMID();
 		ODMARK(2);
+#ifdef __EMSCRIPTEN__
+		PedClumpSweep(3);
+#endif
 
 		CCollision::Update();
 		CScriptPaths::Update();
@@ -1325,6 +1337,7 @@ void CGame::Process(void)
 
 		// Otherwise even on 30 fps most probably you won't see any peds around Ocean View Hospital
 #if defined FIX_BUGS && !defined SQUEEZE_PERFORMANCE
+		PUSH_RENDERGROUP("Logic.population");
 		if (processTime > 2) {
 #else
 		if (processTime >= 2) {
@@ -1335,7 +1348,11 @@ void CGame::Process(void)
 			CPopulation::Update(true);
 			processTime = CTimer::GetCurrentTimeInCycles() / CTimer::GetCyclesPerMillisecond() - startTime;
 		}
+		POP_RENDERGROUP();
 		ODMARK(25);
+#ifdef __EMSCRIPTEN__
+		PedClumpSweep(4);
+#endif
 		CWeapon::UpdateWeapons();
 		if (!CCutsceneMgr::IsRunning())
 			CTheCarGenerators::Process();
@@ -1349,9 +1366,14 @@ void CGame::Process(void)
 		ODMARK(26);
 
 		PUSH_MEMID(MEMID_WORLD);
+		PUSH_RENDERGROUP("Logic.world");
 		CWorld::Process();
+		POP_RENDERGROUP();
 		POP_MEMID();
 		ODMARK(4);
+#ifdef __EMSCRIPTEN__
+		PedClumpSweep(5);
+#endif
 
 		gAccidentManager.Update();
 		CPacManPickups::Update();

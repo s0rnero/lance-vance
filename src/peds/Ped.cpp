@@ -9,7 +9,9 @@ extern void OdWebMark(int);
 #include "Bones.h"
 #include "Ped.h"
 #include "PlayerPed.h"
-#include "PedArbiter.h"   // R18d: el nado del jugador (CPlayerPed::ViceExtIsSwimming) decide la flotación
+#include "PedArbiter.h"
+#include "RwHelper.h"
+#include "RwHelper.h"   // R18d: el nado del jugador (CPlayerPed::ViceExtIsSwimming) decide la flotación
 #include "ondemand.h"  // web: ODTRACES -> odtrace.log (sección 2 / P2)
 #include "AnimBlendAssociation.h"
 #include "Fire.h"
@@ -75,10 +77,10 @@ float CPed::highClimbingOffsetSpeed = 3.0f;
 float CPed::playerVerticalVelocityAtWhichStartsToFall = -0.2f;
 #endif
 
-void *CPed::operator new(size_t sz) throw() { return CPools::GetPedPool()->New();  }
-void *CPed::operator new(size_t sz, int handle) throw() { return CPools::GetPedPool()->New(handle); }
-void CPed::operator delete(void *p, size_t sz) throw() { CPools::GetPedPool()->Delete((CPed*)p); }
-void CPed::operator delete(void *p, int handle) throw() { CPools::GetPedPool()->Delete((CPed*)p); }
+void *CPed::operator new(size_t sz) throw() { void *p = CPools::GetPedPool()->New(); if (p) PedClumpAlloc(CPools::GetPedPool()->GetIndex((CPed*)p), p); return p; }
+void *CPed::operator new(size_t sz, int handle) throw() { void *p = CPools::GetPedPool()->New(handle); if (p) PedClumpAlloc(CPools::GetPedPool()->GetIndex((CPed*)p), p); return p; }
+void CPed::operator delete(void *p, size_t sz) throw() { PedClumpFree(p); CPools::GetPedPool()->Delete((CPed*)p); }
+void CPed::operator delete(void *p, int handle) throw() { PedClumpFree(p); CPools::GetPedPool()->Delete((CPed*)p); }
 
 float gfTommyFatness = 1.0f;
 
@@ -458,6 +460,18 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 
 CPed::~CPed(void)
 {
+#ifdef __EMSCRIPTEN__
+	PedClumpPreDelete(this, nil);
+#endif
+
+#ifdef __EMSCRIPTEN__
+	PedClumpPreDelete(this, nil);
+#endif
+
+#ifdef __EMSCRIPTEN__
+	PedClumpPreDelete(this, nil);
+#endif
+
 #ifdef USE_CUTSCENE_SHADOW_FOR_PED
 	if ( m_pRTShadow ) delete m_pRTShadow;
 #endif
@@ -559,6 +573,9 @@ void
 CPed::SetModelIndex(uint32 mi)
 {
 	CEntity::SetModelIndex(mi);
+#ifdef __EMSCRIPTEN__
+	PedClumpModel(this, (int)mi);
+#endif
 	if(GetClump())
 		CVisibilityPlugins::SetClumpAlpha(GetClump(), 255);
 	RpAnimBlendClumpInit(GetClump());

@@ -142,7 +142,6 @@ DestroyCam(rw::Camera *cam)
 void
 RenderEnvMapScene(void)
 {
-	CRenderer::RenderRoads();
 	CRenderer::RenderEverythingBarRoads();
 	CRenderer::RenderFadingInEntities();
 }

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "main.h"
 
 #include "VuVector.h"
 #include "General.h"
@@ -119,6 +120,10 @@ CEntity::CreateRwObject(void)
 	PUSH_MEMID(MEMID_WORLD);
 	m_rwObject = mi->CreateInstance();
 	POP_MEMID();
+#ifdef __EMSCRIPTEN__
+	if (m_type == ENTITY_TYPE_PED)
+		PedClumpBind(this, m_rwObject);
+#endif
 
 	if(m_rwObject){
 		if(IsBuilding())
@@ -136,6 +141,11 @@ void
 CEntity::AttachToRwObject(RwObject *obj)
 {
 	m_rwObject = obj;
+#ifdef __EMSCRIPTEN__
+	if (m_type == ENTITY_TYPE_PED)
+		PedClumpBind(this, m_rwObject);
+#endif
+
 	if(m_rwObject){
 		if(RwObjectGetType(m_rwObject) == rpATOMIC)
 			GetMatrix().Attach(RwFrameGetMatrix(RpAtomicGetFrame((RpAtomic *)m_rwObject)), false);
@@ -149,6 +159,10 @@ CEntity::AttachToRwObject(RwObject *obj)
 void
 CEntity::DetachFromRwObject(void)
 {
+#ifdef __EMSCRIPTEN__
+	if (m_type == ENTITY_TYPE_PED)
+		PedClumpUnbind(this);
+#endif
 	if(m_rwObject)
 		CModelInfo::GetModelInfo(m_modelIndex)->RemoveRef();
 	m_rwObject = nil;
@@ -180,6 +194,10 @@ CEntity::DeleteRwObject(void)
 {
 	RwFrame *f;
 
+#ifdef __EMSCRIPTEN__
+	if (m_type == ENTITY_TYPE_PED)
+		PedClumpPreDelete(this, m_rwObject);
+#endif
 	GetMatrix().Detach();
 	if(m_rwObject){
 		if(RwObjectGetType(m_rwObject) == rpATOMIC){
@@ -192,6 +210,10 @@ CEntity::DeleteRwObject(void)
 			RpClumpDestroy((RpClump*)m_rwObject);
 		}
 		m_rwObject = nil;
+#ifdef __EMSCRIPTEN__
+		if (m_type == ENTITY_TYPE_PED)
+			PedClumpUnbind(this);
+#endif
 		CModelInfo::GetModelInfo(m_modelIndex)->RemoveRef();
 		if(IsBuilding())
 			gBuildings--;

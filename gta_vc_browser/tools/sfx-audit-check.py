@@ -255,18 +255,35 @@ def main():
     pases = [f for f in filas if etiqueta_de(f) == "RGPASS"]
     if pases:
         acm = {}
-        cnt = {}
+        calls = {}
+        maximo = {}
+        ventana_ms = 0.0
+        historico = 0
         for f in pases:
+            if "schema=2" in f:
+                m = re.search(r"name=(\S+) ovf=", f)
+                w = re.search(r"window_ms=(\d+)", f)
+                c = re.search(r"calls=(\d+)", f)
+                t = re.search(r"total_ms=([\d.]+)", f)
+                x = re.search(r"max_ms=([\d.]+)", f)
+                if not (m and w and c and t and x):
+                    historico += 1
+                    continue
+                nombre = m.group(1)
+                acm[nombre] = acm.get(nombre, 0.0) + float(t.group(1))
+                calls[nombre] = calls.get(nombre, 0) + int(c.group(1))
+                maximo[nombre] = max(maximo.get(nombre, 0.0), float(x.group(1)))
+                ventana_ms = max(ventana_ms, float(w.group(1)))
+                continue
             for ms, nombre in re.findall(r"([\d.]+)=([^;]+);", f):
                 nombre = nombre.strip()
-                acm[nombre] = acm.get(nombre, 0.0) + float(ms)
-                cnt[nombre] = cnt.get(nombre, 0) + 1
-        print("=== Coste por pase de render (%d ventanas de 1 s) ===" % len(pases))
+                historico += 1
+        print("=== Coste por pase de render (schema=2, %d ventanas reales de ~2 s%s) ===" % (len(pases), ", %d historicas no fiables" % historico if historico else ""))
         ranking = sorted(acm, key=lambda k: -acm[k])
         total = sum(acm.values()) or 1.0
         for nombre in ranking[:top]:
-            print("   %7.2f ms/s  %5.1f%%  %s" % (acm[nombre] / len(pases),
-                                                  acm[nombre] * 100.0 / total, nombre))
+            n = calls.get(nombre, 0) or 1
+            print("   %7.3f ms/call  %7.3f max  %8.2f ms/s  %5.1f%%  %s" % (acm[nombre] / n, maximo.get(nombre, 0.0), acm[nombre] * 1000.0 / max(ventana_ms, 1.0), acm[nombre] * 100.0 / total, nombre))
         print()
 
     loopset = [f for f in filas if etiqueta_de(f) == "LOOPSET"]

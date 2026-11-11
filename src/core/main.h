@@ -2,14 +2,26 @@
 
 #ifndef FINAL
 // defined in RwHelpder.cpp
-void PushRendergroup(const char *name);
+void PushRendergroup(const char *name, bool timed = true);
 void PopRendergroup(void);
 #define PUSH_RENDERGROUP(str) PushRendergroup(str)
+#define PUSH_RENDERGROUP_UNTIMED(str) PushRendergroup(str, false)
 #define POP_RENDERGROUP() PopRendergroup()
 #else
 #define PUSH_RENDERGROUP(str)
+#define PUSH_RENDERGROUP_UNTIMED(str)
 #define POP_RENDERGROUP()
 #endif
+
+void PedClumpInit(int count);
+void PedClumpShutdown(void);
+void PedClumpAlloc(int slot, void *ped);
+void PedClumpFree(void *ped);
+void PedClumpModel(void *ped, int model);
+void PedClumpBind(void *ped, void *clump);
+void PedClumpUnbind(void *ped);
+void PedClumpPreDelete(void *ped, void *clump);
+void PedClumpSweep(int phase);
 
 struct GlobalScene
 {

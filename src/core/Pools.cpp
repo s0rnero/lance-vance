@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "Pools.h"
+#include "main.h"
 
 #include "Bike.h"
 #include "Boat.h"
@@ -52,6 +53,7 @@ CPools::Initialise(void)
 	ms_pEntryInfoNodePool = new CEntryInfoNodePool(NUMENTRYINFOS, "EntryInfoNode");
 	CHECKMEM("after CEntryInfoNodePool");
 	ms_pPedPool = new CPedPool(NUMPEDS, "Peds");
+	PedClumpInit(ms_pPedPool->GetSize());
 	CHECKMEM("after CPedPool");
 	ms_pVehiclePool = new CVehiclePool(NUMVEHICLES, "Vehicles");
 	CHECKMEM("after CVehiclePool");
@@ -87,6 +89,7 @@ CPools::ShutDown(void)
 
 	delete ms_pPtrNodePool;
 	delete ms_pEntryInfoNodePool;
+	PedClumpShutdown();
 	delete ms_pPedPool;
 	delete ms_pVehiclePool;
 	delete ms_pBuildingPool;

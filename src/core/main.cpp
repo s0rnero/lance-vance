@@ -958,6 +958,7 @@ WebPhaseNoRender(void)
 }
 
 extern int gRwDrawInstances;
+void OdDrawsFlush(void);
 
 void
 WebPhaseEnd(void)
@@ -993,6 +994,7 @@ WebPhaseEnd(void)
 			gWpMax[0], gWpMax[1], gWpMax[2], gWpMax[3], gWpMax[4], gWpMax[5],
 			gWpWorstScene, gWpSceneMax);
 		ODTRACES(t);
+		OdDrawsFlush();
 		gWpN = 0; gWpOver17 = 0; gWpWorstGap = 0; gWpWorstHas = 0;
 		gWpSceneMax = 0.0;
 		for (i = 0; i < 6; i++) gWpMax[i] = 0.0;
@@ -2001,6 +2003,15 @@ Idle(void *arg)
 {
 #ifdef __EMSCRIPTEN__
 	WebPhaseBegin();
+	{
+		static bool odBuildDone = false;
+		if (!odBuildDone) {
+			odBuildDone = true;
+			char odT[96];
+			snprintf(odT, sizeof odT, "ODBUILD id=2026-11-10-63.0-T1 compiled=%s %s", __DATE__, __TIME__);
+			ODTRACES(odT);
+		}
+	}
 #endif
 	CTimer::Update();
 
@@ -2013,7 +2024,9 @@ Idle(void *arg)
 	CPointLights::InitPerFrame();
 
 	tbStartTimer(0, "CGame::Process");
+	PUSH_RENDERGROUP("Logic.total");
 	CGame::Process();
+	POP_RENDERGROUP();
 	tbEndTimer("CGame::Process");
 	POP_MEMID();
 
@@ -2159,7 +2172,9 @@ Idle(void *arg)
 #endif
 
 #ifdef EXTENDED_PIPELINES
+		PUSH_RENDERGROUP("Scene.envmap");
 		CustomPipes::EnvMapRender();
+		POP_RENDERGROUP();
 #endif
 
 		RenderDebugShit();
@@ -2172,13 +2187,17 @@ Idle(void *arg)
 #ifdef SCREEN_DROPLETS
 		if (ScreenDroplets::IsVisible()) {
 			CPostFX::GetBackBuffer(Scene.camera);
+			PUSH_RENDERGROUP("Scene.droplets");
 			ScreenDroplets::Process();
+			POP_RENDERGROUP();
 			ScreenDroplets::Render();
 		}
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");
+		PUSH_RENDERGROUP("Scene.blur");
 		TheCamera.RenderMotionBlur();
+		POP_RENDERGROUP();
 		tbEndTimer("RenderMotionBlur");
 #ifdef __EMSCRIPTEN__
 		WebPhaseMark(3); // fin de escena 3D (RenderScene + efectos + blur)

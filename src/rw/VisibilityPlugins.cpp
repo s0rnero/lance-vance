@@ -22,6 +22,9 @@
 #include "Timer.h"
 #include "NodeName.h"
 
+int OdDrawsMark(void);
+void OdDrawsEntity(CEntity *e, int dc);
+
 #ifdef __EMSCRIPTEN__
 namespace rw { namespace gl3 { void SetOdTraceTag(const char *tag); } }
 #define OD_TAG(atomic) rw::gl3::SetOdTraceTag(GetFrameNodeName(RpAtomicGetFrame(atomic)))
@@ -316,6 +319,10 @@ CVisibilityPlugins::RenderAlphaAtomics(void)
 void
 CVisibilityPlugins::RenderBoatAlphaAtomics(void)
 {
+#ifdef EXTENDED_PIPELINES
+	if(CustomPipes::bRenderingEnvMap)
+		return;
+#endif
 	SetCullMode(rwCULLMODECULLNONE);
 	RenderAtomicList(m_alphaBoatAtomicList);
 	SetCullMode(rwCULLMODECULLBACK);
@@ -331,7 +338,7 @@ CVisibilityPlugins::RenderFadingEntities(CLinkList<AlphaObjectInfo> &list)
 		if(e->m_rwObject == nil)
 			continue;
 #ifdef EXTENDED_PIPELINES
-		if(CustomPipes::bRenderingEnvMap && (e->IsPed() || e->IsVehicle()))
+		if(CustomPipes::bRenderingEnvMap && !e->IsBuilding())
 			continue;
 #endif
 		mi = (CSimpleModelInfo *)CModelInfo::GetModelInfo(e->GetModelIndex());
@@ -344,8 +351,12 @@ CVisibilityPlugins::RenderFadingEntities(CLinkList<AlphaObjectInfo> &list)
 			DeActivateDirectional();
 			SetAmbientColours();
 			e->bImBeingRendered = true;
-			PUSH_RENDERGROUP(mi->GetModelName());
-			RenderFadingAtomic((RpAtomic*)e->m_rwObject, node->item.sort);
+			PUSH_RENDERGROUP_UNTIMED(mi->GetModelName());
+			{
+				int odDc0 = OdDrawsMark();
+				RenderFadingAtomic((RpAtomic*)e->m_rwObject, node->item.sort);
+				OdDrawsEntity(e, OdDrawsMark() - odDc0);
+			}
 			POP_RENDERGROUP();
 			e->bImBeingRendered = false;
 		}else

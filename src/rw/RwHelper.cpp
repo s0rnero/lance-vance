@@ -116,73 +116,99 @@ SetCullMode(uint32 mode)
 static const char *s_rgName[OD_RG_MAX];
 static double s_rgMs[OD_RG_MAX];
 static uint32 s_rgN[OD_RG_MAX];
+static double s_rgMax[OD_RG_MAX];
 static double s_rgT0[OD_RG_MAX];
 static int s_rgStack[OD_RG_MAX];
 static int s_rgCount;
 static int s_rgDepth;
-static uint32 s_rgEmitAt;
+static uint32 s_rgWinStart;
+static uint32 s_rgWinSeq;
+static uint32 s_rgWinCalls;
+static uint32 s_rgOvf;
+static uint32 s_rgSkp;
+static uint32 s_rgUnf;
 
 static void
-OdGroupEmit(void)
+OdGroupEmit(uint32 windowMs)
 {
-	int order[OD_RG_MAX];
-	int n = 0;
-	for (int i = 0; i < s_rgCount; i++)
-		if (s_rgN[i] != 0u)
-			order[n++] = i;
-	for (int a = 1; a < n; a++)
-		for (int b = a; b > 0 && s_rgMs[order[b]] > s_rgMs[order[b - 1]]; b--) {
-			int tmp = order[b];
-			order[b] = order[b - 1];
-			order[b - 1] = tmp;
-		}
-	char t[420];
-	int off = snprintf(t, sizeof t, "RGPASS");
-	for (int a = 0; a < n && a < 12 && off < 380; a++)
-		off += snprintf(t + off, sizeof t - off, " %.2f=%s;", s_rgMs[order[a]] * 1000.0 / s_rgN[order[a]],
-		                        s_rgName[order[a]]);
-	if (off < (int)sizeof t)
+	for (int i = 0; i < s_rgCount; i++) {
+		if (s_rgN[i] == 0u)
+			continue;
+		s_rgWinSeq++;
+		char t[256];
+		snprintf(t, sizeof t, "RGPASS schema=2 win=%u window_ms=%u calls=%u total_ms=%.3f max_ms=%.3f name=%s ovf=%u skp=%u unf=%u",
+		         s_rgWinSeq, windowMs, s_rgN[i], s_rgMs[i], s_rgMax[i], s_rgName[i],
+		         s_rgOvf, s_rgSkp, s_rgUnf);
 		ODTRACES(t);
+	}
+	if (s_rgOvf || s_rgSkp || s_rgUnf) {
+		char t[192];
+		snprintf(t, sizeof t, "RGPASS schema=2 win=%u window_ms=%u incident=1 calls=%u ovf=%u skp=%u unf=%u",
+		         s_rgWinSeq, windowMs, s_rgWinCalls, s_rgOvf, s_rgSkp, s_rgUnf);
+		ODTRACES(t);
+	}
 	for (int i = 0; i < s_rgCount; i++) {
 		s_rgMs[i] = 0.0;
 		s_rgN[i] = 0u;
+		s_rgMax[i] = 0.0;
 	}
+	s_rgOvf = 0u;
+	s_rgSkp = 0u;
+	s_rgUnf = 0u;
+	s_rgWinCalls = 0u;
 }
 
 static void
 OdGroupTick(void)
 {
 	uint32 now = (uint32)emscripten_get_now();
-	if (s_rgEmitAt != 0 && (uint32)(now - s_rgEmitAt) < 1000u)
-		return;
-	s_rgEmitAt = now;
-	if (s_rgCount != 0)
-		OdGroupEmit();
-	s_rgDepth = 0;
+	if (s_rgWinStart == 0u)
+		s_rgWinStart = now;
+	if (s_rgDepth == 0) {
+		uint32 w = (uint32)(now - s_rgWinStart);
+		if (w >= 2000u) {
+			if (s_rgCount != 0)
+				OdGroupEmit(w);
+			s_rgWinStart = now;
+		}
+	}
 }
 #endif
 
 void
-PushRendergroup(const char *name)
+PushRendergroup(const char *name, bool timed)
 {
 #ifdef __EMSCRIPTEN__
 	OdGroupTick();
-	if (s_rgDepth < OD_RG_MAX) {
+	if (s_rgDepth >= OD_RG_MAX) {
+		s_rgSkp++;
+		s_rgDepth++;
+	} else if (timed) {
 		int i;
 		for (i = 0; i < s_rgCount; i++)
 			if (s_rgName[i] == name)
 				break;
-		if (i == s_rgCount && s_rgCount < OD_RG_MAX) {
-			s_rgName[i] = name;
-			s_rgMs[i] = 0.0;
-			s_rgN[i] = 0u;
-			s_rgCount++;
+		if (i == s_rgCount) {
+			if (s_rgCount < OD_RG_MAX) {
+				s_rgName[i] = name;
+				s_rgMs[i] = 0.0;
+				s_rgN[i] = 0u;
+				s_rgMax[i] = 0.0;
+				s_rgCount++;
+			} else {
+				s_rgOvf++;
+			}
 		}
 		if (i < s_rgCount) {
 			s_rgT0[s_rgDepth] = emscripten_get_now();
 			s_rgStack[s_rgDepth] = i;
-			s_rgDepth++;
+		} else {
+			s_rgStack[s_rgDepth] = -1;
 		}
+		s_rgDepth++;
+	} else {
+		s_rgStack[s_rgDepth] = -1;
+		s_rgDepth++;
 	}
 #endif
 	if(!bDebugRenderGroups)
@@ -201,13 +227,20 @@ void
 PopRendergroup(void)
 {
 #ifdef __EMSCRIPTEN__
-	if (s_rgDepth > 0) {
+	if (s_rgDepth <= 0) {
+		s_rgUnf++;
+	} else {
 		int slot = --s_rgDepth;
-		int i = s_rgStack[slot];
-		double d = emscripten_get_now() - s_rgT0[slot];
-		if (d >= 0.0 && d < 250.0) {
-			s_rgMs[i] += d;
-			s_rgN[i]++;
+		int i = slot < OD_RG_MAX ? s_rgStack[slot] : -1;
+		if (i >= 0) {
+			double d = emscripten_get_now() - s_rgT0[slot];
+			if (d >= 0.0) {
+				s_rgMs[i] += d;
+				s_rgN[i]++;
+				if (d > s_rgMax[i])
+					s_rgMax[i] = d;
+				s_rgWinCalls++;
+			}
 		}
 	}
 #endif
@@ -891,5 +924,248 @@ RestoreAlphaTest()
 	RwD3D8SetRenderState(D3DRS_ALPHAFUNC, saved_alphafunc);
 	RwD3D8SetRenderState(D3DRS_ALPHAREF, saved_alpharef);
 #endif
+}
+#endif
+#ifdef __EMSCRIPTEN__
+#include "Pools.h"
+#include <emscripten/heap.h>
+#include "Timer.h"
+#include "ModelInfo.h"
+struct PedClumpRec {
+	int slot; unsigned long long gen; int model; void *ped; void *clump;
+	unsigned long long serial; int state; int lastPhase; int lastGoodPhase;
+	char modelName[24];
+};
+static PedClumpRec *g_pedClumpTable;
+static int g_pedClumpCount;
+static unsigned long long g_pedClumpGen;
+static unsigned long long g_pedClumpSerialSeq;
+static unsigned long long g_pedClumpEpoch;
+#define PEDCLUMP_RING 128
+static char g_pedClumpRing[PEDCLUMP_RING][224];
+static int g_pedClumpRingHead;
+static int g_pedClumpRingN;
+static int g_pedClumpRingOvf;
+static PedClumpRec g_pedClumpFirstBad;
+static bool g_pedClumpFirstBadSet;
+static void *g_pedClumpLastClump;
+static int g_pedClumpLastSerial;
+static uint32 g_pedClumpSummaryMs;
+static PedClumpRec *
+PedClumpByPed(void *ped)
+{
+	if (!g_pedClumpTable || !ped)
+		return nil;
+	for (int i = 0; i < g_pedClumpCount; i++)
+		if (g_pedClumpTable[i].ped == ped && g_pedClumpTable[i].state != 0)
+			return &g_pedClumpTable[i];
+	return nil;
+}
+static void
+PedClumpRingLine(const char *kind, PedClumpRec *r, int phase)
+{
+	char t[224];
+	snprintf(t, sizeof t, "PEDCLUMP schema=1 seq=%llu frame=%u phase=%d ev=%s slot=%d gen=%llu model=%d nombre=%s ped=%p clump=%p serial=%llu state=%d lastGood=%d ringOvf=%d lost=%s",
+	         g_pedClumpSerialSeq, (unsigned)CTimer::GetFrameCounter(), phase, kind,
+	         r ? r->slot : -1, r ? r->gen : 0ULL, r ? r->model : -1, r ? r->modelName : "-",
+	         r ? r->ped : nil, r ? r->clump : nil, r ? r->serial : 0ULL, r ? r->state : -1,
+	         r ? r->lastGoodPhase : -1, g_pedClumpRingOvf, g_pedClumpRingOvf ? "si" : "no");
+	snprintf(g_pedClumpRing[g_pedClumpRingHead], sizeof g_pedClumpRing[g_pedClumpRingHead], "%s", t);
+	g_pedClumpRingHead = (g_pedClumpRingHead + 1) % PEDCLUMP_RING;
+	if (g_pedClumpRingN < PEDCLUMP_RING)
+		g_pedClumpRingN++;
+	else
+		g_pedClumpRingOvf++;
+}
+static void
+PedClumpFatalDump(PedClumpRec *r, const char *why, int phase)
+{
+	if (!r)
+		return;
+	if (!g_pedClumpFirstBadSet) {
+		g_pedClumpFirstBad = *r;
+		g_pedClumpFirstBadSet = true;
+		PedClumpRingLine("first_bad", r, phase);
+	}
+	char dump[49152];
+	int pos = 0;
+	pos = snprintf(dump + pos, sizeof dump - pos, "PEDCLUMP schema=1 fatal=%s phase=%d frame=%u slot=%d gen=%llu model=%d nombre=%s ped=%p clump=%p serial=%llu lastGood=%d ringOvf=%d first_bad_slot=%d first_bad_gen=%llu first_bad_model=%d first_bad_ped=%p first_bad_clump=%p first_bad_serial=%llu\n",
+	                why, phase, (unsigned)CTimer::GetFrameCounter(), r->slot, r->gen, r->model, r->modelName,
+	                r->ped, r->clump, r->serial, r->lastGoodPhase, g_pedClumpRingOvf,
+	                g_pedClumpFirstBad.slot, g_pedClumpFirstBad.gen, g_pedClumpFirstBad.model,
+	                g_pedClumpFirstBad.ped, g_pedClumpFirstBad.clump, g_pedClumpFirstBad.serial, "\n");
+	int start = (g_pedClumpRingHead - g_pedClumpRingN + PEDCLUMP_RING) % PEDCLUMP_RING;
+	for (int i = 0; i < g_pedClumpRingN; i++) {
+		int idx = (start + i) % PEDCLUMP_RING;
+		int w = snprintf(dump + pos, sizeof dump - pos, "%s\n", g_pedClumpRing[idx]);
+		if (w < 0) break;
+		if (w >= (int)(sizeof dump - pos)) { pos = (int)sizeof dump - 1; break; }
+		pos += w;
+	}
+	ODTRACES(dump);
+	EM_ASM({ if (window.__vcPedClumpFatal) window.__vcPedClumpFatal($0); }, dump);
+	abort();
+}
+static bool
+PedClumpInHeap(void *p, int32 size)
+{
+	uint32 heap = (uint32)emscripten_get_heap_size();
+	uint32 v = (uint32)(uintptr_t)p;
+	return p != nil && v <= heap && (uint32)size <= heap - v;
+}
+static void
+PedClumpVendorCb(int ev, void *clump, int serial)
+{
+	if (ev == 1) {
+		g_pedClumpLastClump = clump;
+		g_pedClumpLastSerial = serial;
+		return;
+	}
+	for (int i = 0; i < g_pedClumpCount; i++) {
+		if (g_pedClumpTable[i].clump == clump && g_pedClumpTable[i].state == 2) {
+			char t[64];
+			snprintf(t, sizeof t, "vendor_ev=%d serial=%d", ev, serial ? serial : g_pedClumpLastSerial);
+			PedClumpRingLine(t, &g_pedClumpTable[i], -1);
+			return;
+		}
+	}
+}
+void
+PedClumpInit(int count)
+{
+	if (g_pedClumpTable || count <= 0)
+		return;
+	rw::rwClumpDiagCb = PedClumpVendorCb;
+	g_pedClumpTable = new PedClumpRec[count];
+	g_pedClumpCount = count;
+	char t[96];
+	snprintf(t, sizeof t, "PEDCLUMP schema=1 activation count=%d epoch=%llu", count, g_pedClumpEpoch);
+	ODTRACES(t);
+}
+void
+PedClumpShutdown(void)
+{
+	if (g_pedClumpTable) {
+		delete[] g_pedClumpTable;
+		g_pedClumpTable = nil;
+	}
+	g_pedClumpCount = 0;
+	g_pedClumpFirstBadSet = false;
+	g_pedClumpRingN = 0;
+	g_pedClumpRingHead = 0;
+	g_pedClumpRingOvf = 0;
+	g_pedClumpEpoch++;
+}
+void
+PedClumpAlloc(int slot, void *ped)
+{
+	PedClumpRec *r = nil;
+	if (g_pedClumpTable && slot >= 0 && slot < g_pedClumpCount) {
+		r = &g_pedClumpTable[slot];
+		if (r->state != 0)
+			PedClumpRingLine("alloc_reuse_unknown", r, -1);
+		*r = PedClumpRec();
+		r->slot = slot;
+		r->gen = ++g_pedClumpGen;
+		r->model = -1;
+		r->ped = ped;
+		r->serial = ++g_pedClumpSerialSeq;
+		r->state = 1;
+		r->lastPhase = -1;
+		r->lastGoodPhase = -1;
+		snprintf(r->modelName, sizeof r->modelName, "-");
+	}
+	PedClumpRingLine("alloc", r, -1);
+}
+void
+PedClumpFree(void *ped)
+{
+	PedClumpRec *r = PedClumpByPed(ped);
+	if (r) {
+		PedClumpRingLine("free", r, -1);
+		r->state = 0;
+		r->ped = nil;
+		r->clump = nil;
+	}
+}
+void
+PedClumpModel(void *ped, int model)
+{
+	PedClumpRec *r = PedClumpByPed(ped);
+	if (!r)
+		return;
+	r->model = model;
+	if (model >= 0 && model < MODELINFOSIZE) {
+		const char *mn = CModelInfo::GetModelInfo(model)->GetModelName();
+		if (mn)
+			snprintf(r->modelName, sizeof r->modelName, "%.23s", mn);
+	}
+	PedClumpRingLine("model", r, -1);
+}
+void
+PedClumpBind(void *ped, void *clump)
+{
+	PedClumpRec *r = PedClumpByPed(ped);
+	if (!r)
+		return;
+	r->clump = clump;
+	r->state = 2;
+	PedClumpRingLine("bind", r, -1);
+}
+void
+PedClumpUnbind(void *ped)
+{
+	PedClumpRec *r = PedClumpByPed(ped);
+	if (!r)
+		return;
+	PedClumpRingLine("unbind", r, -1);
+	r->clump = nil;
+	if (r->state == 2)
+		r->state = 1;
+}
+void
+PedClumpPreDelete(void *ped, void *clump)
+{
+	PedClumpRec *r = PedClumpByPed(ped);
+	if (!r)
+		return;
+	if (clump != nil && r->clump != nil && clump != r->clump)
+		PedClumpRingLine("predel_clump_mismatch", r, -1);
+	else
+		PedClumpRingLine("predel", r, -1);
+}
+void
+PedClumpSweep(int phase)
+{
+	if (!g_pedClumpTable)
+		return;
+	int bound = 0;
+	for (int i = 0; i < g_pedClumpCount; i++) {
+		PedClumpRec *r = &g_pedClumpTable[i];
+		if (r->state != 2 || r->clump == nil)
+			continue;
+		bound++;
+		RpClump *c = (RpClump *)r->clump;
+		if (!PedClumpInHeap(c, (int32)sizeof(RpClump))) {
+			PedClumpFatalDump(r, "clump_fuera_heap", phase);
+			continue;
+		}
+		rw::LLLink *nw = c->cameras.link.next;
+		rw::LLLink *pv = c->cameras.link.prev;
+		if (nw == nil || pv == nil || nw != pv || nw != &c->cameras.link) {
+			PedClumpFatalDump(r, "cameras_listas_corruptas", phase);
+			continue;
+		}
+		r->lastPhase = phase;
+		r->lastGoodPhase = phase;
+	}
+	uint32 now = (uint32)emscripten_get_now();
+	if (now >= g_pedClumpSummaryMs) {
+		g_pedClumpSummaryMs = now + 5000u;
+		char t[192];
+		snprintf(t, sizeof t, "PEDCLUMP schema=1 summary bound=%d ringN=%d ringOvf=%d bad=%d epoch=%llu",
+		         bound, g_pedClumpRingN, g_pedClumpRingOvf, g_pedClumpFirstBadSet ? 1 : 0, g_pedClumpEpoch);
+		ODTRACES(t);
+	}
 }
 #endif

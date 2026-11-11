@@ -53,6 +53,148 @@ struct EntityInfo
 
 CLinkList<EntityInfo> gSortedVehiclesAndPeds;
 
+#ifdef __EMSCRIPTEN__
+extern int gRwDrawInstances;
+int OdDrawsMark(void) { return gRwDrawInstances; }
+#else
+int OdDrawsMark(void) { return 0; }
+#endif
+
+static int s_odDrawPassCount[2][6];
+static int s_odDrawPassDc[2][6];
+static int s_odDrawSzCount[6];
+static int s_odDrawSzDc[6];
+static int s_odDrawTopIdx[8];
+static int s_odDrawTopDc[8];
+static int s_odDrawTopN;
+static int s_odDrawPrev;
+static const bool s_odDrawsOn = false;
+
+static int
+OdDrawCategory(CEntity *e)
+{
+	CBaseModelInfo *mi = CModelInfo::GetModelInfo(e->GetModelIndex());
+	if(e->IsBuilding()){
+		if(mi->GetModelType() == MITYPE_SIMPLE && ((CSimpleModelInfo*)mi)->m_wetRoadReflection)
+			return 1;
+		return 0;
+	}
+	if(e->IsPed())
+		return 3;
+	if(e->IsVehicle())
+		return 4;
+	if(e->IsObject() || e->IsDummy())
+		return 2;
+	return 5;
+}
+
+static int
+OdDrawSizeBucket(int dc)
+{
+	if(dc <= 1) return 0;
+	if(dc <= 3) return 1;
+	if(dc <= 7) return 2;
+	if(dc <= 15) return 3;
+	if(dc <= 31) return 4;
+	return 5;
+}
+
+void
+OdDrawsEntity(CEntity *e, int dc)
+{
+	int pass, cat, sz, i;
+	if(!s_odDrawsOn)
+		return;
+	if(e == nil || dc <= 0)
+		return;
+	pass = 0;
+#ifdef EXTENDED_PIPELINES
+	if(CustomPipes::bRenderingEnvMap)
+		pass = 1;
+#endif
+	cat = OdDrawCategory(e);
+	sz = OdDrawSizeBucket(dc);
+	s_odDrawPassCount[pass][cat]++;
+	s_odDrawPassDc[pass][cat] += dc;
+	s_odDrawSzCount[sz]++;
+	s_odDrawSzDc[sz] += dc;
+	for(i = 0; i < s_odDrawTopN; i++){
+		if(s_odDrawTopIdx[i] == e->GetModelIndex()){
+			s_odDrawTopDc[i] += dc;
+			return;
+		}
+	}
+	if(s_odDrawTopN < 8){
+		s_odDrawTopIdx[s_odDrawTopN] = e->GetModelIndex();
+		s_odDrawTopDc[s_odDrawTopN] = dc;
+		s_odDrawTopN++;
+	}
+}
+
+void
+OdDrawsFlush(void)
+{
+	char t[520];
+	int i, j, n, tot, now, attr, tmpI, tmpD;
+	now = OdDrawsMark();
+	tot = now - s_odDrawPrev;
+	s_odDrawPrev = now;
+	if(!s_odDrawsOn)
+		return;
+	attr = 0;
+	for(i = 0; i < 2; i++)
+		for(j = 0; j < 6; j++)
+			attr += s_odDrawPassDc[i][j];
+	for(i = 1; i < s_odDrawTopN; i++){
+		tmpI = s_odDrawTopIdx[i];
+		tmpD = s_odDrawTopDc[i];
+		j = i - 1;
+		while(j >= 0 && s_odDrawTopDc[j] < tmpD){
+			s_odDrawTopIdx[j+1] = s_odDrawTopIdx[j];
+			s_odDrawTopDc[j+1] = s_odDrawTopDc[j];
+			j--;
+		}
+		s_odDrawTopIdx[j+1] = tmpI;
+		s_odDrawTopDc[j+1] = tmpD;
+	}
+	n = snprintf(t, sizeof t,
+		"ODDRAWS tot=%d rest=%d | sc bld=%d/%d road=%d/%d obj=%d/%d ped=%d/%d veh=%d/%d oth=%d/%d | env bld=%d/%d road=%d/%d obj=%d/%d ped=%d/%d veh=%d/%d oth=%d/%d | sz 1=%d/%d 2=%d/%d 4=%d/%d 8=%d/%d 16=%d/%d 32=%d/%d | top=",
+		tot, tot - attr,
+		s_odDrawPassCount[0][0], s_odDrawPassDc[0][0],
+		s_odDrawPassCount[0][1], s_odDrawPassDc[0][1],
+		s_odDrawPassCount[0][2], s_odDrawPassDc[0][2],
+		s_odDrawPassCount[0][3], s_odDrawPassDc[0][3],
+		s_odDrawPassCount[0][4], s_odDrawPassDc[0][4],
+		s_odDrawPassCount[0][5], s_odDrawPassDc[0][5],
+		s_odDrawPassCount[1][0], s_odDrawPassDc[1][0],
+		s_odDrawPassCount[1][1], s_odDrawPassDc[1][1],
+		s_odDrawPassCount[1][2], s_odDrawPassDc[1][2],
+		s_odDrawPassCount[1][3], s_odDrawPassDc[1][3],
+		s_odDrawPassCount[1][4], s_odDrawPassDc[1][4],
+		s_odDrawPassCount[1][5], s_odDrawPassDc[1][5],
+		s_odDrawSzCount[0], s_odDrawSzDc[0],
+		s_odDrawSzCount[1], s_odDrawSzDc[1],
+		s_odDrawSzCount[2], s_odDrawSzDc[2],
+		s_odDrawSzCount[3], s_odDrawSzDc[3],
+		s_odDrawSzCount[4], s_odDrawSzDc[4],
+		s_odDrawSzCount[5], s_odDrawSzDc[5]);
+	for(i = 0; i < s_odDrawTopN && i < 6 && n > 0 && n < (int)sizeof t - 32; i++){
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(s_odDrawTopIdx[i]);
+		n += snprintf(t + n, sizeof t - n, "%s=%d ", mi->GetModelName(), s_odDrawTopDc[i]);
+	}
+	ODTRACES(t);
+	for(i = 0; i < 2; i++)
+		for(j = 0; j < 6; j++){
+			s_odDrawPassCount[i][j] = 0;
+			s_odDrawPassDc[i][j] = 0;
+		}
+	for(i = 0; i < 6; i++){
+		s_odDrawSzCount[i] = 0;
+		s_odDrawSzDc[i] = 0;
+	}
+	s_odDrawTopN = 0;
+}
+
 int32 CRenderer::ms_nNoOfVisibleEntities;
 CEntity *CRenderer::ms_aVisibleEntityPtrs[NUMVISIBLEENTITIES];
 CEntity *CRenderer::ms_aInVisibleEntityPtrs[NUMINVISIBLEENTITIES];
@@ -139,9 +281,13 @@ CRenderer::RenderOneRoad(CEntity *e)
 	else
 #endif
 	{
-		PUSH_RENDERGROUP(CModelInfo::GetModelInfo(e->GetModelIndex())->GetModelName());
+		PUSH_RENDERGROUP_UNTIMED(CModelInfo::GetModelInfo(e->GetModelIndex())->GetModelName());
 
-		e->Render();
+		{
+			int odDc0 = OdDrawsMark();
+			e->Render();
+			OdDrawsEntity(e, OdDrawsMark() - odDc0);
+		}
 
 		POP_RENDERGROUP();
 	}
@@ -194,7 +340,7 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 	}
 #endif
 
-	PUSH_RENDERGROUP(CModelInfo::GetModelInfo(e->GetModelIndex())->GetModelName());
+	PUSH_RENDERGROUP_UNTIMED(CModelInfo::GetModelInfo(e->GetModelIndex())->GetModelName());
 
 	resetLights = e->SetupLighting();
 
@@ -228,7 +374,11 @@ CRenderer::RenderOneNonRoad(CEntity *e)
 #endif
 		SetCullMode(rwCULLMODECULLNONE);
 	}
-	e->Render();
+	{
+		int odDc0 = OdDrawsMark();
+		e->Render();
+		OdDrawsEntity(e, OdDrawsMark() - odDc0);
+	}
 
 	if(e->IsVehicle()){
 		e->bImBeingRendered = true;
@@ -262,6 +412,10 @@ inline bool IsRoad(CEntity *e) { return e->IsBuilding() && ((CSimpleModelInfo*)C
 void
 CRenderer::RenderRoads(void)
 {
+#ifdef EXTENDED_PIPELINES
+	if(CustomPipes::bRenderingEnvMap)
+		return;
+#endif
 	int i;
 	CEntity *e;
 
@@ -313,7 +467,7 @@ CRenderer::RenderEverythingBarRoads(void)
 			continue;
 
 #ifdef EXTENDED_PIPELINES
-		if(CustomPipes::bRenderingEnvMap && (e->IsPed() || e->IsVehicle()))
+		if(CustomPipes::bRenderingEnvMap && !e->IsBuilding())
 			continue;
 #endif
 

@@ -314,6 +314,12 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 	*tex = Texture::streamReadNative(stream);
 #ifdef LIBRW
 #ifdef __EMSCRIPTEN__
+	if (!*tex) {
+		static int n = 0;
+		if (n < 50) { n++; ODTRACES("hackRead tex NIL"); printf("[texconv] hackRead tex NIL\n"); }
+		return *tex != nil;
+	}
+#endif
 	if ((*tex)->raster) {
 		static int odN = 0;
 		odN++;
@@ -331,13 +337,6 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 		}
 	}
 #endif
-#ifdef __EMSCRIPTEN__
-	if (!*tex) {
-		static int n = 0;
-		if (n < 50) { n++; ODTRACES("hackRead tex NIL"); printf("[texconv] hackRead tex NIL\n"); }
-		return *tex != nil;
-	}
-#endif
 	(*tex)->raster = rw::Raster::convertTexToCurrentPlatform((*tex)->raster);
 #ifdef __EMSCRIPTEN__
 	if ((*tex)->raster == nil) {
@@ -350,7 +349,6 @@ RwBool rwNativeTextureHackRead(RwStream *stream, RwTexture **tex, RwInt32 size)
 			printf("[texconv] %s\n", t);
 		}
 	}
-#endif
 #endif
 	return *tex != nil;
 }
