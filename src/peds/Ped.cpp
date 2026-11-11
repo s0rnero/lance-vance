@@ -11,7 +11,6 @@ extern void OdWebMark(int);
 #include "PlayerPed.h"
 #include "PedArbiter.h"
 #include "RwHelper.h"
-#include "RwHelper.h"   // R18d: el nado del jugador (CPlayerPed::ViceExtIsSwimming) decide la flotación
 #include "ondemand.h"  // web: ODTRACES -> odtrace.log (sección 2 / P2)
 #include "AnimBlendAssociation.h"
 #include "Fire.h"
@@ -460,14 +459,6 @@ CPed::CPed(uint32 pedType) : m_pedIK(this)
 
 CPed::~CPed(void)
 {
-#ifdef __EMSCRIPTEN__
-	PedClumpPreDelete(this, nil);
-#endif
-
-#ifdef __EMSCRIPTEN__
-	PedClumpPreDelete(this, nil);
-#endif
-
 #ifdef __EMSCRIPTEN__
 	PedClumpPreDelete(this, nil);
 #endif
