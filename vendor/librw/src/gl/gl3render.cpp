@@ -238,14 +238,27 @@ defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
 	InstanceData *inst = header->inst;
 	int32 n = header->numMeshes;
 
-	while(n--){
-		m = inst->material;
+	int32 i = 0;
+	while(i < n){
+		InstanceData *inst0 = inst + i;
+		int32 j = i;
+		if(header->primType == GL_TRIANGLES){
+			while(j + 1 < n){
+				InstanceData *a = inst + j;
+				InstanceData *b = inst + j + 1;
+				if(b->material != a->material) break;
+				if(b->vertexAlpha != a->vertexAlpha) break;
+				if(b->offset != a->offset + a->numIndex * 2) break;
+				j++;
+			}
+		}
+		m = inst0->material;
 
 		setMaterial(flags, m->color, m->surfaceProps);
 
 		setTexture(0, m->texture);
 
-		rw::SetRenderState(VERTEXALPHA, inst->vertexAlpha || m->color.alpha != 0xFF);
+		rw::SetRenderState(VERTEXALPHA, inst0->vertexAlpha || m->color.alpha != 0xFF);
 
 		// En dualPass el material transparente conserva la escritura de
 		// profundidad: la primera pasada (alfa >= 128) la usa y la segunda
@@ -257,7 +270,7 @@ defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
 			rw::SetRenderState(rw::ZWRITEENABLE, m->color.alpha != 0xFF ? 0 : odBaseZwrite);
 
 #ifdef __EMSCRIPTEN__
-		odMatTrace(m, inst);
+		odMatTrace(m, inst0);
 #endif
 
 		if((vsBits & VSLIGHT_MASK) == 0){
@@ -272,11 +285,16 @@ defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
 				defaultShader_fullLight_noAT->use();
 		}
 
+		InstanceData runInst = *inst0;
+		uint32 runIndex = 0;
+		for(int32 k = i; k <= j; k++)
+			runIndex += (inst + k)->numIndex;
+		runInst.numIndex = runIndex;
 		if(dualPass && getAlphaBlend() && rw::GetRenderState(rw::ZWRITEENABLE))
-			drawInstDualPass(header, inst);
+			drawInstDualPass(header, &runInst);
 		else
-			drawInst(header, inst);
-		inst++;
+			drawInst(header, &runInst);
+		i = j + 1;
 	}
 	rw::SetRenderState(rw::ZWRITEENABLE, odBaseZwrite);
 	teardownVertexInput(header);

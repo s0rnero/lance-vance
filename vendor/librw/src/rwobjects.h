@@ -802,6 +802,10 @@ struct Camera
 	void setFOV(float32 fov, float32 ratio);
 };
 
+#ifdef __EMSCRIPTEN__
+extern void (*rwClumpDiagCb)(int event, void *clump, int serial);
+#endif
+
 struct Clump
 {
 	PLUGINBASE

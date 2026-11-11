@@ -16,6 +16,9 @@ namespace rw {
 
 int32 Clump::numAllocated;
 int32 Atomic::numAllocated;
+#ifdef __EMSCRIPTEN__
+void (*rwClumpDiagCb)(int, void *, int) = nil;
+#endif
 
 PluginList Clump::s_plglist(sizeof(Clump));
 PluginList Atomic::s_plglist(sizeof(Atomic));
@@ -33,6 +36,10 @@ Clump::create(void)
 		return nil;
 	}
 	numAllocated++;
+#ifdef __EMSCRIPTEN__
+	static int sn_serial = 0;
+	int sn = ++sn_serial;
+#endif
 	clump->object.init(Clump::ID, 0);
 	clump->atomics.init();
 	clump->lights.init();
@@ -43,6 +50,10 @@ Clump::create(void)
 	clump->inWorld.init();
 
 	s_plglist.construct(clump);
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(1, clump, sn);
+#endif
 	return clump;
 }
 
@@ -85,12 +96,20 @@ Clump::clone(void)
 		clump->addAtomic(atomic);
 	}
 	source->purgeClone();
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(20, clump, 0);
+#endif
 
 	// World extension
 	if(this->world)
 		this->world->addClump(clump);
 
 	s_plglist.copy(clump, this);
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(21, clump, 0);
+#endif
 	return clump;
 }
 
@@ -98,7 +117,15 @@ void
 Clump::destroy(void)
 {
 	Frame *f;
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(10, this, 0);
+#endif
 	s_plglist.destruct(this);
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(11, this, 0);
+#endif
 	FORLIST(lnk, this->atomics){
 		Atomic *a = Atomic::fromClump(lnk);
 		this->removeAtomic(a);
@@ -109,6 +136,10 @@ Clump::destroy(void)
 		this->removeLight(l);
 		l->destroy();
 	}
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(13, this, 0);
+#endif
 	FORLIST(lnk, this->cameras){
 		Camera *c = Camera::fromClump(lnk);
 		this->removeCamera(c);
@@ -117,7 +148,15 @@ Clump::destroy(void)
 	if(f = this->getFrame(), f)
 		f->destroyHierarchy();
 	assert(this->world == nil);
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(14, this, 0);
+#endif
 	rwFree(this);
+#ifdef __EMSCRIPTEN__
+	if (rwClumpDiagCb)
+		rwClumpDiagCb(15, this, 0);
+#endif
 	numAllocated--;
 }
 

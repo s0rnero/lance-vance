@@ -4,6 +4,7 @@
 #include <assert.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
+#include <emscripten/html5.h>
 #endif
 
 #include "../rwbase.h"
@@ -2000,8 +2001,22 @@ initOpenGL(void)
 //		printf("%d %s\n", i, ext);
 	}
 */
+#ifdef __EMSCRIPTEN__
+	{
+	EMSCRIPTEN_WEBGL_CONTEXT_HANDLE odCtx = emscripten_webgl_get_current_context();
+	bool odS3tc = false;
+	bool odAstc = false;
+	if(odCtx){
+		odS3tc = emscripten_webgl_enable_extension(odCtx, "WEBGL_compressed_texture_s3tc");
+		odAstc = emscripten_webgl_enable_extension(odCtx, "WEBGL_compressed_texture_astc");
+	}
+	gl3Caps.dxtSupported = odS3tc || !!GLAD_GL_EXT_texture_compression_s3tc;
+	gl3Caps.astcSupported = odAstc || !!GLAD_GL_KHR_texture_compression_astc_ldr;
+	}
+#else
 	gl3Caps.dxtSupported = !!GLAD_GL_EXT_texture_compression_s3tc;
 	gl3Caps.astcSupported = !!GLAD_GL_KHR_texture_compression_astc_ldr;
+#endif
 #ifdef __EMSCRIPTEN__
 	printf("[od] webgl s3tc=%d astc=%d (0 = decode por software)\n",
 		(int)gl3Caps.dxtSupported, (int)gl3Caps.astcSupported);
