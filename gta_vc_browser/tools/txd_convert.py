@@ -182,14 +182,24 @@ def convert(src, dst, port=None):
             raise SystemExit("no se pudo decodificar: %s" % name)
         alpha = any(a < 255 for _, _, _, a in px)
         p = port_info.get(name)
-        if p:
+        # El fmt del TXD de referencia solo se hereda si esa textura ya venia en
+        # 32 bits sin comprimir. Un fmt de 16 bits (C565/C4444) heredado de un
+        # TXD DXT deja un raster de 32 bits mal etiquetado: el lector GL3
+        # (gl3raster.cpp rasterCreateTexture) solo admite C8888/C888/C1555 y
+        # devuelve ERR_INVRASTER, la textura queda nula y el material sale
+        # blanco. Es lo que le paso al kaufman (plan 60, T2 -> T3).
+        if p and p["depth"] == 32 and p["compression"] == 0:
             fmt = p["fmt"]
             has_alpha = p["has_alpha"]
             filt = p["filt"]
             mask = p["mask"]
             rtype = p["rtype"]
         else:
-            fmt = 0x8600 if alpha else 0x8500
+            # C8888 = 0x0500 (GL_RGBA, alfa real) / C888 = 0x0600 (GL_RGB,
+            # sin alfa). Estaban invertidos: las texturas CON alfa salian como
+            # C888 y el motor las dibujaba opacas (el fondo negro de los decals
+            # del kaufman, plan 60 T4).
+            fmt = 0x8500 if alpha else 0x8600
             has_alpha = 1 if alpha else 0
             filt = info["filt"]
             mask = info["mask"]

@@ -32,6 +32,10 @@ static const ViceExtBodyLens s_odBodyLens[] = {
 	{ "fbiranch", "chassis_hi", CAR_INDICATOR_RR, 1, { 172, 92, 16 }, 0x00001000, 178, { 113, -306, 20 } },	// 62.2 cristal 178 cm2 (4 tris, mats [12])
 	{ "fbiranch", "wing_lf_hi_ok", CAR_INDICATOR_LF, -1, { 172, 92, 16 }, 0x00000020, 571, { -111, 311, 3 } },	// 62.2 cristal 571 cm2 (2 tris, mats [5])
 	{ "fbiranch", "wing_rf_hi_ok", CAR_INDICATOR_RF, 1, { 172, 92, 16 }, 0x00000020, 571, { 111, 311, 3 } },	// 62.2 cristal 571 cm2 (2 tris, mats [5])
+	{ "kaufman", "wing_lf_hi_ok", CAR_INDICATOR_LF, -1, { 167, 95, 3 }, 0x00000002, 184, { -112, 239, -28 } },	// 60.0 T4 direccional del ala delantera izquierda (mat1 cabbie8bit128)
+	{ "kaufman", "wing_rf_hi_ok", CAR_INDICATOR_RF, 1, { 167, 95, 3 }, 0x00000002, 184, { 112, 239, -28 } },	// 60.0 T4 direccional del ala delantera derecha
+	{ "kaufman", "chassis_hi", CAR_INDICATOR_LR, -1, { 167, 95, 3 }, 0x00000001, 187, { -111, -247, -28 } },	// 60.0 T4 direccional trasera izquierda (mat0 cabbie8bit128 de chassis_hi)
+	{ "kaufman", "chassis_hi", CAR_INDICATOR_RR, 1, { 167, 95, 3 }, 0x00000001, 187, { 111, -247, -28 } },	// 60.0 T4 direccional trasera derecha
 	{ "mrwhoop", "chassis_hi", CAR_INDICATOR_LF, -1, { 177, 90, 27 }, 0x00000800, 127, { -76, 223, 5 } },	// 62.2 cristal 127 cm2 (2 tris, mats [11])
 	{ "mrwhoop", "chassis_hi", CAR_INDICATOR_RF, 1, { 177, 90, 27 }, 0x00001000, 127, { 76, 223, 5 } },	// 62.2 cristal 127 cm2 (2 tris, mats [12])
 	{ "mule", "chassis_hi", CAR_INDICATOR_LF, -1, { 139, 73, 22 }, 0x00000040, 202, { -73, 278, 1 } },	// 44% ambar

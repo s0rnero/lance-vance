@@ -81,6 +81,15 @@ SITES = {
                  ("chassis_hi", "R", (-1.12, -3.07, 0.20), False)],
     "mule": [("chassis_hi", "F", (-0.73, 2.78, 0.01), True)],
     "mrwhoop": [("chassis_hi", "F", (-0.76, 2.23, 0.05), True)],
+    # 60.0 T4: el kaufman Hero (Xbox) NO trae los frames indicator_lf/rf/lr/rr
+    # del modelo PC; sus direccionales laterales viven pintadas en la chapa.
+    # Centroides medidos en el DFF Hero: alas delanteras (mat1 cabbie8bit128 de
+    # wing_*_hi_ok) y chasis trasero (mat0 de chassis_hi). El material se
+    # comparte con el panel oscuro, asi que van como excepcion parcial: el
+    # atlas solo enciende las texelas ambar del footprint.
+    "kaufman": [("wing_lf_hi_ok", "F", (-1.13, 2.38, -0.29), True, 0.55),
+                ("wing_rf_hi_ok", "F", (-1.13, 2.38, -0.29), True, 0.55),
+                ("chassis_hi", "R", (-1.11, -2.48, -0.28), True)],
 }
 MODELOS = sorted(SITES)
 
@@ -117,14 +126,21 @@ def clusters_with_faces(faces, frac_min=FRAC_FACE):
 
 
 def site_of(model, frame, axle, side, cx, cy, cz):
-    """El sitio aprobado cuyo centroide esta a <= SITE_TOL del racimo, o None."""
-    for (sf, sa, (sx, sy, sz), partial) in SITES.get(model, []):
+    """El sitio aprobado cuyo centroide esta a <= SITE_TOL del racimo, o None.
+
+    Un sitio puede traer un 5o valor: la distancia maxima al ancla de la lampara
+    (`amax`). Solo lo usa el kaufman Hero, cuyas direccionales van en el ala
+    delantera y quedan a 0,51 m del ancla del faro (60.0 T4).
+    """
+    for site in SITES.get(model, []):
+        sf, sa, (sx, sy, sz), partial = site[:4]
+        amax = site[4] if len(site) > 4 else 0.50
         if sf != frame or sa != axle:
             continue
         ex = sx if side < 0 else -sx
         d = ((cx - ex) ** 2 + (cy - sy) ** 2 + (cz - sz) ** 2) ** 0.5
         if d <= SITE_TOL:
-            return (sf, sa, partial)
+            return (sf, sa, partial, amax)
     return None
 
 
@@ -155,8 +171,9 @@ def measure_model(model):
                 detalle.append((c, "RECHAZA cov=%.2f verdict=%s" % (c["cov"], verdict)))
                 continue
         else:
-            if dist > 0.50 or c["amber"] <= 0.0:
-                detalle.append((c, "RECHAZA parcial sin ancla dist=%.2f" % dist))
+            if dist > site[3] or c["amber"] <= 0.0:
+                detalle.append((c, "RECHAZA parcial sin ancla dist=%.2f (max %.2f)"
+                                % (dist, site[3])))
                 continue
         node = NODE[axle][side]
         grupos[(c["frame"], node, side)].append(c)
