@@ -1,6 +1,10 @@
 import { getFS, syncFs, saveBlob } from './fsx.js';
 import { makeZip } from './zip.js';
 
+function trace(s) {
+  try { (globalThis.__odq = globalThis.__odq || []).push('MUS ' + s); } catch (e) {}
+}
+
 const DIR = '/MP3';
 const CAP = 300 * 1024 * 1024;
 
@@ -92,8 +96,12 @@ export function importMusic() {
         }
       }
       if (added.length) syncFs('music');
-      const rescanned = added.length ? rescanUserMusic() : false;
-      resolve({ ok: added.length > 0, reason: added.length ? 'ok' : 'rejected', added, rejected, rescanned, used: usedBytes(FS) });
+      if (typeof window !== 'undefined') {
+        if (added.length) window.__vcWebMusicRescan = 1;
+        window.__vcWebMusicImported = added.length;
+      }
+      trace('import n=' + added.length + ' de ' + files.length);
+      resolve({ ok: added.length > 0, reason: added.length ? 'ok' : 'rejected', added, rejected, rescanned: added.length > 0, used: usedBytes(FS) });
     };
     input.oncancel = () => {
       input.remove();
@@ -111,7 +119,8 @@ export function deleteAllMusic() {
     try { FS.unlink(DIR + '/' + name); n++; } catch (e) {}
   }
   if (n) syncFs('music');
-  setTimeout(rescanUserMusic, 0);
+  if (typeof window !== 'undefined') window.__vcWebMusicRescan = 1;
+  trace('borradas ' + n);
   return n;
 }
 

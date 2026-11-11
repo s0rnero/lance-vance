@@ -18,3 +18,5 @@ FEM_SKO	Aspetti importati
 FEM_SKL	Troppi aspetti in una volta
 FEM_SKE	Nessun BMP valido - usa file .bmp
 FES_ISK	Importa skins
+FES_DSK	Elimina aspetto
+FEM_MOK	Musica importata

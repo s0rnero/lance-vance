@@ -16,7 +16,7 @@ import { createTouchControls, touchDetected } from './touch.js';
 import { downloadAllGallery, clearGallery } from './gallery.js';
 import { downloadSlot, downloadAll, importSavesFromPicker } from './saves.js';
 import { importMusic, deleteAllMusic, downloadAllMusic, musicInfo, rescanUserMusic } from './music.js';
-import { restoreSkins, importSkinsFromPicker, skinInfo } from './skins.js';
+import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './skins.js';
 
 // Tag de esta ronda: sale en la consola, en el título y en las trazas.
 // Sirve para saber QUÉ código corre (adiós confusión de cachés).
@@ -503,7 +503,18 @@ import { restoreSkins, importSkinsFromPicker, skinInfo } from './skins.js';
 // 63.1 T1 (10/11): MatFX recibe env-map dinámico en carrocerías con specular
 // (Banshee de The Hero y el resto de la flota Xbox), sin cambiar el pipeline
 // global a Neo. VERSION anterior: 2026-11-09-62.2-T2.
-export const VERSION = '2026-11-09-62.3-T2';
+// 63.2 T1 (10/11): Banshee Xbox con la capa de reflejo del Banshee PC
+// (bansheespeca + coeficiente 1.0 en pintura y cristales, DFF 344176 B,
+// TXD 1574200 B). VERSION anterior: 2026-11-10-63.0-T1.
+// 63.1 rendimiento T1-T3 (11/11): S3TC/ASTC de GPU activados en WebGL2, batching de mallas del mismo material en librw, envmap solo con edificios. VERSION anterior: 2026-11-10-63.2-T1.
+// 64.0 M1 (11/11): medición de dibujos por tipo de objeto, por tamaño y por
+// pasada (traza ODDRAWS), sin cambios visibles. VERSION anterior: 2026-11-11-64.0-T1.
+// 66.1 M2 (11/11): build de control con la sonda de dibujos apagada, para
+// separar las caidas del registro de trazas. VERSION anterior: 2026-11-11-66.1-T1.
+// 67.1 (11/11): se revierte el cambio de mipmaps DXT de 67.0: los niveles
+// pequenos quedaban con contenido cruzado y los peds a distancia salian a
+// rayas. VERSION anterior: 2026-11-11-67.0-T1.
+export const VERSION = '2026-11-11-68.2-T2';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
@@ -609,7 +620,8 @@ export function startGame(options = {}) {
 
   const live = opts.runMode === 'live';
   const bucketUrl = live ? base(opts.bucketUrl, 'https://vicecity-data.carv-portfolio.workers.dev/') : null;
-  const buildUrl = bucketUrl ? bucketUrl + 'build/' : base(opts.buildUrl, '/build/');
+  const buildParam = (typeof location !== 'undefined') ? new URLSearchParams(location.search).get('build') : null;
+  const buildUrl = bucketUrl ? bucketUrl + 'build/' : base(buildParam || opts.buildUrl, '/build/');
   const streamedUrl = bucketUrl ? bucketUrl + 'streamed/' : base(opts.streamedUrl, '/streamed/');
   const manifestUrl = bucketUrl ? bucketUrl + 'manifest.json' : (opts.manifestUrl || '/manifest.json');
   const assetsUrl = (bucketUrl || opts.assetsUrl === null) ? null : base(opts.assetsUrl, '/vc/');
@@ -725,7 +737,6 @@ export function startGame(options = {}) {
       logTimer = setTimeout(() => { logTimer = 0; writeLogDom(logBuf); logBuf = []; }, 500);
       timers.push(logTimer);
     }
-    if (opts.console && (/^\[err\]|\[REJECT\]|\[FATAL\]/.test(s) || !NOISY.test(s))) console.log('[game]', s);
     return s;
   }
   function fail(text, detail) {
@@ -1101,6 +1112,16 @@ export function startGame(options = {}) {
   // en la misma cola de trazas (`JSERR`/`ENGERR`) y se manda de forma SÍNCRONA
   // antes de que la página muera; el latido `FPSLOG` de cada segundo que falta
   // después marca el instante exacto del cuelgue.
+  window.__vcPedClumpFatal = (text) => {
+    try {
+      const full = 'PEDCLUMPDUMP ' + String(text || '');
+      const trunc = full.length > 49152;
+      const line = full.slice(0, 49152) + (trunc ? ' truncado=1' : '');
+      const q = (window.__odq = window.__odq || []);
+      q.unshift(line);
+      flush(true);
+    } catch (e) {}
+  };
   const pushFatal = (tag, what) => {
     try {
       // 21/10: 600 caracteres cortaban el stack del crash a la mitad (el frame
@@ -1213,7 +1234,11 @@ export function startGame(options = {}) {
   window.__vcWebSaveImported = 0;
   window.__vcWebSaveManager = 0;
   window.__vcWebSkinResult = 0;
+  window.__vcWebSkinRescan = 0;
+  window.__vcWebMusicRescan = 0;
+  window.__vcWebMusicImported = 0;
   window.__vcSkinImport = () => importSkinsFromPicker();
+  window.__vcSkinDelete = (name) => deleteSkin(String(name));
 
   // ---- audio: sin botón, se abre con el primer gesto ---------------------
   async function unlockAudio() {
@@ -1444,12 +1469,18 @@ export function startGame(options = {}) {
           // El juego NO espera solo: sin la dependencia leía MEMFS vacío
           // antes de que bajara IDB (carrera de lectura).
           if (typeof addRunDependency !== 'undefined') addRunDependency('idbfs-populate');
+          window.__vcIdbReady = false;
           FS.syncfs(true, (err) => {
+            window.__vcIdbReady = !err;
+            traceOut('IDBFS', err ? 'load-fail ' + err : 'load-ok', false);
             log(err ? '[err] IDBFS load: ' + err : 'IDBFS listo (guardados persistentes).');
             try { restoreSkins(); } catch (e) {}
             try { if (typeof removeRunDependency !== 'undefined') removeRunDependency('idbfs-populate'); } catch (e) {}
           });
-          setTimeout(() => { try { if (typeof removeRunDependency !== 'undefined') removeRunDependency('idbfs-populate'); } catch (e) {} }, 15000);
+          setTimeout(() => {
+            try { if (typeof removeRunDependency !== 'undefined') removeRunDependency('idbfs-populate'); } catch (e) {}
+            if (!window.__vcIdbReady) traceOut('IDBFS', 'timeout-15s sin poblar', false);
+          }, 15000);
         } catch (e) { log('[err] IDBFS: ' + e); }
       }],
       // El loader reporta "Downloading data... (123/456)": va a la barra.

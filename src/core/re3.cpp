@@ -911,6 +911,14 @@ bool LoadINISettings()
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
 #endif
 
+#ifdef __EMSCRIPTEN__
+	ODTRACES("INI leido");
+#ifdef VICEEXT_AUTOSAVE
+	ODTRACEI("INI autosave=", (int)FrontEndMenuManager.m_PrefsAutosave);
+	ODTRACEI("INI galeria=", (int)FrontEndMenuManager.m_PrefsStoreGalleryPhotos);
+#endif
+#endif
+
 	return true;
 }
 

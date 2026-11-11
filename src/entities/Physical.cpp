@@ -592,7 +592,7 @@ CPhysical::ApplyAirResistance(void)
 static uint32 odEmpujeNextReport;
 
 static void
-odTraceEmpuje(int who, CPhysical *veh, CPhysical *ped, float escala, float velAntes)
+odTraceEmpuje(int who, CPhysical *veh, CPhysical *ped, float escala, float velAntes, float posPush)
 {
 	uint32 odNow = CTimer::GetTimeInMilliseconds();
 	if (odNow < odEmpujeNextReport)
@@ -600,9 +600,9 @@ odTraceEmpuje(int who, CPhysical *veh, CPhysical *ped, float escala, float velAn
 	odEmpujeNextReport = odNow + 200u;
 	char odT[200];
 	snprintf(odT, sizeof odT,
-		"EMPUJE who=%d vantes=%.3f vdespues=%.3f escala=%.3f pedvel=%.3f vehmasa=%.0f",
+		"EMPUJE who=%d vantes=%.3f vdespues=%.3f escala=%.3f pedvel=%.3f vehmasa=%.0f pos=%.3f",
 		who, velAntes, veh->m_vecMoveSpeed.Magnitude(), escala,
-		ped->m_vecMoveSpeed.Magnitude(), veh->m_fMass);
+		ped->m_vecMoveSpeed.Magnitude(), veh->m_fMass, posPush);
 	ODTRACES(odT);
 }
 #endif
@@ -863,7 +863,7 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 				B->ApplyTurnForce(fB, pointposB);
 #if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
 				if(B->IsVehicle() && !((CPed*)A)->bInVehicle)
-					odTraceEmpuje(1, B, A, odEscalaEmpuje, odVelVehAntes);
+					odTraceEmpuje(1, B, A, odEscalaEmpuje, odVelVehAntes, 0.0f);
 #endif
 #else
 				if(!odPedOnFootVsCar) {
@@ -922,9 +922,19 @@ CPhysical::ApplyCollision(CPhysical *B, CColPoint &colpoint, float &impulseA, fl
 				if(fA.z < 0.0f) fA.z = 0.0f;
 				A->ApplyMoveForce(fA);
 				A->ApplyTurnForce(fA, pointposA);
+				// Un peon de 70 kg no frena un coche de 1600: si el coche avanza
+				// contra el, la penetracion se le aparta al peon. Su propio pase
+				// de shift no basta porque va andando y la animacion le devuelve
+				// la posicion cada frame, asi que el coche se queda clavado.
+				float odPison = 0.0f;
+				if(A->IsVehicle() && !((CPed*)B)->bInVehicle && !ispedcontactA &&
+				   DotProduct(A->m_vecMoveSpeed, B->GetPosition() - A->GetPosition()) > 0.0f) {
+					odPison = Min(colpoint.GetDepth(), OD_PISON_MAX);
+					B->GetMatrix().Translate(colpoint.normal * -odPison);
+				}
 #if defined __EMSCRIPTEN__ && defined VICEEXT_PED_VS_CAR_PUSH
 				if(A->IsVehicle() && !((CPed*)B)->bInVehicle)
-					odTraceEmpuje(2, A, B, odEscalaEmpuje, odVelVehAntes);
+					odTraceEmpuje(2, A, B, odEscalaEmpuje, odVelVehAntes, odPison);
 #endif
 #else
 				if(!odCarVsPedOnFoot) {

@@ -18,3 +18,5 @@ FEM_SKO	Skins imported
 FEM_SKL	Too many skins at once
 FEM_SKE	No valid BMP - use .bmp files
 FES_ISK	Import skins
+FES_DSK	Delete skin
+FEM_MOK	Music imported

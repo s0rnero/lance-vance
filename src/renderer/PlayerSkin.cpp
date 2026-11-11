@@ -123,7 +123,13 @@ CPlayerSkin::GetSkinTexture(const char *texName)
 void
 CPlayerSkin::BeginFrontendSkinEdit(void)
 {
+	if (gpPlayerClump)
+		return;
+
 	LoadPlayerDff();
+	if (gpPlayerClump == nil)
+		return;
+
 	RpClumpForAllAtomics(gpPlayerClump, CClumpModelInfo::SetAtomicRendererCB, (void*)CVisibilityPlugins::RenderPlayerCB);
 	CWorld::Players[0].LoadPlayerSkin();
 	gOldFov = CDraw::GetFOV();
@@ -146,6 +152,9 @@ CPlayerSkin::RenderFrontendSkinEdit(void)
 	const RwV3d pos = { 1.35f, 0.35f, 7.725f };
 	const RwV3d axis = { 0.0f, 1.0f, 0.0f };
 	static uint32 LastFlash = 0;
+
+	if (gpPlayerClump == nil)
+		return;
 
 	RwFrame *frame = RpClumpGetFrame(gpPlayerClump);
 

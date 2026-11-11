@@ -39,6 +39,10 @@
 #include "FileLoader.h"
 #include "User.h"
 #include "sampman.h"
+#ifdef VICEEXT_WEB_SKINS
+extern "C" void ViceExtRescanSkins(void);
+extern "C" void ViceExtRescanUserMusic(void);
+#endif
 
 // Similar story to Hud.cpp:
 // Game has colors inlined in code.
@@ -115,6 +119,28 @@ BuildWebSkinImportedText(int result)
 	}
 	ms_awWebSkinImported[n] = '\0';
 }
+
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+static wchar ms_awWebMusicImported[128];
+
+static void
+BuildWebMusicImportedText(int count)
+{
+	wchar *msg = TheText.Get("FEM_MOK");
+	if (msg == nil)
+		return;
+	int n = 0;
+	for (const wchar *p = msg; *p != 0 && n < 110; p++)
+		ms_awWebMusicImported[n++] = *p;
+	char num[16];
+	snprintf(num, sizeof num, " (%d)", count);
+	wchar wnum[16];
+	AsciiToUnicode(num, wnum);
+	for (const wchar *p = wnum; *p != 0 && n < 126; p++)
+		ms_awWebMusicImported[n++] = *p;
+	ms_awWebMusicImported[n] = 0;
+}
+#endif
 
 #define MAP_MIN_SIZE 162.f
 #define MAP_SIZE_TO_ALLOW_X_MOVE 297.f
@@ -650,6 +676,11 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	m_nMenuFadeAlpha = 0;
 	m_nOptionHighlightTransitionBlend = 0;
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
+
+#ifdef VICEEXT_WEB_SKINS
+	if (m_nCurrScreen == MENUPAGE_SKIN_SELECT)
+		CPlayerSkin::BeginFrontendSkinEdit();
+#endif
 
 	{
 		char t[96];
@@ -1396,6 +1427,11 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #ifdef VICEEXT_WEB_SKINS
 		case MENUPAGE_WEB_SKIN_IMPORTED:
 			str = ms_awWebSkinImported;
+			break;
+#endif
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+		case MENUPAGE_WEB_MUSIC_IMPORTED:
+			str = ms_awWebMusicImported;
 			break;
 #endif
 		default:
@@ -3692,6 +3728,14 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 			|| m_nCurrExLayer == HOVEROPTION_IMPORT_SKIN) {
 			m_nHoverOption = HOVEROPTION_IMPORT_SKIN;
 		}
+		else if ((m_nSelectedListRow != 0
+			&& m_nMousePosX > MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT) + CFont::GetStringWidth(TheText.Get("FES_ISK"), true) + MENU_X(20.0f)
+			&& m_nMousePosX < MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT) + CFont::GetStringWidth(TheText.Get("FES_ISK"), true) + MENU_X(20.0f) + CFont::GetStringWidth(TheText.Get("FES_DSK"), true)
+			&& m_nMousePosY > SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 28)
+			&& m_nMousePosY < SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 58))
+			|| m_nCurrExLayer == HOVEROPTION_DELETE_SKIN) {
+			m_nHoverOption = HOVEROPTION_DELETE_SKIN;
+		}
 #endif
 		else if ((strcmp(m_aSkinName, m_PrefsSkinFile) != 0
 			&& m_nMousePosX > MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT)
@@ -3775,7 +3819,6 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 	CFont::PrintString(MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT), SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 5), TheText.Get("FES_SET"));
 #ifdef VICEEXT_WEB_SKINS
 	CFont::SetFontStyle(FONT_LOCALE(FONT_HEADING));
-	CFont::SetScale(MENU_X(0.9f), MENU_Y(0.9f));
 	if (m_nCurrExLayer == HOVEROPTION_IMPORT_SKIN)
 		CFont::SetColor(CRGBA(SELECTEDMENUOPTION_COLOR.r, SELECTEDMENUOPTION_COLOR.g, SELECTEDMENUOPTION_COLOR.b, FadeIn(255)));
 	else
@@ -3784,6 +3827,16 @@ CMenuManager::DrawPlayerSetupScreen(bool activeScreen)
 	CFont::SetDropShadowPosition(2);
 	CFont::SetDropColor(CRGBA(0, 0, 0, FadeIn(255)));
 	CFont::PrintString(MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT), SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 35), TheText.Get("FES_ISK"));
+	{
+		float xDel = MENU_X_LEFT_ALIGNED(PLAYERSETUP_LIST_LEFT) + CFont::GetStringWidth(TheText.Get("FES_ISK"), true) + MENU_X(20.0f);
+		if (m_nSelectedListRow == 0)
+			CFont::SetColor(CRGBA(DARKMENUOPTION_COLOR.r, DARKMENUOPTION_COLOR.g, DARKMENUOPTION_COLOR.b, FadeIn(255)));
+		else if (m_nCurrExLayer == HOVEROPTION_DELETE_SKIN)
+			CFont::SetColor(CRGBA(SELECTEDMENUOPTION_COLOR.r, SELECTEDMENUOPTION_COLOR.g, SELECTEDMENUOPTION_COLOR.b, FadeIn(255)));
+		else
+			CFont::SetColor(CRGBA(MENUOPTION_COLOR.r, MENUOPTION_COLOR.g, MENUOPTION_COLOR.b, FadeIn(255)));
+		CFont::PrintString(xDel, SCREEN_SCALE_FROM_BOTTOM(PLAYERSETUP_LIST_BOTTOM - 35), TheText.Get("FES_DSK"));
+	}
 #endif
 	CFont::SetDropShadowPosition(0);
 }
@@ -4173,7 +4226,8 @@ CMenuManager::SaveSettings()
 	SaveINISettings();
 #endif
 #ifdef __EMSCRIPTEN__
-	EM_ASM({ try { OD.syncUserfiles('settings'); } catch (e) { console.log('[od] flush settings no disponible'); } });
+	ODTRACES("INI save");
+	EM_ASM({ try { OD.syncUserfiles('settings'); } catch (e) {} });
 #endif
 }
 
@@ -5041,6 +5095,9 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			break;
 #ifdef VICEEXT_WEB_SKINS
 		case HOVEROPTION_IMPORT_SKIN:
+			m_nCurrExLayer = m_nSelectedListRow != 0 ? HOVEROPTION_DELETE_SKIN : HOVEROPTION_USESKIN;
+			break;
+		case HOVEROPTION_DELETE_SKIN:
 			m_nCurrExLayer = HOVEROPTION_USESKIN;
 			break;
 #endif
@@ -5182,6 +5239,24 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		case HOVEROPTION_IMPORT_SKIN:
 			EM_ASM({ try { if (window.__vcSkinImport) window.__vcSkinImport(); } catch (e) {} });
 			break;
+		case HOVEROPTION_DELETE_SKIN:
+		{
+			tSkinInfo *s = m_pSkinListHead.nextSkin;
+			while (s && s->skinId != m_nSelectedListRow)
+				s = s->nextSkin;
+			if (s && strcmp(s->skinNameOriginal, DEFAULT_SKIN_NAME) != 0) {
+				if (strcmp(m_PrefsSkinFile, s->skinNameOriginal) == 0) {
+					strcpy(m_PrefsSkinFile, DEFAULT_SKIN_NAME);
+					SaveSettings();
+				}
+				EM_ASM({ try { if (window.__vcSkinDelete) window.__vcSkinDelete(UTF8ToString($0)); } catch (e) {} }, s->skinNameOriginal);
+				strcpy(m_aSkinName, DEFAULT_SKIN_NAME);
+				CWorld::Players[0].SetPlayerSkin(m_aSkinName);
+				m_nSelectedListRow = 0;
+				ODTRACES("SKIN borrada");
+			}
+			break;
+		}
 #endif
 		}
 	}
@@ -5759,7 +5834,31 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		}
 	}
 #endif
+#ifdef VICEEXT_WEB_MUSIC_MANAGER
+	if (m_nCurrScreen == MENUPAGE_WEB_MUSIC) {
+		int odMusic = EM_ASM_INT({ return window.__vcWebMusicImported | 0; });
+		if (odMusic > 0) {
+			EM_ASM({ window.__vcWebMusicImported = 0; });
+			BuildWebMusicImportedText(odMusic);
+			SwitchToNewScreen(MENUPAGE_WEB_MUSIC_IMPORTED);
+			m_nCurrOption = 1;
+			ODTRACEI("MUS import n=", odMusic);
+		}
+	}
+	{
+		if (EM_ASM_INT({ return window.__vcWebMusicRescan | 0; })) {
+			EM_ASM({ window.__vcWebMusicRescan = 0; });
+			ViceExtRescanUserMusic();
+			ODTRACES("MUS rescan");
+		}
+	}
+#endif
 #ifdef VICEEXT_WEB_SKINS
+	if (EM_ASM_INT({ return window.__vcWebSkinRescan | 0; })) {
+		EM_ASM({ window.__vcWebSkinRescan = 0; });
+		ViceExtRescanSkins();
+		ODTRACES("SKIN rescan");
+	}
 	if (m_nCurrScreen == MENUPAGE_SKIN_SELECT) {
 		int odSkin = EM_ASM_INT({ return window.__vcWebSkinResult | 0; });
 		if (odSkin != 0) {
@@ -5767,6 +5866,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			BuildWebSkinImportedText(odSkin);
 			SwitchToNewScreen(MENUPAGE_WEB_SKIN_IMPORTED);
 			m_nCurrOption = 1;
+			ODTRACEI("SKIN import code=", odSkin);
 		}
 	}
 #endif

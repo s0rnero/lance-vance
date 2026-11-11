@@ -687,6 +687,7 @@ enum Config {
 #define OD_VEH_ALMOST_STOPPED_SQ		0.0004f	// (0.02)^2: por debajo, el coche no se mueve
 #define OD_PUSH_VS_PED				0.25f
 #define OD_SHIFT_VS_PED				0.15f
+#define OD_PISON_MAX					0.05f	// desplazamiento maximo del peon por frame al empujarlo un coche
 
 // Plan 49.0: el censo de logica por frame (ADR-050). Cada correccion se
 // apaga con su define; las constantes se afinan aqui.

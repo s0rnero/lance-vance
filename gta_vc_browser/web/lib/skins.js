@@ -1,5 +1,9 @@
 import { getFS, syncFs } from './fsx.js';
 
+function trace(s) {
+  try { (globalThis.__odq = globalThis.__odq || []).push('SKIN ' + s); } catch (e) {}
+}
+
 const DIR = '/skins';
 const STORE = '/userfiles/skins';
 const MAX = 5;
@@ -71,8 +75,22 @@ export async function importSkins(files) {
     } catch (e) {}
   }
   if (written.length) syncFs('skins');
-  setTimeout(rescanSkins, 0);
+  trace('import ' + (written.length ? 'ok n=' + written.length : 'sin ficheros validos') + ' de ' + picked.length);
+  if (typeof window !== 'undefined') window.__vcWebSkinRescan = 1;
   return { ok: written.length > 0, reason: written.length ? 'ok' : 'invalid', written, limit: MAX, picked: picked.length };
+}
+
+export function deleteSkin(name) {
+  const FS = getFS();
+  if (!FS || !name) return 0;
+  const base = String(name).replace(/^.*[\/]/, '').replace(/\.bmp$/i, '');
+  let n = 0;
+  for (const dir of [DIR, STORE]) {
+    const p = dir + '/' + base + '.bmp';
+    try { if (FS.analyzePath(p).exists) { FS.unlink(p); n++; } } catch (e) {}
+  }
+  if (n) { syncFs('skins'); window.__vcWebSkinRescan = 1; trace('borrada ' + base); }
+  return n;
 }
 
 function pickFiles() {
@@ -91,11 +109,12 @@ function pickFiles() {
 
 export async function importSkinsFromPicker() {
   const files = await pickFiles();
-  if (!files.length) return { ok: false, reason: 'cancel', written: [] };
+  if (!files.length) { trace('selector cancelado'); return { ok: false, reason: 'cancel', written: [] }; }
   const r = await importSkins(files);
   if (typeof window !== 'undefined') {
     const code = r.ok ? 1 : r.picked > r.limit ? 2 : 3;
     window.__vcWebSkinResult = code === 1 ? 1000 + r.written.length : code * 1000;
+    trace('resultado ' + window.__vcWebSkinResult);
   }
   return r;
 }

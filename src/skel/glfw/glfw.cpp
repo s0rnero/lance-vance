@@ -2888,7 +2888,17 @@ main(int argc, char *argv[])
 			ControlsManager.InitDefaultControlConfigJoyPad(connectedPadButtons); // add (connected-saved) amount of new button assignments on top of ours
 
 		// these have 2 purposes: creating .ini at the start, and adding newly introduced settings to old .ini at the start
+#ifdef __EMSCRIPTEN__
+		if (EM_ASM_INT({ return (window.__vcIdbReady === undefined || window.__vcIdbReady) ? 1 : 0; })) {
+			LoadINISettings();
+			SaveINISettings();
+			EM_ASM({ try { (window.__odq = window.__odq || []).push('INI boot save'); } catch (e) {} });
+		} else {
+			EM_ASM({ try { (window.__odq = window.__odq || []).push('INI boot save omitido: idbfs sin poblar'); } catch (e) {} });
+		}
+#else
 		SaveINISettings();
+#endif
 		SaveINIControllerSettings();
 #endif
 	}

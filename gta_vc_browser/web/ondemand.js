@@ -7,6 +7,10 @@
 // hilo principal nunca se bloquea: la página sigue viva durante la descarga.
 // Fuente del worker de carga (Nivel 1). Va embebida aquí y se crea con un
 // Blob: así el port no necesita servir un fichero extra ni saber dónde está.
+function odLog(s) {
+  try { (globalThis.__odq = globalThis.__odq || []).push(String(s)); } catch (e) {}
+}
+
 var WORKER_SRC = `
 var DB = null, BASE = '/streamed/', INFLIGHT = {};
 function openDb() {
@@ -304,7 +308,11 @@ var OD = {
   // cobertura por cara, 527 texelas, fuera=0. Se conserva el literal
   // `2026-11-10-63.0-T1` y `2026-11-10-63.1-T1` de la lane del banshee, y la
   // propia `2026-11-09-62.2-T2`, que el checker exige ver en el paquete.
-  dataTag: '2026-11-09-62.3-T2',
+  // 63.2 T1 (10/11): Banshee Xbox con la capa de reflejo del Banshee PC
+  // (bansheespeca + coeficiente 1.0 en pintura y cristales, DFF 344176 B,
+  // TXD 1574200 B); purga la IDB con los datos nuevos.
+  // dataTag anterior: `2026-11-09-62.3-T2`.
+  dataTag: '2026-11-11-66.1-T1',
   manifest: null,
   db: null,
   inflight: {},
@@ -338,11 +346,11 @@ var OD = {
   _syncFsPending: false,
   _ufTimer: null,
   syncUserfiles(src) {
-    if (OD._syncFsBusy) { OD._syncFsPending = true; if (src) console.log('[od] flush ' + src + ': en cola'); return; }
+    if (OD._syncFsBusy) { OD._syncFsPending = true; if (src) odLog('[od] flush ' + src + ': en cola'); return; }
     OD._syncFsBusy = true;
-    if (src) console.log('[od] flush ' + src + '...');
-    try { FS.syncfs(false, () => { OD._syncFsBusy = false; if (src) console.log('[od] flush ' + src + ' ok'); if (OD._syncFsPending) { OD._syncFsPending = false; OD.syncUserfiles('pendiente'); } }); }
-    catch (e) { OD._syncFsBusy = false; if (src) console.log('[od] flush ' + src + ' ERROR: ' + e); }
+    if (src) odLog('[od] flush ' + src + '...');
+    try { FS.syncfs(false, () => { OD._syncFsBusy = false; if (src) odLog('[od] flush ' + src + ' ok'); if (OD._syncFsPending) { OD._syncFsPending = false; OD.syncUserfiles('pendiente'); } }); }
+    catch (e) { OD._syncFsBusy = false; if (src) odLog('[od] flush ' + src + ' ERROR: ' + e); }
   },
   // Estilo dos.zone: toda escritura bajo /userfiles programa un flush con
   // antirrebote (sin ventana de 30 s y sin solapes por construcción).
@@ -435,7 +443,7 @@ var OD = {
       OD.evicted++;
       OD.evictedBytes += e.s;
     }
-    if (OD.verbose && OD.evicted % 50 === 1) console.log('[od] desalojo total=' + OD.evicted + ' live=' + Math.round(OD.liveBytes / 1048576) + 'MB');
+    if (OD.verbose && OD.evicted % 50 === 1) odLog('[od] desalojo total=' + OD.evicted + ' live=' + Math.round(OD.liveBytes / 1048576) + 'MB');
   },
   // Dirs que el motor espera que existan (statvfs, scans). Se crean vacíos.
   // OJO: jamás pre-crear un dir que colisione con un ARCHIVO necesario
@@ -595,7 +603,7 @@ var OD = {
   },
 
   async init() {
-    console.log('[build] ' + OD.buildTag + ' (si no ves este tag, recarga con Ctrl+Shift+R)');
+    odLog('[build] ' + OD.buildTag + ' (si no ves este tag, recarga con Ctrl+Shift+R)');
     OD.trace('build=' + OD.buildTag + ' data=' + OD.dataTag);
     // Puente mínimo recoil (plan recoil-por-arma-y-cadencia): si la librería
     // no definió la sesión (build servido sin lib), el EM_ASM de C++ no debe
@@ -722,7 +730,7 @@ var OD = {
       if (!OD.exists(p)) {
         try { p = await OD.ensure('/Audio/sfx.SDT'); } catch (e) { p = null; }
       }
-      if (!p) { console.log('[od] loops: sin SDT'); return; }
+      if (!p) { odLog('[od] loops: sin SDT'); return; }
       const u8 = FS.readFile(p, { encoding: 'binary' });
       const n = Math.floor(u8.length / 20);
       const list = [];
@@ -734,14 +742,14 @@ var OD = {
         const le = (u8[o + 16] | (u8[o + 17] << 8) | (u8[o + 18] << 16) | (u8[o + 19] << 24)) | 0;
         if (ls !== 0 || (le !== 0 && le !== -1)) list.push(i);
       }
-      console.log('[od] samples con loop en la SDT: ' + list.length);
+      odLog('[od] samples con loop en la SDT: ' + list.length);
       let done = 0;
       for (const i of list) {
         try { if (await OD.ensure('/Audio/sfx/' + i + '.mp3')) done++; } catch (e) {}
         if (done % 20 === 0) await OD.sleep(40);
       }
-      console.log('[od] bucles precargados ' + done + '/' + list.length);
-    } catch (e) { console.log('[od] prefetch loops: ' + (e && e.message || e)); }
+      odLog('[od] bucles precargados ' + done + '/' + list.length);
+    } catch (e) { odLog('[od] prefetch loops: ' + (e && e.message || e)); }
   },
 
   // ------------------------------------------------------------------------
@@ -790,7 +798,7 @@ var OD = {
       if (set.size === n0) return;
       const list = [...set].slice(-6000);
       localStorage.setItem(OD.warmKey, JSON.stringify({ tag: OD.cacheKey(), list }));
-      if (OD.verbose) console.log('[od] lista de arranque en caliente: ' + list.length + ' ficheros');
+      if (OD.verbose) odLog('[od] lista de arranque en caliente: ' + list.length + ' ficheros');
     } catch (e) {}
   },
   // El motor no avisa "voy a cargar el mundo"; sí llama a __loadProgress en
@@ -917,7 +925,7 @@ var OD = {
   wkNote(msg) {
     if (OD._wkNote === msg) return;
     OD._wkNote = msg;
-    console.log('[od] carga en hilo no disponible (' + msg + '): se usa el camino de siempre');
+    odLog('[od] carga en hilo no disponible (' + msg + '): se usa el camino de siempre');
     OD.trace('ODWK off (' + msg + ')');
   },
   wkAsk(canon, hit) {
@@ -1025,7 +1033,7 @@ var OD = {
   },
   wkOnMsg(e) {
     const m = (e && e.data) || {};
-    if (m.op === 'ready') { if (OD.verbose) console.log('[od] worker de carga listo'); return; }
+    if (m.op === 'ready') { if (OD.verbose) odLog('[od] worker de carga listo'); return; }
     if (!OD.wkPending) OD.wkInit();
     delete OD.wkPending[m.key];
     delete OD.wkFails[m.key];
@@ -1058,7 +1066,7 @@ var OD = {
       OD.wkStats.err++;
       const arr = OD.wkWaiters[m.key];
       if (arr) { delete OD.wkWaiters[m.key]; for (const fn of arr) fn(null); }
-      if (OD.verbose) console.log('[od] worker falló ' + m.key + ': ' + m.msg);
+      if (OD.verbose) odLog('[od] worker falló ' + m.key + ': ' + m.msg);
       OD.wkMaybeTrace();
     }
   },
@@ -1263,7 +1271,7 @@ var OD = {
     OD.trace('IDBTRIM motivo=' + (reason || 'init') + ' antes=' + totalMB + 'MB despues=' +
       Math.round((total - freed) / 1048576) + 'MB borrados=' + drop.length + ' tope=' + capMB +
       'MB ms=' + (Date.now() - t0));
-    console.log('[od] caché de datos: ' + totalMB + 'MB -> ' + Math.round((total - freed) / 1048576) +
+    odLog('[od] caché de datos: ' + totalMB + 'MB -> ' + Math.round((total - freed) / 1048576) +
       'MB (borrados ' + drop.length + ' ficheros, tope ' + capMB + 'MB)');
     OD.trimmed = drop.length;
   },
@@ -1293,7 +1301,7 @@ var OD = {
     if (prev !== key) {
       await OD.idbClear();
       await OD.idbPut(OD.cacheKeyName, key);
-      console.log('[od] caché de datos purgada (' + (prev || 'vacía') + ' -> ' + key + ')');
+      odLog('[od] caché de datos purgada (' + (prev || 'vacía') + ' -> ' + key + ')');
       OD.trace('DATATAG old=' + (prev || 'ninguno') + ' new=' + key + ' (caché IDB purgada)');
     }
   },
@@ -1391,7 +1399,7 @@ var OD = {
       await OD.idbMetaPut([[canon, { t: Date.now(), s: off }]]);
       OD.noteWarm(canon, off);
     }
-    if (OD.verbose && off > 32 * 1048576) console.log('[od] OK grande ' + canon);
+    if (OD.verbose && off > 32 * 1048576) odLog('[od] OK grande ' + canon);
   },
   exists(path) {
     try { FS.stat(path); return true; } catch (e) { return false; }
@@ -1475,21 +1483,34 @@ var OD = {
       }
     } catch (e) {}
   },
-  async _ensure(reqPath) {
-    // El motor abre a veces con ruta relativa al CWD (p. ej. "SPANISH.GXT"
-    // con CWD=/TEXT). Probar tal cual + contra CWD.
-    const t0 = Date.now();
+  presentSync(reqPath) {
     let cwd = '/';
     try { cwd = FS.cwd(); } catch (e) {}
     const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
     for (const n of cands) {
-      try { FS.stat('/' + n); if (OD.live.has('/' + n)) OD.touch('/' + n, 0); return '/' + n; } catch (e) {}
+      const f = '/' + n;
+      try { FS.stat(f); if (OD.live.has(f)) OD.touch(f, 0); return f; } catch (e) {}
     }
+    let canon = null;
+    for (const n of cands) {
+      if (OD.manifest && OD.manifest[n]) { canon = '/' + OD.manifest[n].p; break; }
+    }
+    if (canon && OD.exists(canon)) return canon;
+    return null;
+  },
+  async _ensure(reqPath) {
+    // El motor abre a veces con ruta relativa al CWD (p. ej. "SPANISH.GXT"
+    // con CWD=/TEXT). Probar tal cual + contra CWD.
+    const t0 = Date.now();
+    const present = OD.presentSync(reqPath);
+    if (present) return present;
+    let cwd = '/';
+    try { cwd = FS.cwd(); } catch (e) {}
+    const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
     let hit = null, canon = null;
     for (const n of cands) {
       if (OD.manifest && OD.manifest[n]) { hit = OD.manifest[n]; canon = '/' + hit.p; break; }
     }
-    if (canon && OD.exists(canon)) return canon;
     if (!hit) {
       // 21/10: el motor pide un fichero que el manifest no tiene -> el
       // motor reintenta en bucle y la carga no acaba. Hay que verlo.
@@ -1530,7 +1551,7 @@ var OD = {
     if (OD.inflight[canon]) { await OD.inflight[canon]; return OD.exists(canon) ? canon : null; }
     const job = (async () => {
       OD.misses.push(canon + ' (' + hit.s + ')');
-      if (OD.verbose && OD.misses.length % 50 === 1) console.log('[od] +' + canon);
+      if (OD.verbose && OD.misses.length % 50 === 1) odLog('[od] +' + canon);
       // Higiene de memoria: reintentar IDB (rápido, sin red) y solo bajar lo
       // que falte; escribir por tramos cediendo; IDB con contrapresión y tope.
       let cached = await OD.idbGetT(canon);
@@ -1576,7 +1597,7 @@ var OD = {
             break;
           } catch (e) {
             lastErr = e;
-            console.log('[od] REINTENTO ' + attempt + '/3 ' + canon + ': ' + (e && e.message || e));
+            odLog('[od] REINTENTO ' + attempt + '/3 ' + canon + ': ' + (e && e.message || e));
             try { FS.unlink(canon + '.part'); } catch (ee) {}
             await OD.sleep(1000 * attempt);
           }
@@ -1589,7 +1610,7 @@ var OD = {
     })();
     OD.inflight[canon] = job;
     try { await job;     } catch (e) {
-      console.log('[od] FAIL ' + canon + ': ' + (e && e.message || e));
+      odLog('[od] FAIL ' + canon + ': ' + (e && e.message || e));
       // No dejar parciales: un .part a medias cuenta en el censo y confunde.
       try { FS.unlink(canon + '.part'); } catch (ee) {}
     }
@@ -1624,7 +1645,7 @@ if (typeof Module !== 'undefined') {
       FS.createDataFile = function (parent, name, data, canRead, canWrite, canOwn) {
         try {
           const sz = data ? data.length : 0;
-          if (sz > 50 * 1048576) console.log('[od] BIGCREATE ' + parent + '/' + name + ' ' + Math.round(sz / 1048576) + 'MB :: ' + stk());
+          if (sz > 50 * 1048576) odLog('[od] BIGCREATE ' + parent + '/' + name + ' ' + Math.round(sz / 1048576) + 'MB :: ' + stk());
         } catch (e) {}
         return origCreate.call(FS, parent, name, data, canRead, canWrite, canOwn);
       };
@@ -1632,7 +1653,7 @@ if (typeof Module !== 'undefined') {
       FS.write = function (stream, buffer, offset, length, position) {
         try {
           if (length > 50 * 1048576 || position > 100 * 1048576) {
-            console.log('[od] BIGWRITE ' + (stream.path || stream.nodeName || '?') + ' pos=' + position + ' len=' + length + ' :: ' + stk());
+            odLog('[od] BIGWRITE ' + (stream.path || stream.nodeName || '?') + ' pos=' + position + ' len=' + length + ' :: ' + stk());
           }
         } catch (e) {}
         try {
@@ -1644,7 +1665,7 @@ if (typeof Module !== 'undefined') {
       const origTrunc = FS.truncate;
       FS.truncate = function (path, len) {
         try {
-          if (len > 100 * 1048576) console.log('[od] BIGTRUNC ' + path + ' ' + len + ' :: ' + stk());
+          if (len > 100 * 1048576) odLog('[od] BIGTRUNC ' + path + ' ' + len + ' :: ' + stk());
         } catch (e) {}
         return origTrunc.call(FS, path, len);
       };
@@ -1654,7 +1675,7 @@ if (typeof Module !== 'undefined') {
           if (len > 100 * 1048576) {
             let p = '?';
             try { p = FS.getStreamChecked(fd).path; } catch (e) {}
-            console.log('[od] BIGFTRUNC fd=' + fd + ' path=' + p + ' len=' + len + ' :: ' + stk());
+            odLog('[od] BIGFTRUNC fd=' + fd + ' path=' + p + ' len=' + len + ' :: ' + stk());
           }
         } catch (e) {}
         return origFtrunc.call(FS, fd, len);
@@ -1664,8 +1685,8 @@ if (typeof Module !== 'undefined') {
         for (const p of paths) {
           try {
             const st = FS.stat(p);
-            console.log('[od] ARRANQUE existe ' + p + ' size=' + st.size + ' mode=' + st.mode);
-          } catch (e) { console.log('[od] ARRANQUE no existe ' + p); }
+            odLog('[od] ARRANQUE existe ' + p + ' size=' + st.size + ' mode=' + st.mode);
+          } catch (e) { odLog('[od] ARRANQUE no existe ' + p); }
         }
       } catch (e) {}
       try {
@@ -1673,7 +1694,7 @@ if (typeof Module !== 'undefined') {
           const origMmap = FS.mmap;
           FS.mmap = function (stream, length, position, prot, flags) {
             try {
-              if (length > 100 * 1048576) console.log('[od] BIGMMAP ' + (stream.path || '?') + ' len=' + length + ' :: ' + stk());
+              if (length > 100 * 1048576) odLog('[od] BIGMMAP ' + (stream.path || '?') + ' len=' + length + ' :: ' + stk());
             } catch (e) {}
             return origMmap.call(FS, stream, length, position, prot, flags);
           };
@@ -1689,7 +1710,7 @@ if (typeof Module !== 'undefined') {
               const p = OD.pending[k];
               const age = Math.round((now - p.t0) / 1000);
               const idle = Math.round((now - p.last) / 1000);
-              if (age >= 20) console.log('[od] STALL ' + k + ' edad=' + age + 's inactivo=' + idle + 's bytes=' + p.bytes + ' intento=' + p.try);
+              if (age >= 20) odLog('[od] STALL ' + k + ' edad=' + age + 's inactivo=' + idle + 's bytes=' + p.bytes + ' intento=' + p.try);
             }
           } catch (e) {}
         }, 3000);
@@ -1698,7 +1719,7 @@ if (typeof Module !== 'undefined') {
         try {
           let sz = -1;
           try { sz = FS.stat(b).size; } catch (e) {}
-          if (sz > 50 * 1048576) console.log('[od] BIGRENAME ' + a + ' -> ' + b + ' dest ' + Math.round(sz / 1048576) + 'MB :: ' + stk());
+          if (sz > 50 * 1048576) odLog('[od] BIGRENAME ' + a + ' -> ' + b + ' dest ' + Math.round(sz / 1048576) + 'MB :: ' + stk());
         } catch (e) {}
         return origRename.call(FS, a, b);
       };

@@ -26,6 +26,18 @@ EM_ASYNC_JS(char*, od_fetch, (const char *cpath), {
   } catch (e) { return 0; }
 });
 
+EM_JS(char*, od_present, (const char *cpath), {
+  const p = UTF8ToString(cpath);
+  try {
+    const r = OD.presentSync(p);
+    if (!r) return 0;
+    const len = lengthBytesUTF8(r) + 1;
+    const ptr = _malloc(len);
+    stringToUTF8(r, ptr, len);
+    return ptr;
+  } catch (e) { return 0; }
+});
+
 static int odBlockingDepth = 0;
 extern "C" void odBlockingPush(void)
 {
@@ -49,7 +61,8 @@ int __real_access(const char *path, int mode);
 FILE *__wrap_fopen(const char *path, const char *mode)
 {
 	if (path) {
-		char *rp = od_fetch(path);
+		char *rp = od_present(path);
+		if (!rp) rp = od_fetch(path);
 		if (rp) {
 			FILE *f = __real_fopen(rp, mode);
 			free(rp);
@@ -80,7 +93,8 @@ int __wrap_open(const char *path, int flags, ...)
 		va_end(ap);
 	}
 	if (path) {
-		char *rp = od_fetch(path);
+		char *rp = od_present(path);
+		if (!rp) rp = od_fetch(path);
 		if (rp) {
 			int fd = __real_open(rp, flags, m);
 			free(rp);
@@ -93,7 +107,8 @@ int __wrap_open(const char *path, int flags, ...)
 int __wrap_stat(const char *path, struct stat *buf)
 {
 	if (path) {
-		char *rp = od_fetch(path);
+		char *rp = od_present(path);
+		if (!rp) rp = od_fetch(path);
 		if (rp) {
 			int r = __real_stat(rp, buf);
 			free(rp);
@@ -106,7 +121,8 @@ int __wrap_stat(const char *path, struct stat *buf)
 int __wrap_access(const char *path, int mode)
 {
 	if (path) {
-		char *rp = od_fetch(path);
+		char *rp = od_present(path);
+		if (!rp) rp = od_fetch(path);
 		if (rp) {
 			free(rp);
 			return 0;

@@ -18,3 +18,5 @@ FEM_SKO	Apariencias importadas
 FEM_SKL	Demasiadas apariencias a la vez
 FEM_SKE	Ningun BMP valido - usa ficheros .bmp
 FES_ISK	Importar skins
+FES_DSK	Eliminar apariencia
+FEM_MOK	Musica importada
