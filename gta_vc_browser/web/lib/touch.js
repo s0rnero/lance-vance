@@ -7,6 +7,10 @@ const RIGHT1 = 1 << 5;
 const LEFT2 = 1 << 6;
 const RIGHT2 = 1 << 7;
 const SELECT = 1 << 8;
+const DPAD_UP = 1 << 10;
+const DPAD_DOWN = 1 << 11;
+const DPAD_LEFT = 1 << 12;
+const DPAD_RIGHT = 1 << 13;
 const LEFT_SHOCK = 1 << 14;
 const RIGHT_SHOCK = 1 << 15;
 
@@ -27,11 +31,15 @@ const VEHICLE_ICONS = new Set(['car', 'bike', 'boat', 'heli', 'plane', 'tank']);
 const DEFAULT_LAYOUT = {
   'onfoot-run': [93, 79],
   'onfoot-action': [93, 63],
+  // Apuntar (autoapuntado al NPC/enemigo mas cercano): solo a pie y con arma.
+  'onfoot-aim': [82, 63],
   'onfoot-enter': [93, 47],
   'vehicle-left': [7, 82],
   'vehicle-right': [17, 82],
-  'vehicle-brake': [93, 83],
-  'vehicle-gas': [76, 83],
+  // Feedback jugador: el de la izquierda es el freno y el de la derecha el
+  // acelerador (estaban al revés en pantalla; el mapeo al pad es correcto).
+  'vehicle-brake': [76, 83],
+  'vehicle-gas': [93, 83],
   'vehicle-handbrake': [94, 63],
   'vehicle-camera': [88, 33],
   'vehicle-horn': [94, 33],
@@ -39,19 +47,15 @@ const DEFAULT_LAYOUT = {
   'vehicle-rotate-left': [80, 63],
   'vehicle-rotate-right': [90, 63],
   'vehicle-mission': [7, 47],
-  'vehicle-fire-left': [8, 62],
-  'vehicle-fire-center': [90, 63],
-  'vehicle-fire-right': [15, 62],
+  // Plan 64.0 T4: un solo boton de disparo desde vehiculo con el icono real
+  // `vehicle-shoot` (antes tres botones inventados fire-left/center/right).
+  'vehicle-fire': [76, 62],
 };
 
 const VEHICLE_LAYOUT = {
-  bike: { 'vehicle-fire-center': [76, 62] },
-  tank: { 'vehicle-fire-center': [94, 53] },
-  firetruck: { 'vehicle-fire-center': [94, 53] },
-  heli: {
-    'vehicle-fire-center': [94, 53],
-    'vehicle-fire-mg': [84, 53],
-  },
+  tank: { 'vehicle-fire': [94, 53] },
+  firetruck: { 'vehicle-fire': [94, 53] },
+  heli: { 'vehicle-fire-mg': [84, 53] },
 };
 
 function clamp(value, min, max) {
@@ -90,7 +94,17 @@ export function createTouchControls(options) {
   const root = options.root;
   const canvas = options.canvas || root.querySelector('.vc-canvas');
   const doc = root.ownerDocument;
-  const log = options.log || (() => {});
+  // Feedback: la traza `vc-touch:` nunca llegó al log del teléfono porque
+  // options.log (index.js, función hoisted `log`) solo va al DOM #gamelog.
+  // Se envuelve para empujar también a la cola window.__odq que index.js
+  // vuelca por beacon a /odtrace (mismo patrón que BART en index.js).
+  const baseLog = options.log || (() => {});
+  const log = (...args) => {
+    try {
+      if (typeof window !== 'undefined') (window.__odq = window.__odq || []).push(args.join(' '));
+    } catch (e) { /* sin cola: no importa */ }
+    baseLog(...args);
+  };
   const getModule = options.getModule || (() => (typeof Module !== 'undefined' ? Module : null));
   const iconBase = String(options.iconBase || '/touch/icons/').replace(/\/?$/, '/');
   const sensitivity = Number(options.sensitivity || 0.9);
@@ -100,6 +114,7 @@ export function createTouchControls(options) {
     ready: false,
     bridgeEnabled: false,
     bridgeAutoaim: false,
+    bridgeIcons: false,
     mode: 'onfoot',
     context: 0,
     contextAt: 0,
@@ -135,9 +150,16 @@ export function createTouchControls(options) {
     pitchUntil: 0,
     missionUntil: 0,
     rotate: 0,
-    driveSide: null,
+
     menuPointer: null,
     menuPoint: null,
+    menuStart: null,
+    menuPulseBit: 0,
+    menuPulseUntil: 0,
+    menuPending: null,
+    padMode: 0,
+    down: new Set(),
+    perf: { n: 0, sum: 0, max: 0, fpsEma: 60, lastFrame: 0 },
     frameId: 0,
     layer: null,
     stick: null,
@@ -157,6 +179,13 @@ export function createTouchControls(options) {
   const layer = doc.createElement('div');
   layer.className = 'vc-touch';
   layer.hidden = true;
+  // Feedback punto 1: "GIRA EL DISPOSITIVO" debe salir desde minuto 0 en
+  // móvil. Estaba dentro de la capa .vc-touch, oculta hasta __vcFirstFrame;
+  // ahora cuelga directo de root y el CSS (portrait + pointer coarse) lo
+  // muestra desde la carga/portada. pointer-events: none para no bloquear.
+  const rotateEl = doc.createElement('div');
+  rotateEl.className = 'vc-touch-rotate';
+  rotateEl.textContent = 'Gira el dispositivo';
   layer.innerHTML = `
     <div class="vc-touch-zone vc-touch-move" aria-hidden="true"></div>
     <div class="vc-touch-zone vc-touch-look" aria-hidden="true"></div>
@@ -167,6 +196,7 @@ export function createTouchControls(options) {
     <div class="vc-touch-stick" hidden><i></i></div>
     <button type="button" class="vc-touch-btn vc-touch-home" data-key="pause" data-modes="onfoot vehicle" data-action="pause" aria-label="Menú de pausa">${icon('onfoot-menu')}</button>
     ${button('onfoot-run', 'onfoot', 'run', 'onfoot-run-jump', 'Correr o saltar')}
+    ${button('onfoot-aim', 'onfoot', 'aim', 'onfoot-scope', 'Apuntar al enemigo más cercano')}
     ${button('onfoot-action', 'onfoot', 'action', 'onfoot-punch', 'Acción')}
     ${button('onfoot-enter', 'onfoot', 'enter', 'onfoot-enter-exit', 'Entrar o salir')}
     ${button('vehicle-left', 'vehicle', 'vehicle-left', 'vehicle-left', 'Izquierda', 'car bike boat tank firetruck')}
@@ -176,15 +206,12 @@ export function createTouchControls(options) {
     ${button('vehicle-handbrake', 'vehicle', 'handbrake', 'vehicle-handbrake', 'Freno de mano', 'car bike boat firetruck')}
     ${button('vehicle-camera', 'vehicle', 'camera', 'vehicle-camera', 'Cambiar cámara', 'car bike boat heli plane tank firetruck')}
     ${button('vehicle-horn', 'vehicle', 'horn', 'vehicle-horn-siren', 'Claxon o sirena', 'car bike boat firetruck')}
-    ${button('vehicle-exit', 'vehicle', 'exit', 'vehicle-exit-car', 'Salir del vehículo', 'car bike boat heli plane tank firetruck')}
+    ${button('vehicle-exit', 'vehicle', 'exit', 'onfoot-enter-exit', 'Salir del vehículo', 'car bike boat heli plane tank firetruck')}
     ${button('vehicle-rotate-left', 'vehicle', 'rotate-left', 'vehicle-rotate-left', 'Rotar a la izquierda', 'heli plane tank firetruck')}
     ${button('vehicle-rotate-right', 'vehicle', 'rotate-right', 'vehicle-rotate-right', 'Rotar a la derecha', 'heli plane tank firetruck')}
     ${button('vehicle-fire-mg', 'vehicle', 'fire-mg', 'vehicle-shoot', 'Metralleta', 'heli plane')}
     ${button('vehicle-mission', 'vehicle', 'mission', 'vehicle-activate-mission', 'Misión de vehículo')}
-    ${button('vehicle-fire-left', 'vehicle', 'fire-left', 'vehicle-fire-left', 'Disparar a la izquierda', 'car bike boat')}
-    ${button('vehicle-fire-center', 'vehicle', 'fire-center', 'vehicle-fire-center', 'Disparar al frente', 'bike heli tank firetruck')}
-    ${button('vehicle-fire-right', 'vehicle', 'fire-right', 'vehicle-fire-right', 'Disparar a la derecha', 'car bike boat')}
-    <div class="vc-touch-rotate">Gira el dispositivo</div>
+    ${button('vehicle-fire', 'vehicle', 'fire', 'vehicle-shoot', 'Disparar desde el vehículo', 'car bike boat tank firetruck')}
   `;
 
   state.layer = layer;
@@ -193,41 +220,48 @@ export function createTouchControls(options) {
   state.lookZone = layer.querySelector('.vc-touch-look');
   state.skipZone = layer.querySelector('.vc-touch-skip');
   state.radarZone = layer.querySelector('.vc-touch-radar');
-  state.weaponZone = layer.querySelector('.vc-touch-weapon');
-  state.radioZone = layer.querySelector('.vc-touch-radio');
+  state.weaponZone = layer.querySelector('.vc-touch-weapon');    state.radioZone = layer.querySelector('.vc-touch-radio');
+    state.actionButton = layer.querySelector('[data-key="onfoot-action"]');
+    state.actionImg = state.actionButton ? state.actionButton.querySelector('img') : null;
+    state.layoutNodes = Array.from(layer.querySelectorAll('[data-key]'));
 
   function syncActionIcon() {
-    const action = layer.querySelector('[data-key="onfoot-action"]');
+    const action = state.actionButton;
     if (!action) return;
-    const image = action.querySelector('img');
     const name = state.armed ? 'onfoot-shoot' : 'onfoot-punch';
-    if (image) {
+    if (state.actionImg) {
       const source = iconBase + encodeURIComponent(name) + '.png';
-      if (image.getAttribute('src') !== source) image.src = source;
+      if (state.actionImg.getAttribute('src') !== source) state.actionImg.src = source;
     }
-    action.setAttribute('aria-label', state.armed ? 'Disparar' : 'Puñetazo');
+    const label = state.armed ? 'Disparar' : 'Puñetazo';
+    if (action.getAttribute('aria-label') !== label) action.setAttribute('aria-label', label);
   }
 
-  function syncVehicleIcons() {
-    const exit = layer.querySelector('[data-key="vehicle-exit"] img');
-    const enter = layer.querySelector('[data-key="onfoot-enter"] img');
-    const detailed = state.vehicleType && VEHICLE_ICONS.has(state.vehicleName);
-    const exitName = detailed ? `vehicle-exit-${state.vehicleName}` : 'vehicle-exit-car';
-    const enterName = detailed ? `vehicle-enter-${state.vehicleName}` : 'onfoot-enter-exit';
-    if (exit) {
-      const source = iconBase + encodeURIComponent(exitName) + '.png';
-      if (exit.getAttribute('src') !== source) exit.src = source;
-    }
-    if (enter) {
-      const source = iconBase + encodeURIComponent(enterName) + '.png';
-      if (enter.getAttribute('src') !== source) enter.src = source;
-    }
-  }
+  // Plan 64.0 T4: los botones de entrar/salir usan SIEMPRE el icono real unico
+  // `onfoot-enter-exit` (el HTML ya lo trae fijo). Los swaps a
+  // `vehicle-enter-<clase>` / `vehicle-exit-<clase>` eran iconos inventados
+  // y ademas pagaban un cambio de img.src (fetch+decode) por pulsacion.
+  function syncVehicleIcons() {}
 
+  // Plan 64.0 T2: los llamadores pasan nombres sin el guion bajo de Emscripten
+  // (`ViceExtTouchSkip`), pero los exports reales son `_ViceExtTouchSkip`. La
+  // resolucion vive solo aqui; las llamadas directas a `_ViceExtTouchFrame`
+  // etc. no se tocan. Si falta el export, se avisa una vez por nombre en vez
+  // de fallar en silencio (era la causa de que skip/pausa/arma/radio/mapa no
+  // respondieran).
+  const missingExports = new Set();
   function callModule(name, ...args) {
     const module = getModule();
-    if (!module || typeof module[name] !== 'function') return;
-    module[name](...args);
+    if (!module) return;
+    const fn = typeof module[name] === 'function' ? module[name] : module['_' + name];
+    if (typeof fn !== 'function') {
+      if (!missingExports.has(name)) {
+        missingExports.add(name);
+        log(`vc-touch: export ausente _${name}`);
+      }
+      return;
+    }
+    fn(...args);
   }
 
   function tapMenu(point) {
@@ -253,6 +287,7 @@ export function createTouchControls(options) {
       x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
       y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
     };
+    state.menuStart = { x: event.clientX, y: event.clientY };
   }
 
   function onMenuPointerUp(event) {
@@ -260,9 +295,31 @@ export function createTouchControls(options) {
     event.preventDefault();
     event.stopPropagation();
     const point = state.menuPoint;
+    const start = state.menuStart;
     state.menuPointer = null;
     state.menuPoint = null;
-    if (point) tapMenu(point);
+    state.menuStart = null;
+    if (!point) return;
+    // Desliz vertical = scroll siempre. Desliz horizontal y toque = enfocar
+    // y, solo si esa fila YA era la enfocada, cambiar el valor.
+    if (start) {
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) {
+        menuPulse(dy < 0 ? DPAD_UP : DPAD_DOWN);
+        return;
+      }
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+        queueMenuChange(point, dx < 0 ? DPAD_LEFT : DPAD_RIGHT);
+        return;
+      }
+    }
+    queueMenuChange(point, DPAD_RIGHT);
+  }
+
+  function menuPulse(bit) {
+    state.menuPulseBit = bit;
+    state.menuPulseUntil = nowMs() + 260;
   }
 
   function onMenuPointerCancel(event) {
@@ -271,11 +328,12 @@ export function createTouchControls(options) {
     event.stopPropagation();
     state.menuPointer = null;
     state.menuPoint = null;
+    state.menuStart = null;
   }
 
   function applyLayout() {
     const override = VEHICLE_LAYOUT[state.vehicleName] || null;
-    for (const element of layer.querySelectorAll('[data-key]')) {
+    for (const element of state.layoutNodes) {
       const key = element.dataset.key;
       const point = (override && override[key]) || DEFAULT_LAYOUT[key];
       if (!point) continue;
@@ -285,7 +343,10 @@ export function createTouchControls(options) {
   }
 
   function syncVisibility() {
-    layer.hidden = !state.enabled || !window.__vcFirstFrame || !state.playing;
+    // Plan 64.0 T3: en cinematics la capa NO se oculta entera (aunque el bit
+    // 64 no este) para que la zona .vc-touch-skip reciba el toque; el CSS
+    // oculta botones/zonas/stick con [data-mode="cutscene"].
+    layer.hidden = !state.enabled || !window.__vcFirstFrame || (!state.playing && state.mode !== 'cutscene');
     if (!layer.hidden) state.ready = true;
   }
 
@@ -293,11 +354,17 @@ export function createTouchControls(options) {
     if (state.mode === mode) return;
     state.menuPointer = null;
     state.menuPoint = null;
+    state.menuStart = null;
     state.mode = mode;
     layer.dataset.mode = mode;
+    log(`vc-touch: mode=${mode}`);
     if (mode !== 'vehicle') {
       state.rotate = 0;
-      state.driveSide = null;
+      // Al bajar del coche, data-vehicle se quedaba con el ultimo valor y en
+      // el CSS eso hacia aparecer el boton de disparar desde el vehiculo a
+      // pie: dos pistolas en pantalla con arma en mano.
+      delete layer.dataset.vehicle;
+      delete layer.dataset.vehicleArmed;
     }
     state.press.clear();
     state.moveId = null;
@@ -351,7 +418,10 @@ export function createTouchControls(options) {
     syncActionIcon();
     layer.dataset.armed = state.firearm ? '1' : '0';
     if (nowMs() >= state.vehicleTypeAt) {
-      state.vehicleTypeAt = nowMs() + 250;
+      // Plan 64.0 T6: el tipo de vehiculo cercano solo se usa para el layout
+      // de botones (ya no para iconos, T4); 1 Hz evita el barrido del pool
+      // de vehiculos a 4 Hz que causaba tiron en el telefono.
+      state.vehicleTypeAt = nowMs() + 1000;
       readVehicleType();
     }
     if (context & 128) setMode('cutscene');
@@ -371,6 +441,13 @@ export function createTouchControls(options) {
     if (state.enabled && !state.bridgeAutoaim && typeof module._ViceExtTouchSetAutoaim === 'function') {
       module._ViceExtTouchSetAutoaim(1);
       state.bridgeAutoaim = true;
+    }
+    if (state.enabled && !state.bridgeIcons) {
+      state.bridgeIcons = true;
+      // Punto 7: con controles táctiles los mensajes ("Pulsa L o R...")
+      // muestran los iconos del propio juego (TOUCHBTNS.TXD), no los de
+      // mando (X360BTNS) ni de PC (PCBTNS).
+      callModule('ViceExtTouchUseTouchIcons');
     }
     if (!state.enabled && state.bridgeEnabled && typeof module._ViceExtTouchSetEnabled === 'function') {
       module._ViceExtTouchSetEnabled(0);
@@ -392,9 +469,9 @@ export function createTouchControls(options) {
         state.lastRun = now;
       }
     }
-    if (action === 'action') {
-      if (state.firearm) callModule('ViceExtTouchAutoAim');
-    }
+    // Apuntar: engancha el objetivo mas cercano (autoapuntado del motor) y
+    // mientras se mantiene pulsado el ped levanta el arma apuntando.
+    if (action === 'aim') callModule('ViceExtTouchAutoAim');
     if (action === 'gas') {
       if (now - state.lastGasTap < 360) {
         state.pitch = 128;
@@ -425,15 +502,70 @@ export function createTouchControls(options) {
     if (action === 'vehicle-right') state.moveX = 128;
     if (action === 'rotate-left') state.rotate = -1;
     if (action === 'rotate-right') state.rotate = 1;
-    if (action === 'fire-left') state.driveSide = -1;
-    if (action === 'fire-right') state.driveSide = 1;
-    if (action === 'fire-center') state.driveSide = 0;
+
   }
 
   function actionUp(key, action) {
     if (action === 'vehicle-left' || action === 'vehicle-right') state.moveX = 0;
     if (action === 'rotate-left' || action === 'rotate-right') state.rotate = 0;
-    if (action === 'fire-left' || action === 'fire-right' || action === 'fire-center') state.driveSide = null;
+  }
+
+  // Pausa/reanudar o un pointerup perdido (cambio de pantalla completa, irse
+  // de la app) dejaban un id "pillado": la capa ignoraba todo toque nuevo
+  // hasta salir de pantalla completa. Con el registro de punteros vivos se
+  // limpia solo en el siguiente frame.
+  function sanitizePointers() {
+    if (state.moveId !== null && !state.down.has(state.moveId)) {
+      state.moveId = null;
+      state.moveX = 0;
+      state.moveY = 0;
+      state.dragStart = null;
+      state.stick.hidden = true;
+    }
+    if (state.lookId !== null && !state.down.has(state.lookId)) {
+      state.lookId = null;
+      state.lookStart = null;
+    }
+    if (state.menuPointer !== null && !state.down.has(state.menuPointer)) {
+      state.menuPointer = null;
+      state.menuPoint = null;
+      state.menuStart = null;
+    }
+  }
+
+  function onPointerTrackDown(event) { state.down.add(event.pointerId); }
+  function onPointerTrackUp(event) { state.down.delete(event.pointerId); }
+
+  function menuOption() {
+    const module = getModule();
+    if (!module) return -1;
+    const fn = typeof module.ViceExtTouchMenuOption === 'function'
+      ? module.ViceExtTouchMenuOption : module._ViceExtTouchMenuOption;
+    return typeof fn === 'function' ? fn() : -1;
+  }
+
+  // "El recuadro verde" del menú: si la fila tocada NO era la enfocada, el
+  // toque solo enfoca; si ya lo estaba, cambia el valor. El foco lo resuelve
+  // el motor en el frame siguiente, por eso se confirma con retardo corto.
+  function queueMenuChange(point, delta) {
+    state.menuPending = { prev: menuOption(), at: nowMs(), delta };
+    tapMenu(point);
+  }
+
+  function resolveMenuPending(now) {
+    const pending = state.menuPending;
+    if (!pending || now - pending.at < 120) return;
+    state.menuPending = null;
+    const cur = menuOption();
+    if (pending.prev >= 0 && cur === pending.prev) menuPulse(pending.delta);
+  }
+
+  function readPadMode() {
+    const module = getModule();
+    if (!module) return;
+    const fn = typeof module.ViceExtTouchPadMode === 'function'
+      ? module.ViceExtTouchPadMode : module._ViceExtTouchPadMode;
+    if (typeof fn === 'function') state.padMode = fn() | 0;
   }
 
   function buildButtons(now) {
@@ -441,20 +573,33 @@ export function createTouchControls(options) {
     if (state.press.has('onfoot-run')) buttons |= CROSS;
     if (now < state.jumpUntil) buttons |= SQUARE;
     if (now < state.crouchUntil) buttons |= LEFT_SHOCK;
-    if (state.press.has('onfoot-action')) {
-      if (state.firearm) buttons |= LEFT1 | RIGHT1;
-      else buttons |= CIRCLE;
-    }
-    if (state.press.has('vehicle-gas') || now < state.gasUntil) buttons |= RIGHT2;
-    if (state.press.has('vehicle-brake') || now < state.brakeUntil) buttons |= LEFT2;
-    if (state.press.has('vehicle-handbrake')) buttons |= RIGHT1;
+    // Disparar/puñetazo = Circle; apuntar = el boton que el motor lee como
+    // objetivo a pie segun el modo (clasico L2, alternativo R1). Antes se
+    // mandaba L1+R1, que en modo clasico es mirar a los lados: no apuntaba.
+    if (state.press.has('onfoot-action')) buttons |= CIRCLE;
+    if (state.press.has('onfoot-aim') && state.firearm) buttons |= classic ? LEFT2 : RIGHT1;
+    // El motor elige los bits por modo de control (CURMODE). En móvil el
+    // modo clásico (1/3) usa gas R2, freno L2 y freno de mano Cross; en el
+    // otro (0/2) gas Cross, freno Square y freno de mano R1. Con los bits
+    // cruzados, "derrapar" movía la cámara: R1 es mirar a la derecha en el
+    // modo clásico.
+    const classic = state.padMode === 1 || state.padMode === 3;
+    if (state.press.has('vehicle-gas') || now < state.gasUntil) buttons |= classic ? RIGHT2 : CROSS;
+    if (state.press.has('vehicle-brake') || now < state.brakeUntil) buttons |= classic ? LEFT2 : SQUARE;
+    if (state.press.has('vehicle-handbrake')) buttons |= classic ? CROSS : RIGHT1;
     if (state.press.has('vehicle-horn')) buttons |= LEFT_SHOCK;
     if (now < state.missionUntil) buttons |= RIGHT_SHOCK;
-    if (state.press.has('vehicle-fire-center')) buttons |= CIRCLE;
+    if (state.press.has('vehicle-fire')) buttons |= CIRCLE;
     if (state.press.has('vehicle-fire-mg')) buttons |= RIGHT1;
-    if (state.driveSide !== null) buttons |= CIRCLE;
     if (now < state.selectUntil) buttons |= SELECT;
     if (now < state.triangleUntil) buttons |= TRIANGLE;
+    // Puntos 5 y 6, solo gesto sobre el juego (nada de botones nuevos):
+    // deslizar mueve el scroll/cambia de fila y tocar el valor pulsa RIGHT.
+    // Los bits DPad ya llegan fusionados por TouchFrame.
+    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_UP) buttons |= DPAD_UP;
+    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_DOWN) buttons |= DPAD_DOWN;
+    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_LEFT) buttons |= DPAD_LEFT;
+    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_RIGHT) buttons |= DPAD_RIGHT;
     return buttons;
   }
 
@@ -469,14 +614,24 @@ export function createTouchControls(options) {
     if (state.mode === 'vehicle') {
       if (state.rotate && flight) leftX = state.rotate * 128;
       if (state.rotate && (state.vehicleName === 'tank' || state.vehicleName === 'firetruck')) lookX = state.rotate * 128;
-      if (state.driveSide !== null) lookX = state.driveSide * 128;
       if (now < state.pitchUntil) leftY = state.pitch;
     }
+    // Plan 64.0 T6: instrumentacion agregada (cada 240 envios) del coste de
+    // cruce a WASM; no cambia el ritmo de envio, solo mide.
+    const t0 = nowMs();
     module._ViceExtTouchFrame(
       Math.round(leftX), Math.round(leftY), 0, 0,
       Math.round(clamp(lookX, -128, 128)), Math.round(clamp(lookY, -128, 128)),
       buildButtons(now) >>> 0
     );
+    const dt = nowMs() - t0;
+    state.perf.n += 1;
+    state.perf.sum += dt;
+    if (dt > state.perf.max) state.perf.max = dt;
+    if (state.perf.n >= 240) {
+      log(`vc-touch: perf camFrame avg=${(state.perf.sum / state.perf.n).toFixed(2)}ms max=${state.perf.max.toFixed(2)}ms fpsEma=${state.perf.fpsEma.toFixed(1)}`);
+      state.perf.n = 0; state.perf.sum = 0; state.perf.max = 0;
+    }
     state.lookX *= 0.55;
     state.lookY *= 0.55;
     if (Math.abs(state.lookX) < 0.5) state.lookX = 0;
@@ -487,10 +642,18 @@ export function createTouchControls(options) {
     if (!state.enabled) return;
     rememberBridge();
     const now = nowMs();
+    if (state.perf.lastFrame) {
+      const fps = 1000 / Math.max(1, now - state.perf.lastFrame);
+      state.perf.fpsEma = state.perf.fpsEma ? state.perf.fpsEma * 0.95 + fps * 0.05 : fps;
+    }
+    state.perf.lastFrame = now;
     if (now >= state.contextAt) {
       state.contextAt = now + 100;
       readContext();
+      readPadMode();
     }
+    sanitizePointers();
+    resolveMenuPending(now);
     syncVisibility();
     sendFrame(now);
     state.frameId = requestAnimationFrame(frame);
@@ -515,7 +678,6 @@ export function createTouchControls(options) {
     state.lookX = 0;
     state.lookY = 0;
     state.rotate = 0;
-    state.driveSide = null;
     state.pitch = 0;
     state.pitchUntil = 0;
     state.missionUntil = 0;
@@ -687,8 +849,71 @@ export function createTouchControls(options) {
     event.preventDefault();
   }
 
+  // Pantalla completa + orientacion paisaje + Wake Lock (móvil). El Fullscreen
+  // API exige activacion del usuario: se pide al PRIMER toque sobre la capa
+  // (gesto real) y el boton ⛶ lo pide de nuevo cuando el usuario lo pulsa.
+  // En iPhone (Safari, sin Element.requestFullscreen) no hay a pantalla
+  // completa desde la web: se avisa una vez y el juego sigue funcionando.
+  // Ctrl+N y demas atajos reservados del navegador NO se pueden bloquear
+  // desde la pagina; en móvil no existen y los gestos equivalents
+  // (pull-to-refresh, menu de llamada, zoom) se bloquean con CSS/JS abajo.
+  let fsTried = false;
+  let wakeLockSentinel = null;
+
+  function lockLandscape() {
+    try {
+      if (screen && screen.orientation && typeof screen.orientation.lock === 'function')
+        screen.orientation.lock('landscape').catch(() => {});
+    } catch (e) { /* sin soporte: no importa */ }
+  }
+
+  function goFullscreen() {
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      lockLandscape();
+      return;
+    }
+    const el = doc.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    if (typeof req !== 'function') {
+      if (!fsTried) { fsTried = true; log('vc-touch: fullscreen no disponible en este navegador/móvil'); }
+      return;
+    }
+    try {
+      const p = req.call(el);
+      if (p && typeof p.catch === 'function') {
+        p.then(lockLandscape).catch(() => { /* el usuario lo rechazo: reintenta el boton */ });
+      } else {
+        lockLandscape();
+      }
+    } catch (e) { /* gesto sin activacion: lo reintenta el boton ⛶ */ }
+  }
+
+  // Feedback punto 2: fullscreen al tocar en cualquier parte y en cualquier
+  // momento (también en carga/portada), no solo tras el primer frame. El
+  // listener es permanente y reintenta si el usuario salió de fullscreen.
+  function onAnyGesture() {
+    if (state.enabled) goFullscreen();
+  }
+
+  function onGestureStart(event) {
+    if (!layer.hidden) event.preventDefault();   // zoom con pellizco (iOS Safari)
+  }
+
+  async function requestWakeLock() {
+    try {
+      if (wakeLockSentinel) return;
+      if (navigator && navigator.wakeLock && typeof navigator.wakeLock.request === 'function')
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+    } catch (e) { /* sin permiso/bateria: no importa */ }
+  }
+
   function onVisibility() {
-    if (document.hidden) releaseAll();
+    if (document.hidden) {
+      releaseAll();
+      if (wakeLockSentinel) { try { wakeLockSentinel.release(); } catch (e) {} wakeLockSentinel = null; }
+    } else {
+      requestWakeLock();
+    }
   }
 
   function onBlur() {
@@ -698,6 +923,7 @@ export function createTouchControls(options) {
   function mount() {
     if (state.mounted) return;
     state.mounted = true;
+    root.appendChild(rotateEl);
     root.appendChild(layer);
     applyLayout();
     state.moveZone.addEventListener('pointerdown', onMoveDown);
@@ -713,6 +939,12 @@ export function createTouchControls(options) {
     bindHudSwipe(state.radioZone, 'ViceExtTouchRadio');
     bindMapTap();
     layer.addEventListener('contextmenu', onContextMenu);
+    window.addEventListener('pointerdown', onAnyGesture, { capture: true });
+    window.addEventListener('pointerdown', onPointerTrackDown, { capture: true });
+    window.addEventListener('pointerup', onPointerTrackUp, { capture: true });
+    window.addEventListener('pointercancel', onPointerTrackUp, { capture: true });
+    window.addEventListener('gesturestart', onGestureStart, { passive: false });
+    requestWakeLock();
     for (const element of layer.querySelectorAll('.vc-touch-btn')) {
       element.addEventListener('pointerdown', onButtonDown);
       element.addEventListener('pointerup', onButtonUp);
@@ -756,12 +988,14 @@ export function createTouchControls(options) {
   function destroy() {
     stopLoop();
     setEnabled(false);
+    window.removeEventListener('pointerdown', onAnyGesture, { capture: true });
     window.removeEventListener('pointerdown', onMenuPointerDown, true);
     window.removeEventListener('pointerup', onMenuPointerUp, true);
     window.removeEventListener('pointercancel', onMenuPointerCancel, true);
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('blur', onBlur);
     if (layer.parentNode) layer.remove();
+    if (rotateEl.parentNode) rotateEl.remove();
     state.mounted = false;
   }
 

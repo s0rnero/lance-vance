@@ -1826,6 +1826,7 @@ models/coll/peds.col
 models/frontend_ds2.txd
 models/fonts.txd
 models/x360btns.txd
+models/touchbtns.txd
 models/frontend_x360.txd
 models/fonts_r.txd
 models/ps3btns.txd

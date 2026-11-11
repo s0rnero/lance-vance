@@ -592,6 +592,17 @@ CCutsceneMgr::Update(void)
 
 	if (!ms_running) return;
 
+#ifdef VICEEXT_TOUCH_CONTROLS
+	// Plan 64.0 T3: el salto tactil tambien se consume fuera de la rama flyby
+	// (la rama flyby de abajo sigue consumiendo primero; aqui solo se entra si
+	// el toque sigue armado). Guardas: nombre != "finale" y carga == LOADING_0,
+	// igual que el mando/teclado. Un toque = un consumo (ConsumeTouchSkip).
+	if (CGeneral::faststricmp(ms_cutsceneName, "finale") && ms_cutsceneLoadStatus == CUTSCENE_LOADING_0 && CPad::ConsumeTouchSkip()) {
+		FinishCutscene();
+		return;
+	}
+#endif
+
 	ms_cutsceneTimer += CTimer::GetTimeStepNonClippedInSeconds();
 
 	for (int i = 0; i < ms_numCutsceneObjs; i++) {

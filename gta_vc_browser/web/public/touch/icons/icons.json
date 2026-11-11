@@ -114,93 +114,39 @@
     "action": "Cambiar de cÃ¡mara"
   },
   {
-    "name": "vehicle-exit-car",
-    "file": "vehicle-exit-car.png",
-    "label": "Exit Car",
-    "action": "Bajar del coche"
+    "name": "menu-up",
+    "file": "menu-up.svg",
+    "label": "Menu up",
+    "action": "Subir en menú"
   },
   {
-    "name": "vehicle-exit-bike",
-    "file": "vehicle-exit-bike.png",
-    "label": "Exit Bike",
-    "action": "Bajar de la moto"
+    "name": "menu-down",
+    "file": "menu-down.svg",
+    "label": "Menu down",
+    "action": "Bajar en menú"
   },
   {
-    "name": "vehicle-exit-boat",
-    "file": "vehicle-exit-boat.png",
-    "label": "Exit Boat",
-    "action": "Bajar del bote"
+    "name": "menu-left",
+    "file": "menu-left.svg",
+    "label": "Menu left",
+    "action": "Izquierda en menú"
   },
   {
-    "name": "vehicle-exit-heli",
-    "file": "vehicle-exit-heli.png",
-    "label": "Exit Helicopter",
-    "action": "Bajar del helicÃ³ptero"
+    "name": "menu-right",
+    "file": "menu-right.svg",
+    "label": "Menu right",
+    "action": "Derecha en menú"
   },
   {
-    "name": "vehicle-exit-plane",
-    "file": "vehicle-exit-plane.png",
-    "label": "Exit Plane",
-    "action": "Bajar del aviÃ³n"
+    "name": "menu-ok",
+    "file": "menu-ok.svg",
+    "label": "Menu ok",
+    "action": "Aceptar en menú"
   },
   {
-    "name": "vehicle-exit-tank",
-    "file": "vehicle-exit-tank.png",
-    "label": "Exit Tank",
-    "action": "Bajar del tanque"
-  },
-  {
-    "name": "vehicle-enter-car",
-    "file": "vehicle-enter-car.png",
-    "label": "Enter Car",
-    "action": "Subir al coche"
-  },
-  {
-    "name": "vehicle-enter-bike",
-    "file": "vehicle-enter-bike.png",
-    "label": "Enter Bike",
-    "action": "Subir a la moto"
-  },
-  {
-    "name": "vehicle-enter-boat",
-    "file": "vehicle-enter-boat.png",
-    "label": "Enter Boat",
-    "action": "Subir al bote"
-  },
-  {
-    "name": "vehicle-enter-heli",
-    "file": "vehicle-enter-heli.png",
-    "label": "Enter Helicopter",
-    "action": "Subir al helicÃ³ptero"
-  },
-  {
-    "name": "vehicle-enter-plane",
-    "file": "vehicle-enter-plane.png",
-    "label": "Enter Plane",
-    "action": "Subir al aviÃ³n"
-  },
-  {
-    "name": "vehicle-enter-tank",
-    "file": "vehicle-enter-tank.png",
-    "label": "Enter Tank",
-    "action": "Subir al tanque"
-  },
-  {
-    "name": "vehicle-fire-left",
-    "file": "vehicle-fire-left.png",
-    "label": "Drive-by Left",
-    "action": "Disparar por la izquierda"
-  },
-  {
-    "name": "vehicle-fire-center",
-    "file": "vehicle-fire-center.png",
-    "label": "Drive-by Forward",
-    "action": "Disparar al frente"
-  },
-  {
-    "name": "vehicle-fire-right",
-    "file": "vehicle-fire-right.png",
-    "label": "Drive-by Right",
-    "action": "Disparar por la derecha"
+    "name": "menu-back",
+    "file": "menu-back.svg",
+    "label": "Menu back",
+    "action": "Atrás en menú"
   }
 ]

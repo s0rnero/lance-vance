@@ -6,6 +6,7 @@
 #include "WidescreenFixOptions.h"
 #ifdef BUTTON_ICONS
 #include "FileMgr.h"
+#include "Pad.h"
 #endif
 #include "Timer.h"
 #include "ondemand.h" // R3b: caza-todo de textos dibujados (SCRTXT3)
@@ -385,6 +386,17 @@ CFont::Initialise(void)
 void
 CFont::LoadButtons(const char *txdPath)
 {
+	// Plan 64.0 T7 (feedback punto 7): con controles tactiles activos los
+	// mensajes ("Pulsa L o R para conducir...") muestran los iconos del propio
+	// juego, no los de mando ni los de teclado. Se aplica aqui para que
+	// cualquier LoadButtons posterior (cambio de mando en ajustes) no vuelva
+	// a los iconos de gamepad. Si TOUCHBTNS.TXD no existe se usa el original.
+	if (CPad::IsTouchControlsActive()) {
+		if (int touchFile = CFileMgr::OpenFile("MODELS/TOUCHBTNS.TXD")) {
+			CFileMgr::CloseFile(touchFile);
+			txdPath = "MODELS/TOUCHBTNS.TXD";
+		}
+	}
 	if (int file = CFileMgr::OpenFile(txdPath)) {
 		CFileMgr::CloseFile(file);
 		if (ButtonsSlot == -1)
@@ -1005,9 +1017,18 @@ CFont::PrintStringFromBottom(float x, float y, wchar *str)
 }
 
 #ifdef __EMSCRIPTEN__
+// R3b: caza-todo de textos dibujados. Es DIAGNOSTICO y cuesta un cruce a JS
+// (mas su traza por beacon) por cada texto: en una sesion real de 14 min eran
+// 187k de 218k lineas y el motor a 10-15 FPS. Apagado por defecto; se enciende
+// desde JS con _ViceExtTextTrace(1) cuando haya que depurar textos.
+static bool s_viceTextTrace = false;
+extern "C" void ViceExtTextTrace(int on) { s_viceTextTrace = on != 0; }
+
 static void
 ViceExtTraceBottomText(float x, float y, wchar *s)
 {
+	if (!s_viceTextTrace)
+		return;
 	if (s == nil || y < SCREEN_HEIGHT * 0.5f)
 		return;
 	char txt[64];
@@ -1746,7 +1767,11 @@ CFont::ParseToken(wchar* str, CRGBA &color, bool &flash, bool &bold)
 		}
 
 #ifdef VICEEXT_PC_KEY_ICONS
-		if (PS2Symbol != -1 && !CPad::IsAffectedByController)
+		// Plan 64.0 T7 (feedback punto 7): en movil no hay mando, asi que
+		// !IsAffectedByController hacia que los mensajes dibujaran TECLAS DE PC
+		// (una tecla con la letra). Con controles tactiles se queda el simbolo
+		// de boton, que LoadButtons ya carga desde TOUCHBTNS.TXD.
+		if (PS2Symbol != -1 && !CPad::IsAffectedByController && !CPad::IsTouchControlsActive())
 			PCSymbol = ControlsManager.GetCurrentPCKeyFromCurrentAction();
 #endif
 	}

@@ -126,7 +126,6 @@ export const CSS = `
   position: absolute; z-index: 2; width: 92px; height: 92px; margin: -46px 0 0 -46px;
   border: 2px solid rgba(255, 255, 255, .38); border-radius: 50%;
   background: rgba(0, 0, 0, .22); pointer-events: none;
-  backdrop-filter: blur(2px);
 }
 .vc-touch-stick[hidden] { display: none; }
 .vc-touch-stick i {
@@ -140,7 +139,6 @@ export const CSS = `
   transform: translate(-50%, -50%); pointer-events: auto; touch-action: none;
   border: 0; border-radius: 50%; background: rgba(6, 6, 10, .34); color: #fff;
   box-shadow: 0 3px 12px rgba(0, 0, 0, .28);
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
   transition: transform .08s ease, background .08s ease;
 }
 .vc-touch-btn img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,.55)); }
@@ -148,9 +146,9 @@ export const CSS = `
 .vc-touch-home {
   left: 1.6%; top: 28%; z-index: 5;
   width: clamp(48px, 8vmin, 62px); height: clamp(48px, 8vmin, 62px);
-  transform: translate(0, 0); background: rgba(6, 6, 10, .38);
+  transform: translate(0, 0); background: transparent; box-shadow: none; border-radius: 0;
 }
-.vc-touch-home img { width: 58%; height: 58%; }
+.vc-touch-home img { width: 100%; height: 100%; filter: none; }
 .vc-touch-home.is-active { transform: scale(.92); }
 .vc-touch[data-mode="onfoot"] .vc-touch-btn[data-modes]:not([data-modes~="onfoot"]),
 .vc-touch[data-mode="vehicle"] .vc-touch-btn[data-modes]:not([data-modes~="vehicle"]),
@@ -163,6 +161,9 @@ export const CSS = `
 .vc-touch[data-mode="vehicle"] .vc-touch-stick,
 .vc-touch[data-mode="onfoot"] .vc-touch-zone[data-modes]:not([data-modes~="onfoot"]),
 .vc-touch[data-mode="vehicle"] .vc-touch-zone[data-modes]:not([data-modes~="vehicle"]) { display: none; }
+/* Puntos 5 y 6: sin botones nuevos; en vehículo la cámara ocupa todo el
+   ancho para que deslizar mueva la vista. */
+.vc-touch[data-mode="vehicle"]:not([data-vehicle="heli"]):not([data-vehicle="plane"]) .vc-touch-look { left: 0; width: 100%; }
 .vc-touch[data-mode="vehicle"][data-vehicle="heli"] .vc-touch-move,
 .vc-touch[data-mode="vehicle"][data-vehicle="plane"] .vc-touch-move { display: block; }
 .vc-touch[data-mode="vehicle"][data-vehicle="heli"] .vc-touch-stick:not([hidden]),
@@ -177,22 +178,23 @@ export const CSS = `
 .vc-touch[data-mode="vehicle"][data-vehicle="plane"] .vc-touch-btn[data-vehicles~="plane"],
 .vc-touch[data-mode="vehicle"][data-vehicle="tank"] .vc-touch-btn[data-vehicles~="tank"] { display: flex; }
 
-/* El drive-by solo aparece con arma de fuego; el cañón del tanque siempre. */
-.vc-touch-btn[data-action="fire-left"],
-.vc-touch-btn[data-action="fire-right"] { display: none !important; }
-.vc-touch-btn[data-action="fire-center"] { display: none !important; }
+/* El drive-by solo aparece con arma de fuego; el cañón del tanque siempre.
+   Plan 64.0 T4: un solo boton vehicle-fire (icono real vehicle-shoot); se
+   retiraron los botones inventados fire-left/center/right. */
+.vc-touch-btn[data-action="fire"] { display: none !important; }
 .vc-touch-btn[data-action="mission"] { display: none !important; }
 .vc-touch[data-mode="vehicle"][data-mission="1"] .vc-touch-btn[data-action="mission"] { display: flex !important; }
-.vc-touch[data-armed="1"][data-vehicle="car"] .vc-touch-btn[data-action="fire-left"],
-.vc-touch[data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire-left"],
-.vc-touch[data-armed="1"][data-vehicle="boat"] .vc-touch-btn[data-action="fire-left"],
-.vc-touch[data-armed="1"][data-vehicle="car"] .vc-touch-btn[data-action="fire-right"],
-.vc-touch[data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire-right"],
-.vc-touch[data-armed="1"][data-vehicle="boat"] .vc-touch-btn[data-action="fire-right"],
-.vc-touch[data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire-center"],
-.vc-touch[data-vehicle-armed="1"][data-vehicle="heli"] .vc-touch-btn[data-action="fire-center"] { display: flex !important; }
-.vc-touch[data-mode="vehicle"][data-vehicle="tank"] .vc-touch-btn[data-action="fire-center"] { display: flex !important; }
-.vc-touch[data-mode="vehicle"][data-vehicle="firetruck"] .vc-touch-btn[data-action="fire-center"] { display: flex !important; }
+.vc-touch[data-armed="1"][data-vehicle="car"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-armed="1"][data-vehicle="boat"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-mode="vehicle"][data-vehicle="tank"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-mode="vehicle"][data-vehicle="firetruck"] .vc-touch-btn[data-action="fire"] { display: flex !important; }
+/* El disparo desde vehiculo no existe a pie (era el segundo icono de pistola
+   cuando data-vehicle seguia puesto tras bajar del coche). */
+.vc-touch:not([data-mode="vehicle"]) .vc-touch-btn[data-action="fire"] { display: none !important; }
+/* Apuntar (autoapuntado al enemigo mas cercano): solo a pie y con arma. */
+.vc-touch-btn[data-action="aim"] { display: none !important; }
+.vc-touch[data-mode="onfoot"][data-armed="1"] .vc-touch-btn[data-action="aim"] { display: flex !important; }
 .vc-touch-btn[data-action="fire-mg"] { display: none !important; }
 .vc-touch[data-mode="vehicle"][data-vehicle-armed="1"] .vc-touch-btn[data-action="fire-mg"] { display: flex !important; }
 
@@ -200,7 +202,7 @@ export const CSS = `
   display: block; position: absolute; inset: 0; z-index: 20;
   pointer-events: auto; touch-action: none; background: transparent;
 }
-.vc-touch-rotate { display: none; position: absolute; inset: 0; z-index: 30; align-items: center; justify-content: center; background: #000; color: #ff2e9a; font: 800 16px/1.4 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; text-align: center; padding: 24px; }
+.vc-touch-rotate { display: none; position: absolute; inset: 0; z-index: 30; align-items: center; justify-content: center; background: #000; color: #ff2e9a; font: 800 16px/1.4 system-ui, sans-serif; letter-spacing: .1em; text-transform: uppercase; text-align: center; padding: 24px; pointer-events: none; }
 @media (orientation: portrait) and (pointer: coarse) {
   .vc-touch-rotate { display: flex; }
   .vc-touch-btn, .vc-touch-zone { visibility: hidden; }
@@ -208,5 +210,19 @@ export const CSS = `
 @media (max-height: 430px) {
   .vc-touch-btn { width: clamp(44px, 10.5vmin, 68px); }
   .vc-touch-home { width: 42px; height: 42px; }
+}
+/* Pantalla completa + bloqueo de gestos del navegador (móvil).
+   Ctrl+N/Ctrl+P y demás atajos reservados NO se pueden bloquear desde la
+   página; en móvil los equivalentes son pull-to-refresh, menú de llamada
+   al mantener pulsado, zoom con doble toque/pellizco y rebote de
+   sobre-desplazamiento — todos bloqueados aqui. */
+html, body { overscroll-behavior: none; }
+.vc-touch {
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 `;

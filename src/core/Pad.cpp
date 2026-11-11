@@ -2181,8 +2181,20 @@ static void TouchMergeButton(int16 &dst, int16 src)
 
 void CPad::TouchSkip(void)
 {
-	if (CCutsceneMgr::IsRunning())
+	// Plan 64.0 T3: la intro tambien se salta tocando; antes solo IsRunning(),
+	// asi la intro (playingIntro) nunca armaba el salto tactil.
+	// Plan 64.0 T8: la carga de la cinemateca (IsCutsceneProcessing() con
+	// ms_running==false) puede durar varios segundos; sin este termino los
+	// toques de esa ventana se perdian y la 2a cinematica no se podia saltar.
+	bool bRunning = CCutsceneMgr::IsRunning();
+	bool bProcessing = CCutsceneMgr::IsCutsceneProcessing();
+	if (bRunning || CGame::playingIntro || bProcessing) {
 		sTouchSkipRequested = true;
+		char t[128];
+		snprintf(t, sizeof t, "VEX toucheskip armado running=%d intro=%d processing=%d",
+			bRunning ? 1 : 0, CGame::playingIntro ? 1 : 0, bProcessing ? 1 : 0);
+		ODTRACES(t);
+	}
 }
 
 bool CPad::ConsumeTouchSkip(void)
@@ -2190,6 +2202,7 @@ bool CPad::ConsumeTouchSkip(void)
 	if (!sTouchSkipRequested)
 		return false;
 	sTouchSkipRequested = false;
+	ODTRACES("VEX toucheskip consumido");
 	return true;
 }
 
@@ -2264,6 +2277,12 @@ void CPad::SetTouchAutoAim(bool on)
 	ODTRACES(t);
 }
 
+// Feedback movil: el boton de mision (sub-mision de taxi/policia/...) tiene
+// que enviar RightShock, que es el boton que leen los scripts, pero en modo
+// clasico RightShock tambien es "mirar atras" y la camara giraba al pulsarlo.
+// Con esta bandera se ignora el look-behind mientras dura ese pulso.
+static bool sTouchMissionHeld = false;
+
 void CPad::TouchFrame(int leftX, int leftY, int rightX, int rightY, int lookX, int lookY, unsigned buttons)
 {
 	PCTempTouchState.Clear();
@@ -2287,6 +2306,7 @@ void CPad::TouchFrame(int leftX, int leftY, int rightX, int rightY, int lookX, i
 	PCTempTouchState.DPadRight = (buttons & TOUCH_DPAD_RIGHT) ? 255 : 0;
 	PCTempTouchState.LeftShock = (buttons & TOUCH_LEFT_SHOCK) ? 255 : 0;
 	PCTempTouchState.RightShock = (buttons & TOUCH_RIGHT_SHOCK) ? 255 : 0;
+	sTouchMissionHeld = (buttons & TOUCH_RIGHT_SHOCK) != 0;
 	bTouchInput = leftX || leftY || rightX || rightY || lookX || lookY || buttons;
 }
 
@@ -2335,8 +2355,23 @@ int CPad::TouchContext(void)
 	}
 	if (!FrontEndMenuManager.m_bGameNotLoaded && ped)
 		ctx |= 64;
-	if (CCutsceneMgr::IsRunning() || TheCamera.m_WideScreenOn)
+	// Plan 64.0 T1+T3: el predicado de "hay cinemateca" que el resto del motor
+	// ya usa (IsRunning() || playingIntro) + IsCutsceneProcessing(), para que
+	// el bit 128 tambien se encienda en la intro y en carga de cinemateca.
+	// T1: traza una sola vez al cambiar el contexto, con los predicados por
+	// separado, para cerrar la causa B con log del telefono real.
+	bool bCutRunning = CCutsceneMgr::IsRunning();
+	bool bCutProcessing = CCutsceneMgr::IsCutsceneProcessing();
+	if (bCutRunning || CGame::playingIntro || bCutProcessing || TheCamera.m_WideScreenOn)
 		ctx |= 128;
+	static int lastCtx = -1;
+	if (ctx != lastCtx) {
+		char t[192];
+		snprintf(t, sizeof t, "VEX touchctx ctx=%d running=%d intro=%d processing=%d wide=%d",
+			ctx, bCutRunning ? 1 : 0, CGame::playingIntro ? 1 : 0, bCutProcessing ? 1 : 0, TheCamera.m_WideScreenOn ? 1 : 0);
+		ODTRACES(t);
+		lastCtx = ctx;
+	}
 	return ctx;
 }
 
@@ -2368,6 +2403,29 @@ extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuTap(int nx, int ny)
 extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchSkip(void)
 {
 	CPad::TouchSkip();
+}
+
+// Plan 64.0 T7 (feedback punto 7): con controles tactiles los mensajes usan
+// los iconos del propio juego (TOUCHBTNS.TXD) en vez de los de mando o PC.
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchUseTouchIcons(void)
+{
+#ifdef BUTTON_ICONS
+	CFont::LoadButtons("MODELS/TOUCHBTNS.TXD");
+#endif
+}
+
+// Fila enfocada en el menu: el toque tactil solo cambia el valor si la fila
+// tocada ya era la del recuadro verde.
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchMenuOption(void)
+{
+	return FrontEndMenuManager.m_nCurrOption;
+}
+
+// Modo de control real (CURMODE): gas/freno/freno de mano cambian de bit
+// segun sea clasico (1/3) o alternativo (0/2).
+extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchPadMode(void)
+{
+	return CPad::IsAffectedByController ? CPad::GetPad(0)->Mode : 0;
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchPause(void)
@@ -3389,7 +3447,7 @@ bool CPad::GetLookBehindForCar(void)
 		case 1:
 		case 3:
 		{
-			return NewState.RightShock || !!(NewState.RightShoulder1 && NewState.LeftShoulder1);
+			return (!sTouchMissionHeld && NewState.RightShock) || !!(NewState.RightShoulder1 && NewState.LeftShoulder1);
 
 			break;
 		}
@@ -3404,6 +3462,11 @@ bool CPad::GetLookBehindForCar(void)
 bool CPad::GetLookBehindForPed(void)
 {
 	if ( ArePlayerControlsDisabled() )
+		return false;
+
+	// Pulso del boton de mision tactil: es RightShock (lo que leen los
+	// scripts de sub-mision) pero no debe girar la camara.
+	if (sTouchMissionHeld)
 		return false;
 
 	return !!NewState.RightShock;
