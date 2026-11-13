@@ -38,6 +38,15 @@ EM_JS(char*, od_present, (const char *cpath), {
   } catch (e) { return 0; }
 });
 
+EM_JS(int, od_sfx_ready, (const char *cpath), {
+  const p = UTF8ToString(cpath);
+  try {
+    if (OD.presentSync(p)) return 1;
+    OD._ensure(p).catch(function(){});
+    return 0;
+  } catch (e) { return 0; }
+});
+
 static int odBlockingDepth = 0;
 extern "C" void odBlockingPush(void)
 {

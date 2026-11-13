@@ -28,7 +28,11 @@ int32 g_nSkyWorldPipe = 0;
 
 // SkyGFX instalado: `dualPass=1`. Solo afecta al mundo transparente; los
 // vehiculos siguen por `defaultRenderCB` (arreglo del cristal).
+#ifdef VICEEXT_PERF_MINIMAL
+bool g_bSkyDualPass = false;
+#else
 bool g_bSkyDualPass = true;
+#endif
 
 
 

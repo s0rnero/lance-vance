@@ -911,6 +911,11 @@ bool LoadINISettings()
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * CIniFile::CarNumberMultiplier;
 #endif
 
+#ifdef VICEEXT_PERF_MINIMAL
+	g_bSkyDualPass = false;
+	gPS2alphaTest = false;
+#endif
+
 #ifdef __EMSCRIPTEN__
 	ODTRACES("INI leido");
 #ifdef VICEEXT_AUTOSAVE

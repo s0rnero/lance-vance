@@ -2172,9 +2172,11 @@ Idle(void *arg)
 #endif
 
 #ifdef EXTENDED_PIPELINES
-		PUSH_RENDERGROUP("Scene.envmap");
-		CustomPipes::EnvMapRender();
-		POP_RENDERGROUP();
+		if (CTimer::GetFrameCounter() % VICEEXT_ENVMAP_EVERY_N == 0) {
+			PUSH_RENDERGROUP("Scene.envmap");
+			CustomPipes::EnvMapRender();
+			POP_RENDERGROUP();
+		}
 #endif
 
 		RenderDebugShit();

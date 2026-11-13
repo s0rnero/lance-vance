@@ -12,7 +12,7 @@
 #define RW_OPENGL
 #define RWDEVICE gl3
 // doesn't help
-//#define RW_GL_USE_VAOS
+#define RW_GL_USE_VAOS
 #endif
 
 #ifdef RW_GLES2

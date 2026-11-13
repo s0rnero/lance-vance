@@ -15,7 +15,11 @@ bool bDebugRenderGroups;
 #endif
 
 #ifdef PS2_ALPHA_TEST
+#ifdef VICEEXT_PERF_MINIMAL
+bool gPS2alphaTest = false;
+#else
 bool gPS2alphaTest = true;
+#endif
 #else
 bool gPS2alphaTest = false;
 #endif

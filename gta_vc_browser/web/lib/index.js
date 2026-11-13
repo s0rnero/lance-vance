@@ -514,7 +514,7 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // 67.1 (11/11): se revierte el cambio de mipmaps DXT de 67.0: los niveles
 // pequenos quedaban con contenido cruzado y los peds a distancia salian a
 // rayas. VERSION anterior: 2026-11-11-67.0-T1.
-export const VERSION = '2026-11-11-68.2-T2';
+export const VERSION = '2026-11-12-70.3-G4d';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.

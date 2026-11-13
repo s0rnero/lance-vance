@@ -414,7 +414,10 @@ CStreaming::Update(void)
 		if(gOdTexBytes > 512LL*1024*1024){
 			long long odTexB0 = gOdTexBytes;
 			int odEvict = 0, odFail = 0;
-			for(int i = 0; i < 2; i++){
+			uint32 odEvT0 = (uint32)emscripten_get_now();
+			for(int i = 0; i < 4; i++){
+				if((uint32)emscripten_get_now() - odEvT0 >= 3)
+					break;
 				if(!RemoveLeastUsedModel(STREAMFLAGS_20)){
 					odFail = 1;
 					break;

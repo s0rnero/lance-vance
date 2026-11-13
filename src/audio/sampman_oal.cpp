@@ -353,6 +353,13 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	uint32 odNow = (uint32)emscripten_get_now();
 	if (odNoMs[nSample] != 0 && odNow >= odNoMs[nSample] && odNow - odNoMs[nSample] < 120)
 		return false;
+	{
+		extern "C" int od_sfx_ready(const char*);
+		if (!od_sfx_ready(path)) {
+			odNoMs[nSample] = odNow ? odNow : 1;
+			return false;
+		}
+	}
 #endif
 	FILE *probe = fopen(path, "rb");
 	if (!probe) {

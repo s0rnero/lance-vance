@@ -693,7 +693,12 @@ CCamera::Process(void)
 		LODDistMultiplier = 1.0f;
 	GenerationDistMultiplier = LODDistMultiplier;
 	#ifdef VICEEXT_IMPROVED_TECH_PART
-	LODDistMultiplier *= CRenderer::ms_lodDistScale * 2.5f;
+	{
+		float lodT = (CRenderer::ms_lodDistScale - 0.925f) / (1.8f - 0.925f);
+		if(lodT < 0.0f) lodT = 0.0f;
+		if(lodT > 1.0f) lodT = 1.0f;
+		LODDistMultiplier *= CRenderer::ms_lodDistScale * (1.0f + 1.5f * lodT);
+	}
 #else
 	LODDistMultiplier *= CRenderer::ms_lodDistScale;
 #endif

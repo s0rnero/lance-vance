@@ -55,6 +55,7 @@ class CRenderer
 	static BlockedRange *pEmptyBlockedRanges;
 public:
 	static float ms_lodDistScale;
+	static float ms_drawDistCull;
 	static bool m_loadingPriority;
 
 	static void Init(void);

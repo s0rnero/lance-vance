@@ -584,6 +584,8 @@ enum Config {
 #define VICEEXT_SKY_LEEDS_WORLD_PIPE		// pipe de mundo Leeds con el tweak de prelight (worldPipe=2)
 #define VICEEXT_SKY_SEAM_FIX			// se redibuja el front buffer desplazado para tapar las costuras (seamFix)
 #define VICEEXT_SKY_DUAL_PASS			// la geometria transparente se dibuja en dos pasadas (dualPass)
+#define VICEEXT_ENVMAP_EVERY_N 4
+#define VICEEXT_PERF_MINIMAL
 
 #define VICEEXT_MONEY_NO_ZEROS
 

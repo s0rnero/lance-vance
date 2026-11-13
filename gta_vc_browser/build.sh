@@ -65,7 +65,9 @@ PRELOAD="--preload-file $REPO_FWD/gta_vc_browser/bootseed@/"
 # Si hay que volver a instrumentar, que sea sobre una build de prueba aparte y
 # comprobando antes que arranca, no sobre la que juega el jugador.
 emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
-  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DCMAKE_BUILD_TYPE="${REVC_BUILD_TYPE:-RelWithDebInfo}" \
+  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG" \
+  -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG" \
   -DCMAKE_EXECUTABLE_SUFFIX=.html \
   -DCMAKE_MODULE_PATH="$(pwd)/gta_vc_browser/cmake" \
   -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$OUT_DIR" \
@@ -78,7 +80,7 @@ emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DLIBRW_GL3_GFXLIB=GLFW \
   -DLIBRW_TOOLS=OFF \
   -DLIBRW_EXAMPLES=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS="-sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=402653184 -sMAXIMUM_MEMORY=2147483648 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuTap,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace -sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=1048576 -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
+  -DCMAKE_EXE_LINKER_FLAGS="-sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=402653184 -sMAXIMUM_MEMORY=2147483648 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_EmscriptenTick,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuTap,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace -sJSPI=1 -sJSPI_EXPORTS=main,EmscriptenTick,ViceExt* -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
 
 echo "--- configurado en $BUILD_DIR ---"
 if [ "$CONFIG_ONLY" -eq 1 ]; then exit 0; fi

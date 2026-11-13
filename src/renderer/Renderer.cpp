@@ -210,6 +210,7 @@ CVector CRenderer::ms_vecCameraPosition;
 CVehicle *CRenderer::m_pFirstPersonVehicle;
 bool CRenderer::m_loadingPriority;
 float CRenderer::ms_lodDistScale = 1.2f;
+float CRenderer::ms_drawDistCull = 100000.0f;
 
 // unused
 BlockedRange CRenderer::aBlockedRanges[16];
@@ -912,6 +913,10 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 		return VIS_INVISIBLE;
 
 	dist = (ent->GetPosition() - ms_vecCameraPosition).Magnitude();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if(dist > ms_drawDistCull)
+		return VIS_INVISIBLE;
+#endif
 
 #ifndef FIX_BUGS
 	// Whatever this is supposed to do, it breaks fading for objects
@@ -1109,6 +1114,10 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 		return ent->IsVisible() ? VIS_VISIBLE : VIS_INVISIBLE;
 
 	float dist = (ms_vecCameraPosition-ent->GetPosition()).Magnitude();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	if(dist > ms_drawDistCull)
+		return VIS_INVISIBLE;
+#endif
 	CSimpleModelInfo *nonLOD = mi->GetRelatedModel();
 
 	// Find out whether to draw below near distance.
@@ -1210,6 +1219,14 @@ CRenderer::ConstructRenderList(void)
 	ms_nNoOfInVisibleEntities = 0;
 }
 	ms_vecCameraPosition = TheCamera.GetPosition();
+#ifdef VICEEXT_IMPROVED_TECH_PART
+	{
+		float lodT = (ms_lodDistScale - 0.925f) / (1.8f - 0.925f);
+		if(lodT < 0.0f) lodT = 0.0f;
+		if(lodT > 1.0f) lodT = 1.0f;
+		ms_drawDistCull = RwCameraGetFarClipPlane(TheCamera.m_pRwCamera) * (0.25f + 0.75f * lodT);
+	}
+#endif
 
 	// unused
 	pFullBlockedRanges = nil;

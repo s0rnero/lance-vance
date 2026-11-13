@@ -2569,9 +2569,12 @@ FinalCleanup(void)
 }
 
 #ifdef __EMSCRIPTEN__
-static void
+extern "C" EMSCRIPTEN_KEEPALIVE void
 EmscriptenTick(void)
 {
+	static bool s_tickBusy = false;
+	if (s_tickBusy) return;
+	s_tickBusy = true;
 	static int tickCount = 0;
 	static int lastState = -1;
 	static int lastInGame = -1;
@@ -2689,14 +2692,17 @@ EmscriptenTick(void)
 			EM_ASM({ try { if (window.__vcFrame) window.__vcFrame(); } catch (e) {} });
 		}
 		InnerFrame();
+		s_tickBusy = false;
 		return;
 	}
 	if ( AfterInner() ) {
 		OuterSetup();
+		s_tickBusy = false;
 		return;
 	}
 	emscripten_cancel_main_loop();
 	FinalCleanup();
+	s_tickBusy = false;
 }
 #endif
 

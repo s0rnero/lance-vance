@@ -324,7 +324,7 @@ var OD = {
   // ANTES de cargar reVC.js, así el mismo binario sirve para cualquier host
   // (/streamed, CDN, subcarpeta...). Sin config, los valores de siempre.
   cfg: (function () {
-    const d = { streamedUrl: '/streamed/', manifestUrl: '/manifest.json', odtraceUrl: '/odtrace', idbCapMB: 900, warmMB: 64, worker: true };
+    const d = { streamedUrl: '/streamed/', manifestUrl: '/manifest.json', odtraceUrl: '/odtrace', idbCapMB: 900, warmMB: 128, worker: true };
     try {
       const c = (typeof globalThis !== 'undefined' && globalThis.__VC_CFG) || {};
       if (c.streamedUrl) d.streamedUrl = c.streamedUrl;
@@ -771,7 +771,7 @@ var OD = {
   warmList: null,
   warmSeen: null,
   warmStarted: false,
-  warmMaxFile: 2 * 1048576,
+  warmMaxFile: 12 * 1048576,
   noteWarm(canon, size) {
     if (!OD.cfg.warmMB || !canon) return;
     if (size && size > OD.warmMaxFile) return;
@@ -814,7 +814,9 @@ var OD = {
         const orig = w.__loadProgress;
         if (orig && !orig.__odWrapped) {
           const f = function (a, b) {
-            if (!OD._warmFired) { OD._warmFired = 1; setTimeout(() => OD.warmStart(), 250); }
+            const now = Date.now();
+            if (!OD._warmFired || now - (OD._warmLast || 0) > 8000) { OD._warmFired = 1; OD.warmStarted = false; setTimeout(() => OD.warmStart(), 250); }
+            OD._warmLast = now;
             return orig.apply(this, arguments);
           };
           f.__odWrapped = true;
@@ -831,8 +833,12 @@ var OD = {
     OD.warmStarted = true;
     (async () => {
       try {
-        const list = OD.warmLoad();
-        if (!list.length) { OD.trace('ODWARM sin lista previa (esta sesión la aprende)'); return; }
+        let list = OD.warmLoad();
+        if (!list.length) {
+          const man0 = OD.manifest || {};
+          list = Object.keys(man0).map((k) => '/' + man0[k].p).filter((p) => p && p.toLowerCase().indexOf('.adf') < 0);
+          OD.trace('ODWARM sin lista previa: precarga amplia de ' + list.length + ' ficheros');
+        }
         const t0 = Date.now();
         const budget = OD.cfg.warmMB * 1048576;
         const man = OD.manifest || {};
@@ -884,6 +890,9 @@ var OD = {
   wkStats: null,
   wkErrs: null,
   wkErrShown: 0,
+  wkMs: null,
+  waitN: 0,
+  waitMs: 0,
   wkLastLine: 0,
   _wkNote: null,
   wkInit() {
@@ -893,6 +902,7 @@ var OD = {
     OD.wkFails = {};
     OD.wkErrs = {};
     OD.wkStats = { ask: 0, take: 0, fast: 0, idb: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
+    OD.wkMs = {};
   },
   wkStart() {
     if (OD.wkWaiters && Object.keys(OD.wkWaiters).length) OD.wkFlushWaiters('reinicio-worker');
@@ -1049,6 +1059,7 @@ var OD = {
     if (m.op === 'data') {
       OD.wkStats[m.src === 'idb' ? 'idb' : 'net']++;
       OD.wkStats.ms += m.ms || 0;
+      OD.wkMs[m.key] = [m.ms || 0, m.src === 'idb' ? 'idb' : 'red'];
       const arr = OD.wkWaiters[m.key];
       if (arr) { delete OD.wkWaiters[m.key]; for (const fn of arr) fn(m.buf); }
       else {
@@ -1077,7 +1088,8 @@ var OD = {
     const s = OD.wkStats;
     OD.trace('ODWK peticiones=' + s.ask + ' aplazados=' + s.fast +
       ' entregados=' + s.take + ' escritos=' + s.wrote + ' esperando=' + Math.round(OD.wkReadyBytes / 1048576) + 'MB' +
-      ' idb=' + s.idb + ' red=' + s.net + ' err=' + s.err + ' ms=' + Math.round(s.ms));
+      ' idb=' + s.idb + ' red=' + s.net + ' err=' + s.err + ' ms=' + Math.round(s.ms) +
+      ' esperas100=' + OD.waitN + ' ms_esp=' + Math.round(OD.waitMs));
   },
   // --------------------------------------------------------------------
   // R2 (plan 06, 5ª partida): diagnóstico del congelado al cargar emisora.
@@ -1537,8 +1549,22 @@ var OD = {
       // coche y pedir su .ifp). Cargando (init, escena desde el menú) se mantiene
       // larga: ahí sí es la ruta crítica.
       const inGame = (typeof window !== 'undefined' && window.__vcInGame === true);
+      const wt0 = Date.now();
       const delivered = await OD.wkWait(canon, inGame ? 2000 : 30000);
-      if (delivered) return OD.writeFile(canon, delivered);
+      const wwait = Date.now() - wt0;
+      let wpath = null, wmem = 0;
+      if (delivered) {
+        const mt0 = Date.now();
+        wpath = OD.writeFile(canon, delivered);
+        wmem = Date.now() - mt0;
+      }
+      if (wwait > 100) {
+        const wi = OD.wkMs[canon] || [-1, '-'];
+        OD.waitN++; OD.waitMs += wwait;
+        OD.trace('ODWAIT ' + canon + ' espera=' + wwait + ' worker=' + wi[0] + ' memfs=' + wmem + ' src=' + wi[1]);
+      }
+      delete OD.wkMs[canon];
+      if (delivered) return wpath;
       // El worker no pudo traerlo: en partida se reintenta en otro frame (el
       // motor lo vuelve a pedir); durante la carga se sigue por el camino de
       // siempre, que es la ruta crítica y no admite aplazamientos.
