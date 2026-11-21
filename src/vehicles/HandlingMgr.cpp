@@ -145,23 +145,32 @@ cHandlingDataMgr::Initialise(void)
 void
 cHandlingDataMgr::LoadHandlingData(void)
 {
-	char *start, *end;
+	char *start, *end, *limit;
 	char line[201];	// weird value
 	char delim[4];	// not sure
 	char *word;
 	int field, handlingId;
-	int keepGoing;
+	int keepGoing, bad;
 	tHandlingData *handling;
 	tFlyingHandlingData *flyingHandling;
 	tBoatHandlingData *boatHandling;
 	tBikeHandlingData *bikeHandling;
 
 	CFileMgr::SetDir("DATA");
-	CFileMgr::LoadFile(HandlingFilename, work_buff, sizeof(work_buff), "r");
+	int len = CFileMgr::LoadFile(HandlingFilename, work_buff, sizeof(work_buff), "r");
 	CFileMgr::SetDir("");
+	// Si el fichero no llega, no se parsea basura: se queda el handling por defecto
+	// (antes se recorria work_buff sin saber cuanto se habia leido y se salia de el).
+	if(len <= 0){
+		printf("HANDL len=%d: no se leyo %s, handling por defecto\n", len, HandlingFilename);
+		return;
+	}
+	printf("HANDL len=%d first=%02x %02x %02x %02x\n", len, work_buff[0], work_buff[1], work_buff[2], work_buff[3]);
 
 	start = (char*)work_buff;
 	end = start+1;
+	limit = (char*)work_buff + len;
+	bad = 0;
 	handling = nil;
 	flyingHandling = nil;
 	boatHandling = nil;
@@ -169,8 +178,14 @@ cHandlingDataMgr::LoadHandlingData(void)
 	keepGoing = 1;
 
 	while(keepGoing){
-		// find end of line
-		while(*end != '\n') end++;
+		if(start >= limit) break;
+		// find end of line (sin pasarse de lo que se ha leido)
+		while(end < limit && *end != '\n') end++;
+		if(end - start > (int)sizeof(line) - 1){
+			printf("HANDLLINE n=%d: linea demasiado larga, se corta la lectura\n", (int)(end - start));
+			break;
+		}
+		bad = 0;
 
 		// get line
 		strncpy(line, start, end - start);
@@ -179,7 +194,9 @@ cHandlingDataMgr::LoadHandlingData(void)
 		end = start+1;
 
 		// yeah, this is kinda crappy
-		if(strcmp(line, ";the end") == 0)
+		// Los datos llegan con CRLF sin traduccion de fin de linea (WASM/MEMFS),
+		// asi que la linea es ";the end\r" y el bucle no cerraria nunca.
+		if(strcmp(line, ";the end") == 0 || strcmp(line, ";the end\r") == 0)
 			keepGoing = 0;
 		else if(line[0] != ';'){
 			if(line[0] == '!'){
@@ -187,12 +204,16 @@ cHandlingDataMgr::LoadHandlingData(void)
 				field = 0;
 				strcpy(delim, " \t");
 				// FIX: game seems to use a do-while loop here
-				for(word = strtok(line, delim); word; word = strtok(nil, delim)){
+				for(word = strtok(line, delim); word && !bad; word = strtok(nil, delim)){
 					switch(field){
 					case  0: break;
 					case  1:
 						handlingId = FindExactWord(word, (const char*)VehicleNames, 14, NUMHANDLINGS);
-						assert(handlingId >= 0 && handlingId < NUMHANDLINGS);
+						if(handlingId < 0 || handlingId >= NUMHANDLINGS){
+							printf("HANDLNO name=%s: no esta en la tabla, se salta la linea\n", word);
+							bad = 1;
+							break;
+						}
 						bikeHandling = GetBikePointer(handlingId);
 						bikeHandling->nIdentifier = (tVehicleType)handlingId;
 						break;
@@ -214,18 +235,22 @@ cHandlingDataMgr::LoadHandlingData(void)
 					}
 					field++;
 				}
-				ConvertBikeDataToGameUnits(bikeHandling);
+				if(!bad) ConvertBikeDataToGameUnits(bikeHandling);
 			}else if(line[0] == '$'){
 				// Flying data
 				field = 0;
 				strcpy(delim, " \t");
 				// FIX: game seems to use a do-while loop here
-				for(word = strtok(line, delim); word; word = strtok(nil, delim)){
+				for(word = strtok(line, delim); word && !bad; word = strtok(nil, delim)){
 					switch(field){
 					case  0: break;
 					case  1:
 						handlingId = FindExactWord(word, (const char*)VehicleNames, 14, NUMHANDLINGS);
-						assert(handlingId >= 0 && handlingId < NUMHANDLINGS);
+						if(handlingId < 0 || handlingId >= NUMHANDLINGS){
+							printf("HANDLNO name=%s: no esta en la tabla, se salta la linea\n", word);
+							bad = 1;
+							break;
+						}
 						flyingHandling = GetFlyingPointer(handlingId);
 						flyingHandling->nIdentifier = (tVehicleType)handlingId;
 						break;
@@ -255,12 +280,16 @@ cHandlingDataMgr::LoadHandlingData(void)
 				field = 0;
 				strcpy(delim, " \t");
 				// FIX: game seems to use a do-while loop here
-				for(word = strtok(line, delim); word; word = strtok(nil, delim)){
+				for(word = strtok(line, delim); word && !bad; word = strtok(nil, delim)){
 					switch(field){
 					case  0: break;
 					case  1:
 						handlingId = FindExactWord(word, (const char*)VehicleNames, 14, NUMHANDLINGS);
-						assert(handlingId >= 0 && handlingId < NUMHANDLINGS);
+						if(handlingId < 0 || handlingId >= NUMHANDLINGS){
+							printf("HANDLNO name=%s: no esta en la tabla, se salta la linea\n", word);
+							bad = 1;
+							break;
+						}
 						boatHandling = GetBoatPointer(handlingId);
 						boatHandling->nIdentifier = (tVehicleType)handlingId;
 						break;
@@ -285,11 +314,15 @@ cHandlingDataMgr::LoadHandlingData(void)
 				field = 0;
 				strcpy(delim, " \t");
 				// FIX: game seems to use a do-while loop here
-				for(word = strtok(line, delim); word; word = strtok(nil, delim)){
+				for(word = strtok(line, delim); word && !bad; word = strtok(nil, delim)){
 					switch(field){
 					case  0:
 						handlingId = FindExactWord(word, (const char*)VehicleNames, 14, NUMHANDLINGS);
-						assert(handlingId >= 0 && handlingId < NUMHANDLINGS);
+						if(handlingId < 0 || handlingId >= NUMHANDLINGS){
+							printf("HANDLNO name=%s: no esta en la tabla, se salta la linea\n", word);
+							bad = 1;
+							break;
+						}
 						handling = &HandlingData[handlingId];
 						handling->nIdentifier = (tVehicleType)handlingId;
 						break;
@@ -331,7 +364,7 @@ cHandlingDataMgr::LoadHandlingData(void)
 					}
 					field++;
 				}
-				ConvertDataToGameUnits(handling);
+				if(!bad) ConvertDataToGameUnits(handling);
 			}
 		}
 	}

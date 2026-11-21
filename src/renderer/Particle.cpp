@@ -308,11 +308,25 @@ void CParticle::ReloadConfig()
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+// 83.1: baliza inmediata para bisecar un cuelgue con el stdout bloqueado.
+#include <stdio.h>
+extern "C" void OdBeacon(const char *tag);
+#define ODB(x) OdBeacon(x)
+#else
+#define ODB(x)
+#endif
+
 void CParticle::Initialise()
 {
+	printf("PART enter\n");
 	ReloadConfig();
+	printf("PART cfg\n");
+	ODB("PART cfg done");
 
 	CParticleObject::Initialise();
+	printf("PART objects\n");
+	ODB("PART objects done");
 
 	float randVal = -1.0f;
 	for ( int32 i = 0; i < RAND_TABLE_SIZE; i++ )

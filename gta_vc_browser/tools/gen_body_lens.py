@@ -90,7 +90,60 @@ SITES = {
     "kaufman": [("wing_lf_hi_ok", "F", (-1.13, 2.38, -0.29), True, 0.55),
                 ("wing_rf_hi_ok", "F", (-1.13, 2.38, -0.29), True, 0.55),
                 ("chassis_hi", "R", (-1.11, -2.48, -0.28), True)],
+    # 60.0 §12.2: el firetruk Hero tampoco trae frames indicator_*; su ambar esta
+    # pintado en la chapa (chassis_hi mat2 firetruk8bit128, compartido con los
+    # rotulos, asi que van como excepcion parcial). Delantero en el parachoques
+    # (y=+4.00, a 0.61 m del ancla del faro) y trasero en el panel (y=-4.19,
+    # a 0.77 m del piloto) con dos racimos bajos mas en el mismo costado.
+    # 60.0 §12.1: el stinger Hero no tenia NADA ambar (lentes pintadas en blanco
+    # y rojo); se trasplantaron los 4 nodos indicator_* del modelo PC con una
+    # copia de su textura de lente como `stingerlens64`. Las filas apuntan al
+    # frame trasplantado y solo encienden su footprint.
+    "stinger": [("indicator_lf", "F", (-0.93, 2.31, -0.09), True, 0.60),
+                ("indicator_rf", "F", (-0.93, 2.31, -0.09), True, 0.60),
+                ("indicator_lr", "R", (-0.74, -2.53, 0.03), True, 0.50),
+                ("indicator_rr", "R", (-0.74, -2.53, 0.03), True, 0.50)],
+    "firetruk": [("chassis_hi", "F", (-0.84, 4.00, 0.22), True, 0.90),
+                 ("chassis_hi", "R", (-1.00, -4.19, 0.23), True, 0.90),
+                 ("chassis_hi", "R", (-0.97, -4.22, -0.77), True, 0.90),
+                 ("chassis_hi", "R", (-1.15, -4.22, -0.78), True, 0.90)],
+    # 60.1 §7: ambulan, vicechee, admiral y police se retiraron de aqui. Sus
+    # nodos indicator_* existen de verdad tras el trasplante y sus filas de
+    # chapa (aceptables en 60.0, cuando no habia nodo) pintaban el panel; la
+    # lente la pinta IndicatorLensTable. No volver a anadirlos.
+    # 60.0 §13: landstal Hero: frontales en el bumper y en wing_hi_dam (duplicadas
+    # las misms caras en 2 sitios con la misma textura landstal868bit128).
+    "landstal": [("chassis_vlo", "F", (-0.80, 2.08, -0.04), True),
+                 ("wing_lf_hi_dam", "F", (-0.94, 2.03, -0.05), True),
+                 ("wing_rf_hi_dam", "F", (-0.94, 2.03, -0.05), True),
+                 ("bump_front_hi_dam", "F", (-0.70, 2.17, -0.47), True),
+                 ("indicator_lf", "F", (-0.94, 2.03, -0.05), True),
+                 ("indicator_rf", "F", (-0.94, 2.03, -0.05), True),
+                 ("indicator_lf", "F", (-0.70, 2.17, -0.47), True),
+                 ("indicator_rf", "F", (-0.70, 2.17, -0.47), True)],
+    # 60.0 §13: hotrinb Hero: frontales en indicator_lf/rf y en wing_hi_dam
+    # (ambas geometrias pintan la misma lente con hotrinb8bit128).
+    "hotrinb": [("indicator_lf", "F", (-0.87, 2.37, -0.04), True),
+                ("indicator_rf", "F", (-0.87, 2.37, -0.04), True),
+                ("wing_lf_hi_dam", "F", (-0.86, 2.37, -0.04), True),
+                ("wing_rf_hi_dam", "F", (-0.86, 2.37, -0.04), True)],
+    # 60.0 §13: cabbie Hero: delantero dual (indicator_* y wing_*_hi_dam) y
+    # trasera en indicator_lr (panel + chassis_hi segun clasificador) con umbral
+    # de distancia flexible a la lampada (el trasero esta a 0.35 de piloto).
+    "cabbie": [("indicator_lf", "F", (-1.13, 2.39, -0.27), True, 0.60),
+               ("indicator_rf", "F", (-1.13, 2.39, -0.27), True, 0.60),
+               ("wing_lf_hi_dam", "F", (-1.13, 2.42, -0.24), True, 0.60),
+               ("wing_rf_hi_dam", "F", (-1.13, 2.42, -0.24), True, 0.60),
+               ("indicator_lr", "R", (-1.11, -2.47, -0.27), True, 0.60),
+               ("indicator_rr", "R", (-1.11, -2.47, -0.27), True, 0.60),
+               ("chassis_hi", "R", (-1.12, -2.46, -0.27), True, 0.60)],
 }
+# 60.0 §12.1: el jugador quiere las traseras del stinger en rojo (fallback de
+# piloto). Al convertir su TXD a 32 bits para el atlas derivado, los racimos
+# traseros pasan la ventana de matiz y regenerar emitia filas para ellos; se
+# excluyen para no encender las traseras en ambar.
+NODE_SKIP = {"stinger": ("CAR_INDICATOR_LR", "CAR_INDICATOR_RR")}
+
 MODELOS = sorted(SITES)
 
 
@@ -176,6 +229,9 @@ def measure_model(model):
                                 % (dist, site[3])))
                 continue
         node = NODE[axle][side]
+        if node in NODE_SKIP.get(model, ()):
+            detalle.append((c, "RECHAZA nodo excluido (%s)" % node))
+            continue
         grupos[(c["frame"], node, side)].append(c)
         detalle.append((c, "APRUEBA %s%s cov=%.2f dist=%.2f%s" % (
             axle, "L" if side < 0 else "R", c["cov"], dist,
@@ -366,7 +422,28 @@ def build_derived(model, faces, geoms, out_dir, check):
     return emits
 
 
-def write_table(filas, out):
+def foreign_lines(out, measured=None):
+    """Filas del header actual de modelos que este generador NO mide.
+
+    Los planes 59.0/62.2 anadieron filas propias (rumpo, pony, topfun, zebra,
+    trash, enforcer, securica, spand, manana, rancher, fbicar) con otras
+    herramientas; este generador no las mide. Hasta 60.1 las borraba al
+    reescribir la tabla, con lo que regenerar perdia trabajo ajeno: se
+    conservan tal cual (incluido su campo `coverage`).
+    """
+    if not os.path.exists(out):
+        return []
+    keep = []
+    for line in io.open(out, encoding="utf-8").read().splitlines():
+        if not line.startswith('\t{ "'):
+            continue
+        model = line[4:].split('"', 1)[0]
+        if model not in (SITES if measured is None else measured):
+            keep.append(line)
+    return keep
+
+
+def write_table(filas, out, measured=None):
     lineas = ["// Generado por gta_vc_browser/tools/gen_body_lens.py -- no editar a mano.",
               "// Lentes ambar medidas en la CARROCERIA (no en un nodo indicator_*): se",
               "// encienden en su sitio con un atlas derivado <atlas>_lens, sin mover ni",
@@ -387,6 +464,7 @@ def write_table(filas, out):
               "\tuint32 mats;",
               "\tuint16 area_cm2;",
               "\tint16 xyz[3];",
+              "\tuint8 coverage;",
               "};",
               "",
               "static const ViceExtBodyLens s_odBodyLens[] = {"]
@@ -396,6 +474,7 @@ def write_table(filas, out):
             f["model"], f["frame"], f["node"], f["side"], rgb[0], rgb[1], rgb[2],
             f["mats"], f["area_cm2"], f["xyz"][0], f["xyz"][1], f["xyz"][2],
             int(round(100 * f["cov"]))))
+    lineas.extend(foreign_lines(out, measured))
     lineas.append("};")
     with io.open(out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(lineas) + "\n")
@@ -407,13 +486,16 @@ def main():
     ap.add_argument("--atlas-dir", default=os.path.join(REPO, "tmp", "58", "lens"))
     ap.add_argument("--json", default=os.path.join(REPO, "tmp", "58", "body_lens.json"))
     ap.add_argument("--check", action="store_true", help="no escribe tabla ni TXD")
+    ap.add_argument("--model", action="append", default=[],
+                    help="limita la medicion a estos modelos (repetible)")
     a = ap.parse_args()
     ia.BASE = ROOT
     ia.MODELS = ROOT
 
     todas = []
     emits = []
-    for m in MODELOS:
+    modelos = [m for m in MODELOS if not a.model or m in a.model]
+    for m in modelos:
         filas, caras, geoms, detalle = measure_model(m)
         print("==== %s" % m)
         for c, why in detalle:
@@ -440,7 +522,7 @@ def main():
         todas.extend(filas)
 
     if not a.check:
-        write_table(todas, a.out)
+        write_table(todas, a.out, set(modelos))
         os.makedirs(os.path.dirname(a.json), exist_ok=True)
         io.open(a.json, "w", encoding="utf-8").write(json.dumps(
             {"rows": [{k: v for k, v in f.items() if k != "faces"} for f in todas],

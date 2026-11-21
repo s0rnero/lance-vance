@@ -10,6 +10,12 @@
 
 const char *_psGetUserFilesFolder();
 
+#ifdef __EMSCRIPTEN__
+// 83.1: baliza inmediata (sendBeacon) para saber si se pasa por aqui aunque
+// lo impreso se quede en el buffer de stdout al morir el hilo del motor.
+extern "C" void OdBeacon(const char *tag);
+#endif
+
 /*
  * Windows FILE is BROKEN for GTA.
  *
@@ -59,6 +65,7 @@ myfopen(const char *filename, const char *mode)
 	for(fd = 1; fd < NUMFILES; fd++)
 		if(myfiles[fd].file == nil)
 			goto found;
+	printf("OPENFAIL %s: sin descriptor libre (NUMFILES=%d)\n", filename, (int)NUMFILES);
 	return 0;	// no free fd
 found:
 	myfiles[fd].isText = strchr(mode, 'b') == nil;
@@ -71,9 +78,29 @@ found:
 	*p++ = 'b';
 	*p = '\0';
 	
-	myfiles[fd].file = fcaseopen(filename, realmode);
-	if(myfiles[fd].file == nil)
+	// El motor pide rutas de Windows ("DATA\\DEFAULT.DAT"). En MEMFS la barra
+	// invertida no separa carpetas: fcaseopen no la encuentra y devuelve nil SIN
+	// llegar a la capa on-demand (por eso no salia ni ODMISS). Se normaliza.
+	char norm[512];
+	{
+		// Se recortan \r, \n, espacios y tabuladores del final: las lineas de los
+		// ficheros de texto llegan con CRLF y el nombre se quedaba con el \r pegado
+		// ("DATA/DEFAULT.IDE\r" -> no existe).
+		size_t fl = strlen(filename);
+		size_t i;
+		int ni = 0;
+		while(fl > 0 && (filename[fl-1] == '\r' || filename[fl-1] == '\n' ||
+		                 filename[fl-1] == ' '  || filename[fl-1] == '\t'))
+			fl--;
+		for(i = 0; i < fl && ni < (int)sizeof(norm) - 1; i++)
+			norm[ni++] = (filename[i] == '\\') ? '/' : filename[i];
+		norm[ni] = '\0';
+	}
+	myfiles[fd].file = fcaseopen(norm, realmode);
+	if(myfiles[fd].file == nil){
+		printf("OPENFAIL %s: no se encuentra\n", norm);
 		return 0;
+	}
 	return fd;
 }
 
@@ -130,6 +157,11 @@ myfgets(char *buf, int len, int fd)
 				return nil;
 			break;
 		}
+		// CRLF: el \r se descarta, igual que hacia Windows en modo texto.
+		// Los datos nuevos vienen con \r\n y el motor esperaba solo \n: el \r
+		// se pegaba al nombre del fichero ("DEFAULT.IDE\r") y no se encontraba.
+		if(c == '\r')
+			continue;
 		*p++ = c;
 		if(c == '\n')
 			break;
@@ -246,19 +278,34 @@ CFileMgr::LoadFile(const char *file, uint8 *buf, int maxlen, const char *mode)
 	int fd;
 	ssize_t n, len;
 
+	printf("LF open %s\nn", file);
 	fd = myfopen(file, mode);
+	printf("LF fd=%d %s\nn", fd, file);
+#ifdef __EMSCRIPTEN__
+	{ char ob[192]; snprintf(ob, sizeof(ob), "LF fd=%d %s", fd, file); OdBeacon(ob); }
+#endif
 	if(fd == 0)
 		return -1;
 	len = 0;
-	do{
+	for(;;){
 		n = myfread(buf + len, 1, 0x4000, fd);
+		printf("LF read n=%d len=%d\nn", (int)n, (int)len);
 #ifndef FIX_BUGS
 		if (n < 0)
 			return -1;
 #endif
+		if(n == 0)
+			break;
 		len += n;
+		// T23: el bucle original no tenia tope. Si el lector no marca EOF y
+		// devuelve siempre 0x4000, esto se colgaba (PARTICLE.CFG en el paso 3).
 		assert(len < maxlen);
-	}while(n == 0x4000);
+		if(len + 0x4000 >= maxlen)
+			break;
+	}
+#ifdef __EMSCRIPTEN__
+	{ char ob[192]; snprintf(ob, sizeof(ob), "LF done len=%d %s", (int)len, file); OdBeacon(ob); }
+#endif
 	buf[len] = 0;
 	myfclose(fd);
 	return len;

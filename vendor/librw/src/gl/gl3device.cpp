@@ -73,6 +73,17 @@ struct UniformObject
 	RGBAf lightColor[MAX_LIGHTS];
 };
 
+// 80.1 (20/11): los bloques std140 de los shaders (header_vs.inc) solo existen
+// si el preprocesador de GLSL ve `USE_UBOS`. Sin esto, con RW_GL_USE_UBOS los
+// datos se mandarian a un buffer uniforme que ningun shader lee: la matriz del
+// mundo y las luces se quedarian sin actualizar. El autor lo deja anotado abajo
+// ("this needs a define in the shaders as well").
+#ifdef RW_GL_USE_UBOS
+#define OD_UBO_DECL "#define USE_UBOS\n"
+#else
+#define OD_UBO_DECL ""
+#endif
+
 const char *shaderDecl120 =
 "#version 120\n"
 "#define GL2\n"
@@ -80,13 +91,15 @@ const char *shaderDecl120 =
 "#define VSIN(index) attribute\n"
 "#define VSOUT varying\n"
 "#define FSIN varying\n"
-"#define FRAGCOLOR(c) (gl_FragColor = c)\n";
+"#define FRAGCOLOR(c) (gl_FragColor = c)\n"
+OD_UBO_DECL;
 const char *shaderDecl330 =
 "#version 330\n"
 "#define VSIN(index) layout(location = index) in\n"
 "#define VSOUT out\n"
 "#define FSIN in\n"
-"#define FRAGCOLOR(c) (fragColor = c)\n";
+"#define FRAGCOLOR(c) (fragColor = c)\n"
+OD_UBO_DECL;
 const char *shaderDecl100es =
 "#version 100\n"
 "#define GL2\n"
@@ -96,7 +109,8 @@ const char *shaderDecl100es =
 "#define FSIN varying\n"
 "#define FRAGCOLOR(c) (gl_FragColor = c)\n"
 "precision highp float;\n"
-"precision highp int;\n";
+"precision highp int;\n"
+OD_UBO_DECL;
 const char *shaderDecl310es =
 "#version 310 es\n"
 "#define VSIN(index) layout(location = index) in\n"
@@ -104,7 +118,8 @@ const char *shaderDecl310es =
 "#define FSIN in\n"
 "#define FRAGCOLOR(c) (fragColor = c)\n"
 "precision highp float;\n"
-"precision highp int;\n";
+"precision highp int;\n"
+OD_UBO_DECL;
 #ifdef __EMSCRIPTEN__
 // WebGL2 accepts GLSL ES 3.00, not 3.10 (native GLES3 only).
 const char *shaderDecl300es =
@@ -114,7 +129,8 @@ const char *shaderDecl300es =
 "#define FSIN in\n"
 "#define FRAGCOLOR(c) (fragColor = c)\n"
 "precision highp float;\n"
-"precision highp int;\n";
+"precision highp int;\n"
+OD_UBO_DECL;
 #endif
 
 const char *shaderDecl;
@@ -1128,7 +1144,11 @@ void
 setWorldMatrix(Matrix *mat)
 {
 	convMatrix(&uniformObject.world, mat);
+#ifndef RW_GL_USE_UBOS
+	// con UBO los indices u_* no existen: el bloque `Object` se sube entero
+	// en flushCache cuando objectDirty esta puesto.
 	setUniform(u_world, &uniformObject.world);
+#endif
 	objectDirty = 1;
 }
 
@@ -1195,11 +1215,13 @@ setLights(WorldLights *lightData)
 
 	uniformObject.lightParams[n].type = 0.0f;
 
+#ifndef RW_GL_USE_UBOS
 	setUniform(u_ambLight, &uniformObject.ambLight);
 	setUniform(u_lightParams, uniformObject.lightParams);
 	setUniform(u_lightPosition, uniformObject.lightPosition);
 	setUniform(u_lightDirection, uniformObject.lightDirection);
 	setUniform(u_lightColor, uniformObject.lightColor);
+#endif
 out:
 	objectDirty = 1;
 	return bits;
@@ -1209,7 +1231,9 @@ void
 setProjectionMatrix(float32 *mat)
 {
 	memcpy(&uniformScene.proj, mat, 64);
+#ifndef RW_GL_USE_UBOS
 	setUniform(u_proj, uniformScene.proj);
+#endif
 	sceneDirty = 1;
 }
 
@@ -1217,7 +1241,9 @@ void
 setViewMatrix(float32 *mat)
 {
 	memcpy(&uniformScene.view, mat, 64);
+#ifndef RW_GL_USE_UBOS
 	setUniform(u_view, uniformScene.view);
+#endif
 	sceneDirty = 1;
 }
 
@@ -1304,15 +1330,16 @@ flushCache(void)
 
 #else
 	if(objectDirty){
+		// 80.1: solo se reescribe el contenido. glBufferData reasigna el buffer
+		// (y en movil eso puede costar una sincronizacion); el buffer ya se creo
+		// con su tamano en el arranque del dispositivo.
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_object);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), nil, GL_STREAM_DRAW);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformObject), &uniformObject, GL_STREAM_DRAW);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(UniformObject), &uniformObject);
 		objectDirty = 0;
 	}
 	if(sceneDirty){
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_scene);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), nil, GL_STREAM_DRAW);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformScene), &uniformScene, GL_STREAM_DRAW);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(UniformScene), &uniformScene);
 		sceneDirty = 0;
 	}
 	if(stateDirty){
@@ -1336,8 +1363,7 @@ flushCache(void)
 		uniformState.fogEnd = rwStateCache.fogEnd;
 		uniformState.fogRange = 1.0f/(rwStateCache.fogStart - rwStateCache.fogEnd);
 		glBindBuffer(GL_UNIFORM_BUFFER, ubo_state);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), nil, GL_STREAM_DRAW);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformState), &uniformState, GL_STREAM_DRAW);
+		glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(UniformState), &uniformState);
 		stateDirty = 0;
 	}
 #endif
@@ -1805,9 +1831,9 @@ makeVideoModeList(void)
 #ifdef __EMSCRIPTEN__
 	// The port reports no modes: offer fixed windowed sizes so the in-game
 	// menu lists resolutions. The canvas is resized on mode change.
-	static const struct { int w, h; } webModes[] = { {1280,720}, {1600,900}, {1920,1080} };
-	glGlobals.modes = rwNewT(DisplayMode, 3, ID_DRIVER | MEMDUR_EVENT);
-	for(int m = 0; m < 3; m++){
+	static const struct { int w, h; } webModes[] = { {960,540}, {1280,720}, {1600,900}, {1920,1080}, {2560,1440} };
+	glGlobals.modes = rwNewT(DisplayMode, 5, ID_DRIVER | MEMDUR_EVENT);
+	for(int m = 0; m < 5; m++){
 		memset(&glGlobals.modes[m].mode, 0, sizeof(GLFWvidmode));
 		glGlobals.modes[m].mode.width = webModes[m].w;
 		glGlobals.modes[m].mode.height = webModes[m].h;
@@ -1817,7 +1843,7 @@ makeVideoModeList(void)
 		glGlobals.modes[m].mode.refreshRate = 60;
 		glGlobals.modes[m].flags = 0;
 	}
-	glGlobals.numModes = 3;
+	glGlobals.numModes = 5;
 #else
 	glGlobals.modes = rwNewT(DisplayMode, num+1, ID_DRIVER | MEMDUR_EVENT);
 
@@ -2086,6 +2112,21 @@ initOpenGL(void)
 		glGenVertexArrays(1, &vao);
 		glBindVertexArray(vao);
 	}
+#ifdef __EMSCRIPTEN__
+	// 80.1: deja constancia en el log de si las dos rutas rapidas entraron de
+	// verdad en esta build (sin esto no hay forma de saberlo desde el log).
+	printf("[web] GL3 glver=%d vao=%d ubo=%d\n", gl3Caps.glversion,
+#ifdef RW_GL_USE_VAOS
+	       1,
+#else
+	       0,
+#endif
+#ifdef RW_GL_USE_UBOS
+	       1);
+#else
+	       0);
+#endif
+#endif
 
 #ifdef RW_GL_USE_UBOS
 	glGenBuffers(1, &ubo_state);

@@ -112,7 +112,8 @@ rw::EngineOpenParams openParams;
 static RwBool		  ForegroundApp = TRUE;
 static RwBool		  WindowIconified = FALSE;
 #ifdef __EMSCRIPTEN__
-int gWebFpsCap = 120;
+int gWebFpsCap = 60;
+int gWebHz = 60;
 double gWebEngSum = 0.0, gWebEngMax = 0.0;
 int gWebEngN = 0;
 int gWebRafWin = 0;
@@ -268,12 +269,14 @@ psCameraShowRaster(RwCamera *camera)
 #ifdef __EMSCRIPTEN__
 	{
 		static int odLoopEstado = -1;
-		if(odLoopEstado != odWait){
-			char t[160];
+		static int odLoopCap = -1;
+		if(odLoopEstado != odWait || odLoopCap != gWebFpsCap){
+			char t[180];
 			odLoopEstado = odWait;
-			snprintf(t, sizeof t, "WEBLOOP vsync=%d menu=%d cap=%d limit=%d wait=%d",
+			odLoopCap = gWebFpsCap;
+			snprintf(t, sizeof t, "WEBLOOP vsync=%d menu=%d cap=%d hz=%d limit=%d wait=%d",
 				FrontEndMenuManager.m_PrefsVsync ? 1 : 0, FrontEndMenuManager.m_bMenuActive ? 1 : 0,
-				gWebFpsCap, FrontEndMenuManager.m_PrefsFrameLimiter ? 1 : 0, odWait);
+				gWebFpsCap, gWebHz, FrontEndMenuManager.m_PrefsFrameLimiter ? 1 : 0, odWait);
 			ODTRACES(t);
 		}
 	}
@@ -2303,7 +2306,21 @@ InnerFrame(void)
 			{
 				if ( RwInitialised )
 				{
-					gWebFpsCap = FrontEndMenuManager.m_PrefsFrameLimiter ? 30 : (FrontEndMenuManager.m_PrefsVsync ? 0 : 120);
+					// 82.0: el tope es el refresco REAL de la pantalla, no un 120
+					// fijo. Con un panel de 60 Hz y cap 120, los reanudados de
+					// Asyncify empujaban el tick hasta 120 aunque el navegador solo
+					// presentara 60. `__vcHz` lo mide el pre-js con los intervalos
+					// de rAF; se relee cada 30 ticks (no cada frame).
+					static int odHzN = 0;
+					if(++odHzN >= 30){
+						odHzN = 0;
+						int odHz = EM_ASM_INT({
+							try { return (window.__vcHz | 0); } catch (e) { return 0; }
+						});
+						if(odHz >= 30 && odHz <= 240)
+							gWebHz = odHz;
+					}
+					gWebFpsCap = FrontEndMenuManager.m_PrefsFrameLimiter ? 30 : (FrontEndMenuManager.m_PrefsVsync ? 0 : gWebHz);
 					RsGlobal.maxFPS = gWebFpsCap ? gWebFpsCap : 240;
 					static double odLastTickMs = 0.0;
 					double odNow = emscripten_get_now();
@@ -2329,14 +2346,23 @@ InnerFrame(void)
 						else
 							gWebRafSkip++;
 					}
+					// 79.7: aqui se tiraban frames. EmscriptenTick ya es la
+					// devolucion de requestAnimationFrame
+					// (`emscripten_set_main_loop(EmscriptenTick, 0, 1)` mas abajo),
+					// asi que cada llamada ES un frame nuevo. Pero ademas se exigia
+					// que avanzara un contador de OTRO bucle de rAF (el de
+					// ondemand.js, `window.__vcRaf.n`), y el orden entre los dos
+					// callbacks no esta garantizado: cuando el contador aun no
+					// habia cambiado, el frame se descartaba sin jugar ni pintar.
+					// En el log del movil se veia `raf=85 skip=35` y `raf=77
+					// skip=43`: entre el 30% y el 60% de los frames perdidos.
 					if (gWebFpsCap == 0) {
-						if (odNewFrame)
-							WebRunTick();
+						WebRunTick();
 					} else {
 						static float odFrameDebt = 0.0f;
 						float odFrameTime = 1000.0f / (float)gWebFpsCap;
 						odFrameDebt += odDelta;
-						if (odNewFrame && odFrameDebt >= odFrameTime - 0.25f) {
+						if (odFrameDebt >= odFrameTime - 0.25f) {
 							odFrameDebt -= odFrameTime;
 							if (odFrameDebt > odFrameTime)
 								odFrameDebt = odFrameTime;
@@ -2631,11 +2657,35 @@ EmscriptenTick(void)
 			odFtMin = 1e9;
 			odFtMax = 0.0;
 		}
+		// 82.1: un perfil de coches por ventana (ver ondemand.cpp). Sale del
+		// frame muestreado: n = coches procesados y ms totales por tramo.
+		{
+			extern bool gWebVehProfDone;
+			extern int gWebVehProfN;
+			extern double gWebVehProfT[9];
+			if (gWebVehProfDone) {
+				gWebVehProfDone = false;
+				if (gWebVehProfN > 0) {
+					double odTot = gWebVehProfT[1] + gWebVehProfT[2] + gWebVehProfT[3] +
+						gWebVehProfT[4] + gWebVehProfT[5] + gWebVehProfT[6] +
+						gWebVehProfT[7] + gWebVehProfT[8];
+					char odvp[240];
+					snprintf(odvp, sizeof odvp,
+						"VEHPROF n=%d pre=%.2f ai=%.2f dmg=%.2f coll=%.2f phys=%.2f buoy=%.2f aux=%.2f wheel=%.2f tot=%.2f us=%.0f",
+						gWebVehProfN, gWebVehProfT[1], gWebVehProfT[2], gWebVehProfT[3],
+						gWebVehProfT[4], gWebVehProfT[5], gWebVehProfT[6], gWebVehProfT[7],
+						gWebVehProfT[8], odTot, odTot / (double)gWebVehProfN * 1000.0);
+					ODTRACES(odvp);
+				}
+			}
+		}
 #ifdef __EMSCRIPTEN__
 		extern int gOdTexLive;
 		extern long long gOdTexBytes;
 		extern int gOdTexGenTotal;
 		extern int gOdTexDelTotal;
+		extern int gOdTex5551;
+		extern long long gOdTex5551Saved;
 		extern long long gOdTxdBytes;
 		extern int gOdTxdLive;
 		extern long long gOdTxdLiveBytes;
@@ -2657,19 +2707,27 @@ EmscriptenTick(void)
 			(unsigned)emscripten_get_heap_size(), (unsigned)odmi.uordblks,
 			odFsN, odFsMB, odLive, odEv, odEvMB, odFMB, odIdb, (int)CCutsceneMgr::IsRunning());
 		{
-			char odhb[448];
+			char odhb[512];
 			// `tex=` son las texturas GL vivas (creadas menos destruidas): si sube sin
 			// parar mientras se conduce, el motor no libera la GPU al descargar modelos.
 			snprintf(odhb, sizeof odhb,
-				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d ufs=%dMB heap=%uMB used=%uMB free=%uMB fade=%d canvas=%dx%d tex=%d mov=%d texb=%lldMB texgen=%d texdel=%d txd=%d/%lldMB txdb=%lldMB",
+				"WEBHB state=%d ingame=%d cut=%d proc=%d cmd=%d memfs=%dMB files=%d ev=%d/%dMB f=%dMB idb=%d ufs=%dMB heap=%uMB used=%uMB free=%uMB fade=%d canvas=%dx%d tex=%d mov=%d texb=%lldMB texgen=%d texdel=%d tex5551=%d texsave=%lldMB txd=%d/%lldMB txdb=%lldMB",
 				(int)gGameState, inGame, (int)CCutsceneMgr::IsRunning(), (int)CCutsceneMgr::IsCutsceneProcessing(),
 				(int)TheCamera.Cams[TheCamera.ActiveCam].Mode, odFsMB, odFsN, odEv, odEvMB, odFMB, odIdb, odUfs,
 				(unsigned)(emscripten_get_heap_size() / 1048576), (unsigned)(odmi.uordblks / 1048576), (unsigned)(odmi.fordblks / 1048576), (int)CDraw::FadeValue,
 				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.width : -1; }),
 				(int)EM_ASM_INT({ var c = document.querySelector(".vc-canvas"); return c ? c.height : -1; }),
 				gOdTexLive, odMoving, (long long)(gOdTexBytes / 1048576), gOdTexGenTotal, gOdTexDelTotal,
+				gOdTex5551, (long long)(gOdTex5551Saved / 1048576),
 				gOdTxdLive, (long long)(gOdTxdBytes / 1048576), (long long)(gOdTxdLiveBytes / 1048576));
-			ODTRACES(odhb);
+			// 81.3: el heap de V8 por separado del wasm. Si sube sin parar mientras
+			// los fps bajan, el techo es memoria (GC); si se queda plano, es thermal.
+			{
+				int odJsUsed = EM_ASM_INT({ try { var m = performance.memory; return m ? Math.round(m.usedJSHeapSize / 1048576) : -1; } catch (e) { return -1; } });
+				int odJsLim = EM_ASM_INT({ try { var m = performance.memory; return m ? Math.round(m.jsHeapSizeLimit / 1048576) : -1; } catch (e) { return -1; } });
+				snprintf(odhb + strlen(odhb), sizeof odhb - strlen(odhb), " js=%d/%dMB", odJsUsed, odJsLim);
+				ODTRACES(odhb);
+			}
 		}
 		EM_ASM({
 			try {

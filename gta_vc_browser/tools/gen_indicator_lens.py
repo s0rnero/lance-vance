@@ -40,6 +40,7 @@ Uso:
 import argparse
 import io
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -77,6 +78,20 @@ NODE_ENUM = {
 # existen por el ambar con el que el mod realmente se ve. -> ADR-021.
 MOD_DESIGN_RGB = (253, 165, 0)
 
+# 60.1 §7: el stinger no tiene texelo ambar propio. Sus 4 nodos indicator_*
+# usan la copia trasplantada `stingerlens64` y es su atlas derivado
+# (`stingerlens64_lens`, BodyLensTable) el que lleva el tono; con atlas=0 el
+# motor no escribe color y la lente queda roja (probado en juego con 60.1). Con
+# atlas=1 el ambar va al material, igual que en el atlas `lights` del mod. El
+# rgb sigue siendo el medido del racimo, no MOD_DESIGN_RGB.
+MATERIAL_ATLAS = {"stinger": ("stingerlens64",)}
+
+# 60.0 §12.1: el jugador quiere las traseras del stinger en rojo (fallback de
+# piloto), no ambar. Al convertir el TXD a 32 bits por el atlas derivado, sus
+# racimos traseros entraron en la ventana de matiz y regenerar los emitia; se
+# excluyen a proposito para no cambiar esa decision.
+NODE_SKIP = {"stinger": ("indicator_lr", "indicator_rr")}
+
 
 def rows_for(model):
     """Una fila por racimo de lente de cada celda (nodo, costado).
@@ -93,11 +108,17 @@ def rows_for(model):
         frame, side = key
         if frame not in NODE_ENUM:
             continue
+        if frame in NODE_SKIP.get(model, ()):
+            continue
         for cl in cells[key]["cl"]:      # en el orden del barrido de atomics
-            atlas = cl["mod"] >= cl["area"] - 1e-12
+            mod = cl["mod"] >= cl["area"] - 1e-12
+            tex = set(t for t in cl["tex"] if t)
+            forced = MATERIAL_ATLAS.get(model, ())
+            atlas = mod or (bool(tex) and tex <= set(forced))
             out.append({"node": NODE_ENUM[frame], "side": side,
-                        "rgb": MOD_DESIGN_RGB if atlas else cl["amean"],
+                        "rgb": MOD_DESIGN_RGB if mod else cl["amean"],
                         "atlas": atlas,
+                        "mod": mod,
                         "amber": cl["frac"] >= L.FILL_MIN,
                         "cm2": 1e4 * cl["amber"],
                         "xyz": (cl["cx"], cl["cy"], cl["cz"]),
@@ -115,17 +136,37 @@ def _mask(mis):
     return m
 
 
+def kept_rows(path, regenerated):
+    """Filas del header actual de modelos que este pase no regenera (--model)."""
+    if not os.path.exists(path):
+        return []
+    out = []
+    for line in io.open(path, encoding="utf-8").read().splitlines():
+        m = re.match(r'\t\{ "([^"]+)"', line)
+        if m is not None and m.group(1) not in regenerated:
+            out.append(line)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.path.join(REPO, "streamed", "models", "gta3.img"))
     ap.add_argument("--out", default=SRC)
+    ap.add_argument("--model", action="append", default=[],
+                    help="regenera solo estos modelos y conserva las demas filas; "
+                         "las cifras de cabecera cuentan solo lo regenerado")
     a = ap.parse_args()
 
     ia.BASE = a.root
     ia.MODELS = a.root
     rows = []
     avisos = []
-    for model in sorted(L.fleet(a.root)):
+    flota = sorted(L.fleet(a.root))
+    regenerated = set()
+    if a.model:
+        regenerated = set(m.lower() for m in a.model)
+        flota = [m for m in flota if m.lower() in regenerated]
+    for model in flota:
         try:
             rows += [(model, r) for r in rows_for(model.lower())]
         except SystemExit as e:
@@ -134,7 +175,7 @@ def main():
             avisos.append("%s: %s: %s" % (model, type(e).__name__, e))
 
     rows.sort(key=lambda r: (r[0], r[1]["node"], r[1]["side"]))
-    _emit(a.out, rows, a.root)
+    _emit(a.out, rows, a.root, kept_rows(a.out, regenerated))
     am = sum(1 for _m, r in rows if r["amber"])
     print("filas: %d  racimos ambar: %d  modelos con fila: %d"
           % (len(rows), am, len(set(m for m, _r in rows))))
@@ -148,7 +189,7 @@ def main():
     print("->", a.out)
 
 
-def _emit(path, rows, root):
+def _emit(path, rows, root, extra=()):
     am = sum(1 for _m, r in rows if r["amber"])
     with io.open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("// Generado por gta_vc_browser/tools/gen_indicator_lens.py -- no editar a mano.\n")
@@ -173,8 +214,8 @@ def _emit(path, rows, root):
                   "// del atlas `lights`/`lightson` del mod %d (con su ambar medido de captura\n"
                   "// (253,165,0): el mod aplica (255,225,0) sobre texelas de lente con matiz;\n"
                   "// aqui la texela es blanca a proposito, asi que el tono vive en el material).\n"
-                  % (len(rows), am, sum(1 for _m, r in rows if not r["atlas"]),
-                     sum(1 for _m, r in rows if r["atlas"])))
+                  % (len(rows), am, sum(1 for _m, r in rows if not r["mod"]),
+                     sum(1 for _m, r in rows if r["mod"])))
         f.write("// atlas: 1 cuando TODO el racimo pinta sobre ese atlas del mod: sus texelos son\n")
         f.write("// blancos y el unico sitio donde cabe escribir el ambar es el color del material.\n")
         f.write("// Con texelos propios el pixel YA trae el tono y el material tiene que quedarse\n")
@@ -204,6 +245,8 @@ def _emit(path, rows, root):
                          int(round(100 * r["xyz"][2])),
                          "A" if r["amber"] else "o", r["caras"], r["tex"],
                          " [atlas del mod]" if r["atlas"] else ""))
+        for line in extra:
+            f.write(line + "\n")
         f.write("};\n")
 
 

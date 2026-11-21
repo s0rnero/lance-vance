@@ -149,6 +149,32 @@ def rebuild(target):
     return out
 
 
+def _frame_list(d):
+    out = []
+    for i, rec in enumerate(d["records"]):
+        out.append({"i": i, "rot": struct.unpack_from("<9f", rec, 0),
+                    "pos": struct.unpack_from("<3f", rec, 36),
+                    "parent": d["parents"][i]})
+    return out
+
+
+def _inv_affine(m):
+    """Inversa de una matriz afín de rotacion+traslacion (sin escala)."""
+    r = [[m[i][j] for j in range(3)] for i in range(3)]
+    t = [m[i][3] for i in range(3)]
+    rt = [[r[j][i] for j in range(3)] for i in range(3)]
+    nt = [-sum(rt[i][k] * t[k] for k in range(3)) for i in range(3)]
+    return [[rt[0][0], rt[0][1], rt[0][2], nt[0]],
+            [rt[1][0], rt[1][1], rt[1][2], nt[1]],
+            [rt[2][0], rt[2][1], rt[2][2], nt[2]],
+            [0.0, 0.0, 0.0, 1.0]]
+
+
+def _mul4(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(4)) for j in range(4)]
+            for i in range(4)]
+
+
 def add_feature(target, donor, name):
     if name in target["names"]:
         print("  %s: ya existe en destino; se salta" % name)
@@ -178,6 +204,20 @@ def add_feature(target, donor, name):
     new_fi = len(target["records"])
     rec = bytearray(donor["records"][dfi])
     struct.pack_into("<i", rec, 48, pidx)
+    # La matriz del record es local: se reexpresa en el espacio del padre
+    # destino para que el nodo caiga en la misma posicion que en el PC aunque
+    # el padre sea otro (o falte y se cuelgue de chassis_hi/chassis_dummy).
+    try:
+        dw = dg.world_of(_frame_list(donor), dfi)
+        tw = dg.world_of(_frame_list(target), pidx)
+        loc = _mul4(_inv_affine(tw), dw)
+        vals = [loc[0][0], loc[0][1], loc[0][2],
+                loc[1][0], loc[1][1], loc[1][2],
+                loc[2][0], loc[2][1], loc[2][2],
+                loc[0][3], loc[1][3], loc[2][3]]
+        struct.pack_into("<12f", rec, 0, *vals)
+    except (IndexError, KeyError):
+        pass
     target["records"].append(bytes(rec))
     target["names"].append(name)
     target["name_bodies"].append(ch(0x253F2FE, 0xC02FFFF, name.encode("latin-1")))

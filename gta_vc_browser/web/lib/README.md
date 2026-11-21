@@ -48,6 +48,7 @@ El motor y los datos se sirven por HTTP; la librería solo apunta dónde:
 | --- | --- | --- |
 | `buildUrl` | `/build/` | `reVC.js`, `reVC.wasm`, `reVC.data` (~130 MB) |
 | `streamedUrl` | `/streamed/` | datos sueltos on-demand (`models/…`, `Audio/…`) |
+| `packsUrl` | `/packs/` | paquetes .vcp (varios ficheros en una descarga) |
 | `manifestUrl` | `/manifest.json` | índice de `streamed/` (claves en minúsculas) |
 | `assetsUrl` | `/vc/` | copia legal original: **solo se mira si falta `streamed/`** |
 
@@ -144,8 +145,9 @@ aplazamientos, entregas, errores).
 El juego guarda en IndexedDB (`vcod2`) una copia de todo lo que va pidiendo; de
 ahí salen los datos del primer minuto sin tocar la red.
 
-- `idbCapMB` (900 por defecto) es el **techo** de esa caché: al arrancar se
-  borra lo más viejo y menos usado hasta quedar por debajo. `0` = sin techo.
+- `idbCapMB` (`0` por defecto, sin techo): la descarga inicial deja el juego
+  entero en esa caché para poder jugarlo sin conexión; con un techo, al arrancar
+  se borraría lo más viejo y menos usado hasta quedar por debajo.
 - `warmMB` (64 por defecto) es el **arranque en caliente**: nueva ruta, se
   aprende del uso y la sesión siguiente se adelantan esos ficheros (los más
   pequeños primero) durante la pantalla de carga, para que el primer minuto de

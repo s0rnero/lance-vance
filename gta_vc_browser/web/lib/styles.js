@@ -22,20 +22,6 @@ export const CSS = `
   display: block; background: #000; outline: none;
 }
 
-.vc-intro {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  object-fit: cover; background: #000; z-index: 40;
-}
-.vc-skip {
-  position: absolute; right: 22px; bottom: 22px; z-index: 51;
-  padding: 9px 18px; cursor: pointer;
-  background: rgba(10, 10, 14, .72); color: #fff;
-  border: 1px solid rgba(255, 255, 255, .35); border-radius: 6px;
-  font: 600 13px/1 system-ui, "Segoe UI", Roboto, sans-serif;
-  letter-spacing: .08em; text-transform: uppercase;
-}
-.vc-skip[disabled] { opacity: .45; cursor: default; }
-
 /* Barra de progreso: fina, pegada al top del viewport, rosa VC.
    z-index 50: por encima del canvas y de la portada de carga, pero por DEBAJO
    de lo que el host quiera poner encima (overlays propios con z-index > 50),
@@ -184,9 +170,13 @@ export const CSS = `
 .vc-touch-btn[data-action="fire"] { display: none !important; }
 .vc-touch-btn[data-action="mission"] { display: none !important; }
 .vc-touch[data-mode="vehicle"][data-mission="1"] .vc-touch-btn[data-action="mission"] { display: flex !important; }
-.vc-touch[data-armed="1"][data-vehicle="car"] .vc-touch-btn[data-action="fire"],
-.vc-touch[data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire"],
-.vc-touch[data-armed="1"][data-vehicle="boat"] .vc-touch-btn[data-action="fire"],
+/* Plan 79.3: estos dos botones de disparo llegaban a salir a la vez (el de
+   coche y el de metralleta) y ninguno disparaba. Ahora el de coche exige
+   estar DENTRO del vehiculo y el de metralleta solo sale en helicoptero y
+   avion: como mucho hay un boton de disparo en pantalla. */
+.vc-touch[data-mode="vehicle"][data-armed="1"][data-vehicle="car"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-mode="vehicle"][data-armed="1"][data-vehicle="bike"] .vc-touch-btn[data-action="fire"],
+.vc-touch[data-mode="vehicle"][data-armed="1"][data-vehicle="boat"] .vc-touch-btn[data-action="fire"],
 .vc-touch[data-mode="vehicle"][data-vehicle="tank"] .vc-touch-btn[data-action="fire"],
 .vc-touch[data-mode="vehicle"][data-vehicle="firetruck"] .vc-touch-btn[data-action="fire"] { display: flex !important; }
 /* El disparo desde vehiculo no existe a pie (era el segundo icono de pistola
@@ -196,7 +186,8 @@ export const CSS = `
 .vc-touch-btn[data-action="aim"] { display: none !important; }
 .vc-touch[data-mode="onfoot"][data-armed="1"] .vc-touch-btn[data-action="aim"] { display: flex !important; }
 .vc-touch-btn[data-action="fire-mg"] { display: none !important; }
-.vc-touch[data-mode="vehicle"][data-vehicle-armed="1"] .vc-touch-btn[data-action="fire-mg"] { display: flex !important; }
+.vc-touch[data-mode="vehicle"][data-vehicle="heli"] .vc-touch-btn[data-action="fire-mg"],
+.vc-touch[data-mode="vehicle"][data-vehicle="plane"] .vc-touch-btn[data-action="fire-mg"] { display: flex !important; }
 
 .vc-touch[data-mode="cutscene"] .vc-touch-skip {
   display: block; position: absolute; inset: 0; z-index: 20;

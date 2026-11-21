@@ -545,7 +545,7 @@ void LoadINIControllerSettings()
 		ControlsManager.ms_padButtonsInited = cfg.get("Bindings").size() != 0 ? 16 : 0;
 	}
 
-	for (int32 i = 0; i < MAX_CONTROLLERACTIONS; i++) {
+	for (int32 i = 0; i < MAX_CONTROLLERACTIONS && i < (int32)ARRAY_SIZE(iniControllerActions); i++) {
 		char value[128];
 		if (ReadIniIfExists("Bindings", iniControllerActions[i], value, 128)) {
 			for (int32 j = 0; j < MAX_CONTROLLERTYPES; j++){
@@ -600,7 +600,7 @@ void LoadINIControllerSettings()
 
 void SaveINIControllerSettings()
 {
-	for (int32 i = 0; i < MAX_CONTROLLERACTIONS; i++) {
+	for (int32 i = 0; i < MAX_CONTROLLERACTIONS && i < (int32)ARRAY_SIZE(iniControllerActions); i++) {
 		char value[128] = { '\0' };
 
 		// upper limit should've been GetNumOfSettingsForAction(i), but sadly even R* doesn't use it's own system correctly, and there are gaps between orders.
@@ -1162,6 +1162,10 @@ void BigHeadsCheat();
 #endif
 void HealthCheat();
 void VehicleCheat(int model);
+#ifdef VICEEXT_CAR_ROW_CHEAT
+void CarRowCheat(const int *models, int n);
+void TeleportToAirportRunway();
+#endif
 void BlowUpCarsCheat();
 void ChangePlayerCheat();
 void MayhemCheat();
@@ -1236,6 +1240,114 @@ SpawnCar(int id)
 		CWorld::Add(v);
 	}
 }
+
+#ifdef VICEEXT_CAR_ROW_CHEAT
+static const int s_tandaCoches0[] = {
+	MI_VICECHEE, MI_ADMIRAL, MI_POLICE, MI_CABBIE, MI_LANDSTAL,
+	MI_HOTRING, MI_AMBULAN, MI_FIRETRUCK, MI_STINGER, MI_BANSHEE
+};
+static const int s_tandaCoches1[] = {
+	MI_BLISTAC, MI_BLOODRA, MI_BLOODRB, MI_ESPERANT, MI_FBICAR,
+	MI_FBIRANCH, MI_GLENDALE, MI_GREENWOO, MI_LOVEFIST, MI_OCEANIC
+};
+static const int s_tandaCoches2[] = {
+	MI_PEREN, MI_REGINA, MI_ROMERO, MI_SENTINEL, MI_SENTXS,
+	MI_STRETCH, MI_TAXI, MI_VOODOO, MI_WASHING, MI_ZEBRA
+};
+static const int s_tandaCoches3[] = {
+	MI_BFINJECT, MI_CHEETAH, MI_COMET, MI_CUBAN, MI_DELUXO,
+	MI_HERMES, MI_HOTRINA, MI_HOTRING, MI_IDAHO, MI_INFERNUS
+};
+static const int s_tandaCoches4[] = {
+	MI_MANANA, MI_PHEONIX, MI_SABRE, MI_SABRETUR, MI_STALLION,
+	MI_VIRGO, MI_BOBCAT, MI_BOXVILLE, MI_BURRITO, MI_GANGBUR
+};
+static const int s_tandaCoches5[] = {
+	MI_MESA, MI_MOONBEAM, MI_MRWHOOP, MI_PATRIOT, MI_PONY,
+	MI_RANCHER, MI_RUMPO, MI_SANDKING, MI_SECURICA, MI_SPAND
+};
+static const int s_tandaCoches6[] = {
+	MI_TOPFUN, MI_WALTON, MI_BAGGAGE, MI_BARRACKS, MI_BENSON,
+	MI_BUS, MI_CADDY, MI_COACH, MI_ENFORCER, MI_FLATBED
+};
+static const int s_tandaCoches7[] = {
+	MI_LINERUN, MI_MULE, MI_PACKER, MI_TRASH, MI_YANKEE
+};
+
+void
+CarRowCheat(const int *models, int n)
+{
+	CPed *player = FindPlayerPed();
+	if (player == nil)
+		return;
+	for (int i = 0; i < n; i++)
+		CStreaming::RequestModel(models[i], STREAMFLAGS_DONT_REMOVE);
+	CStreaming::LoadAllRequestedModels(false);
+
+	CVector fwd = player->GetForward();
+	fwd.z = 0.0f;
+	if (fwd.Magnitude() < 0.01f)
+		fwd = CVector(0.0f, 1.0f, 0.0f);
+	else
+		fwd.Normalise();
+	const CVector right(-fwd.y, fwd.x, 0.0f);
+	const float spacing = 5.0f;
+	const float radius = 3.0f;
+	const CVector base = player->GetPosition();
+	CVector centre = base + fwd * 12.0f;
+	bool free = false;
+	for (int attempt = 0; attempt < 10 && !free; attempt++) {
+		centre = base + fwd * (12.0f + attempt * 7.0f);
+		free = true;
+		for (int i = 0; i < n && free; i++) {
+			CVector p = centre + right * ((i - (n - 1) * 0.5f) * spacing);
+			float z = CWorld::FindGroundZForCoord(p.x, p.y);
+			if (z < base.z - 25.0f) {
+				free = false;
+				break;
+			}
+			p.z = z + 1.0f;
+			if (CWorld::TestSphereAgainstWorld(p, radius, nil, true, true, true, false, false, false) != nil)
+				free = false;
+		}
+	}
+
+	for (int i = 0; i < n; i++) {
+		int id = models[i];
+		if (!CStreaming::HasModelLoaded(id))
+			continue;
+		CVector p = centre + right * ((i - (n - 1) * 0.5f) * spacing);
+		p.z = CWorld::FindGroundZForCoord(p.x, p.y) + 1.0f;
+		CVehicle *v;
+		if (CModelInfo::IsBoatModel(id))
+			v = new CBoat(id, RANDOM_VEHICLE);
+		else if (CModelInfo::IsBikeModel(id))
+			v = new CBike(id, RANDOM_VEHICLE);
+		else
+			v = new CAutomobile(id, RANDOM_VEHICLE);
+		v->bHasBeenOwnedByPlayer = true;
+		v->SetPosition(p);
+		v->SetOrientation(0.0f, 0.0f, (-fwd).Heading());
+		v->SetStatus(STATUS_ABANDONED);
+		v->m_nDoorLock = CARLOCK_UNLOCKED;
+		CWorld::Add(v);
+	}
+}
+
+void
+TeleportToAirportRunway()
+{
+	CVector pos(-1710.0f, -1210.0f, 0.0f);
+	CStreaming::LoadScene(pos);
+	CStreaming::LoadSceneCollision(pos);
+	CVehicle *veh = FindPlayerVehicle();
+	CEntity *e = veh != nil ? (CEntity*)veh : FindPlayerEntity();
+	if (e == nil)
+		return;
+	pos.z = CWorld::FindGroundZForCoord(pos.x, pos.y) + e->GetDistanceFromCentreOfMassToBaseOfModel() + 0.5f;
+	e->Teleport(pos);
+}
+#endif
 
 static void
 FixCar(void)
@@ -1448,6 +1560,17 @@ DebugMenuPopulate(void)
 		DebugMenuAddCmd("Cheats", "Wanted level up", WantedLevelUpCheat);
 		DebugMenuAddCmd("Cheats", "Wanted level down", WantedLevelDownCheat);
 		DebugMenuAddCmd("Cheats", "Tank", []() { VehicleCheat(MI_TAXI); });
+#ifdef VICEEXT_CAR_ROW_CHEAT
+		DebugMenuAddCmd("Cheats", "tanda de coches 0", [](){ CarRowCheat(s_tandaCoches0, ARRAY_SIZE(s_tandaCoches0)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 1", [](){ CarRowCheat(s_tandaCoches1, ARRAY_SIZE(s_tandaCoches1)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 2", [](){ CarRowCheat(s_tandaCoches2, ARRAY_SIZE(s_tandaCoches2)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 3", [](){ CarRowCheat(s_tandaCoches3, ARRAY_SIZE(s_tandaCoches3)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 4", [](){ CarRowCheat(s_tandaCoches4, ARRAY_SIZE(s_tandaCoches4)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 5", [](){ CarRowCheat(s_tandaCoches5, ARRAY_SIZE(s_tandaCoches5)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 6", [](){ CarRowCheat(s_tandaCoches6, ARRAY_SIZE(s_tandaCoches6)); });
+		DebugMenuAddCmd("Cheats", "tanda de coches 7", [](){ CarRowCheat(s_tandaCoches7, ARRAY_SIZE(s_tandaCoches7)); });
+		DebugMenuAddCmd("Cheats", "teletransporte a la pista del aeropuerto", TeleportToAirportRunway);
+#endif
 		DebugMenuAddCmd("Cheats", "Blow up cars", BlowUpCarsCheat);
 		DebugMenuAddCmd("Cheats", "Change player", ChangePlayerCheat);
 		DebugMenuAddCmd("Cheats", "Mayhem", MayhemCheat);

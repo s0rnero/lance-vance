@@ -2033,13 +2033,30 @@ CWorld::Process(void)
 	// llamado desde el ProcessControl de una entidad reciclase el nodo que el
 	// recorrido de ms_listMovingEntityPtrs estaba leyendo en ese mismo frame.
 	CPtrListWalk odWalkGuard;
+#ifdef __EMSCRIPTEN__
+	// 81.7: reparto del mayor bloque de CPU del frame (Logic.world, 7,2 ms de
+	// media en 81.6). Reloj del navegador: CTimer va en ms enteros y estos
+	// tramos son de 1-3 ms.
+	double odWT0 = emscripten_get_now();
+	double odWLi = 0, odWAnim = 0, odWCtrl = 0, odWPost = 0, odWCol = 0, odWPed = 0;
+	double odWCtrlPedS = 0, odWCtrlVehS = 0, odWCtrlOthS = 0;
+	uint32 odWCtrlPedN = 0, odWCtrlVehN = 0, odWCtrlOthN = 0;
+	static uint32 odWCtrlMuestra = 0;
+	static double odWS[6] = {0, 0, 0, 0, 0, 0};
+	static uint32 odWNF = 0;
+#endif
 	OdWebMark(131);
 	if(!(CTimer::GetLogicalFrameCounter() & 63)) CReferences::PruneAllReferencesInWorld();
 	OdWebMark(132);
 
-	if (bEnableDistantLights)
+	// 81.9: recorrer los dos pools (9.105 slots) cuesta 0.6-1.0 ms por frame y solo
+	// refresca luces lejanas fijas; a 15 Hz se ve igual y cuesta la cuarta parte.
+	// Los contadores se reinician en cada pasada para que la traza siga mostrando
+	// el tamano de los pools y no la suma de 15 pasadas.
+	if (bEnableDistantLights && (CTimer::GetLogicalFrameCounter() & 3) == 0)
 	{
 		static uint32 odDlEdificios = 0, odDlDummies = 0, odDlEfectos = 0, odDlLast = 0;
+		odDlEdificios = odDlDummies = odDlEfectos = 0;
 		OdDlPrepararMascaras();
 		for (int i = CPools::GetDummyPool()->GetSize() - 1; i >= 0; i--) {
 			CDummy *odDlDummy = CPools::GetDummyPool()->GetSlot(i);
@@ -2084,6 +2101,10 @@ CWorld::Process(void)
 		odDlEfectos = 0;
 	}
 
+#ifdef __EMSCRIPTEN__
+	odWLi = emscripten_get_now() - odWT0;
+	odWT0 = emscripten_get_now();
+#endif
 	OdWebMark(133);
 	if(bProcessCutsceneOnly) {
 		for(int i = 0; i < NUMCUTSCENEOBJECTS; i++) {
@@ -2122,6 +2143,10 @@ CWorld::Process(void)
 				}
 			}
 		}
+#ifdef __EMSCRIPTEN__
+		odWAnim = emscripten_get_now() - odWT0;
+		odWT0 = emscripten_get_now();
+#endif
 		OdWebMark(137);
 		// T19: el siguiente se coge ANTES de tocar la entidad. Este cuerpo puede
 		// llamar a CWorld::Remove() y eso devuelve el CPtrNode al pool en el mismo
@@ -2180,10 +2205,28 @@ CWorld::Process(void)
 				RemoveEntityInsteadOfProcessingIt(movingEnt);
 			} else {
 				OdWebMark(movingEnt->IsPed() ? 210 : (movingEnt->IsVehicle() ? 211 : 212));
+				// 81.9: se cronometra una de cada 16 entidades para saber en que tipo se
+				// van los 3-4 ms de ctrl. Muestrear cuesta 2 llamadas a JS por entidad de
+				// 16, no por entidad.
+#ifdef __EMSCRIPTEN__
+				double odEntT0 = ((++odWCtrlMuestra & 15) == 0) ? emscripten_get_now() : -1.0;
+#endif
 				movingEnt->ProcessControl();
+#ifdef __EMSCRIPTEN__
+				if (odEntT0 >= 0.0) {
+					double odD = emscripten_get_now() - odEntT0;
+					if (movingEnt->GetType() == ENTITY_TYPE_PED) { odWCtrlPedS += odD; odWCtrlPedN++; }
+					else if (movingEnt->GetType() == ENTITY_TYPE_VEHICLE) { odWCtrlVehS += odD; odWCtrlVehN++; }
+					else { odWCtrlOthS += odD; odWCtrlOthN++; }
+				}
+#endif
 				if(movingEnt->GetIsStatic()) { movingEnt->RemoveFromMovingList(); }
 			}
 		}
+#ifdef __EMSCRIPTEN__
+		odWCtrl = emscripten_get_now() - odWT0;
+		odWT0 = emscripten_get_now();
+#endif
 		OdWebMark(134);
 		bForceProcessControl = true;
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
@@ -2203,6 +2246,10 @@ CWorld::Process(void)
 			}
 		}
 		bForceProcessControl = false;
+#ifdef __EMSCRIPTEN__
+		odWPost = emscripten_get_now() - odWT0;
+		odWT0 = emscripten_get_now();
+#endif
 		OdWebMark(135);
 		if(CReplay::IsPlayingBack()) {
 			for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
@@ -2277,6 +2324,10 @@ CWorld::Process(void)
 				}
 			}
 		}
+#ifdef __EMSCRIPTEN__
+		odWCol = emscripten_get_now() - odWT0;
+		odWT0 = emscripten_get_now();
+#endif
 		OdWebMark(136);
 		for(CPtrNode *node = ms_listMovingEntityPtrs.first, *odNodeSig = node; node; node = odNodeSig) {
 			odNodeSig = node->next;
@@ -2319,6 +2370,10 @@ CWorld::Process(void)
 				}
 			}
 		}
+#ifdef __EMSCRIPTEN__
+		odWPed = emscripten_get_now() - odWT0;
+		odWT0 = emscripten_get_now();
+#endif
 		CMessages::Process();
 		Players[PlayerInFocus].Process();
 		CRecordDataForChase::SaveOrRetrieveCarPositions();
@@ -2336,6 +2391,25 @@ CWorld::Process(void)
 		} else if((odPhase & 7) == 5) {
 			RemoveFallenCars();
 		}
+#ifdef __EMSCRIPTEN__
+		odWS[0] += odWLi; odWS[1] += odWAnim; odWS[2] += odWCtrl;
+		odWS[3] += odWPost; odWS[4] += odWCol; odWS[5] += odWPed;
+		if(++odWNF >= 120){
+			char odWT[320];
+			snprintf(odWT, sizeof odWT,
+				"ODWORLD luces=%.2f anim=%.2f ctrl=%.2f post=%.2f col=%.2f ped=%.2f rest=%.2f ms/frame ctrlp=%.0fus/%u ctrlv=%.0fus/%u ctrlx=%.0fus/%u",
+				odWS[0]/odWNF, odWS[1]/odWNF, odWS[2]/odWNF, odWS[3]/odWNF,
+				odWS[4]/odWNF, odWS[5]/odWNF, (emscripten_get_now() - odWT0)/odWNF,
+				odWCtrlPedN ? odWCtrlPedS*1000.0/odWCtrlPedN : 0.0, (unsigned)odWCtrlPedN,
+				odWCtrlVehN ? odWCtrlVehS*1000.0/odWCtrlVehN : 0.0, (unsigned)odWCtrlVehN,
+				odWCtrlOthN ? odWCtrlOthS*1000.0/odWCtrlOthN : 0.0, (unsigned)odWCtrlOthN);
+			ODTRACES(odWT);
+			for(int i = 0; i < 6; i++) odWS[i] = 0;
+			odWCtrlPedS = odWCtrlVehS = odWCtrlOthS = 0;
+			odWCtrlPedN = odWCtrlVehN = odWCtrlOthN = 0;
+			odWNF = 0;
+		}
+#endif
 	}
 }
 

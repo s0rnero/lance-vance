@@ -31,23 +31,25 @@ def u32(b, o):
     return struct.unpack_from("<I", b, o)[0]
 
 
-def texture_name(buf, pos, nxt):
-    """Nombre de la textura del chunk que empieza en `pos` (o None si no lo es)."""
+def native_pos(buf, pos, nxt):
     t = u32(buf, pos)
     if t == TEXNATIVE:
-        native = pos
-    elif t == TEXTURE:                       # wrapper: busca su TextureNative
-        native = None
-        p = pos + 12
-        while p + 12 <= nxt:
-            ct, cs, _ = struct.unpack_from("<III", buf, p)
-            if ct == TEXNATIVE:
-                native = p
-                break
-            p += 12 + cs
-        if native is None:
-            return None
-    else:
+        return pos
+    if t != TEXTURE:
+        return None
+    p = pos + 12
+    while p + 12 <= nxt:
+        ct, cs, _ = struct.unpack_from("<III", buf, p)
+        if ct == TEXNATIVE:
+            return p
+        p += 12 + cs
+    return None
+
+
+def texture_name(buf, pos, nxt):
+    """Nombre de la textura del chunk que empieza en `pos` (o None si no lo es)."""
+    native = native_pos(buf, pos, nxt)
+    if native is None:
         return None
     body = native + 12
     if body + 12 + 40 > len(buf) or u32(buf, body) != STRUCT:
@@ -135,6 +137,39 @@ def merge(base_path, extra_path, out_path, only=None, check=False):
           % (out_path, len(chk_texs), len(out) / 1048576))
     print("nombres nuevos presentes: %d/%d" % (len(add), len(add)))
     return total
+
+
+def alias(base_path, name, alias_name, out_path):
+    ver, st_chunk, texs, cola, data = read_txd(base_path)
+    names = [t[2] for t in texs]
+    if alias_name in names:
+        if out_path != base_path:
+            with open(out_path, "wb") as f:
+                f.write(data)
+        return len(names)
+    if name not in names:
+        raise SystemExit("ERROR: no existe la textura %s en %s" % (name, base_path))
+    pos, nxt, _ = next(t for t in texs if t[2] == name)
+    native = native_pos(data, pos, nxt)
+    if native is None:
+        raise SystemExit("ERROR: textura %s sin TextureNative" % name)
+    raw = alias_name.encode("latin1")
+    if len(raw) > 32:
+        raise SystemExit("ERROR: alias demasiado largo: %s" % alias_name)
+    chunk = bytearray(data[pos:nxt])
+    off = native - pos + 32
+    chunk[off:off + 32] = raw.ljust(32, bytes([0]))
+    st = bytearray(st_chunk)
+    struct.pack_into("<I", st, 12, len(texs) + 1)
+    body = bytes(st) + b"".join(data[p:n] for p, n, _ in texs) + bytes(chunk) + cola
+    out = struct.pack("<III", DICT, len(body), ver) + body
+    with open(out_path, "wb") as f:
+        f.write(out)
+    _, _, chk, _, _ = read_txd(out_path)
+    got = [t[2] for t in chk]
+    if len(chk) != len(texs) + 1 or alias_name not in got or not set(names) <= set(got):
+        raise SystemExit("ERROR: alias no valido en %s" % out_path)
+    return len(chk)
 
 
 def main():

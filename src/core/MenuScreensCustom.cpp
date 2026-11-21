@@ -34,7 +34,7 @@
 // Menu screens array is at the bottom of the file.
 #ifdef PC_MENU
 #ifdef CUSTOM_FRONTEND_OPTIONS
-#if defined(IMPROVED_VIDEOMODE) && !defined(GTA_HANDHELD)
+#if defined(IMPROVED_VIDEOMODE) && !defined(GTA_HANDHELD) && !defined(__EMSCRIPTEN__)
 	#define VIDEOMODE_SELECTOR MENUACTION_CFO_SELECT, "FEM_SCF", { new CCFOSelect((int8*)&FrontEndMenuManager.m_nPrefsWindowed, "VideoMode", "Windowed", screenModes, 2, true, ScreenModeAfterChange, true) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define VIDEOMODE_SELECTOR

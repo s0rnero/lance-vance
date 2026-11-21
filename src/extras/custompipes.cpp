@@ -171,6 +171,18 @@ EnvMapRender(void)
 	skycol.blue = CTimeCycle::GetSkyBottomBlue();
 #endif
 	skycol.alpha = 255;
+	static rw::V3d odLastPos, odLastFwd;
+	static uint32 odTick = 0;
+	static bool odHave = false;
+	odTick++;
+	rw::V3d odFwd = EnvMapCam->getFrame()->matrix.at;
+	bool odDirty = !odHave || (odTick % 8 == 0) ||
+		(Abs(camPos.x-odLastPos.x)+Abs(camPos.y-odLastPos.y)+Abs(camPos.z-odLastPos.z) > 0.5f) ||
+		(Abs(odFwd.x-odLastFwd.x)+Abs(odFwd.y-odLastFwd.y)+Abs(odFwd.z-odLastFwd.z) > 0.01f);
+	if(!odDirty){
+		RwCameraBeginUpdate(Scene.camera);
+		return;
+	}
 	EnvMapCam->clear(&skycol, rwCAMERACLEARZ|rwCAMERACLEARIMAGE);
 	RwCameraBeginUpdate(EnvMapCam);
 	bRenderingEnvMap = true;
@@ -187,7 +199,9 @@ EnvMapRender(void)
 		rw::SetRenderState(rw::DESTBLEND, rw::BLENDINVSRCALPHA);
 	}
 	RwCameraEndUpdate(EnvMapCam);
-
+	odLastPos = camPos;
+	odLastFwd = odFwd;
+	odHave = true;
 
 	RwCameraBeginUpdate(Scene.camera);
 

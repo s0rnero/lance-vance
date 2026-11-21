@@ -131,6 +131,7 @@ CChannel aChannel[NUM_CHANNELS];
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <mpg123.h>
+
 static uint8 *odSfxData[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxBytes[TOTAL_AUDIO_SAMPLES];
 static uint32 odSfxRate[TOTAL_AUDIO_SAMPLES];
@@ -142,10 +143,10 @@ static const size_t odSfxCap = 96 * 1024 * 1024;
 static uint32 odSfxHit = 0, odSfxMiss = 0, odSfxMs = 0, odSfxEvicted = 0;
 static uint32 odSfxStatT = 0;
 
-#define ODSFX_FRAME_MS 6      // ms de decode inline por frame
+#define ODSFX_FRAME_MS 4      // ms de decode inline por frame
 #define ODSFX_FRAME_N  3      // y como mucho 3 decodes inline por frame
 #define ODSFX_PEND_MAX 32     // cola de diferidos
-#define ODSFX_PUMP_MS  4      // ms que puede gastar la cola por frame
+#define ODSFX_PUMP_MS  2      // ms que puede gastar la cola por frame
 #define ODSFX_PUMP_N   2      // y 2 samples por frame desde la cola
 static uint32 odSfxFr = 0xFFFFFFFF; // frame del presupuesto
 static uint32 odSfxFrameMs = 0;     // ms de decode gastados en ese frame
@@ -335,6 +336,8 @@ OdSfxDecode(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	return OdSfxDecodeRaw(nSample, wantBytes, wantFreq);
 }
 
+extern "C" int od_sfx_ready(const char*);
+
 static bool
 OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 {
@@ -354,7 +357,6 @@ OdSfxDecodeRaw(uint32 nSample, uint32 wantBytes, uint32 wantFreq)
 	if (odNoMs[nSample] != 0 && odNow >= odNoMs[nSample] && odNow - odNoMs[nSample] < 120)
 		return false;
 	{
-		extern "C" int od_sfx_ready(const char*);
 		if (!od_sfx_ready(path)) {
 			odNoMs[nSample] = odNow ? odNow : 1;
 			return false;
@@ -2345,9 +2347,23 @@ cSampleManager::StartPreloadedStreamedFile(uint8 nStream)
 	}
 }
 
+#ifdef __EMSCRIPTEN__
+// 82.6: ver la nota de casepath. Mientras un .ADF no esta en MEMFS, cada
+// intento recorre /Audio (~1400 entradas) y escribe el error de mpg123, y
+// MusicManager reintenta cada 2 frames (~30/s). Se reintenta cada 400 ms: la
+// emisora arranca igual en cuanto el fichero llega, sin clavarle el frame.
+static uint32 s_odStreamFailFile = 0xFFFFFFFFu;
+static uint32 s_odStreamFailAt = 0;
+#endif
+
 bool8
 cSampleManager::StartStreamedFile(uint32 nFile, uint32 nPos, uint8 nStream)
 {
+#ifdef __EMSCRIPTEN__
+	if (nFile == s_odStreamFailFile &&
+	   (int32)(CTimer::GetTimeInMilliseconds() - s_odStreamFailAt) < 400)
+		return FALSE;
+#endif
 	uint32 i = 0;
 	uint32 position = nPos;
 	char filename[MAX_PATH];
@@ -2512,10 +2528,17 @@ cSampleManager::StartStreamedFile(uint32 nFile, uint32 nPos, uint8 nStream)
 		}
 #endif
 		stream->Start();
+#ifdef __EMSCRIPTEN__
+		s_odStreamFailFile = 0xFFFFFFFFu;
+#endif
 		
 		return TRUE;
 	} else {
 		stream->Close();
+#ifdef __EMSCRIPTEN__
+		s_odStreamFailFile = nFile;
+		s_odStreamFailAt = CTimer::GetTimeInMilliseconds();
+#endif
 	}
 	return FALSE;
 }

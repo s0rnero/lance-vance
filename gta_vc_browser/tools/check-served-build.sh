@@ -97,6 +97,9 @@ MARCAS=(
   "VEX 17 menu franja autosave|17.0 B1: la franja cian (25,150,200) que da fondo a la fila del autosave|wasm"
   "VEX 17 alfa save|17.0 B4: guardado y restaurado del alfa del cristal|wasm"
   "MATVEX atom=|17.0 B4: traza por material con el atomic que lo dibuja (interior del coche)|wasm"
+  "VEHLOD tex=|60.9 T3: LOD de vehiculos (textura/atomic/lod/distancia/umbral) para el taxi|wasm"
+  "WORLDLOD model=|60.9 T3: LOD del mundo (modelo/distancia) para las ventanas del edificio|wasm"
+  "near=%.2f|60.9 T7: near clip real de la camara al pegarse a un muro|wasm"
   "ODDASH modelo=|36.4 T84: materiales del chassis del coche del jugador (textura, si existe, triangulos de malla vs DFF)|wasm"
   "GEOPROPS struct=|36.4 T83: geometria DFF alineada: surface properties detectadas por tamano, no por version|wasm"
   "VEX apunta|13.0 T4: apuntado del mod (bIsPlayerAiming), modo de camara y coche|wasm"
@@ -230,6 +233,7 @@ DATOS=(
   "data/occlu.ipl|21945|e46192296f2e|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ide|111|b82b774a8958|7  mundo del mod servido (familia 7)"
   "data/maps/bryx/bryx.ipl|172|b9b2c1c424f6|7  mundo del mod servido (familia 7)"
+  "data/maps/oceandn/oceandN.ipl|77737|b07cb84be1ba|60.9 T4 restaurado: ventanas od_copwindows a 2 cm; T6 revierte T5"
 )
 
 # Datos del mod que NO se sirven todavia, con su motivo: no son una regresion,
@@ -258,9 +262,18 @@ fallos=0
 echo "== marcas de lo implementado =="
 for m in "${MARCAS[@]}"; do
   marca="${m%%|*}"; resto="${m#*|}"; bloque="${resto%%|*}"; donde="${resto##*|}"
-  fichero="$WASM"; [ "$donde" = "pre" ] && fichero="$PRE"
-  if grep -aq -- "$marca" "$fichero"; then
+  fichero="$WASM"; fuente=""
+  # 82.4: sin -g Emscripten minifica el glue y se lleva por delante los
+  # comentarios del --pre-js, donde viven las marcas historicas de dataTag.
+  # Se mira primero el paquete (es lo que se sirve) y, si no esta, el fuente.
+  [ "$donde" = "pre" ] && { fichero="$PRE"; fuente="web/ondemand.js"; }
+  if grep -aq -- "$marca" "$fichero" || { [ -n "$fuente" ] && grep -aq -- "$marca" "$fuente"; }; then
     printf "   OK    %-22s %s\n" "$marca" "$bloque"
+  elif grep -rqa -- "$marca" ../src; then
+    # 82.4: sin -g, wasm-opt inlinea funciones pequenas y su simbolo ya no
+    # existe en el binario. La marca sigue siendo cierta en el fuente; se dice
+    # asi en vez de dar un OK que no se puede comprobar en el paquete.
+    printf "   OK*   %-22s %s  (en fuente; -O3 lo inlinea, no queda simbolo)\n" "$marca" "$bloque"
   else
     printf "   FALTA %-22s %s  <-- el paquete servido NO lleva esto\n" "$marca" "$bloque"
     fallos=$((fallos + 1))
@@ -273,8 +286,10 @@ done
 # `--pre-js`, y con la sonda puesta (SAFE_HEAP) el paquete sale con comillas
 # dobles mientras el fuente la tiene simple. Con el patron viejo esto salia
 # `dataTag servido: ?` y daba FALTA sin serlo.
-dt_on=$(grep -ao "dataTag: [\"'][^\"']*[\"']" "$PRE" | head -1 | sed -E "s/.*dataTag: [\"']([^\"']*)[\"'].*/\1/")
-dt_src=$(grep -ao "dataTag: [\"'][^\"']*[\"']" web/ondemand.js | head -1 | sed -E "s/.*dataTag: [\"']([^\"']*)[\"'].*/\1/")
+# 82.4: el glue minificado escribe `dataTag:"..."` sin espacio; el patron
+# acepta las dos formas para no dar FALTA falso.
+dt_on=$(grep -ao "dataTag:[ ]*[\"'][^\"']*[\"']" "$PRE" | head -1 | sed -E "s/.*dataTag:[ ]*[\"']([^\"']*)[\"'].*/\1/")
+dt_src=$(grep -ao "dataTag:[ ]*[\"'][^\"']*[\"']" web/ondemand.js | head -1 | sed -E "s/.*dataTag:[ ]*[\"']([^\"']*)[\"'].*/\1/")
 echo "== datos =="
 echo "   dataTag servido: ${dt_on:-?}  (compáralo con ondemand.js)"
 # `ondemand.js` entra al paquete por `--pre-js`, y CMake NO lo apunta como
@@ -318,7 +333,9 @@ if command -v curl >/dev/null 2>&1; then
     echo "   AVISO: el puerto $PUERTO no responde; no se puede comprobar lo servido"
   fi
 fi
-if ! grep -aq "ve13" "$PRE"; then
+# 82.4: `ve13` solo vive en un comentario del --pre-js; el glue minificado ya no
+# arrastra comentarios, asi que tambien se mira el fuente.
+if ! grep -aq "ve13" "$PRE" && ! grep -aq "ve13" web/ondemand.js; then
   echo "   FALTA ve13 (muestras de audio re-codificadas): los sonidos nuevos no llegarán"
   fallos=$((fallos + 1))
 fi
@@ -385,6 +402,17 @@ if [ "${#PENDIENTE[@]}" -gt 0 ]; then
       fallos=$((fallos + 1))
     fi
   done
+fi
+
+echo "== paquetes de descarga =="
+if [ -f web/public/manifest.json ] && command -v python >/dev/null 2>&1; then
+  res=$(python -c "import json,os;m=json.load(open('web/public/manifest.json'));p=(m.get('__vc__') or {}).get('packs') or [];miss=[x['n'] for x in p if not os.path.isfile(os.path.join('web/public/packs',x['n']))];print('%d paquetes, %d sin fichero' % (len(p),len(miss)));raise SystemExit(1 if (miss or not p) else 0)")
+  if [ "$?" -eq 0 ]; then
+    echo "   OK    $res"
+  else
+    echo "   FALTA $res  <-- corre gen_manifest.py (empaqueta los datos)"
+    fallos=$((fallos + 1))
+  fi
 fi
 
 echo

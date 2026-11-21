@@ -165,10 +165,16 @@ OdGroupEmit(uint32 windowMs)
 static void
 OdGroupTick(void)
 {
+	// 82.4: esto se llama en CADA push, y hay un push por entidad (~500 por
+	// frame con PUSH_RENDERGROUP_UNTIMED). La ventana solo se cierra en el push
+	// de fuera de todo grupo, asi que el reloj solo hace falta ahi: con depth>0
+	// se evita un cruce wasm->JS por entidad.
+	if (s_rgDepth != 0)
+		return;
 	uint32 now = (uint32)emscripten_get_now();
 	if (s_rgWinStart == 0u)
 		s_rgWinStart = now;
-	if (s_rgDepth == 0) {
+	{
 		uint32 w = (uint32)(now - s_rgWinStart);
 		if (w >= 2000u) {
 			if (s_rgCount != 0)

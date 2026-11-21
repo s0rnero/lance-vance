@@ -3450,9 +3450,9 @@ CPlayerPed::ViceExtPedAtTrace(void)
 				CVector odP = GetPosition();
 				char tc[400];
 				snprintf(tc, sizeof tc,
-					"PEDCAM modo=%d vel=%.2f dbeta=%.3f dalpha=%.3f ddist=%.2f beta=%.3f alpha=%.3f dist=%.2f look=%.3f fov=%.1f dfov=%.1f zoom=%.3f lat=%.2f avoid=%.2f below=%d col=%d seed=%d mouse3=%d wide=%d red=%.0f shake=%.2f drunk=%.3f fade=%d",
+					"PEDCAM modo=%d vel=%.2f dbeta=%.3f dalpha=%.3f ddist=%.2f beta=%.3f alpha=%.3f dist=%.2f near=%.2f look=%.3f fov=%.1f dfov=%.1f zoom=%.3f lat=%.2f avoid=%.2f below=%d col=%d seed=%d mouse3=%d wide=%d red=%.0f shake=%.2f drunk=%.3f fade=%d",
 					(int)odCam.Mode, odVel, odDBeta, odDAlpha, odDDist, odCam.Beta,
-					odCam.Alpha, odCam.Distance, s_odLook, odCam.FOV, CDraw::GetFOV(),
+					odCam.Alpha, odCam.Distance, CDraw::GetNearClipZ(), s_odLook, odCam.FOV, CDraw::GetFOV(),
 					CDraw::GetCutsceneCameraZoom(),
 					CVector2D(odCam.Source.x - odP.x, odCam.Source.y - odP.y).Magnitude(),
 					TheCamera.m_fAvoidTheGeometryProbsTimer, (int)odCam.bBelowMinDist,

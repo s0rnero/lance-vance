@@ -68,7 +68,25 @@ static int s_odDrawTopIdx[8];
 static int s_odDrawTopDc[8];
 static int s_odDrawTopN;
 static int s_odDrawPrev;
-static const bool s_odDrawsOn = false;
+static const bool s_odDrawsOn = true; // T17-DRAWS diagnostico: revertir a false tras clavar el culpable de los 40fps
+
+// 82.6: censo de instancing. Para cada modelo se acumula cuanto aporta en la
+// ventana de 1 s: `rep` son los draws que pertenecen a modelos dibujados mas de
+// una vez, o sea el techo que puede quitar el instancing (1 draw por modelo y
+// material, compartiendo malla y con matrices por instancia). Es el numero que
+// decide el tramo 2 (camino GL con glDrawElementsInstanced).
+#define OD_INST_MAX 1536
+static int s_odInstModel[OD_INST_MAX];
+static int s_odInstDc[OD_INST_MAX];
+static int s_odInstEnt[OD_INST_MAX];
+static int s_odInstN;
+
+// 82.1 · Censo de los dos pases pendientes de recortar: visitas de
+// CRenderer::RenderEverythingBarRoads y entidades de las listas con alpha.
+// Solo enteros, reseteados por frame en ConstructRenderList; el coste en ms ya
+// lo publica RGPASS, esto dice si el pase es caro por volumen o por blending.
+int gOdBarVisit, gOdBarRoad, gOdBarSort, gOdBarDrawn;
+extern int gOdAlphaAdd, gOdAlphaNil, gOdAlphaFade, gOdAlphaDraw;
 
 static int
 OdDrawCategory(CEntity *e)
@@ -118,6 +136,19 @@ OdDrawsEntity(CEntity *e, int dc)
 	s_odDrawPassDc[pass][cat] += dc;
 	s_odDrawSzCount[sz]++;
 	s_odDrawSzDc[sz] += dc;
+	for(i = 0; i < s_odInstN; i++){
+		if(s_odInstModel[i] == e->GetModelIndex()){
+			s_odInstDc[i] += dc;
+			s_odInstEnt[i]++;
+			break;
+		}
+	}
+	if(i == s_odInstN && s_odInstN < OD_INST_MAX){
+		s_odInstModel[s_odInstN] = e->GetModelIndex();
+		s_odInstDc[s_odInstN] = dc;
+		s_odInstEnt[s_odInstN] = 1;
+		s_odInstN++;
+	}
 	for(i = 0; i < s_odDrawTopN; i++){
 		if(s_odDrawTopIdx[i] == e->GetModelIndex()){
 			s_odDrawTopDc[i] += dc;
@@ -183,11 +214,26 @@ OdDrawsFlush(void)
 		n += snprintf(t + n, sizeof t - n, "%s=%d ", mi->GetModelName(), s_odDrawTopDc[i]);
 	}
 	ODTRACES(t);
+	snprintf(t, sizeof t, "WEBPASS bar v=%d road=%d sort=%d draw=%d | alpha add=%d nil=%d fade=%d draw=%d",
+		gOdBarVisit, gOdBarRoad, gOdBarSort, gOdBarDrawn,
+		gOdAlphaAdd, gOdAlphaNil, gOdAlphaFade, gOdAlphaDraw);
+	ODTRACES(t);
 	for(i = 0; i < 2; i++)
 		for(j = 0; j < 6; j++){
 			s_odDrawPassCount[i][j] = 0;
 			s_odDrawPassDc[i][j] = 0;
 		}
+	{
+		int i2, dr = 0, en = 0, rep = 0;
+		for(i2 = 0; i2 < s_odInstN; i2++){
+			dr += s_odInstDc[i2];
+			en += s_odInstEnt[i2];
+			if(s_odInstEnt[i2] > 1) rep += s_odInstDc[i2];
+		}
+		snprintf(t, sizeof t, "ODINST modelos=%d entidades=%d draws=%d rep=%d", s_odInstN, en, dr, rep);
+		ODTRACES(t);
+		s_odInstN = 0;
+	}
 	for(i = 0; i < 6; i++){
 		s_odDrawSzCount[i] = 0;
 		s_odDrawSzDc[i] = 0;
@@ -463,9 +509,12 @@ CRenderer::RenderEverythingBarRoads(void)
 
 	for(i = 0; i < ms_nNoOfVisibleEntities; i++){
 		e = ms_aVisibleEntityPtrs[i];
+		gOdBarVisit++;
 
-		if(IsRoad(e))
+		if(IsRoad(e)){
+			gOdBarRoad++;
 			continue;
+		}
 
 #ifdef EXTENDED_PIPELINES
 		if(CustomPipes::bRenderingEnvMap && !e->IsBuilding())
@@ -478,14 +527,19 @@ CRenderer::RenderEverythingBarRoads(void)
 				ei.ent = e;
 				ei.sort = (ms_vecCameraPosition - e->GetPosition()).MagnitudeSqr();
 				gSortedVehiclesAndPeds.InsertSorted(ei);
+				gOdBarSort++;
 			}else{
 				if(!CVisibilityPlugins::InsertEntityIntoSortedList(e, (ms_vecCameraPosition - e->GetPosition()).Magnitude())){
 					printf("Ran out of space in alpha entity list");
+					gOdBarDrawn++;
 					RenderOneNonRoad(e);
-				}
+				}else
+					gOdBarSort++;
 			}
-		}else
+		}else{
+			gOdBarDrawn++;
 			RenderOneNonRoad(e);
+		}
 	}
 	POP_RENDERGROUP();
 }
@@ -827,6 +881,31 @@ enum Visbility
 #define OTHERUNAVAILABLE (other != -1 && CModelInfo::GetModelInfo(other)->GetRwObject() == nil)
 #define CANTIMECULL (!OTHERUNAVAILABLE)
 
+#ifdef __EMSCRIPTEN__
+static void
+OdTraceWorldLod(CEntity *ent, CSimpleModelInfo *mi, float dist, RpAtomic *a)
+{
+	static CEntity *odEnts[128];
+	static RpAtomic *odAtoms[128];
+	static int odN;
+	int i;
+	for(i = 0; i < odN; i++)
+		if(odEnts[i] == ent)
+			break;
+	if(i == odN && odN < 128){
+		odEnts[odN] = ent;
+		odAtoms[odN] = nil;
+		odN++;
+	}
+	if(i < 128 && odAtoms[i] != a){
+		char t[180];
+		odAtoms[i] = a;
+		snprintf(t, sizeof t, "WORLDLOD model=%s dist=%.1f", mi->GetModelName(), dist);
+		ODTRACES(t);
+	}
+}
+#endif
+
 int32
 CRenderer::SetupEntityVisibility(CEntity *ent)
 {
@@ -934,6 +1013,9 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 
 	RpAtomic *a = mi->GetAtomicFromDistance(dist);
 	if(a){
+#ifdef __EMSCRIPTEN__
+		OdTraceWorldLod(ent, mi, dist, a);
+#endif
 		mi->m_isDamaged = false;
 		if(ent->m_rwObject == nil)
 			ent->CreateRwObject();
@@ -1219,6 +1301,7 @@ CRenderer::ConstructRenderList(void)
 	ms_nNoOfInVisibleEntities = 0;
 }
 	ms_vecCameraPosition = TheCamera.GetPosition();
+	gOdBarVisit = gOdBarRoad = gOdBarSort = gOdBarDrawn = 0;
 #ifdef VICEEXT_IMPROVED_TECH_PART
 	{
 		float lodT = (ms_lodDistScale - 0.925f) / (1.8f - 0.925f);

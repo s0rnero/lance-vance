@@ -60,18 +60,28 @@ CPedType::LoadPedData(void)
 	CFileMgr::SetDir("");
 
 	for(bp = 0; bp < buflen; ){
-		// read file line by line
-		for(linelen = 0; buf[bp] != '\n' && bp < buflen; bp++){
-			if(buf[bp] == '\r' || buf[bp] == ',' || buf[bp] == '\t')
-				line[linelen++] = ' ';
-			else
-				line[linelen++] = buf[bp];
+		// 83.1: el limite se mira ANTES de leer el byte. Antes la condicion
+		// era `buf[bp] != '\n' && bp < buflen`: al llegar al final se leia
+		// buf[buflen] (memoria sin inicializar) y, si el fichero no acababa
+		// en salto de linea, el bucle seguia mas alla del buffer copiando a
+		// `line` sin tope: desbordaba la pila y el arranque se quedaba clavado
+		// en el paso 8 justo despues de leer PED.DAT.
+		linelen = 0;
+		while(bp < buflen && buf[bp] != '\n'){
+			if(linelen < (int)sizeof(line) - 1){
+				if(buf[bp] == '\r' || buf[bp] == ',' || buf[bp] == '\t')
+					line[linelen++] = ' ';
+				else
+					line[linelen++] = buf[bp];
+			}
+			bp++;
 		}
 		bp++;
 		line[linelen] = '\0';
 
-		// skip white space
-		for(lp = 0; line[lp] <= ' '; lp++);
+		// skip white space (con tope: una linea de solo espacios recorria
+		// `line` mas alla del terminador)
+		for(lp = 0; lp < linelen && line[lp] <= ' '; lp++);
 
 		if(lp >= linelen ||		// FIX: game uses == here, but this is safer if we have empty lines
 		   line[lp] == '#')

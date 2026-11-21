@@ -161,8 +161,23 @@ def name32(s):
     return b + b"\0" * (32 - len(b))
 
 
-def convert(src, dst, port=None):
+def convert(src, dst, port=None, skip_bad=False):
     ver, st_chunk, texs, cola, data = tm.read_txd(src)
+    if skip_bad:
+        # --skip-bad: deja fuera las texturas que este lector no entiende
+        # (paletizadas raras) para que el resto se convierta y las ausentes se
+        # puedan copiar tal cual desde el TXD original.
+        ok, bad = [], []
+        for pos, nxt, name in texs:
+            try:
+                info = tr.read_native(data, pos)
+                if info is None or decode_level(info, data) is None:
+                    raise ValueError('formato no entendido')
+                ok.append((pos, nxt, name))
+            except Exception as e:
+                bad.append(name)
+                print("  sin convertir %s: %s" % (name, e))
+        texs = ok
     port_info = {}
     if port and os.path.exists(port):
         _, _, ptexs, _, pdata = tm.read_txd(port)
@@ -247,8 +262,10 @@ def main():
     ap.add_argument("src")
     ap.add_argument("dst")
     ap.add_argument("--port", help="TXD PC de referencia para fmt/filtro/mascara")
+    ap.add_argument("--skip-bad", action="store_true",
+                    help="omite las texturas que el lector no entiende")
     a = ap.parse_args()
-    convert(a.src, a.dst, a.port)
+    convert(a.src, a.dst, a.port, a.skip_bad)
 
 
 if __name__ == "__main__":

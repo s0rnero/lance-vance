@@ -261,6 +261,7 @@ struct Gl3Raster
 
 	bool isCompressed;
 	bool hasAlpha;
+	uint8 texFormat;
 	bool autogenMipmap;
 	int8 numLevels;
 	// cached filtermode and addressing
@@ -269,6 +270,7 @@ struct Gl3Raster
 	uint8 addressV;
 	int32 maxAnisotropy;
 	long long odBytes;
+	long long odSaved;
 
 	uint32 fbo;		// used for camera texture only!
 	Raster *fboMate;	// color or zbuffer raster mate of this one

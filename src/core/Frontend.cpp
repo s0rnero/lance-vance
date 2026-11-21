@@ -756,7 +756,10 @@ CMenuManager::CMenuManager()
 	m_nMouseOldPosX = m_nMousePosX;
 	m_nMouseOldPosY = m_nMousePosY;
 	m_bShowMouse = true;
-	m_bTouchMenuTap = false;
+	m_bTouchMenuActivate = false;
+	m_bTouchMenuUp = false;
+	m_bTouchMenuDown = false;
+	m_nTouchMenuChange = 0;
 	m_bTouchOpenMap = false;
 	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 
@@ -5326,29 +5329,54 @@ CMenuManager::OpenTouchMap()
 }
 
 void
-CMenuManager::TouchTap(int nx, int ny)
+CMenuManager::TouchActivate(void)
 {
-	int32 x, y;
+	char t[128];
+	snprintf(t, sizeof t, "TMENU activar menu=%d alpha=%d scr=%d opt=%d",
+		(int)m_bMenuActive, (int)m_nMenuFadeAlpha, m_nCurrScreen, m_nCurrOption);
+	ODTRACES(t);
 
 	if (!m_bMenuActive || m_nMenuFadeAlpha != 255)
 		return;
 
-	x = (nx * SCREEN_WIDTH) / 10000;
-	y = (ny * SCREEN_HEIGHT) / 10000;
-	if (x < 0) x = 0;
-	if (x >= SCREEN_WIDTH) x = SCREEN_WIDTH - 1;
-	if (y < 0) y = 0;
-	if (y >= SCREEN_HEIGHT) y = SCREEN_HEIGHT - 1;
+	m_bTouchMenuActivate = true;
+}
 
-	m_nMouseTempPosX = x;
-	m_nMouseTempPosY = y;
-	m_nMousePosX = x;
-	m_nMousePosY = y;
-	m_nMouseOldPosX = x - 1;
-	m_nMouseOldPosY = y - 1;
-	m_bShowMouse = true;
-	m_nHoverOption = HOVEROPTION_NOT_HOVERING;
-	m_bTouchMenuTap = true;
+void
+CMenuManager::TouchChange(int dir)
+{
+	if (!m_bMenuActive || m_nMenuFadeAlpha != 255 || dir == 0)
+		return;
+
+	m_nTouchMenuChange = dir > 0 ? 1 : -1;
+}
+
+void
+CMenuManager::TouchStep(int dir)
+{
+	if (!m_bMenuActive || m_nMenuFadeAlpha != 255 || dir == 0)
+		return;
+
+	if (hasNativeList(m_nCurrScreen)) {
+		if (dir < 0)
+			ScrollUpListByOne();
+		else
+			ScrollDownListByOne();
+		m_nCurrExLayer = HOVEROPTION_LIST;
+	} else if (SCREEN_HAS_AUTO_SCROLLBAR) {
+		m_nSelectedListRow = m_nCurrOption;
+		if (dir < 0)
+			ScrollUpListByOne();
+		else
+			ScrollDownListByOne();
+		m_nCurrOption = m_nSelectedListRow;
+		m_nOptionHighlightTransitionBlend = 0;
+	} else if (m_AllowNavigation) {
+		if (dir < 0)
+			m_bTouchMenuUp = true;
+		else
+			m_bTouchMenuDown = true;
+	}
 }
 
 void
@@ -5387,7 +5415,12 @@ CMenuManager::UserInput(void)
 			static int oldScreen = m_nCurrScreen;
 
 			m_nOptionMouseHovering = rowToCheck;
-			if (m_nMouseOldPosX != m_nMousePosX || m_nMouseOldPosY != m_nMousePosY) {
+			// 79.6: con controles tactiles el "raton" del motor es el dedo, asi
+			// que cada toque movia el recuadro verde a la fila tocada (el jugador
+			// lo llama "la linea salta donde toco"). En movil la seleccion solo
+			// cambia con el desliz (TouchStep) o el cambio de seccion.
+			if (!CPad::IsTouchControlsActive() &&
+				(m_nMouseOldPosX != m_nMousePosX || m_nMouseOldPosY != m_nMousePosY)) {
 				m_nCurrOption = rowToCheck;
 				m_bShowMouse = true;
 			}
@@ -5420,10 +5453,15 @@ CMenuManager::UserInput(void)
 		}
 	}
 
-	if (m_bTouchMenuTap) {
-		if (m_nHoverOption == HOVEROPTION_RANDOM_ITEM)
-			optionSelected = true;
-		m_bTouchMenuTap = false;
+	if (m_bTouchMenuActivate) {
+		optionSelected = true;
+		m_bTouchMenuActivate = false;
+		m_bShowMouse = false;
+		if (hasNativeList(m_nCurrScreen))
+			m_nCurrExLayer = HOVEROPTION_LIST;
+		char t[128];
+		snprintf(t, sizeof t, "TMENU enter scr=%d opt=%d", m_nCurrScreen, m_nCurrOption);
+		ODTRACES(t);
 	}
 
 	if (m_bShowMouse) {
@@ -5454,23 +5492,29 @@ CMenuManager::UserInput(void)
 	if (m_nMousePosY > SCREEN_HEIGHT) m_nMousePosY = SCREEN_HEIGHT;
 
 	changeValueBy = 0;
+	if (m_nTouchMenuChange != 0) {
+		changeValueBy = m_nTouchMenuChange;
+		m_nTouchMenuChange = 0;
+	}
 	if (hasNativeList(m_nCurrScreen)) {
 		ProcessList(optionSelected, goBack);
 	} else {
 		AdditionalOptionInput(goBack);
 
 		if (m_AllowNavigation &&
-			(CPad::GetPad(0)->GetDownJustDown() || CPad::GetPad(0)->GetAnaloguePadDown() || CPad::GetPad(0)->GetDPadDownJustDown())) {
+			(CPad::GetPad(0)->GetDownJustDown() || CPad::GetPad(0)->GetAnaloguePadDown() || CPad::GetPad(0)->GetDPadDownJustDown() || m_bTouchMenuDown)) {
 			m_bShowMouse = false;
 			goDown = true;
 			m_nOptionHighlightTransitionBlend = 0;
 
 		} else if (m_AllowNavigation &&
-			(CPad::GetPad(0)->GetUpJustDown() || CPad::GetPad(0)->GetAnaloguePadUp() || CPad::GetPad(0)->GetDPadUpJustDown())) {
+			(CPad::GetPad(0)->GetUpJustDown() || CPad::GetPad(0)->GetAnaloguePadUp() || CPad::GetPad(0)->GetDPadUpJustDown() || m_bTouchMenuUp)) {
 			m_bShowMouse = false;
 			goUp = true;
 			m_nOptionHighlightTransitionBlend = 0;
 		}
+		m_bTouchMenuUp = false;
+		m_bTouchMenuDown = false;
 
 		if ((m_nCurrOption == 0) && (m_nCurrScreen == MENUPAGE_PAUSE_MENU)) {
 			if (CPad::GetPad(0)->GetEnterJustUp() || CPad::GetPad(0)->GetCrossJustUp()) {
@@ -5916,6 +5960,12 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 	}
 
 	if (optionSelected && m_nMenuFadeAlpha == 255) {
+		{
+			char t[128];
+			snprintf(t, sizeof t, "TMENU aplicar scr=%d opt=%d accion=%d",
+				m_nCurrScreen, m_nCurrOption, (int)aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action);
+			ODTRACES(t);
+		}
 		if (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_TargetMenu == MENUPAGE_NEW_GAME_RELOAD && m_bGameNotLoaded) {
 			DoSettingsBeforeStartingAGame();
 		} else if (hasNativeList(m_nCurrScreen)) {

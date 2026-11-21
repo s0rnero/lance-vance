@@ -1499,7 +1499,7 @@ CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, fl
 			Source = TargetCoors + (Source-TargetCoors)*Distance/TargetDist;
 		float clip = Distance-fRangePlayerRadius;
 		if(clip < RwCameraGetNearClipPlane(Scene.camera))
-			RwCameraSetNearClipPlane(Scene.camera, Max(clip, fCloseNearClipLimit));
+			RwCameraSetNearClipPlane(Scene.camera, Max(clip, 0.25f));
 	}
 
 	Front = TargetCoors - Source;
@@ -1558,9 +1558,12 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	static CVector CurrentAimOffset = { 0.0f, 0.0f, 0.0f };
 #endif
 
+	static float s_avoidHold = 0.0f;
+
 	if(ResetStatics){
 		Rotating = false;
 		m_bCollisionChecksOn = true;
+		s_avoidHold = 0.0f;
 		CPad::GetPad(0)->ClearMouseHistory();
 		if(m_bNeedsSeeding){
 			m_bNeedsSeeding = false;
@@ -1746,7 +1749,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		float odWl = 0.0f;
 		if (CWaterLevel::GetWaterLevelNoWaves(Source.x, Source.y, Source.z, &odWl)
 		 && Source.z < odWl + 0.6f) {
-			RwCameraSetNearClipPlane(Scene.camera, 0.2f);
+			RwCameraSetNearClipPlane(Scene.camera, 0.25f);
 			float odHoriz = (TargetCoors - Source).Magnitude2D();
 			CVector odFwd2D(Front.x, Front.y, 0.0f);
 			odFwd2D.Normalise2D();
@@ -1775,14 +1778,14 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 				PedColDist = (TargetCoors - colPoint.point).Magnitude();
 				Source = colPoint.point;
 				if(PedColDist < DEFAULT_NEAR + 0.3f)
-					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 			}else{
 				RwCameraSetNearClipPlane(Scene.camera, Min(ColCamDist-0.35f, DEFAULT_NEAR));
 			}
 		}else{
 			Source = colPoint.point;
 			if(PedColDist < DEFAULT_NEAR + 0.3f)
-				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 		}
 	}
 	CWorld::pIgnoreEntity = nil;
@@ -1799,7 +1802,7 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		float dist = (CamToCol - Front*frontDist).Magnitude() / ViewPlaneWidth;
 
 		// Try to decrease near clip
-		dist = Max(Min(Near, dist), 0.1f);
+		dist = Max(Min(Near, dist), 0.25f);
 		if(dist < Near)
 			RwCameraSetNearClipPlane(Scene.camera, dist);
 
@@ -1823,16 +1826,22 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 	}
 
 	float TargetDist = (TargetCoors - Source).Magnitude();
-	if(TargetDist < Distance)
+	bool odStill = ((CPed*)CamTargetEntity)->m_vecMoveSpeed.Magnitude2D() < 0.05f;
+	if(TargetDist < Distance){
 		Distance = TargetDist;
-	else{
-		float f = Pow(fMouseAvoidGeomReturnRate, CTimer::GetTimeStep());
-		Distance = (1.0f - f)*TargetDist + f*Distance;
+		s_avoidHold = 0.5f;
+	}else{
+		if(s_avoidHold > 0.0f)
+			s_avoidHold -= CTimer::GetTimeStep();
+		else if(!odStill){
+			float f = Pow(fMouseAvoidGeomReturnRate, CTimer::GetTimeStep());
+			Distance = (1.0f - f)*TargetDist + f*Distance;
+		}
 		if(TargetDist > 0.05f)
 			Source = TargetCoors + (Source-TargetCoors)*Distance/TargetDist;
 		float clip = Distance-fRangePlayerRadius;
 		if(clip < RwCameraGetNearClipPlane(Scene.camera))
-			RwCameraSetNearClipPlane(Scene.camera, Max(clip, fCloseNearClipLimit));
+			RwCameraSetNearClipPlane(Scene.camera, Max(clip, 0.25f));
 	}
 
 	TheCamera.m_bCamDirectlyInFront = false;
@@ -5669,7 +5678,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 				PedColDist = (TargetCoors - colPoint.point).Magnitude();
 				Source = colPoint.point;
 				if (PedColDist < DEFAULT_NEAR + 0.3f)
-					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist - 0.3f, 0.05f));
+					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist - 0.3f, 0.25f));
 			}
 			else {
 				RwCameraSetNearClipPlane(Scene.camera, Min(ColCamDist - 0.35f, DEFAULT_NEAR));
@@ -5678,7 +5687,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		else {
 			Source = colPoint.point;
 			if (PedColDist < DEFAULT_NEAR + 0.3f)
-				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist - 0.3f, 0.05f));
+				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist - 0.3f, 0.25f));
 		}
 	}
 	CWorld::pIgnoreEntity = nil;
@@ -5694,7 +5703,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		float frontDist = DotProduct(CamToCol, Front);
 		float dist = (CamToCol - Front * frontDist).Magnitude() / ViewPlaneWidth;
 
-		dist = Max(Min(Near, dist), 0.1f);
+		dist = Max(Min(Near, dist), 0.25f);
 		if (dist < Near)
 			RwCameraSetNearClipPlane(Scene.camera, dist);
 
@@ -5720,7 +5729,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 			Source = TargetCoors + (Source - TargetCoors) * Distance / TargetDist;
 		float clip = Distance - fRangePlayerRadius;
 		if (clip < RwCameraGetNearClipPlane(Scene.camera))
-			RwCameraSetNearClipPlane(Scene.camera, Max(clip, fCloseNearClipLimit));
+			RwCameraSetNearClipPlane(Scene.camera, Max(clip, 0.25f));
 	}
 
 	TheCamera.m_bCamDirectlyInFront = false;
@@ -5925,14 +5934,14 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 				PedColDist = (TargetCoors - colPoint.point).Magnitude();
 				Source = colPoint.point;
 				if(PedColDist < DEFAULT_NEAR + 0.3f)
-					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 			}else{
 				RwCameraSetNearClipPlane(Scene.camera, Min(ColCamDist-0.35f, DEFAULT_NEAR));
 			}
 		}else{
 			Source = colPoint.point;
 			if(PedColDist < DEFAULT_NEAR + 0.3f)
-				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+				RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 		}
 	}
 	CWorld::pIgnoreEntity = nil;
@@ -5949,7 +5958,7 @@ CCam::Process_FollowPed_Rotation(const CVector &CameraTarget, float TargetOrient
 		float dist = (CamToCol - Front*frontDist).Magnitude() / ViewPlaneWidth;
 
 		// Try to decrease near clip
-		dist = Max(Min(Near, dist), 0.1f);
+		dist = Max(Min(Near, dist), 0.25f);
 		if(dist < Near)
 			RwCameraSetNearClipPlane(Scene.camera, dist);
 
@@ -6737,14 +6746,14 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 					PedColDist = (TargetCoors - colPoint.point).Magnitude();
 					Source = colPoint.point;
 					if(PedColDist < DEFAULT_NEAR + 0.3f)
-						RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+						RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 				}else{
 					RwCameraSetNearClipPlane(Scene.camera, Min(ColCamDist-0.35f, DEFAULT_NEAR));
 				}
 			}else{
 				Source = colPoint.point;
 				if(PedColDist < DEFAULT_NEAR + 0.3f)
-					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.05f));
+					RwCameraSetNearClipPlane(Scene.camera, Max(PedColDist-0.3f, 0.25f));
 			}
 		}
 		
@@ -6769,7 +6778,7 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 			float dist = (CamToCol - Front*frontDist).Magnitude() / ViewPlaneWidth;
 
 			// Try to decrease near clip
-			dist = Max(Min(Near, dist), 0.1f);
+			dist = Max(Min(Near, dist), 0.25f);
 			if(dist < Near)
 				RwCameraSetNearClipPlane(Scene.camera, dist);
 

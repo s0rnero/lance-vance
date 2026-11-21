@@ -682,6 +682,10 @@ readNativeTexture(Stream *stream)
 		raster = Raster::create(width, height, depth, format | type, PLATFORM_D3D8);
 		ras = GETD3DRASTEREXT(raster);
 	}
+	if(raster == nil){
+		tex->destroy();
+		return nil;
+	}
 	tex->raster = raster;
 
 	// TODO: check if format supported and convert if necessary

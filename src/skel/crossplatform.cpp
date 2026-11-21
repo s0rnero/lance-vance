@@ -1,6 +1,10 @@
 #include "common.h"
 #include "crossplatform.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 // Codes compatible with Windows and Linux
 #ifndef _WIN32
 
@@ -188,6 +192,25 @@ char* casepath(char const* path, bool checkPathFirst)
     }
 
     size_t l = strlen(path);
+#ifdef __EMSCRIPTEN__
+    // 82.6: un .ADF que aun no ha llegado se pide decenas de veces por segundo
+    // (MusicManager reintenta cada 2 frames). Cada intento fallido recorria la
+    // carpeta entera -/Audio tiene ~1400 entradas- y se pagaba en la fase de
+    // audio: A=126-137 ms por frame medidos con EMOTION.ADF, con el juego a
+    // 5-20 fps. Aqui se recuerda el fallo de la misma ruta 1 s: el intento
+    // contesta al instante y el juego sigue a 60 hasta que el fichero llega.
+    static char s_odNegPath[192];
+    static double s_odNegAt = -1.0e9;
+    if (s_odNegPath[0] && strcmp(s_odNegPath, path) == 0 &&
+        emscripten_get_now() - s_odNegAt < 1000.0) {
+        char* neg = (char*)malloc(l + 3);
+        size_t i;
+        for (i = 0; i <= l; i++)
+            neg[i] = (path[i] == '\\') ? '/' : path[i];
+        return neg;
+    }
+    bool odMissed = false;
+#endif
     char* p = (char*)alloca(l + 1);
     char* out = (char*)malloc(l + 3); // for extra ./
     strcpy(p, path);
@@ -249,6 +272,25 @@ char* casepath(char const* path, bool checkPathFirst)
             continue;
         }
 
+#ifdef __EMSCRIPTEN__
+        // 82.6: si el nombre ya esta con esa caja exacta, no hay que recorrer
+        // el directorio. 83.1: la comprobacion TIENE que incluir el componente
+        // (`c`); antes se hacia sobre el padre (out aun sin `c`), asi que daba 0
+        // siempre, el componente no se añadia nunca y casepath devolvia el
+        // directorio PADRE. Con eso `CFileMgr::SetDir("DATA")` dejaba el CWD en
+        // "/" y el motor no encontraba ningun fichero por ruta relativa.
+        // Ahora: si la ruta completa existe, se toma; si no, el bucle de abajo
+        // recorre el directorio y copia el nombre real (con su caja).
+        strcpy(out + rl, c);
+        if (d && access(out, F_OK) == 0) {
+            rl += strlen(c);
+            closedir(d);
+            d = opendir(out);
+            if (!d)
+                cantProceed = true;
+            continue;
+        }
+#endif
         struct dirent* e;
         while (e = readdir(d))
         {
@@ -274,6 +316,9 @@ char* casepath(char const* path, bool checkPathFirst)
         if (!e)
         {
             printf("casepath couldn't find dir/file \"%s\", full path was %s\n", c, path);
+#ifdef __EMSCRIPTEN__
+            odMissed = true;
+#endif
             // No match, add original name and continue converting further slashes.
             strcpy(out + rl, c);
             rl += strlen(c);
@@ -290,6 +335,13 @@ char* casepath(char const* path, bool checkPathFirst)
     if (rl > l + 2) {
         printf("\n\ncasepath: Corrected path length is longer then original+2:\n\tOriginal: %s (%zu chars)\n\tCorrected: %s (%zu chars)\n\n", path, l, out, rl);
     }
+#ifdef __EMSCRIPTEN__
+    if (odMissed) {
+        strncpy(s_odNegPath, path, sizeof(s_odNegPath) - 1);
+        s_odNegPath[sizeof(s_odNegPath) - 1] = 0;
+        s_odNegAt = emscripten_get_now();
+    }
+#endif
     return out;
 }
 #endif

@@ -307,6 +307,7 @@ void
 CAutomobile::ProcessControl(void)
 {
 	OdWebMark(217);
+	WebVehProfMark(0); // 82.1: inicio del coche en el frame muestreado
 #ifdef VICEEXT_FIX_FV
 	m_fOdPhase += CTimer::GetTimeStep();
 	if(m_fOdPhase >= 1024.0f)
@@ -445,6 +446,7 @@ CAutomobile::ProcessControl(void)
 
 	bool playerRemote = false;
 	OdWebMark(222); // T20: tramo del ProcessControl (orden de ejecucion)
+	WebVehProfMark(1); // 82.1: pre (pasajeros, alarma, grip, center of mass)
 	switch(GetStatus()){
 	case STATUS_PLAYER_REMOTE:
 #ifdef FIX_BUGS
@@ -633,6 +635,7 @@ CAutomobile::ProcessControl(void)
 	}
 
 	OdWebMark(223); // T20: tramo del ProcessControl (orden de ejecucion)
+	WebVehProfMark(2); // 82.1: IA / estado (CCarAI, SteerAICar, simple physics)
 	// Skip physics if object is found to have been static recently
 	bool skipPhysics = false;
 	if(!bIsStuck && (GetStatus() == STATUS_ABANDONED || GetStatus() == STATUS_WRECKED)){
@@ -701,6 +704,7 @@ CAutomobile::ProcessControl(void)
 	OdWebMark(224); // T20: tramo del ProcessControl (orden de ejecucion)
 	VehicleDamage(0.0f, 0);
 	OdWebMark(225); // T20: tramo del ProcessControl (orden de ejecucion)
+	WebVehProfMark(3); // 82.1: comprobaciones de estatico + VehicleDamage
 
 	// special control
 	switch(GetModelIndex()){
@@ -809,15 +813,18 @@ CAutomobile::ProcessControl(void)
 				ApplyTurnSpeed();
 			}
 			OdWebMark(227); // T20: tramo del ProcessControl (orden de ejecucion)
+			WebVehProfMark(4); // 82.1: correccion de colision antes de la integracion
 			bIsInSafePosition = true;
 			bIsStuck = false;			
 		}
 
 		CPhysical::ProcessControl();
 		OdWebMark(228); // T20: tramo del ProcessControl (orden de ejecucion)
+		WebVehProfMark(5); // 82.1: CPhysical::ProcessControl (fisica)
 
 		ProcessBuoyancy();
 		OdWebMark(229); // T20: tramo del ProcessControl (orden de ejecucion)
+		WebVehProfMark(6); // 82.1: ProcessBuoyancy
 
 		// Rescale spring ratios, i.e. subtract wheel radius
 		for(i = 0; i < 4; i++){
@@ -1152,6 +1159,7 @@ CAutomobile::ProcessControl(void)
 		}
 
 		OdWebMark(233); // T20: tramo del ProcessControl (orden de ejecucion)
+		WebVehProfMark(7); // 82.1: aux (muelles, audio/caja, luces, escape)
 		// Process rear wheels
 
 		if(m_aWheelTimer[CARWHEEL_REAR_LEFT] > 0.0f || m_aWheelTimer[CARWHEEL_REAR_RIGHT] > 0.0f){
@@ -1906,6 +1914,7 @@ CAutomobile::ProcessControl(void)
 				odSeated[odP]->SetPedPositionInCar();
 		}
 	}
+	WebVehProfMark(8); // 82.1: ruedas (ProcessWheel x4) + resto
 }
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
@@ -3019,6 +3028,7 @@ ViceExtIndicatorCoronas(CVehicle *veh, CDamageManager *damage,
 {
 	const bool blink = (CTimer::GetTimeInMilliseconds() & 512) != 0;
 	const bool allowed = ViceExtCarLampsAlive(veh);
+	CAutomobile *car = veh->IsBike() ? nil : (CAutomobile*)veh;
 #ifdef __EMSCRIPTEN__
 	// Una rafaga por segundo, pero con TODOS los grupos de TODOS los nodos del
 	// coche del jugador: es como se ve en el log que el Landstalker echa dos
@@ -3042,6 +3052,13 @@ ViceExtIndicatorCoronas(CVehicle *veh, CDamageManager *damage,
 		const bool lampOk = damage == nil ||
 			damage->GetLightStatus((eLights)s.light) == LIGHT_STATUS_OK;
 		const bool on = allowed && state && blink && lampOk;
+		int revNode = -1;
+		if (s.tableNode == CAR_INDICATOR_LR || s.tableNode == CAR_INDICATOR_2_LR)
+			revNode = CAR_REVERSINGLIGHT_L;
+		else if (s.tableNode == CAR_INDICATOR_RR || s.tableNode == CAR_INDICATOR_2_RR)
+			revNode = CAR_REVERSINGLIGHT_R;
+		const ViceExtIndAnchor *revAnchor = car != nil && revNode >= 0 ?
+			ViceExtIndicatorAnchor(veh, revNode, s.side, car->m_aCarNodes[revNode]) : nil;
 		// Plan 51.1 E2: en la moto el ancla esta guardada en el espacio del propio
 		// nodo de la lente (ver ViceExtIndicatorAnchor), asi que se transforma por su
 		// LTM viva: la inclinacion se aplica al frame del chasis (Bike.cpp:2030-2038)
@@ -3061,6 +3078,17 @@ ViceExtIndicatorCoronas(CVehicle *veh, CDamageManager *damage,
 		// del racimo 3 se comia el del freno. De +100 hacia arriba no hay nada
 		// declarado en el arbol, asi que los racimos 3..5 viven ahi.
 		for (int g = 0; g < anch->nGroup; g++) {
+			bool sameCenter = false;
+			if (revAnchor != nil) {
+				for (int r = 0; r < revAnchor->nGroup; r++) {
+					if ((revAnchor->local[r] - anch->local[g]).Magnitude() < 0.12f) {
+						sameCenter = true;
+						break;
+					}
+				}
+			}
+			if (sameCenter)
+				continue;
 			const uint8 *measured = anch->hasCol[g] ? anch->rgb[g] : nil;
 			const uint32 id = g < 2 ? idFirst + g*n + k
 			                        : idFirst + 60 + (g-2)*n + k;
@@ -3132,6 +3160,12 @@ struct ViceExtIndPaint {
 	uint8 numLens;
 	RwTexture *lensOff[VICEEXT_LENS_ATLAS_PAIRS];
 	RwTexture *lensOn[VICEEXT_LENS_ATLAS_PAIRS];
+	// Fallback para lentes de nodo que usan el atlas generico lights/lightson
+	// y no tienen un par _lens derivado (cheetah, infernus...). Sin este
+	// cambio solo se subia el ambient y el anillo ambar seguia transparente:
+	// el unico brillo visible era la corona.
+	RwTexture *baseOff;
+	RwTexture *baseOn;
 };
 
 static RwObject *
@@ -3185,6 +3219,14 @@ ViceExtIndicatorAtomicCB(RwObject *object, void *data)
 						break;
 					}
 				}
+			} else if (p.baseOff && p.baseOn && (p.mats & (1u << i))) {
+				// Misma idea que los pares derivados, pero con el atlas generico
+				// del coche. El material del indicador nace con `lights` (alfa 0)
+				// y por eso el anillo no se veia aunque el ambient subiera.
+				if (p.on && material->texture == p.baseOff)
+					RpMaterialSetTexture(material, p.baseOn);
+				else if (!p.on && material->texture == p.baseOn)
+					RpMaterialSetTexture(material, p.baseOff);
 			}
 			// El tono SOLO donde la medida lo permite: el material ha de ser uno de
 			// los que la fila declara lente (p.mats) y la lente ha de pintarse sobre
@@ -3225,6 +3267,8 @@ ViceExtSetIndicatorMaterial(CVehicle *veh, int node, int side, RwFrame *frame, b
 	// modelo no tiene atlas derivado y el parpadeo no toca texturas.
 	CVehicleModelInfo *odMi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(veh->GetModelIndex());
 	p.numLens = odMi != nil ? odMi->numIndicatorLensAtlases : 0;
+	p.baseOff = odMi != nil ? odMi->lightsOffTexture : nil;
+	p.baseOn = odMi != nil ? odMi->lightsOnTexture : nil;
 	for (int32 l = 0; l < p.numLens; l++) {
 		p.lensOff[l] = odMi->indicatorLensOff[l];
 		p.lensOn[l] = odMi->indicatorLensOn[l];
@@ -3282,6 +3326,8 @@ ViceExtSetBodyLensMaterial(CAutomobile *car, const ViceExtBodyLens &r, RwFrame *
 	}
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(car->GetModelIndex());
 	p.numLens = mi != nil ? mi->numIndicatorLensAtlases : 0;
+	p.baseOff = nil;
+	p.baseOn = nil;
 	for (int32 l = 0; l < p.numLens; l++) {
 		p.lensOff[l] = mi->indicatorLensOff[l];
 		p.lensOn[l] = mi->indicatorLensOn[l];
@@ -3413,6 +3459,101 @@ CAutomobile::ViceExtApplyIndicatorMaterials(void)
 
 }
 #endif
+#ifdef VICEEXT_IMPROVED_VEHICLES_2
+void
+CAutomobile::ViceExtApplyLampMaterials(void)
+{
+	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
+	const bool lightsAllowed = !bRenderScorched && GetStatus() != STATUS_WRECKED;
+	const bool odServiceAllowed = lightsAllowed;
+
+	if(mi->bNewLights){
+		const bool headlightsOn = bLightsOn && lightsAllowed;
+		// La lente rota se apaga tambien en el material, no solo en la corona:
+		// si no, el faro quedaba pintado como encendido sin destello.
+		const bool frontL = ViceExtLampAlive(this, VEHLIGHT_FRONT_LEFT);
+		const bool frontR = ViceExtLampAlive(this, VEHLIGHT_FRONT_RIGHT);
+		const bool rearL = ViceExtLampAlive(this, VEHLIGHT_REAR_LEFT);
+		const bool rearR = ViceExtLampAlive(this, VEHLIGHT_REAR_RIGHT);
+		const bool headOnL = headlightsOn && frontL;
+		const bool headOnR = headlightsOn && frontR;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], ViceExtLampTexture(mi, headOnL), headOnL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], ViceExtLampTexture(mi, headOnR), headOnR);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], ViceExtLampTexture(mi, headlightsOn && rearL), headlightsOn && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], ViceExtLampTexture(mi, headlightsOn && rearR), headlightsOn && rearR);
+
+		bool reversing = m_fGasPedal < 0.0f && lightsAllowed;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], ViceExtLampTexture(mi, reversing && rearL), reversing && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], ViceExtLampTexture(mi, reversing && rearR), reversing && rearR);
+
+		bool braking = GetStatus() != STATUS_ABANDONED && m_fBrakePedal > 0.0f && lightsAllowed;
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], ViceExtLampTexture(mi, braking && rearL), braking && rearL);
+		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], ViceExtLampTexture(mi, braking && rearR), braking && rearR);
+	}
+
+	if(UsesSiren() && mi->serviceLightsOffTexture && mi->serviceLightsOnTexture){
+		uint32 odNow = CTimer::GetTimeInMilliseconds();
+#ifdef __EMSCRIPTEN__
+		{
+			static uint32 odNextSvcTraza = 0;
+			if(odNow >= odNextSvcTraza){
+				odNextSvcTraza = odNow + 2000;
+				int odNodos = 0;
+				for(int odL = 0; odL < 4; odL++)
+					if(m_aCarNodes[CAR_SERVICELIGHTS_0 + odL] != nil)
+						odNodos++;
+				char odT[200];
+				snprintf(odT, sizeof odT, "SERVICIO model=%d nodos=%d sirena=%d tex=%d",
+					(int)GetModelIndex(), odNodos, m_bSirenOrAlarm ? 1 : 0,
+					(mi->serviceLightsOnTexture != nil) ? 1 : 0);
+				ODTRACES(odT);
+			}
+		}
+#endif
+		for(int odL = 0; odL < 4; odL++){
+			RwFrame *odFrame = m_aCarNodes[CAR_SERVICELIGHTS_0 + odL];
+			if(odFrame == nil)
+				continue;
+			RpAtomic *odAtomic = (RpAtomic*)GetFirstObject(odFrame);
+			if(odAtomic == nil || odAtomic->geometry == nil)
+				continue;
+			for(int odM = 0; odM < odAtomic->geometry->matList.numMaterials; odM++){
+				RpMaterial *odMat = odAtomic->geometry->matList.materials[odM];
+				if(odMat == nil)
+					continue;
+				const float odAmbientOn = 3.0f;
+				if(m_bSirenOrAlarm && odServiceAllowed){
+					bool odOn;
+					if(odM == 0)
+						odOn = (odNow & 512) != 0;
+					else if(odM == 1)
+						odOn = (odNow & 512) == 0;
+					else if(odM == 2)
+						odOn = (odNow & 256) != 0;
+					else
+						odOn = (odNow & 256) == 0;
+					RpMaterialSetTexture(odMat, odOn ? mi->serviceLightsOnTexture : mi->serviceLightsOffTexture);
+					odMat->surfaceProps.ambient = odOn ? odAmbientOn : 1.0f;
+				}else{
+					RpMaterialSetTexture(odMat, mi->serviceLightsOffTexture);
+					odMat->surfaceProps.ambient = 1.0f;
+				}
+			}
+		}
+	}
+	if(m_aCarNodes[CAR_CLEARANCE_LIGHTS]){
+		RpAtomic *odAtomic = (RpAtomic*)GetFirstObject(m_aCarNodes[CAR_CLEARANCE_LIGHTS]);
+		if(odAtomic != nil && odAtomic->geometry != nil){
+			for(int odM = 0; odM < odAtomic->geometry->matList.numMaterials; odM++){
+				RpMaterial *odMat = odAtomic->geometry->matList.materials[odM];
+				if(odMat != nil)
+					odMat->surfaceProps.ambient = bEngineOn ? 3.0f : 1.0f;
+			}
+		}
+	}
+}
+#endif
+
 
 static bool
 ViceExtServiceLightWorldPos(CVehicle *car, CVector &out1, CVector &out2, int *outN, int *outOn)
@@ -4263,92 +4404,6 @@ CAutomobile::PreRender(void)
 		else
 			alarmOff = true;
 	}
-#ifdef VICEEXT_IMPROVED_VEHICLES_2
-	if(mi->bNewLights){
-		const bool headlightsOn = bLightsOn && lightsAllowed;
-		// La lente rota se apaga tambien en el material, no solo en la corona:
-		// si no, el faro quedaba pintado como encendido sin destello.
-		const bool frontL = ViceExtLampAlive(this, VEHLIGHT_FRONT_LEFT);
-		const bool frontR = ViceExtLampAlive(this, VEHLIGHT_FRONT_RIGHT);
-		const bool rearL = ViceExtLampAlive(this, VEHLIGHT_REAR_LEFT);
-		const bool rearR = ViceExtLampAlive(this, VEHLIGHT_REAR_RIGHT);
-		const bool headOnL = headlightsOn && frontL;
-		const bool headOnR = headlightsOn && frontR;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_L], ViceExtLampTexture(mi, headOnL), headOnL);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_HEADLIGHT_R], ViceExtLampTexture(mi, headOnR), headOnR);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_L], ViceExtLampTexture(mi, headlightsOn && rearL), headlightsOn && rearL);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_TAILLIGHT_R], ViceExtLampTexture(mi, headlightsOn && rearR), headlightsOn && rearR);
-
-		bool reversing = m_fGasPedal < 0.0f && lightsAllowed;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_L], ViceExtLampTexture(mi, reversing && rearL), reversing && rearL);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_REVERSINGLIGHT_R], ViceExtLampTexture(mi, reversing && rearR), reversing && rearR);
-
-		bool braking = GetStatus() != STATUS_ABANDONED && m_fBrakePedal > 0.0f && lightsAllowed;
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_L], ViceExtLampTexture(mi, braking && rearL), braking && rearL);
-		ViceExtSetLightMaterial(m_aCarNodes[CAR_BRAKELIGHT_R], ViceExtLampTexture(mi, braking && rearR), braking && rearR);
-	}
-
-	if(UsesSiren() && mi->serviceLightsOffTexture && mi->serviceLightsOnTexture){
-		uint32 odNow = CTimer::GetTimeInMilliseconds();
-#ifdef __EMSCRIPTEN__
-		{
-			static uint32 odNextSvcTraza = 0;
-			if(odNow >= odNextSvcTraza){
-				odNextSvcTraza = odNow + 2000;
-				int odNodos = 0;
-				for(int odL = 0; odL < 4; odL++)
-					if(m_aCarNodes[CAR_SERVICELIGHTS_0 + odL] != nil)
-						odNodos++;
-				char odT[200];
-				snprintf(odT, sizeof odT, "SERVICIO model=%d nodos=%d sirena=%d tex=%d",
-					(int)GetModelIndex(), odNodos, m_bSirenOrAlarm ? 1 : 0,
-					(mi->serviceLightsOnTexture != nil) ? 1 : 0);
-				ODTRACES(odT);
-			}
-		}
-#endif
-		for(int odL = 0; odL < 4; odL++){
-			RwFrame *odFrame = m_aCarNodes[CAR_SERVICELIGHTS_0 + odL];
-			if(odFrame == nil)
-				continue;
-			RpAtomic *odAtomic = (RpAtomic*)GetFirstObject(odFrame);
-			if(odAtomic == nil || odAtomic->geometry == nil)
-				continue;
-			for(int odM = 0; odM < odAtomic->geometry->matList.numMaterials; odM++){
-				RpMaterial *odMat = odAtomic->geometry->matList.materials[odM];
-				if(odMat == nil)
-					continue;
-				const float odAmbientOn = 3.0f;
-				if(m_bSirenOrAlarm && odServiceAllowed){
-					bool odOn;
-					if(odM == 0)
-						odOn = (odNow & 512) != 0;
-					else if(odM == 1)
-						odOn = (odNow & 512) == 0;
-					else if(odM == 2)
-						odOn = (odNow & 256) != 0;
-					else
-						odOn = (odNow & 256) == 0;
-					RpMaterialSetTexture(odMat, odOn ? mi->serviceLightsOnTexture : mi->serviceLightsOffTexture);
-					odMat->surfaceProps.ambient = odOn ? odAmbientOn : 1.0f;
-				}else{
-					RpMaterialSetTexture(odMat, mi->serviceLightsOffTexture);
-					odMat->surfaceProps.ambient = 1.0f;
-				}
-			}
-		}
-	}
-	if(m_aCarNodes[CAR_CLEARANCE_LIGHTS]){
-		RpAtomic *odAtomic = (RpAtomic*)GetFirstObject(m_aCarNodes[CAR_CLEARANCE_LIGHTS]);
-		if(odAtomic != nil && odAtomic->geometry != nil){
-			for(int odM = 0; odM < odAtomic->geometry->matList.numMaterials; odM++){
-				RpMaterial *odMat = odAtomic->geometry->matList.materials[odM];
-				if(odMat != nil)
-					odMat->surfaceProps.ambient = bEngineOn ? 3.0f : 1.0f;
-			}
-		}
-	}
-#endif
 
 #ifdef __EMSCRIPTEN__
 	// El Glendale usa luces clasicas sin mallas de faro independientes.
@@ -4838,7 +4893,17 @@ CAutomobile::PreRender(void)
 		}
 
 		CVector tailLight2 = mi->m_positions[CAR_POS_TAILLIGHTS_2];
-		if(!tailLight2.IsZero()){
+		// Cheetah/Infernus y otros coches con el piloto y el freno en el mismo
+		// centro: la corona roja del piloto caia dentro del circulo de freno y
+		// lo encendia junto al anillo. Si las dos cotas coinciden, la corona no
+		// se registra; el anillo sigue iluminandose por su material.
+		const CVector tailBase = mi->m_positions[CAR_POS_TAILLIGHTS];
+		const CVector brakeBase = mi->m_positions[CAR_POS_BRAKELIGHTS];
+		const bool sharedTailBrake = !tailBase.IsZero() && !brakeBase.IsZero() &&
+			Abs(tailBase.x-brakeBase.x) < 0.03f &&
+			Abs(tailBase.y-brakeBase.y) < 0.03f &&
+			Abs(tailBase.z-brakeBase.z) < 0.03f;
+		if(!tailLight2.IsZero() && !sharedTailBrake){
 			lightR = GetMatrix() * tailLight2;
 			lightL = lightR - GetRight()*2.0f*tailLight2.x;
 			// Igual que arriba: el binario (lights.c:883-949, ids this+28/29) usa
@@ -5405,6 +5470,7 @@ CAutomobile::Render(void)
 
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	ViceExtApplyIndicatorMaterials();
+	ViceExtApplyLampMaterials();
 #endif
 
 	if(IsRealHeli()){
@@ -5732,8 +5798,13 @@ CAutomobile::FireTruckControl(void)
 		m_fCarGunUD = Clamp(m_fCarGunUD, 0.05f, 0.3f);
 
 
-		CVector cannonPos(0.0f, 1.5f, 1.9f);
-		cannonPos = GetMatrix() * cannonPos;
+		// La boca del dispersor vive en el nodo bump_rear, que pivota con el
+		// canon: anclar el chorro a ese nodo para que nazca en la punta.
+		CVector cannonPos(0.0f, 0.748f, 0.098f);
+		if (m_aCarNodes[CAR_BUMP_REAR])
+			cannonPos = GetMatrix() * (CMatrix(RwFrameGetMatrix(m_aCarNodes[CAR_BUMP_REAR])) * cannonPos);
+		else
+			cannonPos = GetMatrix() * CVector(0.0f, 1.80f, 2.00f);
 		CVector cannonDir(
 			Sin(m_fCarGunLR) * Cos(m_fCarGunUD),
 			Cos(m_fCarGunLR) * Cos(m_fCarGunUD),
@@ -5770,8 +5841,11 @@ CAutomobile::FireTruckControl(void)
 
 		// Spray water every once in a while
 		if((CTimer::GetTimeInMilliseconds()>>10) & 3){
-			CVector cannonPos(0.0f, 0.0f, 2.2f);	// different position than player's firetruck!
-			cannonPos = GetMatrix() * cannonPos;
+			CVector cannonPos(0.0f, 0.748f, 0.098f);	// misma boca del dispersor que el jugador
+			if (m_aCarNodes[CAR_BUMP_REAR])
+				cannonPos = GetMatrix() * (CMatrix(RwFrameGetMatrix(m_aCarNodes[CAR_BUMP_REAR])) * cannonPos);
+			else
+				cannonPos = GetMatrix() * CVector(0.0f, 1.80f, 2.00f);
 			CVector cannonDir(
 				Sin(m_fCarGunLR) * Cos(m_fCarGunUD),
 				Cos(m_fCarGunLR) * Cos(m_fCarGunUD),

@@ -135,6 +135,11 @@ Raster::registerModule(void)
 Raster*
 Raster::create(int32 width, int32 height, int32 depth, int32 format, int32 platform)
 {
+	if(!(width == 0 && height == 0 && depth == 0) &&
+	   (width <= 0 || height <= 0 || width > 4096 || height > 4096)){
+		convTrace("Raster::create REJECT fmt=0x%x %dx%dx%d", format, width, height, depth);
+		return nil;
+	}
 	// TODO: pass arguments through to the driver and create the raster there
 	Raster *raster = (Raster*)rwMalloc(s_plglist.size, MEMDUR_EVENT);	// TODO
 	assert(raster != nil);

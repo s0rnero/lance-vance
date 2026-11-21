@@ -1887,6 +1887,13 @@ CCamera::CamControl(void)
 		   (Cams[ActiveCam].Mode != CCam::MODE_REAL_1ST_PERSON ||
 		    Cams[ActiveCam].CamTargetEntity != pTargetEntity))
 			Cams[ActiveCam].m_bViceExtFpEntered = true;
+		// 79.2: si estando ya en primera persona cambia el objetivo (pie <->
+		// coche), el bloque de abajo tiene que re-aplicar el modo en UN frame.
+		// Antes caia en el "else" de StartTransition y reiniciaba la transicion
+		// en cada fotograma.
+		if(ReqMode == CCam::MODE_REAL_1ST_PERSON &&
+		   Cams[ActiveCam].CamTargetEntity != pTargetEntity)
+			switchByJumpCut = true;
 #endif
 
 #ifdef VICEEXT_FIRST_PERSON
@@ -1922,7 +1929,14 @@ CCamera::CamControl(void)
 
 				pTargetEntity->RegisterReference(&pTargetEntity);
 				Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
-			}else if(!m_bWaitForInterpolToFinish){
+			}else if(!m_bWaitForInterpolToFinish && ReqMode != Cams[ActiveCam].Mode){
+				// 79.2: en primera persona el "if" de arriba se cumple siempre
+				// (`|| ReqMode == MODE_REAL_1ST_PERSON`), asi que sin esta guarda
+				// se llamaba a StartTransition() en cada fotograma. Con una
+				// transicion abierta, Process() usa los valores interpolados y
+				// descarta el Beta de Process_Real_1st_Person: la camara se quedaba
+				// clavada aunque el dedo si llegara (log del jugador: 33 s en
+				// modo=47 con look=1 y sin girar).
 				StartTransition(ReqMode);
 				pTargetEntity->RegisterReference(&pTargetEntity);
 				Cams[ActiveCam].CamTargetEntity->RegisterReference(&Cams[ActiveCam].CamTargetEntity);
@@ -2219,7 +2233,7 @@ bool bAvoidTest1 = false;
 bool bAvoidTest2 = false;	// unused
 bool bAvoidTest3 = false;	// unused
 float fRangePlayerRadius = 0.5f;
-float fCloseNearClipLimit = 0.15f;
+float fCloseNearClipLimit = 0.25f;
 float fAvoidTweakFOV = 1.15f;
 float fAvoidProbTimerDamp = 0.9f;
 

@@ -1,5 +1,14 @@
 #include "common.h"
 
+#ifdef __EMSCRIPTEN__
+// 83.1: baliza inmediata (sendBeacon). Lo impreso se queda en el buffer de
+// stdout cuando el hilo del motor se clava, asi que no sirve para bisecar.
+extern "C" void OdBeacon(const char *tag);
+#define ODB(x) OdBeacon(x)
+#else
+#define ODB(x)
+#endif
+
 #include "main.h"
 #include "FileMgr.h"
 #include "ParticleMgr.h"
@@ -20,13 +29,24 @@ void cParticleSystemMgr::Initialise()
 	
 	for ( int32 i = 0; i < MAX_PARTICLES; i++ )
 		m_aParticles[i].m_pParticles = nil;
+	ODB("PD init fin");
 }
 
 void cParticleSystemMgr::LoadParticleData()
 {
 	CFileMgr::SetDir("DATA");
-	CFileMgr::LoadFile(ParticleFilename, work_buff, ARRAY_SIZE(work_buff), "r");
+	printf("PDIR enter\n");
+	int32 len = CFileMgr::LoadFile(ParticleFilename, work_buff, ARRAY_SIZE(work_buff), "r");
 	CFileMgr::SetDir("");
+	ODB("PD setdir ok");
+	// Sin fichero no se parsea basura: se queda sin tipos en vez de salirse de work_buff.
+	if ( len <= 0 ) {
+		printf("PART len=%d: no se leyo %s, sin particulas\n", (int)len, ParticleFilename);
+		return;
+	}
+	printf("PDATA len=\n");
+	ODB("PD parse begin");
+	char *limit = (char *)work_buff + len;
 	
 	tParticleSystemData *entry = nil;
 	int32 type = PARTICLE_FIRST;
@@ -37,17 +57,30 @@ void cParticleSystemMgr::LoadParticleData()
 	char line[500];
 	char delims[4];
 
+	int guard = 0;
+	int dbgLines = 0;
 	while ( true )
 	{
+		if ( lineStart >= limit )
+			break;
 		ASSERT(lineStart != nil);
 		ASSERT(lineEnd != nil);
+#ifdef __EMSCRIPTEN__
+		if ((dbgLines++ % 64) == 0) {
+			char ob[96];
+			snprintf(ob, sizeof(ob), "PD line %d type=%d", dbgLines, (int)type);
+			OdBeacon(ob);
+		}
+#endif
 		
-		while ( *lineEnd != '\n' )
+		while ( lineEnd < limit && *lineEnd != '\n' )
 			++lineEnd;
 		
 		int32 lineLength = lineEnd - lineStart;
 		
 		ASSERT(lineLength < 500);
+		if ( lineLength >= 500 )
+			break;
 
 		strncpy(line, lineStart, lineLength);
 		
@@ -74,6 +107,12 @@ void cParticleSystemMgr::LoadParticleData()
 				switch ( param )
 				{
 					case CFG_PARAM_PARTICLE_TYPE_NAME:
+						// El particle.cfg del mod trae mas tipos que MAX_PARTICLES: el que
+						// no cabe se descarta en vez de escribir fuera de m_aParticles.
+						if ( type >= MAX_PARTICLES ) {
+							printf("PART extra name=%s type=%d (max %d), se ignora\n", value, (int)type, (int)MAX_PARTICLES);
+							return;
+						}
 						ASSERT(type < MAX_PARTICLES);
 						entry = &m_aParticles[type];
 						ASSERT(entry != nil);
@@ -257,5 +296,6 @@ void cParticleSystemMgr::LoadParticleData()
 		lineStart = lineEnd;
 		lineEnd++;
 	}
+	ODB("PD parse end");
 
 }

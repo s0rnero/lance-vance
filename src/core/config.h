@@ -16,7 +16,7 @@ enum Config {
 	MAX_CDCHANNELS = 5,
 
 	MODELINFOSIZE = 10000,
-	TXDSTORESIZE = 1500,
+	TXDSTORESIZE = 2200, // 1433 TXD en los datos actuales + slots propios del motor
 	COLSTORESIZE = 100,
 	EXTRADIRSIZE = 512,
 	CUTSCENEDIRSIZE = 512,
@@ -584,7 +584,7 @@ enum Config {
 #define VICEEXT_SKY_LEEDS_WORLD_PIPE		// pipe de mundo Leeds con el tweak de prelight (worldPipe=2)
 #define VICEEXT_SKY_SEAM_FIX			// se redibuja el front buffer desplazado para tapar las costuras (seamFix)
 #define VICEEXT_SKY_DUAL_PASS			// la geometria transparente se dibuja en dos pasadas (dualPass)
-#define VICEEXT_ENVMAP_EVERY_N 4
+#define VICEEXT_ENVMAP_EVERY_N 10
 #define VICEEXT_PERF_MINIMAL
 
 #define VICEEXT_MONEY_NO_ZEROS
@@ -600,6 +600,7 @@ enum Config {
 #define VICEEXT_GPS_COLOR_B 255
 
 #define VICEEXT_CHEAT_EFFECTS	// v2.5 BIGHEADS/RCROCKET y v2.0 AIRWAYS con efecto real
+#define VICEEXT_CAR_ROW_CHEAT	// trucos "tanda de coches 0..7" y teletransporte a la pista del aeropuerto
 
 #ifdef VICEEXT_VICE_EXTENDED
 #define VICEEXT_UTILS

@@ -811,7 +811,10 @@ public:
 	int32 m_nMouseOldPosY;
 	int32 m_nHoverOption;
 	bool m_bShowMouse;
-	bool m_bTouchMenuTap;
+	bool m_bTouchMenuActivate;
+	bool m_bTouchMenuUp;
+	bool m_bTouchMenuDown;
+	int8 m_nTouchMenuChange;
 	bool m_bTouchOpenMap;
 	int32 m_nOptionMouseHovering;
 	bool m_bStartWaitingForKeyBind;
@@ -992,7 +995,9 @@ public:
 	void Process();
 	void ProcessList(bool &optionSelected, bool &goBack);
 	void UserInput();
-	void TouchTap(int, int);
+	void TouchActivate(void);
+	void TouchChange(int);
+	void TouchStep(int);
 	void OpenTouchMap();
 	void ProcessUserInput(uint8, uint8, uint8, uint8, int8);
 	void ChangeRadioStation(int8);

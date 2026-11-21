@@ -2395,9 +2395,19 @@ extern "C" EMSCRIPTEN_KEEPALIVE int ViceExtTouchContext(void)
 	return CPad::TouchContext();
 }
 
-extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuTap(int nx, int ny)
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuActivate(void)
 {
-	FrontEndMenuManager.TouchTap(nx, ny);
+	FrontEndMenuManager.TouchActivate();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuChange(int dir)
+{
+	FrontEndMenuManager.TouchChange(dir);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchMenuStep(int dir)
+{
+	FrontEndMenuManager.TouchStep(dir);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE void ViceExtTouchSkip(void)

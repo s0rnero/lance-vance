@@ -628,6 +628,11 @@ int splashTxdId = -1;
 CSprite2d*
 LoadSplash(const char *name)
 {
+	{
+		char odB[64];
+		snprintf(odB, sizeof odB, "SPLASH %s", name ? name : "nil");
+		OdBeacon(odB);
+	}
 	RwTexDictionary *txd;
 	char filename[140];
 	RwTexture *tex = nil;
@@ -649,8 +654,14 @@ LoadSplash(const char *name)
 		}
 	}
 #endif
-	if(name == nil)
+	if(name == nil) {
+		// 83.0-T9: al entrar en partida se libera el TXD splash (TXDFREE);
+		// el sprite conservaba m_pTexture colgante y WebDrawLoadScreen se
+		// colgaba al pintarlo. Sin textura, pinta el fondo negro.
+		if(splashTxdId != -1 && CTxdStore::GetSlot(splashTxdId)->texDict == nil)
+			splash.m_pTexture = nil;
 		return &splash;
+	}
 	if(splashTxdId == -1)
 		splashTxdId = CTxdStore::AddTxdSlot("splash");
 
@@ -766,25 +777,24 @@ ResetLoadingScreenBar()
 void
 LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 {
+	OdBeacon("LOADSCREEN");
 	CSprite2d *splash;
-
 #ifdef DISABLE_LOADING_SCREEN
 	if (str1 && str2)
 		return;
 #endif
-
 #ifdef __EMSCRIPTEN__
 	if (gWebLoadScreenActive) {
 		WebDrawLoadScreen(gWebLoadFrac);
 		return;
 	}
 #endif
-
 #ifndef RANDOMSPLASH
 	splashscreen = "LOADSC0";
 #endif
-
+	OdBeacon("LS splash");
 	splash = LoadSplash(splashscreen);
+	OdBeacon("LS splash ok");
 
 #ifndef GTA_PS2
 	if(RsGlobal.quit)
@@ -861,6 +871,18 @@ LoadingScreen(const char *str1, const char *str2, const char *splashscreen)
 int gOdWebMark = -1;
 int gOdWebEnt = -1;
 
+// 82.4: OdWebEnt/OdWebMark se llaman por ENTIDAD y frame dentro del bucle de
+// ProcessControl (World.cpp). Cada llamada era un EM_ASM + postMessage a un
+// Worker, y el perro guardian solo consulta el ultimo valor cada 5 s: eso son
+// cientos de postMessage por frame en el pase que mas CPU gasta (ODWORLD
+// ctrl=2,4-3,5 ms/frame). Ahora solo se guarda el ultimo valor y se envia como
+// mucho uno de cada 200 ms desde WebPhaseEnd; el vigilante no nota la diferencia
+// y el bucle caliente se queda sin cruces wasm->JS.
+#ifdef __EMSCRIPTEN__
+static int gOdMarkPend, gOdEntPend;
+static int gOdMarkPendHas, gOdEntPendHas;
+#endif
+
 void
 OdWebEnt(int v)
 {
@@ -868,7 +890,8 @@ OdWebEnt(int v)
 		return;
 	gOdWebEnt = v;
 #ifdef __EMSCRIPTEN__
-	EM_ASM({ try { if (window.__odEnt) window.__odEnt($0); } catch (e) {} }, v);
+	gOdEntPend = v;
+	gOdEntPendHas = 1;
 #endif
 }
 
@@ -879,7 +902,8 @@ OdWebMark(int v)
 		return;
 	gOdWebMark = v;
 #ifdef __EMSCRIPTEN__
-	EM_ASM({ try { if (window.__odMark) window.__odMark($0); } catch (e) {} }, v);
+	gOdMarkPend = v;
+	gOdMarkPendHas = 1;
 #endif
 }
 
@@ -894,10 +918,40 @@ static uint32 gWpN, gWpOver17, gWpWorstIdx;
 static double gWpWorstGap, gWpWorstPrev[6], gWpWorstWait;
 static int gWpWorstHas;
 static double gWpMax[6], gWpEmit, gWpPrevStart;
+// 79.4: suma de los huecos entre frames de la ventana, para el ajuste
+// automatico de distancia de dibujado (ver WebPhaseEnd).
+static double gWpSumGap;
 // Tiempo de RenderScene dentro del frame (ms). El resto de la fase S son los
 // efectos, el env map y el blur: separarlos evita adivinar donde se va el frame.
 double gWpSceneCur;
 static double gWpScenePrev, gWpWorstScene, gWpSceneMax;
+
+// 82.5: el pase de envmap re-renderiza el mundo entero (0,4-2,4 ms) cada 10
+// frames. En un frame que ya lleva 8,5 ms encima es justo lo que lo tumba de
+// 11,1 a 22,2 ms, y esos frames son los que se ven como tirones: se aplaza al
+// frame siguiente como mucho 2 veces, asi que el reflejo se actualiza igual.
+static int s_odEnvPending, s_odEnvSkips, s_odEnvDefers;
+
+// 82.4: ver la nota de OdWebEnt. Un solo envio cada 200 ms como maximo.
+void
+OdWebProbeFlush(void)
+{
+	static double s_next = 0.0;
+	if (!gOdMarkPendHas && !gOdEntPendHas)
+		return;
+	double now = emscripten_get_now();
+	if (now < s_next)
+		return;
+	s_next = now + 200.0;
+	if (gOdMarkPendHas) {
+		gOdMarkPendHas = 0;
+		EM_ASM({ try { if (window.__odMark) window.__odMark($0); } catch (e) {} }, gOdMarkPend);
+	}
+	if (gOdEntPendHas) {
+		gOdEntPendHas = 0;
+		EM_ASM({ try { if (window.__odEnt) window.__odEnt($0); } catch (e) {} }, gOdEntPend);
+	}
+}
 
 void WebPhaseEnd(void);
 
@@ -913,6 +967,7 @@ WebPhaseBegin(void)
 			int i;
 			double work = 0.0;
 			for (i = 0; i < 6; i++) work += gWpPrev[i];
+			gWpSumGap += gap;
 			gWpWorstGap = gap;
 			gWpWorstIdx = gWpN;
 			gWpWorstWait = gap - work;
@@ -965,6 +1020,7 @@ WebPhaseEnd(void)
 {
 	double now = emscripten_get_now();
 	int i;
+	OdWebProbeFlush();
 	if (!(gWpDone & (1 << 5))) {
 		double acc = gWpCur[0] + gWpCur[1] + gWpCur[2] + gWpCur[3] + gWpCur[4];
 		double rest = now - gWpStart - acc;
@@ -987,15 +1043,17 @@ WebPhaseEnd(void)
 		s_wpDcPrev = dcNow;
 		for (i = 0; i < 6; i++) sum += gWpWorstPrev[i];
 		snprintf(t, sizeof t,
-			"FPHASE n=%u over17=%u gap=%.1f at=%u prev(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f sum=%.1f) wait=%.1f dc=%.0f max(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f) scene=%.1f/%.1f",
+			"FPHASE n=%u over17=%u gap=%.1f at=%u prev(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f sum=%.1f) wait=%.1f dc=%.0f max(L=%.1f A=%.1f R=%.1f S=%.1f T=%.1f P=%.1f) scene=%.1f/%.1f envd=%d",
 			gWpN, gWpOver17, gWpWorstGap, gWpWorstIdx,
 			gWpWorstPrev[0], gWpWorstPrev[1], gWpWorstPrev[2], gWpWorstPrev[3], gWpWorstPrev[4], gWpWorstPrev[5],
 			sum, gWpWorstWait, dcPerFrame,
 			gWpMax[0], gWpMax[1], gWpMax[2], gWpMax[3], gWpMax[4], gWpMax[5],
-			gWpWorstScene, gWpSceneMax);
+			gWpWorstScene, gWpSceneMax, s_odEnvDefers);
 		ODTRACES(t);
 		OdDrawsFlush();
+		s_odEnvDefers = 0;
 		gWpN = 0; gWpOver17 = 0; gWpWorstGap = 0; gWpWorstHas = 0;
+		gWpSumGap = 0.0;
 		gWpSceneMax = 0.0;
 		for (i = 0; i < 6; i++) gWpMax[i] = 0.0;
 		gWpEmit = now;
@@ -1083,7 +1141,10 @@ WebDrawLoadScreen(float frac)
 	s_webLoadShown = frac;
 
 	inDraw = true;
-	CSprite2d *sp = LoadSplash(nil);
+	// 82.5-T18: se cachea el sprite. Recargar el splash en cada frame de la
+	// pantalla de carga bloqueaba la llamada y el motor no volvia a avanzar.
+	static CSprite2d *sp = nil;
+	if (sp == nil) sp = LoadSplash(nil);
 	if (DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255)) {
 		CSprite2d::SetRecipNearClip();
 		CSprite2d::InitPerFrame();
@@ -2172,10 +2233,20 @@ Idle(void *arg)
 #endif
 
 #ifdef EXTENDED_PIPELINES
-		if (CTimer::GetFrameCounter() % VICEEXT_ENVMAP_EVERY_N == 0) {
-			PUSH_RENDERGROUP("Scene.envmap");
-			CustomPipes::EnvMapRender();
-			POP_RENDERGROUP();
+		// 82.5: ver la nota de s_odEnvPending. 8,5 ms deja ~2,6 ms al envmap.
+		if (CTimer::GetFrameCounter() % VICEEXT_ENVMAP_EVERY_N == 0)
+			s_odEnvPending = 1;
+		if (s_odEnvPending) {
+			if (s_odEnvSkips >= 2 || emscripten_get_now() - gWpStart < 8.5) {
+				PUSH_RENDERGROUP("Scene.envmap");
+				CustomPipes::EnvMapRender();
+				POP_RENDERGROUP();
+				s_odEnvPending = 0;
+				s_odEnvSkips = 0;
+			} else {
+				s_odEnvSkips++;
+				s_odEnvDefers++;
+			}
 		}
 #endif
 
@@ -2334,6 +2405,7 @@ static int s_gameStepStarted = 0;
 bool
 InitialiseGameStep(void)
 {
+	OdBeacon("INITGAME");
 	if (!s_gameStepStarted) {
 		// Misma portada que la carga de partida (coleccion loadscN del mod).
 		LoadingScreen(nil, nil, GetLevelSplashScreen(0));

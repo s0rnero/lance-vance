@@ -176,6 +176,7 @@ public:
 #ifdef VICEEXT_IMPROVED_VEHICLES_2
 	void ViceExtProcessTurnSignals(void);
 	void ViceExtApplyIndicatorMaterials(void);
+	void ViceExtApplyLampMaterials(void);
 	bool m_bIndicatorState[2];
 	// Plan 51.0 D4 / 51.1 E1: `Latched` = el estado lo puso el jugador con la tecla,
 	// y por eso sobrevive a bajarse. `NpcHazard` = el NPC iba en luces de parqueo

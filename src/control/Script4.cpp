@@ -1289,18 +1289,35 @@ int8 CRunningScript::ProcessCommands900To999(int32 command)
 		return 0;
 	}
 	case COMMAND_LOAD_ALL_MODELS_NOW:
+	{
 #ifdef FIX_BUGS
 		CTimer::Suspend();
 #else
 		CTimer::Stop();
 #endif
+#ifdef __EMSCRIPTEN__
+		// 82.0: "carga todos los modelos ahora" no puede parar en el
+		// presupuesto de 16 ficheros/tick. La cinematica pide >20 (objetos +
+		// TXD) y `CreateCutsceneObject` no comprueba si el modelo llego: los
+		// personajes se quedaban sin clump (mesa y sillas visibles, nadie
+		// mas). Se carga sin trocear, como hace LoadSceneCollision.
+		int odSaveBudget = CStreaming::gWebLoadBudget;
+		float odSaveCap = CStreaming::gWebLoadTimeCapMs;
+		CStreaming::gWebLoadBudget = 0;
+		CStreaming::gWebLoadTimeCapMs = 0.0f;
+#endif
 		CStreaming::LoadAllRequestedModels(false);
+#ifdef __EMSCRIPTEN__
+		CStreaming::gWebLoadBudget = odSaveBudget;
+		CStreaming::gWebLoadTimeCapMs = odSaveCap;
+#endif
 #ifdef FIX_BUGS
 		CTimer::Resume();
 #else
 		CTimer::Update();
 #endif
 		return 0;
+	}
 	case COMMAND_ADD_TO_OBJECT_VELOCITY:
 	{
 		CollectParameters(&m_nIp, 4);

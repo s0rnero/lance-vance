@@ -281,12 +281,10 @@ static const ViceExtIndLens s_odIndLens[] = {
 	{ "sentxs", CAR_INDICATOR_RF, 1, { 151, 86, 25 }, 1, 0, 0x00000001, 455, { 92, 226, -4 } },	// A 5 caras sentxs868bit128
 	{ "spand", CAR_INDICATOR_LF, -1, { 152, 77, 21 }, 1, 0, 0x00000001, 112, { -73, 275, -6 } },	// A 1 caras spand8bit128
 	{ "spand", CAR_INDICATOR_RF, 1, { 136, 70, 20 }, 1, 0, 0x00000001, 110, { 73, 275, -6 } },	// A 1 caras spand8bit128
-	{ "stinger", CAR_INDICATOR_LF, -1, { 143, 84, 19 }, 1, 0, 0x00000001, 531, { -91, 239, -7 } },	// A 3 caras stinger86body64
-	{ "stinger", CAR_INDICATOR_LF, -1, { 130, 75, 12 }, 1, 0, 0x00000001, 129, { -98, 222, -12 } },	// A 1 caras stinger86body64
-	{ "stinger", CAR_INDICATOR_LR, -1, { 140, 82, 18 }, 1, 0, 0x00000001, 56, { -74, -255, 3 } },	// A 2 caras stinger86body64
-	{ "stinger", CAR_INDICATOR_RF, 1, { 143, 84, 19 }, 1, 0, 0x00000001, 531, { 91, 239, -7 } },	// A 3 caras stinger86body64
-	{ "stinger", CAR_INDICATOR_RF, 1, { 130, 75, 13 }, 1, 0, 0x00000001, 129, { 98, 222, -12 } },	// A 1 caras stinger86body64
-	{ "stinger", CAR_INDICATOR_RR, 1, { 140, 82, 18 }, 1, 0, 0x00000001, 56, { 74, -255, 3 } },	// A 2 caras stinger86body64
+	{ "stinger", CAR_INDICATOR_LF, -1, { 143, 84, 19 }, 1, 1, 0x00000001, 531, { -91, 239, -7 } },	// A 3 caras stingerlens64 [atlas del mod]
+	{ "stinger", CAR_INDICATOR_LF, -1, { 130, 75, 12 }, 1, 1, 0x00000001, 129, { -98, 222, -12 } },	// A 1 caras stingerlens64 [atlas del mod]
+	{ "stinger", CAR_INDICATOR_RF, 1, { 143, 84, 19 }, 1, 1, 0x00000001, 531, { 91, 239, -7 } },	// A 3 caras stingerlens64 [atlas del mod]
+	{ "stinger", CAR_INDICATOR_RF, 1, { 130, 75, 13 }, 1, 1, 0x00000001, 129, { 98, 222, -12 } },	// A 1 caras stingerlens64 [atlas del mod]
 	{ "streetfi", CAR_INDICATOR_LF, -1, { 253, 165, 0 }, 1, 1, 0x00000001, 34, { -25, 64, 28 } },	// A 2 caras lights [atlas del mod]
 	{ "streetfi", CAR_INDICATOR_LR, -1, { 253, 165, 0 }, 1, 1, 0x00000001, 34, { -17, -97, 38 } },	// A 2 caras lights [atlas del mod]
 	{ "streetfi", CAR_INDICATOR_RF, 1, { 253, 165, 0 }, 1, 1, 0x00000001, 34, { 25, 64, 28 } },	// A 2 caras lights [atlas del mod]

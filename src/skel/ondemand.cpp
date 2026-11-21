@@ -10,18 +10,70 @@
 #include <stdlib.h>
 #include <string.h>
 
+// ---------------------------------------------------------------------------
+// 82.1 · Perfil por muestreo del ProcessControl de coches
+//
+// El bucle de vehiculos se lleva ~4 ms de `Logic.world` (traza 81.9b) pero no
+// se sabia QUE rama: fisica, IA, dano, colision, ruedas o audio. Cronometrar
+// cada tramo de cada coche en todos los frames costaria mas que el propio
+// tramo (cada `emscripten_get_now` cruza a JS), asi que se muestrea UN frame de
+// cada 240 (~4 s a 60 Hz) y se suman los tramos de todos los coches de ese
+// frame. La linea `VEHPROF` la emite glfw.cpp junto al WEBFT; el coste medio
+// son ~30 llamadas a JS por frame.
+// ---------------------------------------------------------------------------
+bool gWebVehProfOn;
+bool gWebVehProfDone;
+int gWebVehProfN;
+double gWebVehProfT[9];
+static double odVehProfLast;
+static int odVehProfTick;
+
+void WebVehProfFrame(void)
+{
+	if (gWebVehProfOn) {
+		gWebVehProfOn = false;
+		gWebVehProfDone = true;
+	}
+	if (++odVehProfTick >= 240) {
+		odVehProfTick = 0;
+		gWebVehProfN = 0;
+		for (int i = 0; i < 9; i++)
+			gWebVehProfT[i] = 0.0;
+		gWebVehProfOn = true;
+	}
+}
+
+void WebVehProfMark(int slot)
+{
+	if (!gWebVehProfOn)
+		return;
+	double now = emscripten_get_now();
+	if (slot == 0) {
+		odVehProfLast = now;
+		gWebVehProfN++;
+		return;
+	}
+	if (slot > 0 && slot < 9)
+		gWebVehProfT[slot] += now - odVehProfLast;
+	odVehProfLast = now;
+}
+
 EM_ASYNC_JS(char*, od_fetch, (const char *cpath), {
   const p = UTF8ToString(cpath);
   try {
     // T18: si el motor se queda colgado aquí, la sonda del jugador tiene que
     // decir QUÉ fichero estaba esperando (no adivinarlo).
     try { window.__vcFetchNow = p; } catch (e) {}
+    const dbgF = (typeof OD_PROBE !== 'undefined') && OD_PROBE.test(p);
+    if (dbgF) { try { odProbe('fetch enter ' + p); } catch (e) {} }
     const r = await OD.ensure(p);
+    if (dbgF) { try { odProbe('fetch got ' + p + ' -> ' + (r || 'nil')); } catch (e) {} }
     try { window.__vcFetchNow = null; } catch (e) {}
     if (!r) return 0;
     const len = lengthBytesUTF8(r) + 1;
     const ptr = _malloc(len);
     stringToUTF8(r, ptr, len);
+    if (dbgF) { try { odProbe('fetch ret ' + p); } catch (e) {} }
     return ptr;
   } catch (e) { return 0; }
 });
@@ -62,18 +114,43 @@ extern "C" void odBlockingPop(void)
 
 extern "C" {
 
+void OdBeacon(const char *tag)
+{
+	EM_ASM({
+		try {
+			var u = (typeof OD !== 'undefined' && OD.cfg && OD.cfg.odtraceUrl) || null;
+			if (u && navigator.sendBeacon) navigator.sendBeacon(u, 'CPUBEACON ' + UTF8ToString($0));
+		} catch (e) {}
+	}, tag);
+}
+
 FILE *__real_fopen(const char *path, const char *mode);
 int __real_open(const char *path, int flags, ...);
 int __real_stat(const char *path, struct stat *buf);
 int __real_access(const char *path, int mode);
 
+// 83.1: baliza desde C para bisecar el wrapper (que es donde se pierde el
+// hilo cuando el motor no vuelve de una suspension).
+static void odBW(const char *tag, const char *path, int val)
+{
+	EM_ASM({
+		try {
+			if (typeof odProbe === 'function')
+				odProbe('WRAP ' + UTF8ToString($0) + ' ' + UTF8ToString($1) + ' v=' + $2);
+		} catch (e) {}
+	}, tag, path ? path : "-", val);
+}
+
 FILE *__wrap_fopen(const char *path, const char *mode)
 {
 	if (path) {
 		char *rp = od_present(path);
+		odBW("fopen-pres", path, rp ? 1 : 0);
 		if (!rp) rp = od_fetch(path);
+		odBW("fopen-rp", path, rp ? 1 : 0);
 		if (rp) {
 			FILE *f = __real_fopen(rp, mode);
+			odBW("fopen-real", path, f ? 1 : 0);
 			free(rp);
 			if (f) return f;
 		}
@@ -104,6 +181,7 @@ int __wrap_open(const char *path, int flags, ...)
 	if (path) {
 		char *rp = od_present(path);
 		if (!rp) rp = od_fetch(path);
+		odBW("open-rp", path, rp ? 1 : 0);
 		if (rp) {
 			int fd = __real_open(rp, flags, m);
 			free(rp);
@@ -132,6 +210,7 @@ int __wrap_access(const char *path, int mode)
 	if (path) {
 		char *rp = od_present(path);
 		if (!rp) rp = od_fetch(path);
+		odBW("access-rp", path, rp ? 1 : 0);
 		if (rp) {
 			free(rp);
 			return 0;

@@ -276,6 +276,10 @@ CCoronas::Render(void)
 
 	screenw = RwRasterGetWidth(RwCameraGetRaster(Scene.camera));
 	screenh = RwRasterGetHeight(RwCameraGetRaster(Scene.camera));
+	CSprite::InitSpriteBuffer();
+	RwRaster *prevRaster = nil;
+	bool prevZTest = true;
+	bool havePrevGroup = false;
 
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
@@ -310,7 +314,7 @@ CCoronas::Render(void)
 				aCoronas[i].offScreen = true;
 				aCoronas[i].sightClear = false;
 			}else{
-				if(CTimer::GetTimeInMilliseconds() > aCoronas[i].lastLOScheck + 2000){
+				if(CTimer::GetTimeInMilliseconds() > aCoronas[i].lastLOScheck + 2000 && ((CTimer::GetFrameCounter() + i) % 30 == 0)){
 					aCoronas[i].lastLOScheck = CTimer::GetTimeInMilliseconds();
 					aCoronas[i].sightClear = CWorld::GetIsLineOfSightClear(
 						aCoronas[i].coors, TheCamera.Cams[TheCamera.ActiveCam].Source,
@@ -355,8 +359,17 @@ CCoronas::Render(void)
 					float fogscale = CWeather::Foggyness*Min(spriteCoors.z, 40.0f)/40.0f + 1.0f;
 					if(CCoronas::aCoronas[i].id == SUN_CORE)
 						spriteCoors.z = 0.95f * RwCameraGetFarClipPlane(Scene.camera);
-					RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(aCoronas[i].texture));
 					spriteCoors.z -= aCoronas[i].nearDist;
+					{
+						RwRaster *ras = RwTextureGetRaster(aCoronas[i].texture);
+						bool zt = !aCoronas[i].LOScheck;
+						if(!havePrevGroup || ras != prevRaster || zt != prevZTest){
+							CSprite::FlushSpriteBuffer();
+							RwRenderStateSet(rwRENDERSTATETEXTURERASTER, ras);
+							RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)zt);
+							prevRaster = ras; prevZTest = zt; havePrevGroup = true;
+						}
+					}
 
 					if(aCoronas[i].texture == gpCoronaTexture[8]){
 						float f = 1.0f - aCoronas[i].someAngle*2.0f/PI;
@@ -369,7 +382,7 @@ CCoronas::Render(void)
 						float hscale = 0.35f - (wscale - 0.5f) * 0.06f;
 						hscale = Max(hscale, 0.15f);
 
-						CSprite::RenderOneXLUSprite(spriteCoors.x, spriteCoors.y, spriteCoors.z,
+						CSprite::RenderBufferedOneXLUSprite(spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * wscale,
 							spriteh * aCoronas[i].size * fogscale * hscale,
 							CCoronas::aCoronas[i].red / fogscale,
@@ -379,7 +392,7 @@ CCoronas::Render(void)
 							recipz,
 							255);
 					}else{
-						CSprite::RenderOneXLUSprite_Rotate_Aspect(
+						CSprite::RenderBufferedOneXLUSprite_Rotate_Aspect(
 							spriteCoors.x, spriteCoors.y, spriteCoors.z,
 							spritew * aCoronas[i].size * fogscale,
 							spriteh * aCoronas[i].size * fogscale,
@@ -404,8 +417,17 @@ CCoronas::Render(void)
 					}
 
 					for(; flare->texture; flare++){
-						RwRenderStateSet(rwRENDERSTATETEXTURERASTER, RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]));
-						CSprite::RenderOneXLUSprite(
+						{
+							RwRaster *ras = RwTextureGetRaster(gpCoronaTexture[flare->texture + 4]);
+							bool zt = !aCoronas[i].LOScheck;
+							if(!havePrevGroup || ras != prevRaster || zt != prevZTest){
+								CSprite::FlushSpriteBuffer();
+								RwRenderStateSet(rwRENDERSTATETEXTURERASTER, ras);
+								RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)zt);
+								prevRaster = ras; prevZTest = zt; havePrevGroup = true;
+							}
+						}
+						CSprite::RenderBufferedOneXLUSprite(
 							(spriteCoors.x - (screenw/2)) * flare->position + (screenw/2),
 							(spriteCoors.y - (screenh/2)) * flare->position + (screenh/2),
 							spriteCoors.z,
@@ -422,6 +444,7 @@ CCoronas::Render(void)
 		}
 	}
 
+	CSprite::FlushSpriteBuffer();
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);

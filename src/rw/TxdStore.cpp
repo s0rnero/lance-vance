@@ -279,9 +279,29 @@ CTxdStore::LoadTxd(int slot, const char *filename)
 
 	ret = false;
 	_rwD3D8TexDictionaryEnableRasterFormatConversion(true);
+	OdBeacon("TXD-OPEN");
+	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
+#ifndef __EMSCRIPTEN__
 	do
 		stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	while(stream == nil);
+	while (stream == nil);
+#endif
+	// 83.1: en web NO se reintenta. El bucle de 15 s (y el do/while original)
+	// dejaban el hilo del motor girando sin devolver control: si el fichero no
+	// estaba, el jugador veia una carga que no terminaba. El arranque deja los
+	// TXD criticos enteros en MEMFS (OD.BOOT_CRITICAL) y un fallo se reporta
+	// abajo (TXDOPEN-FALLO), que es informacion util; reintentar no lo era.
+	OdBeacon(stream ? "TXD-OPEN-OK" : "TXD-OPEN-NIL");
+#ifdef __EMSCRIPTEN__
+	if(stream == nil){
+		char odT[160];
+		snprintf(odT, sizeof odT, "TXDOPEN-FALLO nom=%.128s", filename);
+		ODTRACES(odT);
+	}
+#endif
+	if(stream == nil)
+		return false;
+	OdBeacon("TXD-PARSE");
 	ret = LoadTxd(slot, stream);
 	RwStreamClose(stream, nil);
 	return ret;

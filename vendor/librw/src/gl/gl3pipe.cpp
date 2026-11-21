@@ -31,7 +31,9 @@ freeInstanceData(Geometry *geometry)
 	glDeleteBuffers(1, &header->ibo);
 	glDeleteBuffers(1, &header->vbo);
 #ifdef RW_GL_USE_VAOS
-	glDeleteBuffers(1, &header->vao);
+	// 80.1: era glDeleteBuffers sobre un VAO: no lo borraba (los VAO se
+	// acumulaban hasta que el driver se queda sin memoria).
+	glDeleteVertexArrays(1, &header->vao);
 #endif
 	rwFree(header->indexBuffer);
 	rwFree(header->vertexBuffer);

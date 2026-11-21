@@ -28,6 +28,8 @@ int gOdTexLive = 0;
 long long gOdTexBytes = 0;
 int gOdTexGenTotal = 0;
 int gOdTexDelTotal = 0;
+int gOdTex5551 = 0;
+long long gOdTex5551Saved = 0;
 
 #ifdef __EMSCRIPTEN__
 static void
@@ -81,14 +83,17 @@ getLevelSize(Raster *raster, int32 level)
 	int h = raster->originalHeight;
 	int s = raster->originalStride;
 	int minDim = 1;
+	int blockBytes = 0;
 
 #ifdef RW_OPENGL
 	switch(natras->internalFormat){
 	case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
 	case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+		minDim = 4; blockBytes = 8;
+		break;
 	case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
 	case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
-		minDim = 4;
+		minDim = 4; blockBytes = 16;
 		break;
 	}
 #endif
@@ -102,6 +107,10 @@ getLevelSize(Raster *raster, int32 level)
 			h /= 2;
 	}
 
+	if(blockBytes == 0 && natras->isCompressed)
+		blockBytes = 16;
+	if(blockBytes)
+		return blockBytes * ((w+3)/4) * ((h+3)/4);
 	return s*h;
 }
 
@@ -115,7 +124,9 @@ odTexRasterBytes(Raster *raster)
 	long long tot = 0;
 	for(int32 l = 0; l < levels; l++)
 		tot += getLevelSize(raster, l);
-	if(!natras->isCompressed && raster->type == Raster::TEXTURE && !natras->hasAlpha &&
+	if(!natras->isCompressed && raster->type == Raster::TEXTURE &&
+	   (natras->texFormat == 1 || natras->texFormat == 2 ||
+	    (natras->texFormat == 0 && !natras->hasAlpha)) &&
 	   natras->format == GL_RGBA && natras->type == GL_UNSIGNED_BYTE)
 		tot /= 2;
 	if(natras->autogenMipmap)
@@ -123,14 +134,50 @@ odTexRasterBytes(Raster *raster)
 	return tot;
 }
 
+// 81.3: la conversion a 16 bits de 81.1 solo miraba `hasAlpha`, que en las TXD
+// sin comprimir vale 1 siempre (rasterCreateTexture, C8888): nunca llego a
+// activarse (`tex5551=0` en la traza de la sesion 81.2). El formato se decide
+// UNA vez por textura, mirando el alfa real del nivel 0: todo 255 -> RGB565;
+// solo 0 o 255 -> RGB5_A1; cualquier alfa suave -> RGBA8.
+static void
+odPickFormat(Raster *raster)
+{
+	Gl3Raster *natras = GETGL3RASTEREXT(raster);
+	if(natras->texFormat != 0 || natras->isCompressed)
+		return;
+	if(raster->type != Raster::TEXTURE || natras->format != GL_RGBA ||
+	   natras->type != GL_UNSIGNED_BYTE || raster->pixels == nil)
+		return;
+	int npx = raster->width * raster->height;
+	uint8 *p = raster->pixels;
+	int sawZero = 0;
+	for(int i = 0; i < npx; i++, p += 4){
+		if(p[3] == 255)
+			continue;
+		if(p[3] != 0)
+			return;
+		sawZero = 1;
+	}
+	natras->texFormat = sawZero ? 2 : 1;
+}
+
 static void
 odTexAccount(Raster *raster)
 {
 	Gl3Raster *natras = GETGL3RASTEREXT(raster);
 	long long bytes = odTexRasterBytes(raster);
+	long long saved = (natras->texFormat == 1 || natras->texFormat == 2) ? bytes : 0;
 	if(bytes != natras->odBytes){
 		::gOdTexBytes += bytes - natras->odBytes;
 		natras->odBytes = bytes;
+	}
+	if(saved != natras->odSaved){
+		::gOdTex5551Saved += saved - natras->odSaved;
+		if(natras->odSaved == 0)
+			::gOdTex5551++;
+		else if(saved == 0)
+			::gOdTex5551--;
+		natras->odSaved = saved;
 	}
 }
 
@@ -141,6 +188,11 @@ odTexUnaccount(Raster *raster)
 	if(natras->odBytes != 0){
 		::gOdTexBytes -= natras->odBytes;
 		natras->odBytes = 0;
+	}
+	if(natras->odSaved != 0){
+		::gOdTex5551Saved -= natras->odSaved;
+		::gOdTex5551--;
+		natras->odSaved = 0;
 	}
 }
 
@@ -396,6 +448,7 @@ allocateDXT(Raster *raster, int32 dxt, int32 numLevels, bool32 hasAlpha)
 	}
 	natras->type = GL_UNSIGNED_BYTE;
 	natras->hasAlpha = hasAlpha;
+	natras->texFormat = 0;
 	natras->bpp = 2;
 	raster->depth = 16;
 
@@ -481,6 +534,7 @@ rasterCreate(Raster *raster)
 
 	natras->isCompressed = 0;
 	natras->hasAlpha = 0;
+	natras->texFormat = 0;
 	natras->numLevels = 1;
 
 	Raster *ret = raster;
@@ -647,8 +701,10 @@ rasterUnlock(Raster *raster, int32 level)
 	case Raster::CAMERATEXTURE:
 		if(raster->privateFlags & Raster::LOCKWRITE){
 			uint32 prev = bindTexture(natras->texid);
-			if(level == 0)
+			if(level == 0){
+				odPickFormat(raster);
 				odTexAccount(raster);
+			}
 			if(natras->isCompressed){
 				glCompressedTexImage2D(GL_TEXTURE_2D, level, natras->internalFormat,
 					raster->width, raster->height, 0,
@@ -662,13 +718,16 @@ rasterUnlock(Raster *raster, int32 level)
 			}else{
 				glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 #ifdef __EMSCRIPTEN__
-				// Web: texturas opacas a RGB565 (mitad de VRAM que RGBA8).
-				// Solo TEXTURE con hasAlpha==0 en este nivel: los cutouts
-				// tienen alfa en el nivel 0 (latch del musgo) y quedan RGBA.
+				// Web: opacas a RGB565 y alfa binario a RGB5_A1 (mitad de VRAM
+				// que RGBA8). El alfa suave queda en RGBA8 y el formato se
+				// decide una vez por textura, no por nivel.
 				// Conversión transitoria por nivel (se libera acto seguido);
 				// los campos quedan RGBA8 (readback y recompresión intactos).
 				// Alfa ausente muestrea 1.0: el blend de una opaca no cambia.
-				if(raster->type == Raster::TEXTURE && !natras->hasAlpha &&
+				int odFmt = natras->texFormat;
+				if(odFmt == 0 && !natras->hasAlpha)
+					odFmt = 1;
+				if(raster->type == Raster::TEXTURE && odFmt == 1 &&
 				   natras->format == GL_RGBA && natras->type == GL_UNSIGNED_BYTE){
 					int npx = raster->width * raster->height;
 					uint16 *tmp = (uint16*)rwMalloc(npx*sizeof(uint16), MEMDUR_EVENT | ID_DRIVER);
@@ -681,6 +740,25 @@ rasterUnlock(Raster *raster, int32 level)
 						glTexImage2D(GL_TEXTURE_2D, level, GL_RGB565,
 						             raster->width, raster->height,
 						             0, GL_RGB, GL_UNSIGNED_SHORT_5_6_5, tmp);
+						rwFree(tmp);
+					}else{
+						glTexImage2D(GL_TEXTURE_2D, level, natras->internalFormat,
+						             raster->width, raster->height,
+						             0, natras->format, natras->type, raster->pixels);
+					}
+				}else if(raster->type == Raster::TEXTURE && odFmt == 2 &&
+				         natras->format == GL_RGBA && natras->type == GL_UNSIGNED_BYTE){
+					int npx = raster->width * raster->height;
+					uint16 *tmp = (uint16*)rwMalloc(npx*sizeof(uint16), MEMDUR_EVENT | ID_DRIVER);
+					if(tmp){
+						uint8 *src = raster->pixels;
+						for(int i = 0; i < npx; i++){
+							tmp[i] = (uint16)(((src[0] >> 3) << 11) | ((src[1] >> 3) << 6) | ((src[2] >> 3) << 1) | (src[3] >> 7));
+							src += 4;
+						}
+						glTexImage2D(GL_TEXTURE_2D, level, GL_RGB5_A1,
+						             raster->width, raster->height,
+						             0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, tmp);
 						rwFree(tmp);
 					}else{
 						glTexImage2D(GL_TEXTURE_2D, level, natras->internalFormat,
@@ -963,6 +1041,8 @@ createNativeRaster(void *object, int32 offset, int32)
 	ras->fboMate = nil;
 	ras->backingStore = nil;
 	ras->odBytes = 0;
+	ras->odSaved = 0;
+	ras->texFormat = 0;
 	return object;
 }
 
@@ -1036,6 +1116,8 @@ copyNativeRaster(void *dst, void *, int32 offset, int32)
 	d->fboMate = nil;
 	d->backingStore = nil;
 	d->odBytes = 0;
+	d->odSaved = 0;
+	d->texFormat = 0;
 	return dst;
 }
 
@@ -1052,7 +1134,7 @@ dxtUnpack565(uint16 c, uint8 *r, uint8 *g, uint8 *b)
 
 // Decodifica un nivel DXT1/3/5 a RGBA8. dst pitch en bytes.
 static void
-dxtDecodeLevel(uint8 *dst, int32 dstPitch, int32 w, int32 h, uint8 *src, int32 dxt)
+dxtDecodeLevel(uint8 *dst, int32 dstPitch, int32 w, int32 h, uint8 *src, int32 dxt, bool32 *alphaUsed, bool32 *smoothAlpha)
 {
 	int32 blocksX = (w + 3) / 4;
 	int32 blocksY = (h + 3) / 4;
@@ -1140,6 +1222,8 @@ dxtDecodeLevel(uint8 *dst, int32 dstPitch, int32 w, int32 h, uint8 *src, int32 d
 					d[0] = cr[sel]; d[1] = cg[sel]; d[2] = cb[sel];
 					if(dxt == 1) d[3] = ca[sel];
 					else d[3] = alpha[4*py+px];
+					if(alphaUsed && d[3] != 255) *alphaUsed = 1;
+					if(smoothAlpha && d[3] != 0 && d[3] != 255) *smoothAlpha = 1;
 				}
 			}
 			s += (dxt == 1 ? 8 : 16);
@@ -1212,13 +1296,17 @@ readNativeTexture(Stream *stream)
 	}else{
 		raster = Raster::create(width, height, depth, format | Raster::TEXTURE, PLATFORM_GL3);
 	}
-	assert(raster);
+	if(raster == nil){
+		tex->destroy();
+		return nil;
+	}
 	natras = GETGL3RASTEREXT(raster);
 	tex->raster = raster;
 
 	uint32 size;
 	uint8 *data;
 	if(useSoftwareDXT){
+		bool32 anyAlpha = 0;
 		for(int32 i = 0; i < numLevels; i++){
 			int32 lw = width >> i; if(lw < 1) lw = 1;
 			int32 lh = height >> i; if(lh < 1) lh = 1;
@@ -1238,7 +1326,18 @@ readNativeTexture(Stream *stream)
 			// stride real del raster desbloqueado
 			int32 pitch = raster->stride;
 			// raster->width/height ya están divididos por lock()
-			dxtDecodeLevel(data, pitch, raster->width, raster->height, tmp, compression);
+			bool32 lvlAlpha = 0, lvlSmooth = 0;
+			dxtDecodeLevel(data, pitch, raster->width, raster->height, tmp, compression, &lvlAlpha, &lvlSmooth);
+			if(lvlAlpha) anyAlpha = 1;
+			natras->hasAlpha = anyAlpha ? 1 : 0;
+			if(i == 0){
+				if(!lvlAlpha)
+					natras->texFormat = 1;
+				else if(!lvlSmooth)
+					natras->texFormat = 2;
+				else
+					natras->texFormat = 0;
+			}
 			raster->unlock(i);
 			rwFree(tmp);
 			(void)lw; (void)lh;
@@ -1317,9 +1416,26 @@ readNativeTexture(Stream *stream)
 	}else{
 		for(int32 i = 0; i < numLevels; i++){
 			size = stream->readU32();
-			data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
-			stream->read8(data, size);
-			raster->unlock(i);
+			if(i < raster->getNumLevels()){
+				int32 need = getLevelSize(raster, i);
+				if(need <= 0){
+					stream->seek(size);
+				}else{
+					if((int64)size > (int64)need){
+						uint32 excess = size - (uint32)need;
+						size = (uint32)need;
+						while(excess > 0){
+							uint32 odChunk = excess > 1048576 ? 1048576 : excess;
+							stream->seek((int32)odChunk);
+							excess -= odChunk;
+						}
+					}
+					data = raster->lock(i, Raster::LOCKWRITE|Raster::LOCKNOFETCH);
+					stream->read8(data, size);
+					raster->unlock(i);
+				}
+			}else
+				stream->seek(size);
 		}
 	}
 	return tex;

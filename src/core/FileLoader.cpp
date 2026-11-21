@@ -167,6 +167,9 @@ CFileLoader::LoadTexDictionary(const char *filename)
 	txd = nil;
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
 	debug("Loading texture dictionary file %s\n", filename);
+#ifdef __EMSCRIPTEN__
+	{ char odT[180]; snprintf(odT, sizeof odT, "TXDOPEN nom=%.96s stream=%d", filename, stream != nil); ODTRACES(odT); }
+#endif
 	if(stream){
 		if(RwStreamFindChunk(stream, rwID_TEXDICTIONARY, nil, nil))
 			txd = RwTexDictionaryGtaStreamRead(stream);
@@ -583,6 +586,16 @@ InitClump(RpClump *clump)
 #define InitClump(clump)
 #endif
 
+#ifdef __EMSCRIPTEN__
+static void
+OdRwOpenFail(const char *filename)
+{
+	char odT[180];
+	snprintf(odT, sizeof odT, "RWOPEN-FALLO nom=%.96s", filename);
+	ODTRACES(odT);
+}
+#endif
+
 void
 CFileLoader::LoadModelFile(const char *filename)
 {
@@ -591,7 +604,10 @@ CFileLoader::LoadModelFile(const char *filename)
 
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	if(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
+#ifdef __EMSCRIPTEN__
+	if(stream == nil) OdRwOpenFail(filename);
+#endif
+	if(stream && RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
 		clump = RpClumpStreamRead(stream);
 		if(clump){
 			InitClump(clump);
@@ -599,7 +615,7 @@ CFileLoader::LoadModelFile(const char *filename)
 			RpClumpDestroy(clump);
 		}
 	}
-	RwStreamClose(stream, nil);
+	if(stream) RwStreamClose(stream, nil);
 }
 
 void
@@ -613,7 +629,10 @@ CFileLoader::LoadClumpFile(const char *filename)
 
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	while(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
+#ifdef __EMSCRIPTEN__
+	if(stream == nil) OdRwOpenFail(filename);
+#endif
+	while(stream && RwStreamFindChunk(stream, rwID_CLUMP, nil, nil)){
 		clump = RpClumpStreamRead(stream);
 		if(clump){
 			nodename = GetFrameNodeName(RpClumpGetFrame(clump));
@@ -627,7 +646,7 @@ CFileLoader::LoadClumpFile(const char *filename)
 				RpClumpDestroy(clump);
 		}
 	}
-	RwStreamClose(stream, nil);
+	if(stream) RwStreamClose(stream, nil);
 }
 
 bool
@@ -724,11 +743,14 @@ CFileLoader::LoadAtomicFile2Return(const char *filename)
 	clump = nil;
 	debug("Loading model file %s\n", filename);
 	stream = RwStreamOpen(rwSTREAMFILENAME, rwSTREAMREAD, filename);
-	if(RwStreamFindChunk(stream, rwID_CLUMP, nil, nil))
+#ifdef __EMSCRIPTEN__
+	if(stream == nil) OdRwOpenFail(filename);
+#endif
+	if(stream && RwStreamFindChunk(stream, rwID_CLUMP, nil, nil))
 		clump = RpClumpStreamRead(stream);
 	if(clump)
 		InitClump(clump);
-	RwStreamClose(stream, nil);
+	if(stream) RwStreamClose(stream, nil);
 	return clump;
 }
 

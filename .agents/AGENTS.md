@@ -66,7 +66,7 @@ re3/                          # repo root, git branch `miami`
 | Build engine (WASM) | `bash gta_vc_browser/build.sh` (emcc/emsdk on PATH) |
 | Rebuild one object (fast) | `cd gta_vc_browser/build/web && ninja src/CMakeFiles/reVC.dir/<path>.cpp.o` |
 | Stage preload data | `python gta_vc_browser/tools/stage_bootseed.py` |
-| Regenerate data manifest | `python gta_vc_browser/tools/gen_manifest.py` |
+| Regenerate data manifest + packs | `python gta_vc_browser/tools/gen_manifest.py` (obligatorio tras cambiar datos: empaqueta en `web/public/packs/` y así el móvil descarga y ve los cambios) |
 | Dev / preview (Vite) | `cd gta_vc_browser/web && npm run dev` (port 2077) |
 | Verify the served build | `bash gta_vc_browser/tools/check-served-build.sh` |
 | Verify a gameplay log | `python gta_vc_browser/tools/viceext-log-check.py <log>` |

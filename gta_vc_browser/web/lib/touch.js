@@ -34,6 +34,7 @@ const DEFAULT_LAYOUT = {
   // Apuntar (autoapuntado al NPC/enemigo mas cercano): solo a pie y con arma.
   'onfoot-aim': [82, 63],
   'onfoot-enter': [93, 47],
+  'onfoot-camera': [94, 33],
   'vehicle-left': [7, 82],
   'vehicle-right': [17, 82],
   // Feedback jugador: el de la izquierda es el freno y el de la derecha el
@@ -64,6 +65,19 @@ function clamp(value, min, max) {
 
 function nowMs() {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+// 79.5 (fallo del HUD, 4 avisos): en el movil `setPointerCapture` lanza
+// InvalidStateError cuando el puntero ya no esta activo (dedo levantado
+// mientras el motor iba a tirones). Esa excepcion saltaba ANTES de guardar el
+// toque, asi que el boton o la zona quedaban muertos: en el log sale como
+// `JSERR InvalidStateError: Failed to execute 'setPointerCapture'` en
+// onButtonDown, onLookDown y onMoveDown. Con esto un fallo de captura nunca
+// corta el toque; solo se pierde poder arrastrar fuera del elemento.
+function grab(element, id) {
+  try {
+    if (element && typeof element.setPointerCapture === 'function') element.setPointerCapture(id);
+  } catch (e) { /* puntero ya soltado: el toque vale igual */ }
 }
 
 function touchDetected() {
@@ -103,7 +117,7 @@ export function createTouchControls(options) {
     try {
       if (typeof window !== 'undefined') (window.__odq = window.__odq || []).push(args.join(' '));
     } catch (e) { /* sin cola: no importa */ }
-    baseLog(...args);
+    try { baseLog(...args); } catch (e) { /* log del host aún no listo: no se corta el arranque */ }
   };
   const getModule = options.getModule || (() => (typeof Module !== 'undefined' ? Module : null));
   const iconBase = String(options.iconBase || '/touch/icons/').replace(/\/?$/, '/');
@@ -118,6 +132,11 @@ export function createTouchControls(options) {
     mode: 'onfoot',
     context: 0,
     contextAt: 0,
+    motorLogged: false,
+    ctxSeen: false,
+    ctxProbeAt: 0,
+    ctxNoExport: false,
+    firstFrameAt: 0,
     vehicleType: 0,
     vehicleName: 'onfoot',
     vehicleMission: 0,
@@ -130,6 +149,11 @@ export function createTouchControls(options) {
     moveY: 0,
     lookX: 0,
     lookY: 0,
+    lookUntil: 0,
+    aimUntil: 0,
+    aimTickAt: 0,
+    pausePurged: false,
+    frameDt: 16.7,
     press: new Set(),
     armed: false,
     firearm: false,
@@ -142,6 +166,10 @@ export function createTouchControls(options) {
     lastLeftTap: 0,
     tapStart: 0,
     tapMoved: false,
+    lookTravel: 0,
+    lookEngaged: false,
+    lastSweepLog: 0,
+    lastBtnLog: 0,
     lastGasTap: 0,
     lastBrakeTap: 0,
     gasUntil: 0,
@@ -150,13 +178,18 @@ export function createTouchControls(options) {
     pitchUntil: 0,
     missionUntil: 0,
     rotate: 0,
+    confirmUntil: 0,
 
     menuPointer: null,
-    menuPoint: null,
-    menuStart: null,
-    menuPulseBit: 0,
-    menuPulseUntil: 0,
-    menuPending: null,
+    menuGesture: null,
+    menuTouch: null,
+    bound: false,
+    lastTapAt: 0,
+    badDown: 0,
+    enabledLogged: false,
+    frameError: false,
+    asyncBridge: false,
+    menuIgnoreAt: 0,
     padMode: 0,
     down: new Set(),
     perf: { n: 0, sum: 0, max: 0, fpsEma: 60, lastFrame: 0 },
@@ -199,6 +232,7 @@ export function createTouchControls(options) {
     ${button('onfoot-aim', 'onfoot', 'aim', 'onfoot-scope', 'Apuntar al enemigo más cercano')}
     ${button('onfoot-action', 'onfoot', 'action', 'onfoot-punch', 'Acción')}
     ${button('onfoot-enter', 'onfoot', 'enter', 'onfoot-enter-exit', 'Entrar o salir')}
+    ${button('onfoot-camera', 'onfoot', 'camera', 'vehicle-camera', 'Cambiar cámara')}
     ${button('vehicle-left', 'vehicle', 'vehicle-left', 'vehicle-left', 'Izquierda', 'car bike boat tank firetruck')}
     ${button('vehicle-right', 'vehicle', 'vehicle-right', 'vehicle-right', 'Derecha', 'car bike boat tank firetruck')}
     ${button('vehicle-brake', 'vehicle', 'brake', 'vehicle-brake', 'Frenar o descender', 'car bike boat heli plane tank firetruck')}
@@ -222,6 +256,7 @@ export function createTouchControls(options) {
   state.radarZone = layer.querySelector('.vc-touch-radar');
   state.weaponZone = layer.querySelector('.vc-touch-weapon');    state.radioZone = layer.querySelector('.vc-touch-radio');
     state.actionButton = layer.querySelector('[data-key="onfoot-action"]');
+    state.aimButton = layer.querySelector('[data-key="onfoot-aim"]');
     state.actionImg = state.actionButton ? state.actionButton.querySelector('img') : null;
     state.layoutNodes = Array.from(layer.querySelectorAll('[data-key]'));
 
@@ -264,62 +299,230 @@ export function createTouchControls(options) {
     fn(...args);
   }
 
-  function tapMenu(point) {
+  // El motor se compila con JSPI (`-sJSPI_EXPORTS=...ViceExt*`): Emscripten
+  // envuelve TODAS las exportaciones `ViceExt*` con `WebAssembly.promising` y
+  // devuelven una promesa. Leerlas con `| 0` daba 0 siempre: la capa táctil se
+  // creía en juego a pie todo el rato (sin botones de vehículo) y no veía ni el
+  // menú ni las cinemáticas. Se pide y se guarda el valor al resolver.
+  const valores = new Map();
+  function leer(name) {
     const module = getModule();
-    if (!module || typeof module._ViceExtTouchMenuTap !== 'function') return;
-    module._ViceExtTouchMenuTap(
-      Math.round(clamp(point.x, 0, 1) * 10000),
-      Math.round(clamp(point.y, 0, 1) * 10000)
-    );
+    if (!module) return undefined;
+    const fn = typeof module[name] === 'function' ? module[name] : module['_' + name];
+    if (typeof fn !== 'function') return undefined;
+    let out;
+    try { out = fn(); } catch (e) { return undefined; }
+    if (out && typeof out.then === 'function') {
+      if (!state.asyncBridge) {
+        state.asyncBridge = true;
+        log('vc-touch: el motor devuelve promesas (JSPI); se leen al resolver');
+      }
+      out.then((v) => valores.set(name, Number(v) | 0)).catch(() => {});
+      return valores.get(name);
+    }
+    return Number(out) | 0;
+  }
+
+  // 79.0: zonas muertas y ventana de toque. Antes bastaba una deriva de 2-5 px
+  // del dedo para mover al personaje o girar la camara, y un toque de mas de
+  // 260 ms no contaba como toque: el dedo lento se sentia como un mini-desliz.
+  const MOVE_SLOP_PX = 14;
+  const LOOK_SLOP_PX = 10;
+  const TAP_MAX_MS = 600;
+  const MENU_ROW_PX = 30;
+  // 79.1: en el menu un toque se estaba tomando por desliz. Con 20 px de
+  // umbral, la deriva normal del dedo al apretar (20-30 px en un movil) marcaba
+  // "desliz" y el toque no activaba nada; y si tardabas mas de 600 ms en soltar
+  // tampoco contaba como toque. Ahora el desliz necesita 34 px de recorrido real
+  // y un toque vale hasta 1,2 s: manda el movimiento, no la prisa.
+  const MENU_SLIDE_PX = 34;
+  const MENU_TAP_MS = 1200;
+  // 79.6: mantener el dedo quieto en el menu solo empieza a repetir tras 0,7 s
+  // (antes repetia a los 0,2 s y cada 0,11 s: parecia que el menu se disparaba
+  // solo). Ademas un desliz mueve UNA fila, no cinco.
+  const MENU_HOLD_DELAY_MS = 700;
+  const MENU_HOLD_MS = 700;
+  // 79.3: cuanto dura la mira fijada al tocar "Apuntar" (autoapuntado).
+  const AIM_HOLD_MS = 5000;
+  const MENU_REPEAT_MS = 260;
+
+  function menuStep(dir) {
+    callModule('ViceExtTouchMenuStep', dir < 0 ? -1 : 1);
+  }
+
+  function menuActivate(via = 'touch') {
+    const now = nowMs();
+    if (now - state.lastTapAt < 400) return;
+    state.lastTapAt = now;
+    const module = getModule();
+    const canPulse = !!(module && typeof module._ViceExtTouchFrame === 'function');
+    if (!canPulse) {
+      callModule('ViceExtTouchMenuActivate');
+      log(`vc-touch: menu toque motor via=${via}`);
+      return;
+    }
+    state.confirmUntil = now + 50;
+    log(`vc-touch: menu toque pulse via=${via} modo=${state.mode}`);
+  }
+
+  function menuChange(dir) {
+    callModule('ViceExtTouchMenuChange', dir < 0 ? -1 : 1);
+    log(`vc-touch: menu cambio=${dir < 0 ? -1 : 1}`);
+  }
+
+  function menuActiveNow() {
+    const module = getModule();
+    const fn = module && typeof module._ViceExtTouchContext === 'function' ? module._ViceExtTouchContext : null;
+    if (fn) {
+      const ctx = leer('ViceExtTouchContext');
+      if (ctx !== undefined) return !!(ctx & 4);
+    }
+    return state.mode === 'menu';
+  }
+
+  // El motor puede contestar ctx=0 siempre (nunca enciende el bit 64 de
+  // "partida cargada"): entonces `playing` era false toda la partida y la capa
+  // tactil se quedaba oculta. Si pasan 4 s con frames y no ha llegado ni un ctx
+  // distinto de 0, se da el juego por empezado y se muestran los botones.
+  function inGameFallback() {
+    if (state.ctxSeen || !window.__vcFirstFrame) return false;
+    if (!state.firstFrameAt) state.firstFrameAt = nowMs();
+    return nowMs() - state.firstFrameAt > 4000;
+  }
+
+  function menuOpen() {
+    if (menuActiveNow()) return true;
+    if (state.playing || inGameFallback()) return false;
+    return state.mode !== 'cutscene';
+  }
+
+  function probeModule(tag, readNow = true) {
+    const module = getModule();
+    const fnOf = (name) => {
+      if (!module) return null;
+      if (typeof module[name] === 'function') return module[name];
+      return typeof module['_' + name] === 'function' ? module['_' + name] : null;
+    };
+    const ctxFn = fnOf('ViceExtTouchContext');
+    let ctx = null;
+    if (ctxFn && readNow) {
+      const raw = leer('ViceExtTouchContext');
+      ctx = raw === undefined ? null : raw;
+    }
+    log(`vc-touch: monta ${tag} motor=${module ? 1 : 0} enabled=${state.enabled ? 1 : 0}`
+      + ` ctx=${!readNow ? 'al-arrancar' : ctx === null ? 'sin-funcion' : ctx} menu=${!readNow || ctx === null || ctx < 0 ? '?' : (ctx & 4 ? 1 : 0)}`
+      + ` activar=${fnOf('ViceExtTouchMenuActivate') ? 1 : 0}`
+      + ` paso=${fnOf('ViceExtTouchMenuStep') ? 1 : 0}`
+      + ` cambio=${fnOf('ViceExtTouchMenuChange') ? 1 : 0}`);
+    return ctx !== null && ctx >= 0;
   }
 
   function onMenuPointerDown(event) {
-    if (!state.enabled || state.mode !== 'menu' || state.menuPointer !== null) return;
-    if (event.button !== 0 || !canvas) return;
-    const target = event.target;
-    if (target !== canvas && !canvas.contains(target)) return;
-    const rect = canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
+    if (!state.enabled) return;
+    if (!menuOpen()) {
+      const now = nowMs();
+      if (now - state.menuIgnoreAt > 1000) {
+        state.menuIgnoreAt = now;
+        log(`vc-touch: puntero sin menu ctx=${state.context} modo=${state.mode} juego=${state.playing ? 1 : 0}`);
+      }
+      return;
+    }
+    if (event.isPrimary === false || (typeof event.button === 'number' && event.button !== 0)) return;
     event.preventDefault();
     event.stopPropagation();
+    const now = nowMs();
+    if (state.menuPointer !== null) {
+      state.menuPointer = null;
+      state.menuGesture = null;
+      log('vc-touch: menu reinicia puntero');
+    }
+    // 81.4: la traza de la sesion 81.3 enseño `menu abajo x=0 y=0` cuatro veces
+    // seguidas, justo antes de `mapa pedido`, y con ese origen el desliz y el
+    // toque se calculan contra (0,0): un toque sin coordenadas acababa pulsando
+    // una fila al azar (abrir el mapa por accidente cuesta una recarga de assets
+    // de varios segundos). Mismo criterio que el stick de 81.2: sin punto valido
+    // no se arranca el gesto.
+    const p = layerPoint(event, true);
+    if (!p) {
+      if (state.badDown < 6) {
+        state.badDown++;
+        log('vc-touch: menu bajada sin coords x=' + event.clientX + ' y=' + event.clientY);
+      }
+      return;
+    }
     state.menuPointer = event.pointerId;
-    state.menuPoint = {
-      x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
-      y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+    state.menuGesture = {
+      startX: p.x,
+      startY: p.y,
+      dx: 0,
+      dy: 0,
+      axis: 0,
+      moved: false,
+      stepped: false,
+      startAt: now,
+      lastMove: now,
+      lastStep: now,
+      rowAccum: 0,
+      lastY: p.y,
+      holdDir: 0,
     };
-    state.menuStart = { x: event.clientX, y: event.clientY };
+    log(`vc-touch: menu abajo x=${Math.round(p.x)} y=${Math.round(p.y)}`);
+  }
+
+  function onMenuPointerMove(event) {
+    const gesture = state.menuGesture;
+    if (!gesture || event.pointerId !== state.menuPointer) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const now = nowMs();
+    const p = layerPoint(event, false);
+    if (!p) return;
+    gesture.dx = p.x - gesture.startX;
+    gesture.dy = p.y - gesture.startY;
+    gesture.lastMove = now;
+    if (!gesture.axis) {
+      if (Math.hypot(gesture.dx, gesture.dy) < MENU_SLIDE_PX) return;
+      gesture.axis = Math.abs(gesture.dy) > Math.abs(gesture.dx) ? 1 : 2;
+      gesture.moved = true;
+      gesture.lastY = p.y;
+      // El recorrido gastado en decidir tambien cuenta para el primer paso: sin
+      // esto, con el umbral nuevo un desliz corto (50-70 px) no movia ninguna
+      // fila y parecia que el menu no respondia.
+      const pasado = Math.abs(gesture.dy) - MENU_SLIDE_PX;
+      gesture.rowAccum = pasado > 0 ? (gesture.dy > 0 ? pasado : -pasado) : 0;
+      log(`vc-touch: menu desliz=${gesture.axis === 1 ? 'vertical' : 'horizontal'}`);
+    }
+    if (gesture.axis !== 1) return;
+    gesture.rowAccum += p.y - gesture.lastY;
+    gesture.lastY = p.y;
+    // 79.6: un desliz mueve UNA fila. Antes cada 30 px de recorrido movia otra
+    // y un desliz normal (150 px) saltaba 5 opciones de golpe: por eso era
+    // imposible parar en la que querias.
+    if (!gesture.stepped && Math.abs(gesture.rowAccum) >= MENU_ROW_PX) {
+      const dir = gesture.rowAccum > 0 ? 1 : -1;
+      gesture.rowAccum = 0;
+      gesture.lastStep = now;
+      gesture.holdDir = dir;
+      gesture.stepped = true;
+      menuStep(dir);
+    }
   }
 
   function onMenuPointerUp(event) {
-    if (event.pointerId !== state.menuPointer) return;
+    const gesture = state.menuGesture;
+    if (!gesture || event.pointerId !== state.menuPointer) return;
     event.preventDefault();
     event.stopPropagation();
-    const point = state.menuPoint;
-    const start = state.menuStart;
+    const now = nowMs();
     state.menuPointer = null;
-    state.menuPoint = null;
-    state.menuStart = null;
-    if (!point) return;
-    // Desliz vertical = scroll siempre. Desliz horizontal y toque = enfocar
-    // y, solo si esa fila YA era la enfocada, cambiar el valor.
-    if (start) {
-      const dx = event.clientX - start.x;
-      const dy = event.clientY - start.y;
-      if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) {
-        menuPulse(dy < 0 ? DPAD_UP : DPAD_DOWN);
-        return;
-      }
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
-        queueMenuChange(point, dx < 0 ? DPAD_LEFT : DPAD_RIGHT);
-        return;
-      }
+    state.menuGesture = null;
+    if (gesture.axis === 2 && Math.abs(gesture.dx) >= MENU_ROW_PX) {
+      menuChange(gesture.dx > 0 ? 1 : -1);
+      return;
     }
-    queueMenuChange(point, DPAD_RIGHT);
-  }
-
-  function menuPulse(bit) {
-    state.menuPulseBit = bit;
-    state.menuPulseUntil = nowMs() + 260;
+    if (gesture.axis === 1) return;
+    if (now - gesture.startAt > MENU_TAP_MS) return;
+    menuActivate('pointer');
   }
 
   function onMenuPointerCancel(event) {
@@ -327,8 +530,19 @@ export function createTouchControls(options) {
     event.preventDefault();
     event.stopPropagation();
     state.menuPointer = null;
-    state.menuPoint = null;
-    state.menuStart = null;
+    state.menuGesture = null;
+  }
+
+  function updateMenuHold(now) {
+    const gesture = state.menuGesture;
+    if (!gesture || gesture.axis !== 1) return;
+    if (now - gesture.lastMove < MENU_HOLD_DELAY_MS) return;
+    if (now - gesture.lastStep < MENU_REPEAT_MS) return;
+    const dir = gesture.holdDir || (gesture.dy > 0 ? 1 : gesture.dy < 0 ? -1 : 0);
+    if (!dir) return;
+    gesture.lastStep = now;
+    gesture.holdDir = dir;
+    menuStep(dir);
   }
 
   function applyLayout() {
@@ -346,15 +560,15 @@ export function createTouchControls(options) {
     // Plan 64.0 T3: en cinematics la capa NO se oculta entera (aunque el bit
     // 64 no este) para que la zona .vc-touch-skip reciba el toque; el CSS
     // oculta botones/zonas/stick con [data-mode="cutscene"].
-    layer.hidden = !state.enabled || !window.__vcFirstFrame || (!state.playing && state.mode !== 'cutscene');
+    const inGame = state.playing || inGameFallback();
+    layer.hidden = !state.enabled || !window.__vcFirstFrame || (!inGame && state.mode !== 'cutscene');
     if (!layer.hidden) state.ready = true;
   }
 
   function setMode(mode) {
     if (state.mode === mode) return;
     state.menuPointer = null;
-    state.menuPoint = null;
-    state.menuStart = null;
+    state.menuGesture = null;
     state.mode = mode;
     layer.dataset.mode = mode;
     log(`vc-touch: mode=${mode}`);
@@ -381,9 +595,9 @@ export function createTouchControls(options) {
     const module = getModule();
     let type = 0;
     if (state.context & 2 && module && typeof module._ViceExtTouchVehicleType === 'function') {
-      type = module._ViceExtTouchVehicleType() | 0;
+      type = leer('ViceExtTouchVehicleType') | 0;
     } else if (module && typeof module._ViceExtTouchNearVehicleType === 'function') {
-      type = module._ViceExtTouchNearVehicleType() | 0;
+      type = leer('ViceExtTouchNearVehicleType') | 0;
     }
     const previousVehicle = state.vehicleName;
     state.vehicleType = type;
@@ -391,14 +605,14 @@ export function createTouchControls(options) {
     layer.dataset.vehicle = state.vehicleName;
     let armed = 0;
     if (state.context & 2 && module && typeof module._ViceExtTouchArmedVehicle === 'function') {
-      armed = module._ViceExtTouchArmedVehicle() | 0;
+      armed = leer('ViceExtTouchArmedVehicle') | 0;
     }
     state.vehicleArmed = armed;
     layer.dataset.vehicleArmed = armed ? '1' : '0';
     if (previousVehicle !== state.vehicleName) applyLayout();
     let mission = 0;
     if (state.context & 2 && module && typeof module._ViceExtTouchMissionVehicle === 'function') {
-      mission = module._ViceExtTouchMissionVehicle() | 0;
+      mission = leer('ViceExtTouchMissionVehicle') | 0;
     }
     state.vehicleMission = mission;
     layer.dataset.mission = mission ? '1' : '0';
@@ -407,8 +621,30 @@ export function createTouchControls(options) {
 
   function readContext() {
     const module = getModule();
-    if (!module || typeof module._ViceExtTouchContext !== 'function') return state.context;
-    const context = module._ViceExtTouchContext() | 0;
+    if (!module) return state.context;
+    if (typeof module._ViceExtTouchContext !== 'function') {
+      if (!state.ctxNoExport) {
+        state.ctxNoExport = true;
+        log('vc-touch: ctx sin export (no hay ViceExtTouchContext en el motor)');
+      }
+      return state.context;
+    }
+    const crudo = leer('ViceExtTouchContext');
+    if (crudo === undefined) return state.context;
+    const context = crudo;
+    if (context !== 0 && !state.ctxSeen) {
+      state.ctxSeen = true;
+      log(`vc-touch: ctx vivo=${context} modo=${state.mode}`);
+    }
+    if (!state.ctxSeen && nowMs() - state.ctxProbeAt > 5000) {
+      state.ctxProbeAt = nowMs();
+      log(`vc-touch: ctx leer=${context} respaldo=${inGameFallback() ? 1 : 0} oculto=${layer.hidden ? 1 : 0}`);
+    }
+    if (!state.motorLogged) {
+      state.motorLogged = true;
+      probeModule('motor');
+    }
+    if (context !== state.context) log(`vc-touch: ctx=${context}`);
     state.context = context;
     state.armed = !!(context & 32);
     state.firearm = !!(context & 32);
@@ -424,6 +660,11 @@ export function createTouchControls(options) {
       state.vehicleTypeAt = nowMs() + 1000;
       readVehicleType();
     }
+    // 81.5: la purga de 79.3 (soltar el pool hasta 100 MB al abrir la pausa)
+    // se quita. Medido en la sesion 81.3: al abrir el mapa el motor tenia que
+    // recargar lo recien desalojado y el juego se congelo 9,5 s (`ODSTALL`,
+    // `dc=0`, `L=3502ms`) y volvio a 1-10 fps. El LRU de `OD.CAP` ya acota la
+    // memoria sin tirar el mundo en cada pausa.
     if (context & 128) setMode('cutscene');
     else if (context & 4) setMode('menu');
     else if (context & 2) setMode('vehicle');
@@ -469,9 +710,25 @@ export function createTouchControls(options) {
         state.lastRun = now;
       }
     }
-    // Apuntar: engancha el objetivo mas cercano (autoapuntado del motor) y
-    // mientras se mantiene pulsado el ped levanta el arma apuntando.
-    if (action === 'aim') callModule('ViceExtTouchAutoAim');
+    // Un toque de disparo tambien engancha el objetivo mas cercano antes de
+    // tirar: asi el tiro va al enemigo aunque la mira este algo desviada. Es
+    // lo que hace el Vice City movil al tocar disparar (autoapuntado).
+    if (action === 'action' && state.firearm) callModule('ViceExtTouchAutoAim');
+    // Plan 79.3: apuntado automatico como en el Vice City movil. Un toque
+    // FIJA la mira en el enemigo mas cercano y la mantiene (el boton se queda
+    // encendido); otro toque la suelta. Antes solo enganchaba mientras el dedo
+    // estaba encima, asi que al levantar el dedo se perdia la mira.
+    if (action === 'aim') {
+      if (now < state.aimUntil) {
+        state.aimUntil = 0;
+        log('vc-touch: apuntado suelto');
+      } else {
+        state.aimUntil = now + AIM_HOLD_MS;
+        state.aimTickAt = 0;
+        callModule('ViceExtTouchAutoAim');
+        log('vc-touch: apuntado fijado ' + Math.round(AIM_HOLD_MS / 1000) + 's');
+      }
+    }
     if (action === 'gas') {
       if (now - state.lastGasTap < 360) {
         state.pitch = 128;
@@ -497,7 +754,7 @@ export function createTouchControls(options) {
     if (action === 'mission') state.missionUntil = now + 450;
     if (action === 'camera') state.selectUntil = now + 450;
     if (action === 'enter' || action === 'exit') state.triangleUntil = now + 450;
-    if (action === 'pause') callModule('ViceExtTouchPause');
+    if (action === 'pause') { log('vc-touch: pausa pedida'); callModule('ViceExtTouchPause'); }
     if (action === 'vehicle-left') state.moveX = -128;
     if (action === 'vehicle-right') state.moveX = 128;
     if (action === 'rotate-left') state.rotate = -1;
@@ -528,48 +785,25 @@ export function createTouchControls(options) {
     }
     if (state.menuPointer !== null && !state.down.has(state.menuPointer)) {
       state.menuPointer = null;
-      state.menuPoint = null;
-      state.menuStart = null;
+      state.menuGesture = null;
     }
   }
 
   function onPointerTrackDown(event) { state.down.add(event.pointerId); }
   function onPointerTrackUp(event) { state.down.delete(event.pointerId); }
 
-  function menuOption() {
-    const module = getModule();
-    if (!module) return -1;
-    const fn = typeof module.ViceExtTouchMenuOption === 'function'
-      ? module.ViceExtTouchMenuOption : module._ViceExtTouchMenuOption;
-    return typeof fn === 'function' ? fn() : -1;
-  }
-
-  // "El recuadro verde" del menú: si la fila tocada NO era la enfocada, el
-  // toque solo enfoca; si ya lo estaba, cambia el valor. El foco lo resuelve
-  // el motor en el frame siguiente, por eso se confirma con retardo corto.
-  function queueMenuChange(point, delta) {
-    state.menuPending = { prev: menuOption(), at: nowMs(), delta };
-    tapMenu(point);
-  }
-
-  function resolveMenuPending(now) {
-    const pending = state.menuPending;
-    if (!pending || now - pending.at < 120) return;
-    state.menuPending = null;
-    const cur = menuOption();
-    if (pending.prev >= 0 && cur === pending.prev) menuPulse(pending.delta);
-  }
-
   function readPadMode() {
     const module = getModule();
     if (!module) return;
     const fn = typeof module.ViceExtTouchPadMode === 'function'
       ? module.ViceExtTouchPadMode : module._ViceExtTouchPadMode;
-    if (typeof fn === 'function') state.padMode = fn() | 0;
+    if (typeof fn === 'function') state.padMode = leer('ViceExtTouchPadMode') | 0;
   }
 
   function buildButtons(now) {
     let buttons = 0;
+    const classic = state.padMode === 1 || state.padMode === 3;
+    if (now < state.confirmUntil) buttons |= CROSS;
     if (state.press.has('onfoot-run')) buttons |= CROSS;
     if (now < state.jumpUntil) buttons |= SQUARE;
     if (now < state.crouchUntil) buttons |= LEFT_SHOCK;
@@ -577,13 +811,12 @@ export function createTouchControls(options) {
     // objetivo a pie segun el modo (clasico L2, alternativo R1). Antes se
     // mandaba L1+R1, que en modo clasico es mirar a los lados: no apuntaba.
     if (state.press.has('onfoot-action')) buttons |= CIRCLE;
-    if (state.press.has('onfoot-aim') && state.firearm) buttons |= classic ? LEFT2 : RIGHT1;
+    if ((state.press.has('onfoot-aim') || now < state.aimUntil) && state.firearm) buttons |= classic ? LEFT2 : RIGHT1;
     // El motor elige los bits por modo de control (CURMODE). En móvil el
     // modo clásico (1/3) usa gas R2, freno L2 y freno de mano Cross; en el
     // otro (0/2) gas Cross, freno Square y freno de mano R1. Con los bits
     // cruzados, "derrapar" movía la cámara: R1 es mirar a la derecha en el
     // modo clásico.
-    const classic = state.padMode === 1 || state.padMode === 3;
     if (state.press.has('vehicle-gas') || now < state.gasUntil) buttons |= classic ? RIGHT2 : CROSS;
     if (state.press.has('vehicle-brake') || now < state.brakeUntil) buttons |= classic ? LEFT2 : SQUARE;
     if (state.press.has('vehicle-handbrake')) buttons |= classic ? CROSS : RIGHT1;
@@ -593,13 +826,6 @@ export function createTouchControls(options) {
     if (state.press.has('vehicle-fire-mg')) buttons |= RIGHT1;
     if (now < state.selectUntil) buttons |= SELECT;
     if (now < state.triangleUntil) buttons |= TRIANGLE;
-    // Puntos 5 y 6, solo gesto sobre el juego (nada de botones nuevos):
-    // deslizar mueve el scroll/cambia de fila y tocar el valor pulsa RIGHT.
-    // Los bits DPad ya llegan fusionados por TouchFrame.
-    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_UP) buttons |= DPAD_UP;
-    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_DOWN) buttons |= DPAD_DOWN;
-    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_LEFT) buttons |= DPAD_LEFT;
-    if (now < state.menuPulseUntil && state.menuPulseBit === DPAD_RIGHT) buttons |= DPAD_RIGHT;
     return buttons;
   }
 
@@ -632,18 +858,48 @@ export function createTouchControls(options) {
       log(`vc-touch: perf camFrame avg=${(state.perf.sum / state.perf.n).toFixed(2)}ms max=${state.perf.max.toFixed(2)}ms fpsEma=${state.perf.fpsEma.toFixed(1)}`);
       state.perf.n = 0; state.perf.sum = 0; state.perf.max = 0;
     }
-    state.lookX *= 0.55;
-    state.lookY *= 0.55;
-    if (Math.abs(state.lookX) < 0.5) state.lookX = 0;
-    if (Math.abs(state.lookY) < 0.5) state.lookY = 0;
+    if (now >= state.lookUntil) {
+      const k = Math.pow(0.55, Math.max(1, state.frameDt) / 16.7);
+      state.lookX *= k;
+      state.lookY *= k;
+      if (Math.abs(state.lookX) < 0.5) state.lookX = 0;
+      if (Math.abs(state.lookY) < 0.5) state.lookY = 0;
+    }
   }
 
   function frame() {
     if (!state.enabled) return;
+    try {
+      frameStep();
+    } catch (e) {
+      if (!state.frameError) {
+        state.frameError = true;
+        log('vc-touch: fallo en el bucle ' + ((e && e.message) || e));
+      }
+    }
+    state.frameId = requestAnimationFrame(frame);
+  }
+
+  // Un pointerup que se pierde (pausa, mapa, cambio de pantalla completa,
+  // volver de segundo plano) dejaba el boton dentro de `state.press` para
+  // siempre: el motor seguia viendo ese boton pulsado y el resto del HUD
+  // parecia muerto. Sin ningun puntero vivo se suelta todo.
+  function healStuckButtons(now) {
+    if (!state.press.size || state.down.size) return;
+    state.press.clear();
+    for (const element of layer.querySelectorAll('.vc-touch-btn.is-active')) element.classList.remove('is-active');
+    if (now - state.lastSweepLog > 2000) {
+      state.lastSweepLog = now;
+      log('vc-touch: botones sueltos sin puntero');
+    }
+  }
+
+  function frameStep() {
     rememberBridge();
     const now = nowMs();
     if (state.perf.lastFrame) {
-      const fps = 1000 / Math.max(1, now - state.perf.lastFrame);
+      state.frameDt = Math.max(1, now - state.perf.lastFrame);
+      const fps = 1000 / state.frameDt;
       state.perf.fpsEma = state.perf.fpsEma ? state.perf.fpsEma * 0.95 + fps * 0.05 : fps;
     }
     state.perf.lastFrame = now;
@@ -652,11 +908,19 @@ export function createTouchControls(options) {
       readContext();
       readPadMode();
     }
+    // Mientras la mira esta fijada se reengancha el objetivo cada 400 ms: si
+    // el enemigo se mueve, muere o aparece otro mas cerca, la mira salta a el
+    // en vez de quedarse apuntando al aire.
+    if (now < state.aimUntil && now >= state.aimTickAt) {
+      state.aimTickAt = now + 400;
+      callModule('ViceExtTouchAutoAim');
+    }
+    if (state.aimButton) state.aimButton.classList.toggle('is-active', now < state.aimUntil);
     sanitizePointers();
-    resolveMenuPending(now);
+    healStuckButtons(now);
+    updateMenuHold(now);
     syncVisibility();
     sendFrame(now);
-    state.frameId = requestAnimationFrame(frame);
   }
 
   function startLoop() {
@@ -677,6 +941,7 @@ export function createTouchControls(options) {
     state.moveY = 0;
     state.lookX = 0;
     state.lookY = 0;
+    state.lookUntil = 0;
     state.rotate = 0;
     state.pitch = 0;
     state.pitchUntil = 0;
@@ -684,7 +949,30 @@ export function createTouchControls(options) {
     state.gasUntil = 0;
     state.brakeUntil = 0;
     state.stick.hidden = true;
+    state.confirmUntil = 0;
     for (const element of layer.querySelectorAll('.vc-touch-btn.is-active')) element.classList.remove('is-active');
+  }
+
+  // 81.2: el stick se coloca con el punto del dedo relativo a la capa. Si el
+  // evento llega sin coordenadas utiles (el primer toque tras pedir pantalla
+  // completa puede venir con clientX/Y a 0), antes quedaba clavado en (0,0),
+  // en la esquina, y el personaje corria hacia arriba-izquierda porque el
+  // origen del arrastre tambien era (0,0). Ahora sin punto valido no se pinta
+  // el stick y el primer pointermove re-ancla el origen bajo el dedo.
+  function layerPoint(event, strict) {
+    const rect = layer.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (!isFinite(x) || !isFinite(y)) return null;
+    if (strict && ((x === 0 && y === 0) || x < 0 || y < 0 || x > rect.width || y > rect.height)) return null;
+    return { x, y };
+  }
+
+  function placeStick(p) {
+    state.stick.style.left = p.x + 'px';
+    state.stick.style.top = p.y + 'px';
+    state.stick.hidden = false;
   }
 
   function onMoveDown(event) {
@@ -692,28 +980,52 @@ export function createTouchControls(options) {
     if ((state.mode !== 'onfoot' && !flight) || state.moveId !== null) return;
     event.preventDefault();
     state.moveId = event.pointerId;
-    state.moveZone.setPointerCapture(event.pointerId);
-    const rect = layer.getBoundingClientRect();
-    state.dragStart = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    grab(state.moveZone, event.pointerId);
+    const p = layerPoint(event, true);
+    state.dragStart = p;
     state.tapStart = nowMs();
     state.tapMoved = false;
-    state.stick.style.left = state.dragStart.x + 'px';
-    state.stick.style.top = state.dragStart.y + 'px';
-    state.stick.hidden = false;
     state.moveX = 0;
     state.moveY = 0;
+    if (p) placeStick(p);
+    else {
+      state.stick.hidden = true;
+      if (state.badDown < 6) {
+        state.badDown++;
+        log('vc-touch: bajada sin coords x=' + event.clientX + ' y=' + event.clientY);
+      }
+    }
   }
 
   function onMoveMove(event) {
-    if (event.pointerId !== state.moveId || !state.dragStart) return;
+    if (event.pointerId !== state.moveId) return;
     event.preventDefault();
-    const rect = layer.getBoundingClientRect();
-    const dx = event.clientX - rect.left - state.dragStart.x;
-    const dy = event.clientY - rect.top - state.dragStart.y;
-    if (Math.hypot(dx, dy) > 12) state.tapMoved = true;
-    const radius = 54;
+    const p = layerPoint(event, false);
+    if (!p) return;
+    if (!state.dragStart) {
+      state.dragStart = p;
+      state.tapMoved = true;
+      placeStick(p);
+      state.moveX = 0;
+      state.moveY = 0;
+      return;
+    }
+    let dx = p.x - state.dragStart.x;
+    let dy = p.y - state.dragStart.y;
     const distance = Math.hypot(dx, dy);
-    const scale = distance > radius ? radius / distance : 1;
+    // Zona muerta del stick: hasta MOVE_SLOP_PX el dedo no mueve al personaje.
+    if (distance > MOVE_SLOP_PX) {
+      state.tapMoved = true;
+      const k = (distance - MOVE_SLOP_PX) / distance;
+      dx *= k;
+      dy *= k;
+    } else {
+      dx = 0;
+      dy = 0;
+    }
+    const radius = 54;
+    const travel = Math.hypot(dx, dy);
+    const scale = travel > radius ? radius / travel : 1;
     state.moveX = clamp((dx * scale / radius) * 128, -128, 128);
     state.moveY = clamp((dy * scale / radius) * 128, -128, 128);
     state.stick.querySelector('i').style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
@@ -722,7 +1034,7 @@ export function createTouchControls(options) {
   function onMoveUp(event) {
     if (event.pointerId !== state.moveId) return;
     const now = nowMs();
-    if (!state.tapMoved && now - state.tapStart < 260) {
+    if (!state.tapMoved && now - state.tapStart < TAP_MAX_MS) {
       if (now - state.lastLeftTap < 360) {
         crouchPulse();
         state.lastLeftTap = 0;
@@ -741,9 +1053,11 @@ export function createTouchControls(options) {
     if (state.mode === 'menu' || state.mode === 'cutscene' || state.lookId !== null) return;
     event.preventDefault();
     state.lookId = event.pointerId;
-    state.lookZone.setPointerCapture(event.pointerId);
+    grab(state.lookZone, event.pointerId);
     state.lookStart = { x: event.clientX, y: event.clientY, time: nowMs() };
     state.lookMoved = false;
+    state.lookTravel = 0;
+    state.lookEngaged = false;
   }
 
   function onLookMove(event) {
@@ -751,11 +1065,19 @@ export function createTouchControls(options) {
     event.preventDefault();
     const dx = event.clientX - state.lookStart.x;
     const dy = event.clientY - state.lookStart.y;
-    if (Math.abs(dx) + Math.abs(dy) > 5) state.lookMoved = true;
     state.lookStart.x = event.clientX;
     state.lookStart.y = event.clientY;
+    // Zona muerta de la camara: la deriva del dedo no gira nada hasta que el
+    // recorrido pasa de LOOK_SLOP_PX.
+    state.lookTravel = (state.lookTravel || 0) + Math.abs(dx) + Math.abs(dy);
+    if (!state.lookEngaged) {
+      if (state.lookTravel < LOOK_SLOP_PX) return;
+      state.lookEngaged = true;
+      state.lookMoved = true;
+    }
     state.lookX = clamp(state.lookX + dx * sensitivity, -128, 128);
     state.lookY = clamp(state.lookY + dy * sensitivity, -128, 128);
+    state.lookUntil = nowMs() + 60;
   }
 
   function onLookUp(event) {
@@ -763,6 +1085,8 @@ export function createTouchControls(options) {
     state.lookId = null;
     state.lookStart = null;
     state.lookMoved = false;
+    state.lookTravel = 0;
+    state.lookEngaged = false;
   }
 
   function onSkipDown(event) {
@@ -777,16 +1101,17 @@ export function createTouchControls(options) {
     let startX = 0;
     let startY = 0;
     zone.addEventListener('pointerdown', (event) => {
+      pointerId = null;
       if (state.mode === 'menu' || state.mode === 'cutscene') return;
       event.preventDefault();
       event.stopPropagation();
       pointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
-      zone.setPointerCapture(pointerId);
+      grab(zone, pointerId);
     });
     zone.addEventListener('pointerup', (event) => {
-      if (event.pointerId !== pointerId) return;
+      if (pointerId === null || event.pointerId !== pointerId) return;
       event.preventDefault();
       event.stopPropagation();
       const dx = event.clientX - startX;
@@ -803,22 +1128,23 @@ export function createTouchControls(options) {
     let startX = 0;
     let startY = 0;
     state.radarZone.addEventListener('pointerdown', (event) => {
+      pointerId = null;
       if (state.mode === 'menu' || state.mode === 'cutscene') return;
       event.preventDefault();
       event.stopPropagation();
       pointerId = event.pointerId;
       startX = event.clientX;
       startY = event.clientY;
-      state.radarZone.setPointerCapture(pointerId);
+      grab(state.radarZone, pointerId);
     });
     state.radarZone.addEventListener('pointerup', (event) => {
-      if (event.pointerId !== pointerId) return;
+      if (pointerId === null || event.pointerId !== pointerId) return;
       event.preventDefault();
       event.stopPropagation();
       const dx = event.clientX - startX;
       const dy = event.clientY - startY;
       pointerId = null;
-      if (Math.hypot(dx, dy) < 18) callModule('ViceExtTouchOpenMap');
+      if (Math.hypot(dx, dy) < 18) { log('vc-touch: mapa pedido'); callModule('ViceExtTouchOpenMap'); }
     });
     state.radarZone.addEventListener('pointercancel', () => { pointerId = null; });
   }
@@ -830,8 +1156,16 @@ export function createTouchControls(options) {
     if (!key || !action) return;
     event.preventDefault();
     event.stopPropagation();
-    target.setPointerCapture(event.pointerId);
+    // 79.0: una linea por pulsacion (como mucho 2/s) para separar "el toque no
+    // llega" de "el motor lo ignora" en el proximo log del movil.
+    const nowPress = nowMs();
+    if (nowPress - state.lastBtnLog > 500) {
+      state.lastBtnLog = nowPress;
+      log('vc-touch: boton ' + key + ' modo=' + state.mode + ' oculto=' + (layer.hidden ? 1 : 0) +
+        ' ctx=' + state.context);
+    }
     state.press.add(key);
+    grab(target, event.pointerId);
     target.classList.add('is-active');
     actionDown(key, action);
   }
@@ -899,6 +1233,54 @@ export function createTouchControls(options) {
     if (!layer.hidden) event.preventDefault();   // zoom con pellizco (iOS Safari)
   }
 
+  function onCanvasTouch(event) {
+    if (!state.enabled) {
+      if (!state.enabledLogged) {
+        state.enabledLogged = true;
+        log('vc-touch: toque sin capa enabled=0');
+      }
+      return false;
+    }
+    const target = event.target;
+    if (!target || !root.contains(target)) return false;
+    if (target.closest && target.closest('button, a, input')) return false;
+    event.preventDefault();
+    return true;
+  }
+
+  function onCanvasTouchStart(event) {
+    if (!onCanvasTouch(event)) return;
+    if (!event.touches || event.touches.length !== 1) return;
+    if (!menuOpen()) return;
+    const t = event.changedTouches && event.changedTouches[0];
+    if (!t) return;
+    state.menuTouch = { id: t.identifier, x: t.clientX, y: t.clientY, at: nowMs(), moved: false };
+  }
+
+  function onCanvasTouchMove(event) {
+    const gesture = state.menuTouch;
+    if (gesture && event.changedTouches) {
+      const t = event.changedTouches[0];
+      if (t && t.identifier === gesture.id && Math.hypot(t.clientX - gesture.x, t.clientY - gesture.y) > MENU_SLIDE_PX) gesture.moved = true;
+    }
+    onCanvasTouch(event);
+  }
+
+  function onCanvasTouchEnd(event) {
+    const gesture = state.menuTouch;
+    state.menuTouch = null;
+    if (!onCanvasTouch(event)) return;
+    if (!gesture || gesture.moved) return;
+    const t = event.changedTouches && event.changedTouches[0];
+    if (t && t.identifier !== gesture.id) return;
+    if (nowMs() - gesture.at > MENU_TAP_MS) return;
+    if (!menuOpen()) {
+      log(`vc-touch: tap sin menu ctx=${state.context} modo=${state.mode} juego=${state.playing ? 1 : 0}`);
+      return;
+    }
+    menuActivate('touch');
+  }
+
   async function requestWakeLock() {
     try {
       if (wakeLockSentinel) return;
@@ -920,9 +1302,31 @@ export function createTouchControls(options) {
     releaseAll();
   }
 
+  function bindWindow() {
+    if (state.bound) return;
+    state.bound = true;
+    window.addEventListener('pointerdown', onAnyGesture, { capture: true });
+    window.addEventListener('pointerdown', onPointerTrackDown, { capture: true });
+    window.addEventListener('pointerup', onPointerTrackUp, { capture: true });
+    window.addEventListener('pointercancel', onPointerTrackUp, { capture: true });
+    window.addEventListener('gesturestart', onGestureStart, { passive: false });
+    window.addEventListener('touchstart', onCanvasTouchStart, { capture: true, passive: false });
+    window.addEventListener('touchmove', onCanvasTouchMove, { capture: true, passive: false });
+    window.addEventListener('touchend', onCanvasTouchEnd, { capture: true, passive: false });
+    window.addEventListener('touchcancel', onCanvasTouchEnd, { capture: true, passive: false });
+    window.addEventListener('pointerdown', onMenuPointerDown, true);
+    window.addEventListener('pointermove', onMenuPointerMove, true);
+    window.addEventListener('pointerup', onMenuPointerUp, true);
+    window.addEventListener('pointercancel', onMenuPointerCancel, true);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', onBlur);
+    log('vc-touch: oyentes listos');
+  }
+
   function mount() {
     if (state.mounted) return;
     state.mounted = true;
+    state.motorLogged = probeModule('capa', false);
     root.appendChild(rotateEl);
     root.appendChild(layer);
     applyLayout();
@@ -939,11 +1343,7 @@ export function createTouchControls(options) {
     bindHudSwipe(state.radioZone, 'ViceExtTouchRadio');
     bindMapTap();
     layer.addEventListener('contextmenu', onContextMenu);
-    window.addEventListener('pointerdown', onAnyGesture, { capture: true });
-    window.addEventListener('pointerdown', onPointerTrackDown, { capture: true });
-    window.addEventListener('pointerup', onPointerTrackUp, { capture: true });
-    window.addEventListener('pointercancel', onPointerTrackUp, { capture: true });
-    window.addEventListener('gesturestart', onGestureStart, { passive: false });
+    bindWindow();
     requestWakeLock();
     for (const element of layer.querySelectorAll('.vc-touch-btn')) {
       element.addEventListener('pointerdown', onButtonDown);
@@ -951,11 +1351,6 @@ export function createTouchControls(options) {
       element.addEventListener('pointercancel', onButtonUp);
       element.addEventListener('lostpointercapture', onButtonUp);
     }
-    window.addEventListener('pointerdown', onMenuPointerDown, true);
-    window.addEventListener('pointerup', onMenuPointerUp, true);
-    window.addEventListener('pointercancel', onMenuPointerCancel, true);
-    document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('blur', onBlur);
     syncVisibility();
     if (state.enabled) startLoop();
   }
@@ -970,7 +1365,8 @@ export function createTouchControls(options) {
     root.dataset.touch = next ? '1' : '0';
     if (!next) {
       state.menuPointer = null;
-      state.menuPoint = null;
+      state.menuGesture = null;
+      state.menuTouch = null;
       releaseAll();
       stopLoop();
     } else {
@@ -990,6 +1386,7 @@ export function createTouchControls(options) {
     setEnabled(false);
     window.removeEventListener('pointerdown', onAnyGesture, { capture: true });
     window.removeEventListener('pointerdown', onMenuPointerDown, true);
+    window.removeEventListener('pointermove', onMenuPointerMove, true);
     window.removeEventListener('pointerup', onMenuPointerUp, true);
     window.removeEventListener('pointercancel', onMenuPointerCancel, true);
     document.removeEventListener('visibilitychange', onVisibility);
@@ -1000,6 +1397,7 @@ export function createTouchControls(options) {
   }
 
   if (state.enabled) root.dataset.touch = '1';
+  bindWindow();
   state.layer.dataset.mode = state.mode;
   state.layer.dataset.vehicle = state.vehicleName;
   state.layer.dataset.mission = '0';

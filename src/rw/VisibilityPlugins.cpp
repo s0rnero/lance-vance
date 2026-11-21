@@ -32,6 +32,14 @@ namespace rw { namespace gl3 { void SetOdTraceTag(const char *tag); } }
 #define OD_TAG(atomic)
 #endif
 
+// 82.1 · Censo del pase de entidades con alpha (CRenderer::RenderFadingInEntities).
+// Solo enteros: cuenta lo que ENTRA en las listas y como se dibuja. El coste en
+// ms ya lo da RGPASS; esto dice si el pase es caro por volumen o por blending.
+int gOdAlphaAdd;    // entidades metidas en alguna lista este frame
+int gOdAlphaNil;    // descartadas por no tener RwObject
+int gOdAlphaFade;   // dibujadas por el camino de fundido por distancia
+int gOdAlphaDraw;   // dibujadas enteras por RenderOneNonRoad
+
 CLinkList<CVisibilityPlugins::AlphaObjectInfo> CVisibilityPlugins::m_alphaList;
 CLinkList<CVisibilityPlugins::AlphaObjectInfo> CVisibilityPlugins::m_alphaBoatAtomicList;
 CLinkList<CVisibilityPlugins::AlphaObjectInfo> CVisibilityPlugins::m_alphaEntityList;
@@ -106,6 +114,10 @@ CVisibilityPlugins::InitAlphaEntityList(void)
 	m_alphaEntityList.Clear();
 	m_alphaBoatAtomicList.Clear();
 	m_alphaUnderwaterEntityList.Clear();
+	gOdAlphaAdd = 0;
+	gOdAlphaNil = 0;
+	gOdAlphaFade = 0;
+	gOdAlphaDraw = 0;
 #ifdef NEW_RENDERER
 	m_alphaBuildingList.Clear();
 #endif
@@ -125,9 +137,15 @@ CVisibilityPlugins::InsertEntityIntoSortedList(CEntity *e, float dist)
 	if(gbNewRenderer && e->IsBuilding())
 		return !!m_alphaBuildingList.InsertSorted(item);
 #endif
-	if(e->bUnderwater && m_alphaUnderwaterEntityList.InsertSorted(item))
+	if(e->bUnderwater && m_alphaUnderwaterEntityList.InsertSorted(item)){
+		gOdAlphaAdd++;
 		return true;
-	return !!m_alphaEntityList.InsertSorted(item);
+	}
+	if(m_alphaEntityList.InsertSorted(item)){
+		gOdAlphaAdd++;
+		return true;
+	}
+	return false;
 }
 
 void
@@ -335,8 +353,10 @@ CVisibilityPlugins::RenderFadingEntities(CLinkList<AlphaObjectInfo> &list)
 	CSimpleModelInfo *mi;
 	for(node = list.tail.prev; node != &list.head; node = node->prev){
 		CEntity *e = node->item.entity;
-		if(e->m_rwObject == nil)
+		if(e->m_rwObject == nil){
+			gOdAlphaNil++;
 			continue;
+		}
 #ifdef EXTENDED_PIPELINES
 		if(CustomPipes::bRenderingEnvMap && !e->IsBuilding())
 			continue;
@@ -359,8 +379,11 @@ CVisibilityPlugins::RenderFadingEntities(CLinkList<AlphaObjectInfo> &list)
 			}
 			POP_RENDERGROUP();
 			e->bImBeingRendered = false;
-		}else
+			gOdAlphaFade++;
+		}else{
+			gOdAlphaDraw++;
 			CRenderer::RenderOneNonRoad(e);
+		}
 
 		if(mi->GetModelType() == MITYPE_SIMPLE && mi->m_noZwrite)
 			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)TRUE);
@@ -473,6 +496,10 @@ CVisibilityPlugins::RenderFadingAtomic(RpAtomic *atomic, float camdist)
 		fadefactor = 1.0f;
 	alpha = mi->m_alpha * fadefactor;
 	OD_TAG(atomic);
+	// 81.5: alfa 0 es invisible. Los LOD atascados de la traza llegan aqui con
+	// alpha=0 y se dibujaban igual: mismo coste que uno opaco para nada.
+	if(alpha == 0)
+		return atomic;
 	if(alpha == 255)
 		RENDERCALLBACK(atomic);
 	else{
@@ -610,6 +637,63 @@ OdTraceDoorCull(RpAtomic *atomic, float dot, uint32 flags)
 }
 #endif
 
+#ifdef __EMSCRIPTEN__
+static void
+OdTraceVehicleLod(RpAtomic *atomic, int lod)
+{
+	RpClump *clump = RpAtomicGetClump(atomic);
+	static RpClump *odClumps[16];
+	static int odLods[16];
+	static int odN;
+	int i;
+	if(clump == nil)
+		return;
+	for(i = 0; i < odN; i++)
+		if(odClumps[i] == clump)
+			break;
+	if(i == odN && odN < 16){
+		odClumps[odN] = clump;
+		odLods[odN] = -1;
+		odN++;
+	}
+	if(i < 16 && odLods[i] != lod){
+		RpGeometry *g = RpAtomicGetGeometry(atomic);
+		RpMaterial *m = g ? RpGeometryGetMaterial(g, 0) : nil;
+		RwTexture *tex = m ? RpMaterialGetTexture(m) : nil;
+		const char *nm = GetFrameNodeName(RpAtomicGetFrame(atomic));
+		char t[200];
+		odLods[i] = lod;
+		snprintf(t, sizeof t, "VEHLOD tex=%s atom=%s lod=%d dist=%.1f thr=%.1f",
+			tex ? RwTextureGetName(tex) : "-", nm ? nm : "?", lod,
+			Sqrt(DistToCameraSq), Sqrt(CVisibilityPlugins::ms_vehicleLod0Dist));
+		ODTRACES(t);
+	}
+}
+#endif
+
+#ifdef __EMSCRIPTEN__
+static bool
+OdAtomicBelowPixel(RpAtomic *atomic)
+{
+	RwSphere *bs;
+	RwMatrix *m;
+	float sx, sy, sz, radius, dist;
+
+	bs = RpAtomicGetBoundingSphere(atomic);
+	if(bs == nil || bs->radius <= 0.0f)
+		return false;
+	m = RwFrameGetLTM(RpAtomicGetFrame(atomic));
+	if(m == nil)
+		return false;
+	sx = RwV3dLength(&m->right);
+	sy = RwV3dLength(&m->up);
+	sz = RwV3dLength(&m->at);
+	radius = bs->radius * (sx > sy ? (sx > sz ? sx : sz) : (sy > sz ? sy : sz));
+	dist = Sqrt(DistToCameraSq);
+	return radius * SCREEN_HEIGHT * 0.71f < dist * 1.5f;
+}
+#endif
+
 RpAtomic*
 CVisibilityPlugins::RenderVehicleHiDetailCB(RpAtomic *atomic)
 {
@@ -624,6 +708,10 @@ CVisibilityPlugins::RenderVehicleHiDetailCB(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_vehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+#ifdef __EMSCRIPTEN__
+		if(OdAtomicBelowPixel(atomic))
+			return atomic;
+#endif
 		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
 			RwFrameGetLTM(clumpframe), flags);
 #ifdef __EMSCRIPTEN__
@@ -635,6 +723,9 @@ CVisibilityPlugins::RenderVehicleHiDetailCB(RpAtomic *atomic)
 		}
 		OD_TAG(atomic);
 		RENDERCALLBACK(atomic);
+#ifdef __EMSCRIPTEN__
+		OdTraceVehicleLod(atomic, 0);
+#endif
 	}
 	return atomic;
 }
@@ -649,6 +740,10 @@ CVisibilityPlugins::RenderVehicleHiDetailAlphaCB(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_vehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+#ifdef __EMSCRIPTEN__
+		if(OdAtomicBelowPixel(atomic))
+			return atomic;
+#endif
 #ifdef __EMSCRIPTEN__
 		{
 			static RpAtomic *odCristalVisto[16];
@@ -703,6 +798,10 @@ CVisibilityPlugins::RenderVehicleHiDetailCB_BigVehicle(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_bigVehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+#ifdef __EMSCRIPTEN__
+		if(OdAtomicBelowPixel(atomic))
+			return atomic;
+#endif
 		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
 			RwFrameGetLTM(clumpframe), flags);
 		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f){
@@ -725,6 +824,10 @@ CVisibilityPlugins::RenderVehicleHiDetailAlphaCB_BigVehicle(RpAtomic *atomic)
 	clumpframe = RpClumpGetFrame(RpAtomicGetClump(atomic));
 	if(DistToCameraSq < ms_bigVehicleLod0Dist){
 		flags = GetAtomicId(atomic);
+#ifdef __EMSCRIPTEN__
+		if(OdAtomicBelowPixel(atomic))
+			return atomic;
+#endif
 		dot = GetDotProductWithCameraVector(RwFrameGetLTM(RpAtomicGetFrame(atomic)),
 			RwFrameGetLTM(clumpframe), flags);
 		if(DistToCameraSq > ms_cullCompsDist && (flags & ATOMIC_FLAG_NOCULL) == 0 && PitchToCamera < 0.2f)
@@ -833,6 +936,9 @@ CVisibilityPlugins::RenderVehicleReallyLowDetailCB(RpAtomic *atomic)
 			RENDERCALLBACK(atomic);
 		else
 			RenderAlphaAtomic(atomic, alpha);
+#ifdef __EMSCRIPTEN__
+		OdTraceVehicleLod(atomic, 2);
+#endif
 	}
 	return atomic;
 

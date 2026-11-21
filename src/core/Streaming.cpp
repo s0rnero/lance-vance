@@ -9,6 +9,8 @@
 #include "Text.h"
 #include "Clock.h"
 #include "Renderer.h"
+#include "Draw.h"
+#include "Frontend.h"
 #include "ModelInfo.h"
 #include "TxdStore.h"
 #include "ModelIndices.h"
@@ -411,11 +413,16 @@ CStreaming::Update(void)
 		extern int gOdTxdLive;
 		extern long long gOdTxdLiveBytes;
 		static uint32 odTexRel = 0;
-		if(gOdTexBytes > 512LL*1024*1024){
+		// 81.7: el contexto WebGL del móvil muere al pasar de ~200 MB de texturas
+		// (medido: WEBGL_LOST a 212 MB en 81.6 y a 237 MB en 81.5). Se desaloja
+		// por VRAM real, no por heap: los DXT van directos a GL y el presupuesto
+		// de streaming (251 MB de heap) no los ve. Por eso `ODTEXEV` salía a 0.
+		uint32 odTexNow = (uint32)emscripten_get_now();
+		if(gOdTexBytes > 176LL*1024*1024){
 			long long odTexB0 = gOdTexBytes;
 			int odEvict = 0, odFail = 0;
-			uint32 odEvT0 = (uint32)emscripten_get_now();
-			for(int i = 0; i < 4; i++){
+			uint32 odEvT0 = odTexNow;
+			for(int i = 0; i < 8; i++){
 				if((uint32)emscripten_get_now() - odEvT0 >= 3)
 					break;
 				if(!RemoveLeastUsedModel(STREAMFLAGS_20)){
@@ -425,6 +432,10 @@ CStreaming::Update(void)
 				odEvict++;
 			}
 			odTexRel++;
+			// 81.9b: el cooldown de 2,5 s que puse en 81.9 dejaba subir texb a 230 MB
+			// y volvio a matar el contexto (WEBGL_LOST). Sin el, este bloque mantiene
+			// 175-177 MB (medido en 81.8). `freed=0` en el acto no significa que no
+			// sirva: la textura se destruye mas tarde, al procesar la lista.
 			if(odTexRel <= 60 || (odTexRel % 200) == 0){
 				long long odFreed = odTexB0 - gOdTexBytes;
 				if(odFreed < 0)
@@ -3166,7 +3177,21 @@ CStreaming::UpdateMemoryUsed(void)
 #endif
 }
 
-#define STREAM_DIST 80.0f
+static inline float
+OdStreamDist(void)
+{
+	float d = CDraw::GetFarClipZ() * 0.08f;
+	if(d > 80.0f) d = 80.0f;
+#ifdef NO_ISLAND_LOADING
+	float cap = 80.0f;
+	if(FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_LOW) cap = 48.0f;
+	else if(FrontEndMenuManager.m_PrefsIslandLoading == CMenuManager::ISLAND_LOADING_MEDIUM) cap = 64.0f;
+	if(d > cap) d = cap;
+#endif
+	if(d < 32.0f) d = 32.0f;
+	return d;
+}
+#define STREAM_DIST OdStreamDist()
 
 void
 CStreaming::AddModelsToRequestList(const CVector &pos, int32 flags)

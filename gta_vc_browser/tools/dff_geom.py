@@ -208,6 +208,44 @@ def parse(buf):
     return frames, geoms, atomics
 
 
+def split_triangles(buf, geom, keep):
+    """STRUCT nuevo con solo los triangulos `keep` (indices de parse_geometry).
+
+    Conserva vertices, prelit, UVs y el bloque morph (esfera + normales) byte a
+    byte: solo cambia el contador de triangulos y el array. Los vertices que
+    quedan sin usar son legales en RenderWare.
+    """
+    st = first(buf, geom, 0x01)
+    if st is None:
+        raise SystemExit('geometria sin STRUCT')
+    flags, ntris, nverts, nmorph = struct.unpack_from('<Iiii', buf, st.start)
+    ntex = (flags >> 16) & 0xFFFF
+
+    def tamano(extra):
+        t = 16 + extra
+        if flags & PRELIT:
+            t += 4 * nverts
+        t += 8 * ntex * nverts
+        t += 8 * ntris
+        t += 16 + 8 + 12 * nverts * 2 * max(1, nmorph)
+        return t
+
+    real = st.end - st.start
+    extra = 0 if tamano(0) == real else 12
+    tri_off = st.start + 16 + extra
+    if flags & PRELIT:
+        tri_off += 4 * nverts
+    tri_off += 8 * ntex * nverts
+    tri_end = tri_off + 8 * ntris
+    head = bytes(buf[st.start:tri_off])
+    morph = bytes(buf[tri_end:st.end])
+    packed = b''.join(struct.pack('<II', (t[0] << 16) | t[1], (t[2] << 16) | t[3])
+                      for t in keep)
+    body = bytearray(head + packed + morph)
+    struct.pack_into('<i', body, 4, len(keep))
+    return st.ver, bytes(body)
+
+
 def frame_matrix(f):
     """Matriz 3x3 (filas) y posicion del marco, tal y como esta en el DFF."""
     r = f['rot']

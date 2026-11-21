@@ -25,14 +25,14 @@ export interface StartGameOptions {
   buildUrl?: string;
   /** Datos sueltos on-demand. Por defecto '/streamed/'. */
   streamedUrl?: string;
+  /** Paquetes .vcp de la descarga inicial. Por defecto '/packs/'. */
+  packsUrl?: string;
   /** Índice JSON de streamed/. Por defecto '/manifest.json'. */
   manifestUrl?: string;
   /** Copia legal original: SOLO se mira si falta streamed/. Por defecto '/vc/'. */
   assetsUrl?: string | null;
   runMode?: 'local' | 'live';
   bucketUrl?: string;
-  intro?: boolean;
-  introUrl?: string | null;
   /** 'viewport' (toda la pantalla, por defecto) | 'parent' (la caja del div). */
   fill?: 'viewport' | 'parent';
   /** Poner el título de la pestaña con el tag de build. Por defecto true. */
@@ -79,7 +79,7 @@ export interface StartGameOptions {
   onFullscreen?: (active: boolean) => void;
 }
 
-export type GameEvent = 'progress' | 'log' | 'error' | 'ready' | 'audio' | 'fullscreen' | 'booted' | 'intro';
+export type GameEvent = 'progress' | 'log' | 'error' | 'ready' | 'audio' | 'fullscreen' | 'booted';
 
 export interface GameHandle {
   /** false si faltan build o datos (el motivo sale en el log y por onError). */
@@ -124,7 +124,6 @@ export interface GameHandle {
   unlockAudio(): Promise<true | string>;
   audioActive(): boolean;
   dataReady(): boolean;
-  skipIntro(): void;
   openGallery(): boolean;
   openSaveManager(): boolean;
   importMusic(): Promise<{ ok: boolean; reason: string; added: string[]; rejected: string[]; rescanned?: boolean }>;
@@ -133,7 +132,6 @@ export interface GameHandle {
   importSkinsFromPicker(): Promise<{ ok: boolean; reason: string; written: string[]; limit: number; picked: number }>;
   skinInfo(): { name: string; size: number }[];
   restoreSkins(): number;
-  onIntro?: (active: boolean) => void;
   /** Suscripción a eventos; devuelve la función para darse de baja. */
   on(event: GameEvent, fn: (arg: never) => void): () => void;
   /** Diagnóstico del sistema de ficheros virtual. */

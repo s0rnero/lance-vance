@@ -13,6 +13,7 @@
 // solo se apunta dónde están (buildUrl / streamedUrl / manifestUrl / assetsUrl).
 import { CSS, STYLE_ID } from './styles.js';
 import { createTouchControls, touchDetected } from './touch.js';
+import { downloadGame } from './download.js';
 import { downloadAllGallery, clearGallery } from './gallery.js';
 import { downloadSlot, downloadAll, importSavesFromPicker } from './saves.js';
 import { importMusic, deleteAllMusic, downloadAllMusic, musicInfo, rescanUserMusic } from './music.js';
@@ -510,17 +511,83 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // 64.0 M1 (11/11): medición de dibujos por tipo de objeto, por tamaño y por
 // pasada (traza ODDRAWS), sin cambios visibles. VERSION anterior: 2026-11-11-64.0-T1.
 // 66.1 M2 (11/11): build de control con la sonda de dibujos apagada, para
-// separar las caidas del registro de trazas. VERSION anterior: 2026-11-11-66.1-T1.
+// separar las caidas del registro de trazas. VERSION anterior: 2026-11-13-66.2-T1.
 // 67.1 (11/11): se revierte el cambio de mipmaps DXT de 67.0: los niveles
 // pequenos quedaban con contenido cruzado y los peds a distancia salian a
 // rayas. VERSION anterior: 2026-11-11-67.0-T1.
-export const VERSION = '2026-11-12-70.3-G4d';
+// 60.5 (15/11): carroceria PC + piezas Xbox en los 11; volante propio, nunca el
+// negro generico (SteeringWheel). VERSION anterior: 2026-11-15-60.4-T4b.
+// 60.7 (15/11): sirena unica en la patrulla y ventanilla danada en los 11.
+// VERSION anterior: 2026-11-15-60.6-R2.
+// 60.8 T14 (16/11): los 9 coches restantes (kaufman, cabbie, stinger, landstal,
+// hotrinb, police, ambulan, firetruk, vicechee) con interior, motor, bajos y
+// paneles de puerta Xbox sobre carroceria PC; lunas danadas en los que no
+// tenian malla propia. TXD base convertidos a 32 bits y texturas nuevas.
+// VERSION anterior: 2026-11-16-60.9-T13.
+// 60.10 T8 (17/11): corrige la T7 servida. La retirada de las cartas del chassis
+// leia el buffer ORIGINAL (snapshot de geoms_of) en vez del clump ya modificado,
+// asi que deshacia la retirada de cabina y volvia a dejar el cuerpo PC entero
+// (vicechee 1074 caras en vez de 921, police 966 en vez de 774). Ahora la
+// retirada se integra en la misma pasada sobre el clump clonado.
+// VERSION anterior: 2026-11-17-60.10-T7.
+// 60.10 T7 (17/11): la mancha negra/gris sobre la luna rota NO era el od_interior
+// (T6 lo dejo como admiral): era el chassis PC, que conserva cartas planas OPACAS
+// tapando el hueco de la luna (respaldo negro None + respaldo body inboard).
+// Admiral no las tiene. Se retiran por componente completo solo en coches con
+// luna lateral (stinger/hotrinb sin lunas quedan intactos). vicechee ademas tenia
+// un cabezal de retrovisor permanente en el chassis que se sumaba al de od_mirrors
+// (3 retrovisores en algunos angulos): se retira => quedan exactamente 2.
+// 60.10 T6 (17/11): firetruk: el chorro nace en la boca REAL del dispersor
+// (y1.80,z2.00; el tubo rojo apunta hacia adelante) anclada al nodo bump_rear que
+// pivota con el canon, no en la tapa trasera (0,1.26,2.14) que uso T5. Vidrio
+// roto: se REVIERTE el trim de T5 (refutado: admiral conserva esas cartas); eran
+// el respaldo interior opaco de la ventanilla (cheetah868bit128, por dentro del
+// cristal), no moldura danina. Quitarlas dejaba el hueco sin respaldo y flotaba
+// el material de la otra puerta. od_interior de los 9 vuelve a su respaldo.
+// 60.10 T5 (17/11): firetruk chorro a (0,1.26,2.14) + trim de molduras coplanares
+// del od_interior. AMBOS refutados en T6: la boca estaba mal medida y el trim
+// retiraba el respaldo legitimo de la ventanilla (admiral lo conserva).
+// 60.10 T4 (17/11): vicechee. La farola de la sirena del parabrisas (chassis PC,
+// comps x0.33..0.48 z0.14..0.27) se injerta como od_siren permanente (T3 la retiro
+// porque su bbox sobresalia del KEEP_BAND). Los retrovisores dejan de ser
+// componentes aleatorios: extra1 (1 retrovisor) y extra2 (la pareja) se vacian y
+// la pareja se injerta como od_mirrors permanente => siempre 2 retrovisores.
+// 60.10 T3 (17/11): correcciones de pilotos SIN plan (el plan 61 solo guarda los
+// guards para su ejecucion futura): tinte/alfa de vidrios uniforme en los 9
+// (referencia admiral: sano 89/89/89/89, grieta 255/255/255/242, todos ALFA);
+// sirena del vicechee conservada por componentes completos y od_interior fuera
+// de la banda expandida (sin cortes en el salpicadero); volante fijo Xbox retirado
+// donde hay steeringwheel PC movil, y anclaje del procedural bajado a <=100 tris
+// en landstal para que lo sustituya por el movil.
+// 60.10 T2 (16/11): corrige los 4 defectos del T1 tras prueba en juego: vidrio
+// sano solo None CON alfa (la junta opaca se queda en la puerta) para que el
+// atomic window_* caiga al pase transparente; od_interior/motor/bajos justo tras
+// chassis_hi (antes de las grietas, que escriben profundidad); sirena PC del
+// vicechee conservada y fuera del od_interior; piel exterior de puerta landstal
+// conservada y incluida en la chapa de proyeccion del panel danado.
+// 60.10 T1 (16/11): correccion del lote de los 9 con el metodo admiral. El
+// chassis PC solo pierde el interior de cabina (por cara, caja por coche);
+// morro/cola/parachoques/luces y atlas *body* quedan intactos. od_interior solo
+// cabina, encogido 8 mm y sin solapes reales con el casco. Vidrios/grietas y
+// paneles de puerta danados rehechos. dataTag sube para purgar la IDB.
+// VERSION anterior: 2026-11-17-60.9-T17.
+// 60.10 T13 (17/11): vicechee, marco del parabrisas restaurado (el filtro de
+// lunas lo tomaba por respaldo) y retirada la pala vertical del pilar A que se
+// veia como tercer retrovisor. VERSION anterior: 2026-11-17-60.10-T12.
+// 61.0 T1 (18/11): wheel_lightvan64back pasa de paletizada 8 bits a 32 bits sin comprimir. VERSION anterior: 2026-11-18-61.0.
+// 82.4 T2 (20/11): quita el reloj por entidad de la instrumentacion de grupos
+// (un cruce wasm->JS menos por entidad y frame), agrupa las senales del perro
+// guardian a una cada 200 ms (antes: un postMessage por entidad y frame dentro
+// del bucle de ProcessControl) y compila sin DWARF para que wasm-opt aplique
+// todos los pases de -O3. VERSION anterior: 2026-11-20-82.3-T1.
+export const VERSION = '2026-11-21-83.1-T36';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
   // --- De dónde salen las cosas ---
   buildUrl: '/build/',      // reVC.js + reVC.wasm + reVC.data
   streamedUrl: '/streamed/',// datos sueltos on-demand
+  packsUrl: '/packs/',      // paquetes .vcp de la descarga inicial
   manifestUrl: '/manifest.json', // índice de streamed/ (claves en minúsculas)
   assetsUrl: '/vc/',        // copia legal original, SOLO se mira si falta streamed/
   runMode: 'local',
@@ -528,8 +595,6 @@ const DEFAULTS = {
   // --- Comportamiento ---
   fill: 'viewport',         // 'viewport' (toda la pantalla) | 'parent' (la caja del div)
   title: true,              // poner el título de la pestaña con el tag de build
-  intro: true,              // portada con el trailer antes del juego
-  introUrl: null,           // vídeo de la portada (null = intro/vc.mp4 o el del bucket)
   audio: true,              // desbloquear audio con el primer gesto (sin botones)
   pointerLock: true,        // capturar el ratón al hacer clic en el canvas
   touch: 'auto',             // 'auto' | 'on' | 'off'
@@ -538,7 +603,7 @@ const DEFAULTS = {
   guardUnload: true,        // pedir confirmación al cerrar/recargar en partida
   fullscreenKey: true,      // F11 = pantalla completa del juego
   showFps: false,           // contador de FPS del motor (esquina superior izq.)
-  idbCapMB: 900,            // techo de la caché de datos en IndexedDB (0 = sin techo)
+  idbCapMB: 0,              // 0 = sin techo: lo descargado se queda para jugar sin conexión
   warmMB: 64,               // MB de "arranque en caliente" durante la carga (0 = off)
   worker: true,             // cargar ficheros en un hilo aparte (false = como antes)
   traceUrl: null,           // p.ej. '/odtrace' en desarrollo; null = sin envíos
@@ -558,7 +623,24 @@ const DEFAULTS = {
 // El motor emscripten es global (Module, FS, OD): una instancia por página.
 let current = null;
 
-const ODPRI = /^(loadtick|webload|BART|ASYNC|RETUNE|RADIOTRACK|FPSLOG|ENGAP|PERF|ODCAP|GEAR|initstep|od-trace|FPHASE|ODLOAD|ODSFXDEFER|ODSFXSTAT|ODSFXBUDGET)/;
+// 81.2: Chrome limita a 64 KB el cuerpo de `sendBeacon` y de `fetch` con
+// keepalive. Los lotes de 1200/3000 lineas pasaban de ese tope justo cuando el
+// motor mas escribe (carga del mundo y partida): el envio se descartaba sin
+// error y la traza se cortaba al empezar a jugar. Ahora cada lote se corta por
+// caracteres y, si el beacon falla, las lineas vuelven a la cola.
+const TRACE_CHUNK = 48000;
+function takeTrace(q, maxLines) {
+  let n = 0;
+  let k = 0;
+  while (k < q.length && k < maxLines) {
+    const add = String(q[k]).length + 1;
+    if (k > 0 && n + add > TRACE_CHUNK) break;
+    n += add;
+    k++;
+  }
+  return k ? q.splice(0, k) : [];
+}
+const ODPRI = /^(loadtick|webload|BART|ASYNC|RETUNE|RADIOTRACK|FPSLOG|ENGAP|PERF|ODCAP|GEAR|initstep|od-trace|FPHASE|ODLOAD|ODSFXDEFER|ODSFXSTAT|ODSFXBUDGET|ODCMIG|ODTEXREL|ODWORLD)/;
 const NOISY = /took \d+ ?ms|\[DBG\]: (Request|Remove) Ped|\.txd took |REMOVE_SOUND - Sound doesn't exist/;
 
 function base(url, fallback) {
@@ -575,7 +657,19 @@ async function exists(url) {
     const ct = (r.headers.get('content-type') || '').toLowerCase();
     return !ct.includes('text/html');
   } catch (e) {
-    return false;
+    // 77.4 (sin conexión): el service worker guarda el motor pero solo atiende
+    // GET, así que un HEAD sin red no tiene respuesta y el arranque se negaba a
+    // empezar («falta el build») con reVC.js/wasm/data ya guardados. Un GET sale
+    // de la caché del service worker y el cuerpo se cancela en el acto para no
+    // pagar el fichero entero solo por mirar si está.
+    try {
+      const r = await fetch(url, { cache: 'force-cache' });
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      try { if (r.body) r.body.cancel(); } catch (ee) {}
+      return r.ok && !ct.includes('text/html');
+    } catch (ee) {
+      return false;
+    }
   }
 }
 
@@ -587,11 +681,10 @@ function injectStyles(doc) {
   (doc.head || doc.documentElement).appendChild(s);
 }
 
-function markup(root, fill, intro) {
+function markup(root, fill) {
   root.dataset.fill = fill;
   root.innerHTML = `
     <canvas class="vc-canvas" tabindex="0"></canvas>
-    ${intro ? '<video class="vc-intro" playsinline preload="auto"></video>\n    <button class="vc-skip" type="button" disabled>Omitir</button>' : ''}
     <div class="vc-bar" aria-hidden="true"><i></i></div>
     <div class="vc-load" hidden>
       <div class="vc-load-title">VICE CITY</div>
@@ -623,11 +716,9 @@ export function startGame(options = {}) {
   const buildParam = (typeof location !== 'undefined') ? new URLSearchParams(location.search).get('build') : null;
   const buildUrl = bucketUrl ? bucketUrl + 'build/' : base(buildParam || opts.buildUrl, '/build/');
   const streamedUrl = bucketUrl ? bucketUrl + 'streamed/' : base(opts.streamedUrl, '/streamed/');
+  const packsUrl = bucketUrl ? bucketUrl + 'packs/' : base(opts.packsUrl, '/packs/');
   const manifestUrl = bucketUrl ? bucketUrl + 'manifest.json' : (opts.manifestUrl || '/manifest.json');
   const assetsUrl = (bucketUrl || opts.assetsUrl === null) ? null : base(opts.assetsUrl, '/vc/');
-  const trailerUrl = live ? base(opts.bucketUrl, 'https://vicecity-data.carv-portfolio.workers.dev/') + 'trailers/vc.mp4' : null;
-  const introSrc = opts.intro === false ? null
-    : (opts.introUrl ? String(opts.introUrl) : (bucketUrl ? trailerUrl : 'intro/vc.mp4'));
   const traceUrl = opts.traceUrl || null;
   const recoilTraceId = null;   // Sin query param: id siempre automático.
   // Recoil siempre activo si hay endpoint de trazas: sin query param.
@@ -670,7 +761,7 @@ export function startGame(options = {}) {
 
   injectStyles(doc);
   el.classList.add('vc-root');
-  markup(el, opts.fill === 'parent' ? 'parent' : 'viewport', !!introSrc);
+  markup(el, opts.fill === 'parent' ? 'parent' : 'viewport');
 
   const canvas = el.querySelector('.vc-canvas');
   const barEl = el.querySelector('.vc-bar');
@@ -679,24 +770,12 @@ export function startGame(options = {}) {
   const loadBar = loadEl.querySelector('.vc-load-bar > i');
   const loadLabel = loadEl.querySelector('.vc-load-label');
   const msgEl = el.querySelector('.vc-msg');
-  const introEl = el.querySelector('.vc-intro');
-  const skipEl = el.querySelector('.vc-skip');
 
   const touchParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('touch') : null;
   const touchOn = touchParam === '1' ? true : touchParam === '0' ? false
     : opts.touch === 'on' ? true : opts.touch === 'off' ? false : touchDetected();
-  const touch = createTouchControls({
-    root: el,
-    log,
-    enabled: touchOn,
-    iconBase: opts.touchIconsUrl,
-    sensitivity: opts.touchLookSensitivity,
-    getModule: () => (typeof Module !== 'undefined' ? Module : null),
-  });
-  touch.mount();
-
   const logLines = [];
-  const listeners = { progress: [], log: [], error: [], ready: [], audio: [], fullscreen: [], booted: [], intro: [] };
+  const listeners = { progress: [], log: [], error: [], ready: [], audio: [], fullscreen: [], booted: [] };
   const timers = [];
   let destroyed = false;
   let runtimeReady = false;
@@ -748,6 +827,17 @@ export function startGame(options = {}) {
     if (opts.onError) opts.onError(err);
   }
 
+  const touch = createTouchControls({
+    root: el,
+    log,
+    enabled: touchOn,
+    iconBase: opts.touchIconsUrl,
+    sensitivity: opts.touchLookSensitivity,
+    getModule: () => (typeof Module !== 'undefined' ? Module : null),
+  });
+
+  touch.mount();
+
   // ---- barra de progreso (rosa, top del viewport) ------------------------
   // Cubre SOLO la preparación previa al motor:
   //   'probe' → comprobación de ficheros (build y datos)
@@ -764,11 +854,12 @@ export function startGame(options = {}) {
   // volvía a arrancar desde cero — así que la barra parecía cargar DOS veces y no
   // se leía como un progreso. Ahora:
   //   * `probe` (comprobar build y datos) aporta el primer 4%;
-  //   * `build` (descargar y arrancar el motor) aporta del 4% al 100%.
+  //   * `data` (bajar todos los datos del juego al navegador) del 4% al 86%;
+  //   * `build` (guardar el motor para sin conexión y arrancarlo) del 86% al 100%.
   // El valor es MONÓTONO: nunca baja, ni al cambiar de fase ni cuando el cargador
   // reporta algo sin medida (antes eso volvía a poner el barrido y parecía
   // "empezar de nuevo").
-  const BAR_TRAMO = { probe: [0.0, 0.04], build: [0.04, 1.0] };
+  const BAR_TRAMO = { probe: [0.0, 0.04], data: [0.04, 0.86], build: [0.86, 1.0] };
   let barOverall = 0;      // progreso global 0..1 (nunca baja)
   let barMedido = false;   // ya hay una medida real: el barrido indeterminado no vuelve
   let engineUp = false;
@@ -871,77 +962,19 @@ export function startGame(options = {}) {
     idleTimer = setTimeout(() => engineOwnsScreen('done-timeout'), 400);
   }
 
-  // ---- portada: trailer + barra del top ----------------------------------
-  // El vídeo arranca en cuanto la página tiene el elemento montado (es local, no
-  // espera a nada). Omitir SOLO se habilita con los datos y el motor listos: sin
-  // eso, saltarse la intro dejaría al jugador mirando un canvas negro.
-  let introDone = false;
-  let introFellBack = false;
-  function updateSkip() {
-    if (skipEl) skipEl.disabled = !(dataOk && runtimeReady);
-  }
-  function endIntro(reason) {
-    if (introDone) return;
-    introDone = true;
-    window.removeEventListener('pointerdown', onIntroGesture, true);
-    window.removeEventListener('keydown', onIntroGesture, true);
-    if (introEl) {
-      try { introEl.pause(); } catch (e) {}
-      introEl.removeAttribute('src');
-      try { introEl.load(); } catch (e) {}
-      introEl.remove();
-    }
-    if (skipEl) skipEl.remove();
-    log('[lib] intro: ' + reason);
-    try { canvas.focus({ preventScroll: true }); } catch (e) {}
-    hideBar();
-    emit('intro', false);
-    if (opts.onIntro) opts.onIntro(false);
-  }
-  function onIntroGesture() {
-    if (!introEl || introDone || !introEl.muted) return;
-    introEl.muted = false;
-    const p = introEl.play();
-    if (p && p.catch) p.catch(() => {});
-  }
-  function playIntro() {
-    if (!introEl) return;
-    introEl.src = introSrc;
-    introEl.addEventListener('ended', () => endIntro('fin del video'));
-    introEl.addEventListener('error', () => {
-      if (live && trailerUrl && !introFellBack && introSrc !== trailerUrl) {
-        introFellBack = true;
-        log('[lib] intro: el video local no esta; se usa el del bucket');
-        introEl.src = trailerUrl;
-        const p = introEl.play();
-        if (p && p.catch) p.catch(() => endIntro('el video no se pudo cargar'));
-        return;
-      }
-      endIntro('el video no se pudo cargar');
-    });
-    introEl.addEventListener('playing', updateSkip);
-    introEl.addEventListener('canplay', updateSkip);
-    if (skipEl) skipEl.addEventListener('click', () => { if (!skipEl.disabled) endIntro('omitida por el jugador'); });
-    window.addEventListener('pointerdown', onIntroGesture, true);
-    window.addEventListener('keydown', onIntroGesture, true);
-    const started = introEl.play();
-    if (started && started.catch) {
-      started.catch(() => {
-        introEl.muted = true;
-        const again = introEl.play();
-        if (again && again.catch) again.catch(() => endIntro('reproduccion rechazada'));
-      });
-    }
-    emit('intro', true);
-    if (opts.onIntro) opts.onIntro(true);
-  }
-  playIntro();
-
   // ---- cola de trazas (lo que manda el motor C++) ------------------------
   // window.__odq lo llenan EM_ASM del motor y el pre-js. Aquí se envía por
   // lotes async (nunca XHR síncrono en el hilo del juego) y se acota para que
   // una tormenta de líneas no se coma la memoria.
   const odq = (window.__odq = window.__odq || []);
+  try {
+    if (traceUrl) {
+      const rigW = (typeof screen !== 'undefined' && screen.width) || 0;
+      const rigUa = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+      const rigNav = /Edg\//.test(rigUa) ? 'Edge' : /Chrome\//.test(rigUa) ? 'Chrome' : /Firefox\//.test(rigUa) ? 'Firefox' : /Safari\//.test(rigUa) ? 'Safari' : 'Nav';
+      odq.push('RIG id=' + rigW + '-' + rigNav + ' ancho=' + rigW + ' nav=' + rigNav);
+    }
+  } catch (e) {}
   const recoilSession = window.__odRecoilSession = { active: recoilTraceActive, id: (recoilTraceId && /^recoil-[a-zA-Z0-9_-]{1,40}$/.test(recoilTraceId)) ? recoilTraceId : ('auto-' + Date.now().toString(36)) };
   const recoilEmit = window.__odRecoilEmit = (event) => {
     if (!recoilSession.active) return;
@@ -993,7 +1026,7 @@ export function startGame(options = {}) {
         }
         if (drop > 0) { recoilDropped += drop; odDropPending += drop; q.splice(0, drop); }
       }
-      const batch = q.splice(0, 3000);
+      const batch = takeTrace(q, 3000);
       if (odDropPending > 0) { batch.unshift('ODTRACE_DROP descartes=' + odDropPending); odDropPending = 0; }
       if (!traceUrl) {
         // Sin endpoint de trazas: se guardan acotadas (para diagnóstico desde
@@ -1076,8 +1109,11 @@ export function startGame(options = {}) {
           const t = tnow;
           if (q.length >= 1200 || t - lastBeat >= 250) {
             lastBeat = t;
-            const batch = q.splice(0, 1200);
-            navigator.sendBeacon(traceUrl, batch.join('\n'));
+            const batch = takeTrace(q, 1200);
+            if (batch.length && !navigator.sendBeacon(traceUrl, batch.join('\n'))) {
+              for (let i = batch.length - 1; i >= 0; i--) q.unshift(batch[i]);
+              lastBeat = t + 5000;
+            }
           }
         }
       } catch (e) {}
@@ -1085,6 +1121,38 @@ export function startGame(options = {}) {
     };
     requestAnimationFrame(beat);
     log('[lib] synctrace activo: cada frame se envía la traza (diagnóstico de cuelgues)');
+    // 83.0: si el motor se cuelga esperando un fichero en od_fetch, el wasm
+    // queda suspendido en Asyncify y la cola de trazas ya no se vacía. Este
+    // timer vive en la página y sigue corriendo: nombra el fichero exacto
+    // (`window.__vcFetchNow`) y, si no hay ninguno, avisa de que el cuelgue
+    // ocurre fuera de od_fetch. Solo traza; no cambia el arranque.
+    let odFetchLast = null;
+    let odFetchSince = 0;
+    let odFrozenAt = 0;
+    let odBeatSeen = 0;
+    let odBeatAt = Date.now();
+    setInterval(() => {
+      try {
+        const now = Date.now();
+        const b = window.__odMainBeat || 0;
+        if (b !== odBeatSeen) { odBeatSeen = b; odBeatAt = now; }
+        const silent = now - odBeatAt;
+        const p = window.__vcFetchNow || null;
+        if (p) {
+          if (p !== odFetchLast) { odFetchLast = p; odFetchSince = now; }
+          try {
+            navigator.sendBeacon(traceUrl,
+              'ODFETCHNOW p=' + p + ' espera=' + (now - odFetchSince) + ' silent=' + silent);
+          } catch (e) {}
+          return;
+        }
+        odFetchLast = null;
+        if (silent > 3000 && now - odFrozenAt >= 5000) {
+          odFrozenAt = now;
+          try { navigator.sendBeacon(traceUrl, 'ODFROZEN fetch=null silent=' + silent); } catch (e) {}
+        }
+      } catch (e) {}
+    }, 1000);
   }
   // E1: cierre garantizado. El fetch async puede no salir al cerrar la
   // pestaña; el beacon lo entrega el navegador aunque la página muera.
@@ -1097,9 +1165,12 @@ export function startGame(options = {}) {
     try {
       const q = window.__odq;
       if (traceUrl && q && q.length) {
-        const body = q.splice(0, q.length).join('\n');
-        if (typeof navigator !== 'undefined' && navigator.sendBeacon) navigator.sendBeacon(traceUrl, body);
-        else { const x = new XMLHttpRequest(); x.open('POST', traceUrl, false); x.send(body); }
+        while (q.length) {
+          const body = takeTrace(q, 1000000).join('\n');
+          if (!body) break;
+          if (typeof navigator !== 'undefined' && navigator.sendBeacon && navigator.sendBeacon(traceUrl, body)) continue;
+          const x = new XMLHttpRequest(); x.open('POST', traceUrl, false); x.send(body);
+        }
       }
     } catch (e) {}
   };
@@ -1172,6 +1243,27 @@ export function startGame(options = {}) {
   // Lo único que la página puede distinguir en ese caso es la pérdida del
   // contexto WebGL, así que queda escrito en la traza con el consumo del
   // momento antes de que la pestaña desaparezca.
+  // 81.3: Chrome puede tirar el contexto WebGL (memoria del proceso GPU) sin
+  // matar la pestaña. Hasta ahora se anotaba y el motor seguia 30 s pintando
+  // contra un contexto muerto: `WEBGL_LOST` en la sesion 81.2 y luego 3 fps con
+  // el canvas en blanco, que es la "muerte" que ve el jugador. Ahora se para el
+  // bucle (no se gasta bateria contra un GL muerto) y se ofrece recargar. El
+  // preventDefault es lo que permite que el navegador llegue a restaurarlo.
+  const ctxOverlay = () => {
+    if (document.getElementById('vc-ctx-lost')) return;
+    const d = document.createElement('div');
+    d.id = 'vc-ctx-lost';
+    d.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;' +
+      'justify-content:center;flex-direction:column;gap:16px;background:rgba(8,8,12,.93);color:#fff;' +
+      'font:16px/1.5 system-ui,sans-serif;text-align:center;padding:24px';
+    d.innerHTML = '<div style="font-size:19px;font-weight:600">Se perdió el contexto gráfico</div>' +
+      '<div style="opacity:.8;max-width:420px">El navegador cerró WebGL (memoria de la GPU). ' +
+      'Lo que tengas guardado no se pierde.</div>' +
+      '<button id="vc-ctx-reload" style="padding:12px 22px;border-radius:10px;border:0;' +
+      'background:#e8b400;color:#111;font-size:16px;font-weight:600">Recargar</button>';
+    document.body.appendChild(d);
+    d.querySelector('#vc-ctx-reload').addEventListener('click', () => location.reload());
+  };
   const onCtxLost = (e) => {
     let mem = '';
     try {
@@ -1180,10 +1272,18 @@ export function startGame(options = {}) {
                      Math.round(m.jsHeapSizeLimit / 1048576) + 'MB';
     } catch (err) {}
     pushFatal('WEBGL_LOST', 'contexto WebGL perdido (' + ((e && e.statusMessage) || 'sin motivo') + ')' + mem);
+    try { if (e && e.preventDefault) e.preventDefault(); } catch (err) {}
+    try { if (typeof Module !== 'undefined' && Module.pauseMainLoop) Module.pauseMainLoop(); } catch (err) {}
+    try { if (typeof touch !== 'undefined' && touch.setEnabled) touch.setEnabled(false); } catch (err) {}
+    try { ctxOverlay(); } catch (err) {}
   };
   try {
     canvas.addEventListener('webglcontextlost', onCtxLost, false);
-    canvas.addEventListener('webglcontextrestored', () => pushFatal('WEBGL_OK', 'contexto WebGL restaurado'), false);
+    canvas.addEventListener('webglcontextrestored', () => {
+      pushFatal('WEBGL_OK', 'contexto WebGL restaurado');
+      // El motor no sabe reconstruir sus objetos GL: se recarga la pagina.
+      location.reload();
+    }, false);
   } catch (e) {}
 
   // ---- contrato con el motor (globals que llama el C++) ------------------
@@ -1388,14 +1488,41 @@ export function startGame(options = {}) {
         const used = performance.memory ? performance.memory.usedJSHeapSize : 0;
         if (idx === 1) { heap0 = used; minHeap = used; }
         if (used && used < minHeap) minHeap = used;
+        // Parada larga cazada en el acto (tag ODSTALL): el FPSLOG de cada 60
+        // frames dice que hubo tirón, pero no con qué coincidió. Aquí se copian
+        // los contadores del pool de modelos en ese mismo instante, así un
+        // maxdelta grande se puede atar (o descartar) a un desalojo o a una
+        // re-descarga. Máximo una línea cada 2 s para no inundar la traza.
+        if (d > 150) {
+          const tn = now | 0;
+          if (!tick.stall || tn - tick.stall > 2000) {
+            tick.stall = tn;
+            try {
+              if (typeof OD !== 'undefined' && OD.liveBytes !== undefined) {
+                window.__odq.push('ODSTALL d=' + Math.round(d) + 'ms heap=' +
+                  Math.round((used || 0) / 1048576) + 'MB pool=' + Math.round(OD.liveBytes / 1048576) +
+                  'MB ev=' + (OD.evicted | 0) + '/' + Math.round((OD.evictedBytes | 0) / 1048576) +
+                  'MB fmb=' + Math.round((OD.fetchedBytes | 0) / 1048576) + 'MB');
+              }
+            } catch (e) {}
+          }
+        }
         if (idx >= 60) {
           const s = ivs.slice().sort((a, b) => a - b);
           const med = s[Math.floor(s.length / 2)];
           const xr2 = (window.__jankM.xhrN - x0.n), xm2 = (window.__jankM.xhrMs - x0.ms);
           const dn = (window.__jankM.domN - d0.n), dm = (window.__jankM.domMs - d0.ms);
+          let pool = '';
+          try {
+            if (typeof OD !== 'undefined' && OD.liveBytes !== undefined) {
+              pool = ' pool=' + Math.round(OD.liveBytes / 1048576) + 'MB ev=' + (OD.evicted | 0) +
+                '/' + Math.round((OD.evictedBytes | 0) / 1048576) + 'MB fmb=' +
+                Math.round((OD.fetchedBytes | 0) / 1048576) + 'MB';
+            }
+          } catch (e) {}
           window.__odq.push('FPSLOG frames=' + n + ' over17=' + over17 + ' maxdelta=' + Math.max(0, Math.round(maxd)) +
             ' med=' + Math.round(med) + ' heap0=' + Math.round(heap0 / 1048576) + 'MB freed=' + Math.round((heap0 - minHeap) / 1048576) + 'MB' +
-            ' xhr=' + xr2 + '/' + Math.round(xm2 * 10) / 10 + 'ms@' + xr2 + ' dom=' + dn + '/' + Math.round(dm * 10) / 10 + 'ms');
+            ' xhr=' + xr2 + '/' + Math.round(xm2 * 10) / 10 + 'ms@' + xr2 + ' dom=' + dn + '/' + Math.round(dm * 10) / 10 + 'ms' + pool);
           t0 = now; maxd = 0; idx = 0; n = 0; over17 = 0; ivs.length = 0;
           heap0 = used; minHeap = used;
           x0 = { n: window.__jankM.xhrN, ms: window.__jankM.xhrMs };
@@ -1435,6 +1562,55 @@ export function startGame(options = {}) {
     };
   }
 
+  // ---- app instalable y sin conexión --------------------------------------
+  async function registerServiceWorker() {
+    if (!('serviceWorker' in navigator) || !window.isSecureContext) return null;
+    try {
+      await navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(VERSION));
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((res) => setTimeout(() => res(null), 10000)),
+      ]);
+      if (!reg) return null;
+      const worker = reg.active || reg.waiting || reg.installing;
+      if (!worker || worker.state === 'activated') return reg;
+      await new Promise((res) => {
+        const stop = () => { worker.removeEventListener('statechange', stop); res(); };
+        worker.addEventListener('statechange', stop);
+        setTimeout(stop, 8000);
+      });
+      return reg;
+    } catch (e) {
+      log('[lib] service worker: ' + e);
+      return null;
+    }
+  }
+
+  async function cacheBuild(reg) {
+    const worker = reg && (reg.active || reg.waiting);
+    if (!worker) return false;
+    try { if (new URL(buildUrl, location.href).origin !== location.origin) return false; } catch (e) { return false; }
+    const urls = ['reVC.js', 'reVC.wasm', 'reVC.data'].map((f) => buildUrl + f + '?v=' + VERSION);
+    const id = 'build-' + Date.now().toString(36);
+    return await new Promise((res) => {
+      let timer = 0;
+      const stop = (ok) => {
+        navigator.serviceWorker.removeEventListener('message', onMsg);
+        clearTimeout(timer);
+        res(ok);
+      };
+      const onMsg = (e) => {
+        const m = e.data || {};
+        if (m.type !== 'build' || m.id !== id) return;
+        if (m.total) progress('build', m.done / m.total, 'Motor guardado para jugar sin conexión: ' + Math.round(100 * m.done / m.total) + '%');
+        if (m.finished) stop(true);
+      };
+      navigator.serviceWorker.addEventListener('message', onMsg);
+      timer = setTimeout(() => stop(false), 20 * 60 * 1000);
+      try { worker.postMessage({ type: 'prefetch-build', id, urls }); } catch (e) { stop(false); }
+    });
+  }
+
   // ---- arranque ----------------------------------------------------------
   function boot() {
     canvas.hidden = false;
@@ -1460,7 +1636,82 @@ export function startGame(options = {}) {
       printErr: (t) => { log('[err] ' + t); traceOut('ENGERR', t, true); },
       // Guardados persistentes: /userfiles vive en IndexedDB (IDBFS). El resto
       // de assets va en MEMFS (lectura síncrona del motor).
+      // 82.9-T7: copiar los ficheros de arranque (DATA/*, TEXT/*) a MEMFS antes
+      // de que empiece el motor. OD.bootPreload aguanta main con addRunDependency.
       preRun: [() => {
+        // 77.3: topes del pool on-demand aplicados desde aquí, sin esperar al
+        // reenlace del motor (el pre-js vive dentro de reVC.js). Medido en la
+        // sesión 77.0 del 19:33: con el heap JS en 562-604 MB el aviso del pre-js
+        // desalojó 6.100 ficheros (live 233->168 MB) y el heap NO bajó ni un MB;
+        // el motor los volvió a pedir acto seguido (`evict=6419/222MB`). Con el
+        // aviso alto solo se traza, y CAP sube un escalón (+16 MB) porque el pool
+        // tocaba techo en partida (`live=238MB` de 240). Si el móvil matase la
+        // pestaña, volver CAP a 240 aquí abajo antes que tocar nada más.
+        // 79.0 · El techo de 256 MB era el que se comía la partida: medido en
+        // la sesión 77.3 de las 21:00 (`ODCAP`/`FPSLOG`), MEMFS llegaba a 464 MB
+        // (live=253 de 256) y el heap JS a 480-532 MB con `freed=0MB`. A partir
+        // del minuto 1:30 los fps caían de ~100 a 30-40 y los parones subían de
+        // 150 ms a 6.129 ms (`ODSTALL`): es el GC de V8 con casi 1 GB de renderer
+        // en un móvil, no el render. Con CAP 144 el working set queda por debajo
+        // del de 256 y cubre los ~134 MB medidos; no se sube más por el
+        // historial de GC. Lo desalojado sigue en IndexedDB y vuelve sin red.
+        // dlMax 48 → 8: 48 descargas simultáneas dejaban hasta ~200 MB de
+        // buffers vivos de golpe (el heap JS saltaba a 516 MB antes de terminar
+        // de cargar el mundo) y V8 no devolvía esa memoria en toda la sesión.
+        try {
+          if (typeof OD !== 'undefined') {
+            // 81.7: 256 -> 192 MB. En la sesión 81.6 el pool se pegó al tope
+            // (`live=255/256MB`), MEMFS subió a 466 MB de heap JS y las texturas
+            // a 212 MB, donde el contexto WebGL murió. Con OPFS una relectura
+            // cuesta 10-20 ms, no los 200-1428 ms medidos por IDB.
+            OD.CAP = 192 * 1048576;
+            OD.HEAP_HI = 900 * 1048576;
+            OD.dlMax = 8;
+            try {
+              (window.__odq = window.__odq || []).push('ODCFG cap=' +
+                Math.round(OD.CAP / 1048576) + 'MB dlmax=' + OD.dlMax +
+                ' gracia=' + Math.round((OD.GRACE_MS || 0) / 1000) + 's');
+            } catch (err) {}
+          }
+        } catch (e) {}
+        // 77.4 · Las emisoras se comían el pool de modelos. Medido en la sesión
+        // 77.0 de las 19:48 (`ODCAP`): `/Audio:206-236MB` de los 414 MB de MEMFS,
+        // con `live=211-217MB` sobre un tope de 256. Cada emisora son ~30 MB
+        // (`manifest.json`: 274 MB las nueve) y la anterior se quedaba residente
+        // al cambiar, así que al motor le quedaban ~40 MB para modelos:
+        // `evict=8163/396MB`, 8.282 re-lecturas de caché y 4.696 ficheros
+        // aplazados en 22 minutos. Aquí se sueltan las emisoras que no suenan
+        // (se conservan la actual y la que se precarga); los bytes siguen en
+        // IndexedDB y vuelven en cuanto el motor las pida.
+        try {
+          if (typeof OD !== 'undefined' && !OD._shedStations) {
+            OD._shedStations = true;
+            OD.dropStations = (keepA, keepB) => {
+              const keep = new Set([keepA, keepB].filter(Boolean).map((s) => String(s).toUpperCase()));
+              for (const p of Array.from(OD.live.keys())) {
+                if (!/\.adf$/i.test(p)) continue;
+                const name = p.slice(p.lastIndexOf('/') + 1).replace(/\.adf$/i, '').toUpperCase();
+                if (keep.has(name)) continue;
+                const e = OD.live.get(p);
+                try { FS.unlink(p); } catch (err) {}
+                OD.live.delete(p);
+                OD.liveBytes -= (e && e.s) || 0;
+              }
+            };
+            const noteStation = OD.noteStation;
+            if (typeof noteStation === 'function') {
+              OD.noteStation = function (station) {
+                const r = noteStation.apply(OD, arguments);
+                try {
+                  const i = OD.radios ? OD.radios.indexOf(station) : -1;
+                  const next = i >= 0 ? OD.radios[(i + 1) % OD.radios.length] : null;
+                  OD.dropStations(station, next);
+                } catch (err) {}
+                return r;
+              };
+            }
+          }
+        } catch (e) {}
         try {
           FS.mkdir('/userfiles');
           FS.mount(IDBFS, {}, '/userfiles');
@@ -1501,7 +1752,6 @@ export function startGame(options = {}) {
       },
       onRuntimeInitialized: () => {
         runtimeReady = true;
-        updateSkip();
         log('Runtime WASM listo, arrancando juego…');
         // El motor avisa por __vcFrame en cuanto presenta su primer frame
         // (unos cientos de ms). Este plazo es solo la red por si esa señal no
@@ -1569,7 +1819,6 @@ export function startGame(options = {}) {
     setTouchControls(on = true) { return touch.setEnabled(on); },
     touchControls: () => touch.enabled,
     touchContext: () => touch.context(),
-    skipIntro: () => endIntro('omitida por API'),
     on(evt, fn) {
       if (!listeners[evt]) throw new Error('gtavc-web: evento desconocido ' + evt);
       listeners[evt].push(fn);
@@ -1638,6 +1887,13 @@ export function startGame(options = {}) {
     progress('probe', null, 'Comprobando build…');
 
     const b = await probeBuild();
+    // 77.4: una línea para saber qué ve el arranque cuando no hay red (el HEAD
+    // no pasa por el service worker; con `sinred=1` y todo a 1 el GET de caché
+    // hizo su trabajo).
+    try {
+      (window.__odq = window.__odq || []).push('OFFBUILD js=' + (b.js ? 1 : 0) + ' wasm=' + (b.wasm ? 1 : 0) +
+        ' data=' + (b.data ? 1 : 0) + ' sinred=' + (navigator.onLine === false ? 1 : 0) + ' tag=' + VERSION);
+    } catch (e) {}
     if (!b.ok) {
       handle.ok = false;
       if (opts.requireBuild) {
@@ -1651,7 +1907,6 @@ export function startGame(options = {}) {
 
     const d = await probeData();
     dataOk = !!d.ok;
-    updateSkip();
     if (!d.ok) {
       handle.ok = false;
       const list = '<ul>' + d.missing.map((k) => `<li><code>${k}</code></li>`).join('') + '</ul>';
@@ -1677,6 +1932,37 @@ export function startGame(options = {}) {
       idbCapMB: opts.idbCapMB, warmMB: opts.warmMB, worker: opts.worker !== false,
     };
 
+    let sw = null;
+    try { sw = await registerServiceWorker(); } catch (e) { sw = null; }
+    log('[lib] ' + (sw ? 'app instalable: el envoltorio y el motor quedan guardados para jugar sin conexión' : 'sin service worker: hará falta conexión para abrir el juego'));
+    if (sw) {
+      try {
+        const worker = sw.active || sw.waiting;
+        const assets = performance.getEntriesByType('resource')
+          .map((e) => e.name)
+          .filter((n) => n.startsWith(location.origin + '/') && /\.(js|css)(\?|$)/.test(n));
+        if (worker) worker.postMessage({ type: 'prefetch-shell', urls: assets });
+      } catch (e) {}
+    }
+    try { if (navigator.storage && navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+
+    if (d.manifest) {
+      progress('data', 0, 'Descargando datos del juego…');
+      const r = await downloadGame({
+        manifest: d.manifest, streamedUrl, packsUrl, log,
+        onProgress: (p) => {
+          const pct = p.totalBytes ? p.bytes / p.totalBytes : 1;
+          progress('data', pct, 'Datos del juego: ' + p.done + '/' + p.total + ' · ' +
+            Math.round(p.bytes / 1048576) + ' de ' + Math.round(p.totalBytes / 1048576) + ' MB');
+        },
+      });
+      (window.__odq = window.__odq || []).push('OFFLINE datos=' + r.done + '/' + r.total +
+        ' mb=' + Math.round(r.bytes / 1048576) + ' fallos=' + r.failed +
+        ' completa=' + (r.complete ? 1 : 0) + ' sinred=' + (r.offline ? 1 : 0) + ' tag=' + VERSION);
+    }
+
+    if (sw) await cacheBuild(sw);
+
     progress('build', 0, 'Cargando motor…');
     boot();
   })();
@@ -1688,3 +1974,21 @@ export function getGame() { return current; }
 export function isRunning() { return !!current && !!current.ok; }
 
 export default startGame;
+
+// 83.0-T9: el SW viejo servia /build/reVC.js cacheado aunque ?v cambiara
+// (cache.match con ignoreSearch). Se registra en cada arranque y, cuando el
+// nuevo toma el control, se recarga una vez para que el motor sea el de esta
+// build. Sin esto, la pagina era T8 pero el motor seguia siendo T6.
+try {
+  if ('serviceWorker' in navigator && window.isSecureContext) {
+    let swReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (swReloaded) return;
+      swReloaded = true;
+      const k = 'vc_sw_reload_' + VERSION;
+      try { if (sessionStorage.getItem(k)) return; sessionStorage.setItem(k, '1'); } catch (e) {}
+      location.reload();
+    });
+    navigator.serviceWorker.register('/sw.js?v=' + encodeURIComponent(VERSION)).catch(() => {});
+  }
+} catch (e) {}

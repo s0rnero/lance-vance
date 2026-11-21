@@ -10,6 +10,28 @@
 function odLog(s) {
   try { (globalThis.__odq = globalThis.__odq || []).push(String(s)); } catch (e) {}
 }
+// 83.1: sondas INMEDIATAS por sendBeacon. `__odq` solo se vacia cuando el
+// motor habla (el flush lo llama el), asi que en un cuelgue sus lineas se
+// quedan dentro. Estas salen en el acto aunque el hilo del motor este parado
+// (los CPUBEACON del motor siguen llegando en pleno cuelgue: esta probado).
+var OD_PROBE = /particle\.cfg|ped\.dat/i;
+function odProbe(s) {
+  try {
+    s = String(s);
+    // Solo las sondas del fichero bajo estudio (o los hitos del arranque de
+    // particulas/peds): una sonda por acceso llenaba el log y el navegador
+    // acaba descartando las de sendBeacon.
+    if (!OD_PROBE.test(s) && !/^(PD |PART |LF )/.test(s)) return;
+    var u = (typeof OD !== 'undefined' && OD.cfg && OD.cfg.odtraceUrl) || null;
+    if (!u) return;
+    var line = 'ODB ' + (Date.now() % 100000) + ' ' + s.slice(0, 240);
+    // XHR sincrono: sendBeacon se descarta en silencio cuando se acumula, y
+    // justo la ultima linea (la que dice donde se clava) es la que importa.
+    var x = new XMLHttpRequest();
+    x.open('POST', u, false);
+    x.send(line);
+  } catch (e) {}
+}
 
 var WORKER_SRC = `
 var DB = null, BASE = '/streamed/', INFLIGHT = {};
@@ -49,6 +71,171 @@ function idbPut(k, buf) {
     } catch (e) { res(); }
   });
 }
+// Caché en OPFS: dentro del worker la lectura es síncrona (10-20 ms por
+// fichero) en vez de la ida y vuelta asíncrona a IndexedDB (150-500 ms
+// medidos en la sesión 81.5). Si el navegador no la da, todo sigue por IDB.
+var OPFS = null, OPFS_ON = false;
+// 82.2: a partir de este tamano las lecturas/escrituras de OPFS van por la via
+// ASINCRONA. Medido en la traza de 82.1: 'anim/cuts.img' (110 MB) leido con el
+// handle SINCRONO bloqueo el worker ~4 s; detras de el esperaron 'camera.txd'
+// (73 KB, 3.921 ms en el worker), 'bopen.mp3' (812 ms) y 'sfx/8.mp3' (3.057 ms),
+// y el motor se quedo con un frame de 4.085 ms al empezar INT_A (3 FPS y luego
+// 30 FPS en el contador). Con la via asincrona el worker sigue atendiendo
+// peticiones pequenas mientras el fichero gordo se lee o se persiste.
+var BIGIO = 4 * 1048576;
+function opfsName(k) {
+  var h1 = 0x811c9dc5, h2 = 0x1000193;
+  for (var i = 0; i < k.length; i++) {
+    var c = k.charCodeAt(i);
+    h1 = ((h1 ^ c) * 0x01000193) >>> 0;
+    h2 = ((h2 ^ (c + 0x9e37)) * 0x85ebca6b) >>> 0;
+  }
+  return h1.toString(16) + '-' + h2.toString(16);
+}
+function opfsGet(k) {
+  return new Promise(function (res) {
+    if (!OPFS_ON || !OPFS) return res(null);
+    try {
+      OPFS.getFileHandle(opfsName(k)).then(function (fh) {
+        return fh.getFile().then(function (f) {
+          var n = f.size || 0;
+          if (!n) return null;
+          // 82.2: los gordos por 'File.arrayBuffer()' (no bloquea el bucle de
+          // eventos del worker). Los pequenos siguen por el handle sincrono,
+          // que es el camino rapido (10-20 ms por fichero).
+          if (n > BIGIO) return f.arrayBuffer();
+          return fh.createSyncAccessHandle().then(function (h) {
+            var out = null;
+            try {
+              var buf = new ArrayBuffer(n);
+              if (h.read(new Uint8Array(buf), { at: 0 }) === n) out = buf;
+            } catch (e) {}
+            try { h.close(); } catch (e) {}
+            return out;
+          });
+        });
+      }).then(function (b) { res(b || null); }).catch(function () { res(null); });
+    } catch (e) { res(null); }
+  });
+}
+function opfsPut(k, buf) {
+  return new Promise(function (res) {
+    if (!OPFS_ON || !OPFS) return res();
+    try {
+      var big = (buf && buf.byteLength || 0) > BIGIO;
+      OPFS.getFileHandle(opfsName(k), { create: true }).then(function (fh) {
+        // 82.2: 'h.flush()' de un fichero gordo es un fsync real y deja al
+        // worker sin atender peticiones varios segundos. createWritable()
+        // hace la misma persistencia sin bloquear el bucle de eventos.
+        if (big && fh.createWritable) {
+          return fh.createWritable().then(function (w) {
+            return w.write(buf).then(function () { return w.close(); });
+          });
+        }
+        return fh.createSyncAccessHandle().then(function (h) {
+          try { h.truncate(0); h.write(new Uint8Array(buf), { at: 0 }); h.flush(); } catch (e) {}
+          try { h.close(); } catch (e) {}
+        });
+      }).then(function () { res(); }).catch(function () { res(); });
+    } catch (e) { res(); }
+  });
+}
+function opfsClear() {
+  return new Promise(function (res) {
+    if (!OPFS) return res();
+    var it;
+    try { it = OPFS.keys(); } catch (e) { return res(); }
+    function step() {
+      it.next().then(function (r) {
+        if (r.done) return res();
+        OPFS.removeEntry(r.value).catch(function () {}).then(step);
+      }).catch(function () { res(); });
+    }
+    step();
+  });
+}
+function opfsInit(ver) {
+  return new Promise(function (res) {
+    try {
+      if (!navigator.storage || !navigator.storage.getDirectory) return res(false);
+      navigator.storage.getDirectory().then(function (root) {
+        return root.getDirectoryHandle('vcod', { create: true });
+      }).then(function (dir) {
+        OPFS = dir;
+        OPFS_ON = true;
+        return opfsGet('.ver').then(function (buf) {
+          var cur = '';
+          if (buf) {
+            var u = new Uint8Array(buf, 0, Math.min(64, buf.byteLength));
+            cur = String.fromCharCode.apply(null, u);
+          }
+          if (cur === String(ver)) return true;
+          return opfsClear().then(function () {
+            return opfsPut('.ver', new TextEncoder().encode(String(ver)).buffer);
+          }).then(function () { return true; });
+        });
+      }).then(function (ok) { res(!!ok); }).catch(function () { OPFS_ON = false; res(false); });
+    } catch (e) { OPFS_ON = false; res(false); }
+  });
+}
+// 81.7: la caché nace en IndexedDB y la primera sesión con OPFS lee todo de
+// IDB (200-1400 ms por fichero, medido en 81.6). Se copia a OPFS por lotes de
+// 12 en segundo plano, cediendo ante cualquier petición del motor.
+var MIG = { n: 0, bytes: 0, next: null, done: false };
+function migSay(done) {
+  postMessage({ op: 'mig', n: MIG.n, mb: Math.round(MIG.bytes / 1048576), done: done ? 1 : 0 });
+}
+function opfsHas(k) {
+  return new Promise(function (res) {
+    if (!OPFS_ON || !OPFS) return res(false);
+    try {
+      OPFS.getFileHandle(opfsName(k)).then(function () { res(true); }).catch(function () { res(false); });
+    } catch (e) { res(false); }
+  });
+}
+function migWrite(batch, more) {
+  var i = 0;
+  function step() {
+    if (i >= batch.length) {
+      migSay(false);
+      if (!more) { MIG.done = true; migSay(true); return; }
+      setTimeout(migStep, 60);
+      return;
+    }
+    var k = batch[i][0], v = batch[i][1];
+    i++;
+    opfsHas(k).then(function (yes) {
+      if (yes) { MIG.n++; step(); return; }
+      opfsPut(k, v).then(function () {
+        MIG.n++;
+        MIG.bytes += (v && v.byteLength) || 0;
+        step();
+      });
+    });
+  }
+  step();
+}
+function migStep() {
+  if (!OPFS_ON || !DB || MIG.done) return;
+  if (MIG.bytes >= 512 * 1048576) { MIG.done = true; migSay(true); return; }
+  if (Object.keys(INFLIGHT).length) { setTimeout(migStep, 300); return; }
+  var batch = [];
+  try {
+    var tx = DB.transaction(['files'], 'readonly');
+    var st = tx.objectStore('files');
+    var range = MIG.next !== null ? IDBKeyRange.lowerBound(MIG.next, true) : null;
+    var req = range ? st.openCursor(range) : st.openCursor();
+    req.onsuccess = function (e) {
+      var cur = e.target.result;
+      if (!cur) { MIG.done = true; migWrite(batch, false); return; }
+      if (batch.length >= 12) { migWrite(batch, true); return; }
+      if (typeof cur.key === 'string') batch.push([cur.key, cur.value]);
+      MIG.next = cur.key;
+      cur.continue();
+    };
+    req.onerror = function () { MIG.done = true; migSay(true); };
+  } catch (e) { MIG.done = true; }
+}
 function isHtml(buf) {
   try {
     var u = new Uint8Array(buf, 0, Math.min(9, buf.byteLength));
@@ -71,8 +258,21 @@ function fromNet(key, rel, size) {
       if (!buf || !buf.byteLength) throw new Error('fichero vacio');
       if (isHtml(buf)) throw new Error('HTML en vez de fichero');
       if (size && buf.byteLength < size) throw new Error('truncado ' + buf.byteLength + '/' + size);
+      // 82.2: un fichero gordo se entrega YA (se copia para que la escritura
+      // no se quede con el buffer desligado) y no se duplica en IndexedDB:
+      // esperar la persistencia era parte del bloqueo de 4 s del arranque.
+      // 82.7: se espera a que este en OPFS antes de entregar; si el motor lo
+      // vuelve a pedir antes, opfsGet fallaba y se bajaba otra vez (dos
+      // ODWSLOW src=net con /Audio/EMOTION.ADF en la traza).
+      if (buf.byteLength > 16 * 1048576) {
+        opfsPut(key, buf).then(function () { res({ buf: buf.slice(0), src: 'net' }); })
+          .catch(function () { res({ buf: buf.slice(0), src: 'net' }); });
+        return;
+      }
       idbPut(key, buf);
-      res({ buf: buf, src: 'net' });
+      // La escritura en OPFS se espera: el buffer se transfiere al hilo del
+      // juego justo después y quedaría desligado a mitad de escritura.
+      opfsPut(key, buf).then(function () { res({ buf: buf, src: 'net' }); });
     }).catch(function (e) { clearTimeout(timer); rej(e); });
   });
 }
@@ -80,17 +280,28 @@ onmessage = function (ev) {
   var m = ev.data || {};
   if (m.op === 'init') {
     if (m.streamedUrl) BASE = m.streamedUrl;
-    openDb().then(function (db) { DB = db; postMessage({ op: 'ready' }); });
+    openDb().then(function (db) { DB = db; return opfsInit(m.ver); })
+      .then(function (ok) { postMessage({ op: 'ready', opfs: ok ? 1 : 0 }); });
     return;
   }
+  if (m.op === 'migrate') { migStep(); return; }
   if (m.op !== 'get') return;
   var k = m.key;
   if (INFLIGHT[k]) return;
   INFLIGHT[k] = 1;
   var t0 = Date.now();
-  idbGet(k).then(function (c) {
-    if (c && c.byteLength && !isHtml(c) && (!m.size || c.byteLength === m.size)) return { buf: c, src: 'idb' };
-    return fromNet(k, m.rel, m.size);
+  opfsGet(k).then(function (c) {
+    if (c && c.byteLength && !isHtml(c) && (!m.size || c.byteLength === m.size)) return { buf: c, src: 'opfs' };
+    return idbGet(k).then(function (c2) {
+      if (c2 && c2.byteLength && !isHtml(c2) && (!m.size || c2.byteLength === m.size)) {
+        // Copia de la caché vieja: se migra a OPFS al primer uso.
+        return opfsPut(k, c2).then(function () { return { buf: c2, src: 'idb' }; });
+      }
+      // REVERTIDO a como iba en 82.5-T1: si no esta en cache se pide a la red
+      // (y se guarda). Quitar esto dejaba el arranque sin respaldo cuando la
+      // descarga inicial no habia traido un fichero.
+      return fromNet(k, m.rel || k, m.size);
+    });
   }).then(function (r) {
     delete INFLIGHT[k];
     postMessage({ op: 'data', key: k, buf: r.buf, src: r.src, ms: Date.now() - t0 }, [r.buf]);
@@ -312,7 +523,72 @@ var OD = {
   // (bansheespeca + coeficiente 1.0 en pintura y cristales, DFF 344176 B,
   // TXD 1574200 B); purga la IDB con los datos nuevos.
   // dataTag anterior: `2026-11-09-62.3-T2`.
-  dataTag: '2026-11-11-66.1-T1',
+  // 60.0 §13 (14/11): Stinger faro rojo pintado ambar en el atlas + traseras al
+  // fallback rojo; firetruk con las piezas extradetails/servicelights_0 del PC
+  // (canon visible otra vez, DFF 379475 B, TXD 2264412 B); y la tanda 2 del
+  // plan 60 (vicechee, admiral, cabbie, landstal, hotrinb, police, ambulan)
+  // con la capa de reflejo y sus lentes ambar. Sube por la IDB: cambian los
+  // DFF/TXD y el .dir (están en streamed+gamefiles y en bootseed horneado).
+  // Se conserva el literal `2026-11-13-66.2-T1` (purga de la IDB del 66.2).
+  // dataTag anterior: `2026-11-14-66.3-T1`.
+  // 60.1: lentes, barras, luces de servicio y cañon nuevos en 8 modelos.
+  // 60.3 T1: revision del jugador. Stinger sin indicadores delanteros y lente
+  // pintada en ambar; police con una sola barra (policebar_hi) y placa con el
+  // RGB del PC; vicechee con la farola fija (vicebar1/2/3_hi); panes window_*
+  // del PC en vicechee/police/admiral/ambulan y vidrio fundido fuera de las
+  // puertas; firetruk sin el watercannon inventado.
+  // 60.3 T2: los DFF de vicechee/police/admiral/ambulan salieron con el STRUCT
+  // de geometria 12 bytes corto (strip_glass) y el police no cargaba (`buf
+  // falla police`): regenerados y validados chunk a chunk. dataTag anterior:
+  // `2026-11-14-60.1-T1`.
+  // 60.5 T1: los 11 vuelven a carroceria PC + piezas Xbox (interior asientos/
+  // salpicadero/paneles, motor, bajos, escape); sin lentes ni matriculas Xbox;
+  // volante propio (nunca el negro). dataTag anterior: `2026-11-15-60.4-T4b`.
+  // 60.7 T1: la patrulla con una sola barra de sirena (fuera la V duplicada) y
+  // ventanilla de puerta con su estado danado antes de romperse. dataTag
+  // anterior: `2026-11-15-60.6-R2`.
+  // 60.8 T1: el Banshee vuelve a base PC (el restore era el DFF Xbox completo y
+  // el TXD faltaba) y estrena interior/motor/bajos/vano Xbox, con V12 y
+  // belowcars anadidos al atlas PC y paneles _dam deformados. dataTag anterior:
+  // `2026-11-16-60.9-T6`.
+  // 60.8 T14: los 9 restantes estrenan interior/motor/bajos Xbox y paneles de
+  // puerta; los TXD base de 8 bits se convierten a 32 bits. dataTag anterior:
+  // `2026-11-16-60.9-T13`.
+  // 60.10 T1: correccion del lote de los 9 (metodo admiral): exterior PC intacto
+  // (morro/cola/luces/parachoques), od_interior solo cabina sin solapes, vidrios
+  // y paneles _dam rehechos. dataTag anterior: `2026-11-17-60.9-T17`.
+  // 60.10 T2: vidrios al pase transparente, od_interior antes de las grietas,
+  // sirena vicechee y piel de puerta landstal conservadas. dataTag anterior:
+  // `2026-11-16-60.10-T1`.
+  // 60.10 T3: correcciones de pilotos sin plan: vidrios con tinte uniforme,
+  // sirena vicechee por componentes completos sin cortes, y un solo volante movil
+  // (fijo Xbox retirado / anclaje del procedural <=100). dataTag anterior:
+  // `2026-11-16-60.10-T2`.
+  // 60.10 T4: vicechee farola de sirena permanente (od_siren) y pareja de
+  // retrovisores permanente (od_mirrors); extra1/extra2 vaciados para que el
+  // sorteo aleatorio de componentes no deje el coche con 1 retrovisor o sin
+  // farola. dataTag anterior: `2026-11-17-60.10-T3`.
+  // 60.10 T6: chorro del firetruk anclado a la boca real del dispersor (nodo
+  // bump_rear pivotante, y1.80/z2.00) y REVERTIDO el trim de molduras de T5
+  // (refutado: era el respaldo interior de la ventanilla que admiral conserva;
+  // quitarlo flotaba el material de la otra puerta sobre el vidrio roto).
+  // 60.10 T7: la mancha sobre la luna rota era el chassis PC (cartas planas
+  // opacas tapando el hueco: respaldo negro None + body inboard), no el
+  // od_interior. Se retiran por componente en coches con luna lateral; admiral
+  // no las tiene. vicechee: fuera el cabezal de retrovisor duplicado del chassis
+  // (quedaban 3 en algunos angulos) => exactamente 2 (od_mirrors).
+  // dataTag anterior: `2026-11-17-60.10-T6`.
+  // 60.10 T8: la retirada de cartas del chassis de T7 leia el buffer original y
+  // deshacia la retirada de cabina (cuerpo PC entero otra vez); ahora va en la
+  // misma pasada sobre el clump clonado. dataTag anterior:
+  // `2026-11-17-60.10-T7`.
+  // 60.10 T13: vicechee, vuelve el marco del parabrisas (el filtro de lunas lo
+  // tomaba por respaldo) y fuera la pala vertical del pilar A que se veia como
+  // tercer retrovisor encima del del conductor. dataTag anterior:
+  // `2026-11-17-60.10-T12`.
+  // 61.0 T1: la textura paletizada del rines (wheel_lightvan64back) pasa a 32
+  // bits sin comprimir. dataTag anterior: `2026-11-18-61.0`.
+  dataTag: '2026-11-19-80.0-T1',
   manifest: null,
   db: null,
   inflight: {},
@@ -338,6 +614,19 @@ var OD = {
     return d;
   })(),
   sleep(ms) { return new Promise((r) => setTimeout(r, ms)); },
+  // 82.2: hueco libre del navegador. La precarga en caliente lo usa para no
+  // robar milisegundos a los frames (requestIdleCallback con tope de espera).
+  idle(ms) {
+    return new Promise((r) => {
+      try {
+        if (typeof requestIdleCallback === 'function') {
+          requestIdleCallback(() => r(), { timeout: ms || 60 });
+          return;
+        }
+      } catch (e) {}
+      setTimeout(r, 0);
+    });
+  },
   // Flush IDBFS serializado (F2): solapar syncfs atasca la cola IDB
   // ("N operations in flight") y nada completa. Si hay uno en vuelo, encolar.
   // Con origen (save/settings/quit) deja línea en consola; el resto va
@@ -408,7 +697,12 @@ var OD = {
   // 551-624 MB de heap CON 436-517 MB de MEMFS; ahora MEMFS vive en ~300 MB, asi
   // que el aviso sube a 520 MB, exige tres medidas seguidas (24 s) y desaloja
   // solo hasta el 70% del tope en vez de dejarlo en 96 MB.
-  CAP: 240 * 1048576,
+  // 19/11 (escalón +16 MB, sesión 77.0 de las 19:33): el pool tocó techo en
+  // partida (`live=238MB` de 240) y ahí empezaban los desalojos por gracia de
+  // ficheros que el motor estaba usando. Un escalón pequeño y reversible: el
+  // techo de MEMFS pasa de ~404 a ~420 MB. Si el móvil mata la pestaña, volver
+  // a 240 antes que tocar HEAP_HI.
+  CAP: 192 * 1048576,
   GRACE_MS: 45000,
   HEAP_HI: 520 * 1048576,
   CAP_SOFT: 96 * 1048576,
@@ -437,7 +731,11 @@ var OD = {
     for (const [p, e] of order) {
       if (OD.liveBytes <= cap) break;
       if (!hard && now - e.t < OD.GRACE_MS) continue;
-      try { FS.unlink(p); } catch (err) { OD.live.delete(p); OD.liveBytes -= e.s; continue; }
+      try { FS.unlink(p); } catch (err) {
+        OD.live.delete(p);
+        OD.liveBytes -= e.s;
+        continue;
+      }
       OD.live.delete(p);
       OD.liveBytes -= e.s;
       OD.evicted++;
@@ -525,6 +823,7 @@ var OD = {
     OD._census.evmb = Math.round(OD.evictedBytes / 1048576);
     OD._census.fmb = Math.round(OD.fetchedBytes / 1048576);
     OD._census.idb = OD.idbHits + ((OD.wkStats && OD.wkStats.idb) || 0);
+    OD._census.opfs = (OD.wkStats && OD.wkStats.opfs) || 0;
     OD._census.per = Object.entries(per).map(([k, v]) => k + ':' + Math.round(v / 1048576)).join(' ');
     OD._census.ufs = Math.round((per['/userfiles'] || 0) / 1048576);
     OD._census.root = Math.round((per['/'] || 0) / 1048576);
@@ -654,6 +953,8 @@ var OD = {
     try { addEventListener('pagehide', () => { OD.warmPersist(); OD.idbFlushTouches(); }); } catch (e) {}
     OD.wkStart();          // Nivel 1: el trabajo de carga, en un hilo aparte
     OD.hookWorldLoad();
+    // 83.0: con el manifiesto y el IDB ya listos; main espera (odBoot).
+    try { OD.bootPreload(typeof Module !== 'undefined' ? Module : null); } catch (e) {}
     // F4a: una línea ASYNC por segundo con las suspensiones que atendió el
     // pre-js (n y wall-ms). Emparejar con FPSLOG maxdelta del mismo segundo.
     setInterval(() => {
@@ -667,12 +968,14 @@ var OD = {
     // con datos, no a ojo.
     setInterval(() => {
       try {
+        OD.migrateMaybe();
         const c = OD.census();
         let js = '';
         if (performance.memory) js = ' js=' + Math.round(performance.memory.usedJSHeapSize / 1048576) + 'MB';
         const per = c.per ? ' desglose=' + c.per : '';
         OD.trace('ODCAP memfs=' + c.mb + 'MB files=' + c.n + ' live=' + c.live + 'MB' +
-          ' evict=' + c.ev + '/' + c.evmb + 'MB fmb=' + c.fmb + 'MB idb=' + c.idb + js + per);
+          ' evict=' + c.ev + '/' + c.evmb + 'MB fmb=' + c.fmb + 'MB idb=' + c.idb +
+          ' opfs=' + (c.opfs || 0) + js + per);
       } catch (e) {}
     }, 30000);
     // Vigilancia de memoria: con el heap JS por encima de HEAP_HI el
@@ -686,13 +989,25 @@ var OD = {
         OD.heapOver = js > OD.HEAP_HI ? (OD.heapOver | 0) + 1 : 0;
         // Tres medidas seguidas (24 s) por encima del aviso: un pico de GC o un
         // lote de descargas no puede vaciar la cache de modelos.
+        // 19/11 (medido en la sesión 77.0 de las 19:33): con el heap JS en
+        // 562-604 MB este aviso desalojó 6.100 ficheros (live 233->168 MB) y el
+        // heap NO bajó ni un MB (604 antes y después). Lo que ocupa esos MB no es
+        // el pool de modelos sino la página (traza y buffers), así que el desalojo
+        // solo servía para que el motor volviera a pedir 65 MB de golpe al segundo
+        // siguiente (`evict=6419/222MB`) con sus paradas de frame. Ahora se avisa
+        // y NO se toca el pool mientras esté por debajo de CAP: solo se recorta
+        // con presión real (el pool pasado de tope), que es el caso para el que
+        // se escribió.
         const target = OD.CAP * 0.7;
-        if (OD.heapOver >= 3 && OD.liveBytes > target) {
+        if (OD.heapOver >= 3 && OD.liveBytes > OD.CAP) {
           const before = OD.liveBytes;
           OD.evict(true, target);
           OD.trace('ODMEM heap=' + Math.round(js / 1048576) + 'MB desalojo live=' +
             Math.round(before / 1048576) + '->' + Math.round(OD.liveBytes / 1048576) + 'MB');
           OD.heapOver = 0;
+        } else if (OD.heapOver === 3) {
+          OD.trace('ODMEM heap=' + Math.round(js / 1048576) + 'MB aviso sin desalojo live=' +
+            Math.round(OD.liveBytes / 1048576) + 'MB cap=' + Math.round(OD.CAP / 1048576) + 'MB');
         }
       } catch (e) {}
     }, 8000);
@@ -814,9 +1129,10 @@ var OD = {
         const orig = w.__loadProgress;
         if (orig && !orig.__odWrapped) {
           const f = function (a, b) {
-            const now = Date.now();
-            if (!OD._warmFired || now - (OD._warmLast || 0) > 8000) { OD._warmFired = 1; OD.warmStarted = false; setTimeout(() => OD.warmStart(), 250); }
-            OD._warmLast = now;
+            // 82.2: una sola vez por sesión. Antes se reprogramaba cada 8 s y
+            // con la precarga nueva (que espera al primer frame) habría dos
+            // pasadas solapadas.
+            if (!OD._warmFired) { OD._warmFired = 1; setTimeout(() => OD.warmStart(), 250); }
             return orig.apply(this, arguments);
           };
           f.__odWrapped = true;
@@ -839,7 +1155,6 @@ var OD = {
           list = Object.keys(man0).map((k) => '/' + man0[k].p).filter((p) => p && p.toLowerCase().indexOf('.adf') < 0);
           OD.trace('ODWARM sin lista previa: precarga amplia de ' + list.length + ' ficheros');
         }
-        const t0 = Date.now();
         const budget = OD.cfg.warmMB * 1048576;
         const man = OD.manifest || {};
         const items = [];
@@ -849,13 +1164,46 @@ var OD = {
           if (s && s <= OD.warmMaxFile) items.push([p, s]);
         }
         items.sort((a, b) => a[1] - b[1]);
-        let n = 0, bytes = 0, touched = 0;
+        // 82.2: la precarga ya NO corre durante el arranque. En la traza de
+        // 82.1 empezó con la carga del mundo y siguió 8,2 s (5.441 ficheros,
+        // 64 MB escritos en MEMFS desde el hilo del juego) con la cinemática
+        // INT_A ya empezada y el motor pidiendo sus modelos. Ahora espera al
+        // primer frame, va en huecos libres del navegador y NO escribe en
+        // MEMFS: los bytes quedan retenidos (wkPut) hasta que el motor pida el
+        // fichero, que es cuando la copia ya no se nota.
+        // 82.3: `__vcState >= 9` ya es cierto DURANTE la carga, asi que la
+        // precarga arrancaba con el mundo a medias (5.347 ficheros a los 11 s
+        // de arrancar) y competia con los criticos en un worker serial. Ahora
+        // espera a estar DENTRO de la partida de verdad.
+        const inGame = () => {
+          try { return OD.gameLive() && window.__vcInGame === true; } catch (e) { return false; }
+        };
+        for (let i = 0; i < 480 && !inGame(); i++) await OD.sleep(250);
+        if (!inGame()) { OD.trace('ODWARM sin partida: no se precarga'); return; }
+        const t0 = Date.now();
+        let n = 0, bytes = 0, touched = 0, blkWait = 0, fails = 0;
         for (const [p, s] of items) {
           if (bytes + s > budget) break;
+          if (Date.now() - t0 > 120000) break;                 // tope por sesión
           touched++;
-          if (OD.exists(p)) continue;
-          try { await OD._ensure(p); bytes += s; n++; } catch (e) {}
-          if (n % 10 === 0) await OD.sleep(0);
+          if (OD.exists(p) || (OD.wkReady && OD.wkReady.has(p))) continue;
+          let blk = 0;
+          try { blk = window.__vcODBlock | 0; } catch (e) {}
+          if (blk > 0) {                                        // carga bloqueante en curso
+            if (++blkWait > 150) break;
+            await OD.sleep(200);
+            continue;
+          }
+          await OD.idle();                                      // hueco entre frames
+          const h = man[OD.norm(p)];
+          if (!h) continue;
+          OD.wkAsk(p, h);
+          const buf = await OD.wkWait(p, 4000);
+          if (buf) { fails = 0; OD.wkPut(p, buf); bytes += buf.byteLength || s; n++; }
+          else if (++fails > 5) break;                          // worker sin respuesta: se deja
+          // 82.3: deja huecos a la ruta critica y acota la precarga por sesion.
+          if (touched % 20 === 0) await OD.sleep(40);
+          if (n >= 1500) break;
         }
         OD.trace('ODWARM n=' + n + ' mb=' + Math.round(bytes / 1048576) + ' ms=' + (Date.now() - t0) +
           ' lista=' + items.length + ' ya_en_mem=' + (touched - n));
@@ -871,8 +1219,9 @@ var OD = {
   // de 20-280 ms al entrar en zona nueva). Ahora ese trabajo va a un Worker y
   // al hilo del juego solo le queda copiar bytes a MEMFS (microsegundos).
   //
-  // Además, si el juego ya está JUGANDO (lo publica el motor en
-  // window.__vcInGame), un fichero que aún no está se contesta "no está" al
+  // Además, si el mundo ya está cargado (primer frame dibujado: el motor
+  // publica `__vcState >= 9`, no `__vcInGame`, que se apaga al abrir mapa o
+  // pausa), un fichero que aún no está se contesta "no está" al
   // instante: el motor pide los modelos en cada pasada de streaming y reintenta,
   // así que ningún frame se congela y el fichero entra un par de frames después,
   // ya traído. Durante la CARGA (menú o partida) NO se aplaza nada: esa ruta es
@@ -888,6 +1237,7 @@ var OD = {
   wkWaiters: null,
   wkFails: null,
   wkStats: null,
+  wkTO: null,
   wkErrs: null,
   wkErrShown: 0,
   wkMs: null,
@@ -901,8 +1251,9 @@ var OD = {
     OD.wkWaiters = {};
     OD.wkFails = {};
     OD.wkErrs = {};
-    OD.wkStats = { ask: 0, take: 0, fast: 0, idb: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
+    OD.wkStats = { ask: 0, take: 0, fast: 0, idb: 0, opfs: 0, net: 0, err: 0, ms: 0, wrote: 0, held: 0 };
     OD.wkMs = {};
+    OD.wkTO = {};
   },
   wkStart() {
     if (OD.wkWaiters && Object.keys(OD.wkWaiters).length) OD.wkFlushWaiters('reinicio-worker');
@@ -928,9 +1279,109 @@ var OD = {
       let absBase = OD.cfg.streamedUrl;
       try { absBase = new URL(OD.cfg.streamedUrl, location.href).href; } catch (e) {}
       if (absBase.slice(-1) !== '/') absBase += '/';
-      w.postMessage({ op: 'init', streamedUrl: absBase });
+      w.postMessage({ op: 'init', streamedUrl: absBase, ver: OD.cacheKey() });
       OD.wk = w;
     } catch (e) { OD.wk = null; OD.wkNote('no se pudo crear: ' + ((e && e.message) || e)); }
+  },
+  // PRECARGA DE ARRANQUE (82.9-T7). El motor abre DATA/*.DAT, *.CFG, *.IDE y
+  // TEXT/*.GXT nada mas arrancar y NO espera: si el fichero aun no esta en
+  // MEMFS se cae. Aqui se copian esos ficheros, ya descargados, antes de main.
+  BOOT_PRELOAD: false,
+  // 83.1: ficheros que CFileLoader::LoadLevel("DATA\\DEFAULT.DAT") abre en el
+  // hilo del motor sin poder reintentar (IDE, wheels.txd, generic.txd,
+  // air_vlo.DFF, wheels.DFF) mas los de los pasos 1/2 (particle, hud). Tienen
+  // que estar ENTEROS en MEMFS antes de que main arranque.
+  BOOT_CRITICAL: [
+    '/data/default.dat',
+    '/data/maps/generic.ide',
+    '/models/generic/wheels.TXD',
+    '/models/generic.txd',
+    '/models/generic/air_vlo.DFF',
+    '/models/generic/wheels.DFF',
+    '/models/particle.txd',
+    '/models/hud.txd',
+  ],
+  // Cabecera de stream RenderWare: [tipo u32][tamano u32][version u32]. Se
+  // exige el tipo correcto (0x16 TEXDICTIONARY, 0x10 CLUMP), que el chunk
+  // declarado quepa en el fichero (una entrada truncada declara mas bytes de
+  // los que hay) y como mucho 12 de cola (air_vlo.DFF original los lleva).
+  // Leer 12 bytes distingue un .txd/.dff entero de basura con el mismo nombre;
+  // una entrada mala aqui es lo que dejaba al motor dentro de LoadTexDictionary.
+  rwOk(path) {
+    let len = 0;
+    try { len = FS.stat(path).size; } catch (e) { return false; }
+    const isTxd = /\.txd$/i.test(path), isDff = /\.dff$/i.test(path);
+    if (!isTxd && !isDff) return len > 0;
+    if (len < 12) return false;
+    let h;
+    try {
+      const st = FS.open(path, 'r');
+      h = new Uint8Array(12);
+      FS.read(st, h, 0, 12, 0);
+      FS.close(st);
+    } catch (e) { return false; }
+    const u32 = (i) => (h[i] | (h[i + 1] << 8) | (h[i + 2] << 16) | (h[i + 3] << 24)) >>> 0;
+    const sz = u32(4);
+    const slack = len - (sz + 12);
+    return u32(0) === (isTxd ? 0x16 : 0x10) && slack >= 0 && slack <= 12;
+  },
+  bootPreload(Module) {
+    if (OD.BOOT_PRELOAD === false) return;
+    const man = OD.manifest || {};
+    const keys = [];
+    for (const k in man) {
+      const p = (man[k] && man[k].p) || k;
+      // 83.0: ademas de data/text, la portada (txd/loadsc*) y los modelos que
+      // LoadLevel abre sin esperar (generic/wheels/air_vlo/particle/hud/fronten).
+      // 83.1: copiar en MEMFS no basta si los bytes son malos (ver rwOk y la
+      // pasada sobre BOOT_CRITICAL); aqui solo se elige QUE precargar.
+      if (/^(data|text|txd)\//i.test(p) ||
+          /^models\/(generic\.txd|generic\/|particle\.txd|hud\.txd|fronten1\.txd|fronten2\.txd)/i.test(p)) keys.push(k);
+    }
+    if (!keys.length) { OD.trace('BOOTPRE n=0 (manifest vacio)'); return; }
+    const t0 = Date.now();
+    let n = 0, bytes = 0, still = 0, bad = 0, fix = 0;
+    try { Module.addRunDependency('odBoot'); } catch (e) {}
+    (async () => {
+      try {
+        for (const k of keys) {
+          const hit = man[k], nom = '/' + hit.p, want = hit.s | 0;
+          let have = 0;
+          try { have = FS.stat(nom).size; } catch (e) {}
+          if (have && (!want || have === want)) continue;
+          const b = await OD.idbGetT(nom);
+          // 83.1: de IDB solo se copia si el tamano es el del manifiesto. Antes
+          // bastaba byteLength > 0, asi que una entrada truncada o envenenada
+          // se escribia tal cual y el motor se quedaba dentro de ella.
+          if (b && b.byteLength && (!want || b.byteLength === want)) {
+            try {
+              const slash = nom.lastIndexOf('/');
+              if (slash > 0) { try { FS.mkdirTree(nom.slice(0, slash)); } catch (e) {} }
+              FS.writeFile(nom, new Uint8Array(b)); n++; bytes += b.byteLength;
+            } catch (e) {}
+          } else if (b && b.byteLength) {
+            bad++;
+            try { await OD.idbDelete([nom]); } catch (e) {}
+          } else still++;
+        }
+        // 83.1: la lista critica se comprueba de verdad, no por tamano de IDB.
+        // Lo que no este entero se pide al pack AHORA, antes de soltar main:
+        // sin esto el motor abria el hueco y se quedaba esperando.
+        for (const nom of OD.BOOT_CRITICAL) {
+          if (OD.rwOk(nom)) continue;
+          try { OD.live.delete(nom); } catch (e) {}
+          try { FS.unlink(nom); } catch (e) {}
+          try { await OD.idbDelete([nom]); } catch (e) {}
+          if (!man[OD.norm(nom)]) continue;
+          try { await OD._ensure(nom); } catch (e) {}
+          if (OD.rwOk(nom)) fix++;
+        }
+      } finally {
+        OD.trace('BOOTPRE n=' + n + ' bytes=' + bytes + ' ms=' + (Date.now() - t0) +
+          ' faltan=' + still + ' mal=' + bad + ' repuestos=' + fix);
+        try { Module.removeRunDependency('odBoot'); } catch (e) {}
+      }
+    })();
   },
   wkNote(msg) {
     if (OD._wkNote === msg) return;
@@ -940,8 +1391,15 @@ var OD = {
   },
   wkAsk(canon, hit) {
     if (!OD.wk || !OD.wkPending) return;
-    if (OD.wkPending[canon]) return;
-    OD.wkPending[canon] = 1;
+    // 82.3: una peticion VIVA no se vuelve a encolar. Antes, al vencer la
+    // espera se borraba `wkPending` mientras el worker seguia con ella, el
+    // motor reintentaba y se pedia el mismo fichero otra vez. En la traza
+    // INT_A de 82.2 eso fueron 5.481 peticiones en 33 s y la pestaña murio
+    // con el heap en 472 MB. Se deja caducar a los 20 s por si el worker
+    // perdio el mensaje de verdad.
+    const at = OD.wkPending[canon] | 0;
+    if (at && Date.now() - at < 20000) return;
+    OD.wkPending[canon] = Date.now();
     OD.wkStats.ask++;
     let rel = canon.replace(/^\//, '');
     let size = (hit && hit.s) || 0;
@@ -993,8 +1451,11 @@ var OD = {
         if (a) {
           const i = a.indexOf(finish);
           if (i >= 0) a.splice(i, 1);
-          if (!a.length) { delete OD.wkWaiters[canon]; delete OD.wkPending[canon]; }
+          // 82.3: NO se borra `wkPending`: la peticion sigue viva en el worker.
+          // Solo se cuenta el fallo, para dejar de aplazar este fichero.
+          if (!a.length) delete OD.wkWaiters[canon];
         }
+        if (OD.wkTO) OD.wkTO[canon] = (OD.wkTO[canon] || 0) + 1;
         OD.wkTimeouts++;
         if (OD.wkTimeouts <= 8) OD.trace('ODWKTMO ' + canon + ' ms=' + deadline);
         finish(null);
@@ -1013,11 +1474,25 @@ var OD = {
     }
     if (n) OD.trace('ODWKDEAD ' + why + ' esperas=' + n);
   },
+  // Pide la migración IDB->OPFS una sola vez y ya con el mundo cargado: son
+  // ~7.500 ficheros y durante la carga competiría con el propio arranque.
+  migrateMaybe() {
+    if (OD._migAsked || !OD.wk || !OD.gameLive()) return;
+    OD._migAsked = true;
+    try { OD.wk.postMessage({ op: 'migrate' }); } catch (e) { OD._migAsked = false; }
+  },
+  // "El mundo está cargado": el motor ya dibujó el primer frame. Se mira
+  // `__vcState` (gGameState; GS_PLAYING_GAME = 9), NO `__vcInGame`, que se
+  // apaga al abrir mapa o pausa y volvía a meter la espera de 30 s en medio de
+  // la partida: 3 s de congelación medidos en la sesión 81.5.
+  gameLive() {
+    return typeof window !== 'undefined' && (window.__vcState | 0) >= 9;
+  },
   // Solo se aplaza en partida, y nunca encadenando fallos del mismo fichero
   // (tras 8 seguidos se espera: antes esperar que quedarse sin fichero).
   wkFastFail(canon) {
     if (!OD.wk) return false;
-    if (typeof window === 'undefined' || window.__vcInGame !== true) return false;
+    if (!OD.gameLive()) return false;
     // El motor avisa cuando está en una carga BLOQUEANTE (LoadAllRequestedModels,
     // preparación de cinemática): ahí no se aplaza nada, porque el motor no
     // puede reintentar en otro frame y se quedaría sin el modelo/audio.
@@ -1036,17 +1511,31 @@ var OD = {
     OD.wkStats.fast++;
     return true;
   },
-  // true si el worker está vivo y el juego en partida (para no caer al camino
-  // bloqueante cuando el worker falla: en partida se reintenta en otro frame).
+  // true si el worker está vivo y el mundo ya está cargado (para no caer al
+  // camino bloqueante cuando el worker falla: el motor reintenta en otro frame).
   wkInGame() {
-    return !!OD.wk && typeof window !== 'undefined' && window.__vcInGame === true;
+    return !!OD.wk && OD.gameLive();
   },
   wkOnMsg(e) {
     const m = (e && e.data) || {};
-    if (m.op === 'ready') { if (OD.verbose) odLog('[od] worker de carga listo'); return; }
+    if (m.op === 'ready') {
+      if (OD.verbose) odLog('[od] worker de carga listo');
+      // Una línea por sesión: dice si la caché corre en OPFS o sigue en IDB.
+      OD.trace('ODCACHE opfs=' + (m.opfs ? 1 : 0));
+      return;
+    }
+    if (m.op === 'mig') {
+      if (m.done || (m.n && m.n % 1000 === 0)) {
+        OD.trace('ODCMIG n=' + m.n + ' mb=' + m.mb + (m.done ? ' fin=1' : ''));
+      }
+      return;
+    }
     if (!OD.wkPending) OD.wkInit();
+    if (m.key && OD_PROBE.test(m.key)) odProbe('wkmsg ' + m.op + ' ' +
+      (m.buf ? m.buf.byteLength : (m.msg || '')) + ' src=' + (m.src || '-') + ' ms=' + (m.ms || 0));
     delete OD.wkPending[m.key];
     delete OD.wkFails[m.key];
+    if (OD.wkTO) delete OD.wkTO[m.key];
     if (m.op === 'err') {
       // Los primeros fallos, siempre en el log (con esto se ve la causa real
       // sin adivinar); después basta con el contador.
@@ -1057,9 +1546,28 @@ var OD = {
       }
     }
     if (m.op === 'data') {
-      OD.wkStats[m.src === 'idb' ? 'idb' : 'net']++;
+      OD.wkStats[m.src === 'opfs' ? 'opfs' : (m.src === 'idb' ? 'idb' : 'net')]++;
       OD.wkStats.ms += m.ms || 0;
-      OD.wkMs[m.key] = [m.ms || 0, m.src === 'idb' ? 'idb' : 'red'];
+      // 82.2: una entrega lenta del worker (>600 ms) deja rastro aunque nadie
+      // la estuviera esperando; es el dato que separa "worker atascado" de
+      // "el motor no la pidió".
+      if ((m.ms || 0) > 600 && (OD.wkSlowShown || 0) < 10) {
+        OD.wkSlowShown = (OD.wkSlowShown || 0) + 1;
+        OD.trace('ODWSLOW ' + m.key + ' ms=' + Math.round(m.ms) + ' src=' + (m.src || '?') +
+          ' mb=' + ((m.buf ? m.buf.byteLength : 0) / 1048576).toFixed(1));
+      }
+      // 82.6: una entrega desde red de un fichero ya entregado antes = se ha
+      // bajado dos veces. Se deja en la traza para vigilarlo.
+      if (m.src !== 'opfs' && m.src !== 'idb') {
+        if (!OD.netSeen) OD.netSeen = {};
+        if (OD.netSeen[m.key]) {
+          if ((OD.wkDup || 0) < 6) {
+            OD.wkDup = (OD.wkDup || 0) + 1;
+            OD.trace('ODWDUP ' + m.key + ' mb=' + ((m.buf ? m.buf.byteLength : 0) / 1048576).toFixed(1));
+          }
+        } else OD.netSeen[m.key] = 1;
+      }
+      OD.wkMs[m.key] = [m.ms || 0, m.src === 'opfs' ? 'opfs' : (m.src === 'idb' ? 'idb' : 'red')];
       const arr = OD.wkWaiters[m.key];
       if (arr) { delete OD.wkWaiters[m.key]; for (const fn of arr) fn(m.buf); }
       else {
@@ -1123,6 +1631,7 @@ var OD = {
     let t0 = 0;
     try { t0 = performance.now(); } catch (e) {}
     const u8 = new Uint8Array(buffer);
+    if (OD_PROBE.test(canon)) odProbe('write ' + canon + ' ' + u8.length);
     const slash = canon.lastIndexOf('/');
     const parent = slash > 0 ? canon.slice(0, slash) : '/';
     const name = canon.slice(slash + 1);
@@ -1417,6 +1926,35 @@ var OD = {
     try { FS.stat(path); return true; } catch (e) { return false; }
   },
 
+  // 83.1: resuelve una ruta de MEMFS sin distinguir caja y devuelve la ruta
+  // REAL (con la caja del fichero) o null. El motor pide en MAYUSCULAS
+  // ("MODELS\\GENERIC\\WHEELS.TXD") y MEMFS es sensible a la caja: el fichero
+  // esta en MEMFS pero FS.stat de la ruta tal cual falla, la peticion acababa
+  // en od_fetch -> nil y el motor se quedaba sin el. Se comprueba componente a
+  // componente (stat directo y, si falla, un readdir del padre).
+  fsResolve(path) {
+    try { FS.stat(path); return path; } catch (e) {}
+    const parts = String(path).split('/');
+    let cur = '/';
+    for (let i = 0; i < parts.length; i++) {
+      const seg = parts[i];
+      if (!seg) continue;
+      const cand = cur === '/' ? '/' + seg : cur + '/' + seg;
+      try { FS.stat(cand); cur = cand; continue; } catch (e) {}
+      let ents = null;
+      try { ents = FS.readdir(cur); } catch (e) { return null; }
+      const low = seg.toLowerCase();
+      let found = null;
+      for (const en of ents) {
+        if (en === '.' || en === '..') continue;
+        if (en.toLowerCase() === low) { found = en; break; }
+      }
+      if (!found) return null;
+      cur = cur === '/' ? '/' + found : cur + '/' + found;
+    }
+    return cur;
+  },
+
   // Devuelve ruta canónica lista para abrir, o null.
   // F4a: coste de las suspensiones que pide el wasm (wall ms de ensure).
   // F5c: aquí también se detecta la emisora que pide el motor (todas las
@@ -1428,8 +1966,21 @@ var OD = {
   asyncN: 0, asyncMs: 0,
   async ensure(reqPath) {
     const t0 = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+    const dbg = OD_PROBE.test(String(reqPath));
+    if (dbg) odProbe('ensure enter ' + reqPath);
     try {
       const s = String(reqPath).replace(/\\/g, '/');
+      // 83.1: fuera del manifiesto Y fuera de MEMFS = null EN EL ACTO, sin
+      // await. Toda peticion que llega aqui acaba en una suspension del wasm;
+      // si la ruta no la conoce nadie (SAVE/*.b, basura del motor, un nombre
+      // con el CWD movido) esa suspension no tiene por que existir. Lo que ya
+      // esta en MEMFS sigue mandando: presentSync lo devuelve aunque el
+      // manifiesto no lo liste (son los guardados del jugador).
+      if (!OD.manifestFor(reqPath) && !OD.presentSync(reqPath)) {
+        try { OD.trace('ODMISS fuera-de-manifest ' + reqPath); } catch (e) {}
+        if (dbg) odProbe('ensure -> nil (fuera-de-manifest)');
+        return null;
+      }
       // (el arranque en caliente se engancha en init(): hookWorldLoad)
       try {
         const sm = /([a-z0-9_]+)\.adf$/i.exec(s);
@@ -1455,7 +2006,9 @@ var OD = {
           }
         }
       } catch (e) {}
-      return await OD._ensure(reqPath);
+      const r = await OD._ensure(reqPath);
+      if (dbg) odProbe('ensure -> ' + (r || 'nil') + ' ' + reqPath);
+      return r;
     }
     finally {
       OD.asyncN++;
@@ -1499,23 +2052,88 @@ var OD = {
     let cwd = '/';
     try { cwd = FS.cwd(); } catch (e) {}
     const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
+    // Un fichero de 0 bytes es un hueco: el paquete lo creo pero el contenido
+    // aun no ha llegado. Si el manifest dice que tiene bytes, NO esta.
+    let want = 0;
+    for (const n of cands) {
+      const h = OD.manifest && OD.manifest[n];
+      if (h && h.s) { want = h.s; break; }
+    }
+    if (!want) {
+      // El motor pide el nombre suelto (SPANISH.GXT con CWD=/TEXT): buscar por nombre.
+      const base = OD.norm(reqPath).split('/').pop();
+      if (OD.manifest) for (const k in OD.manifest) {
+        if (k === base || k.slice(-(base.length + 1)) === '/' + base) { want = OD.manifest[k].s || 0; break; }
+      }
+    }
+    const odDbg = /generic|wheels|air_vlo/i.test(reqPath);
+    const odNote = (res, size) => {
+      if (!odDbg) return;
+      try {
+        const h = OD.manifest && OD.manifest[cands[0]];
+        OD.trace('ODRES pedido=' + reqPath + ' norm=' + cands[0] +
+          ' res=' + (res || '-') + ' size=' + (size == null ? '-' : size) +
+          ' man=' + (h ? ('p=' + h.p + ' s=' + h.s) : '-'));
+      } catch (e) {}
+    };
     for (const n of cands) {
       const f = '/' + n;
-      try { FS.stat(f); if (OD.live.has(f)) OD.touch(f, 0); return f; } catch (e) {}
+      // 83.1: se resuelve contra el MEMFS real (sin distinguir caja) y se
+      // devuelve ESA ruta; con la ruta tal cual, un pedido en mayusculas no
+      // encontraba el fichero aunque estuviera puesto.
+      const real = OD.fsResolve(f);
+      if (!real) continue;
+      try {
+        const st = FS.stat(real);
+        if (want && st.size === 0) continue;
+        if (OD.live.has(real)) OD.touch(real, 0);
+        odNote(real, st.size);
+        return real;
+      } catch (e) {}
     }
     let canon = null;
     for (const n of cands) {
       if (OD.manifest && OD.manifest[n]) { canon = '/' + OD.manifest[n].p; break; }
     }
-    if (canon && OD.exists(canon)) return canon;
+    // 83.1: la ruta pedida puede no resolver (PED.DAT con el CWD en "/" y el
+    // fichero puesto en /data) aunque el manifest lo tenga y ESTE ya en MEMFS.
+    // Antes se devolvia null, el motor repetia la descarga del fichero entero
+    // y en esa segunda vuelta se quedaba clavado (ultimo rastro: `idb ask`).
+    if (!canon) {
+      const mf = OD.manifestFor(reqPath);
+      if (mf && mf.p) canon = '/' + mf.p;
+    }
+    if (canon && OD.exists(canon)) {
+      let sz = null;
+      try { sz = FS.stat(canon).size; } catch (e) {}
+      odNote(canon, sz);
+      return canon;
+    }
+    odNote(null, null);
+    return null;
+  },
+  // 83.1: la misma resolucion que _ensure (ruta tal cual, contra CWD y por
+  // nombre suelto) pero SIN await: permite contestar null en el acto.
+  manifestFor(reqPath) {
+    let cwd = '/';
+    try { cwd = FS.cwd(); } catch (e) {}
+    const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
+    for (const n of cands) if (OD.manifest && OD.manifest[n]) return OD.manifest[n];
+    const base = OD.norm(reqPath).split('/').pop();
+    if (OD.manifest) for (const k in OD.manifest) {
+      if (k === base || k.slice(-(base.length + 1)) === '/' + base) return OD.manifest[k];
+    }
     return null;
   },
   async _ensure(reqPath) {
     // El motor abre a veces con ruta relativa al CWD (p. ej. "SPANISH.GXT"
     // con CWD=/TEXT). Probar tal cual + contra CWD.
     const t0 = Date.now();
+    const dbg = OD_PROBE.test(String(reqPath));
+    const B = (m) => { if (dbg) odProbe(m); };
+    B('_ensure enter ' + reqPath);
     const present = OD.presentSync(reqPath);
-    if (present) return present;
+    if (present) { B('present ' + present); return present; }
     let cwd = '/';
     try { cwd = FS.cwd(); } catch (e) {}
     const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
@@ -1524,11 +2142,35 @@ var OD = {
       if (OD.manifest && OD.manifest[n]) { hit = OD.manifest[n]; canon = '/' + hit.p; break; }
     }
     if (!hit) {
+      // El motor pide el nombre sin carpeta (SPANISH.GXT con CWD=/TEXT) o con
+      // otra capitalizacion: probar por nombre suelto contra el manifest.
+      const base = OD.norm(reqPath).split('/').pop();
+      if (OD.manifest) for (const k in OD.manifest) {
+        if (k === base || k.slice(-(base.length + 1)) === '/' + base) {
+          hit = OD.manifest[k]; canon = '/' + hit.p; break;
+        }
+      }
+    }
+    B('hit ' + (hit ? canon + ' s=' + hit.s : 'nil'));
+    if (!hit) {
       // 21/10: el motor pide un fichero que el manifest no tiene -> el
       // motor reintenta en bucle y la carga no acaba. Hay que verlo.
       try { OD.trace('ODMISS fuera-de-manifest ' + reqPath); } catch (e) {}
       return null;
     }
+
+    // 83.0: los bytes de la cache viven en este IDB. Leerlo antes de pedirle
+    // nada al worker evita el tiron de 30 s cuando el worker no contesta (el
+    // motor esta suspendido en Asyncify y no puede reintentar el open).
+    B('idb ask ' + canon);
+    try {
+      const cached = await OD.idbGetT(canon);
+      B('idb ' + (cached ? cached.byteLength : 'nil') + ' ' + canon);
+      if (cached && cached.byteLength) {
+        OD.idbHits++;
+        return OD.writeFile(canon, cached);
+      }
+    } catch (e) {}
 
     // Camino nuevo (Nivel 1): el worker trae el fichero fuera del hilo del
     // juego. Si ya lo tiene entregado, esto es solo copiarlo a MEMFS. Si no,
@@ -1538,20 +2180,49 @@ var OD = {
     // seguridad.
     if (OD.wk) {
       const ready = OD.wkTake(canon);
+      B('wk ready=' + (ready ? ready.byteLength : 'nil') + ' ' + canon);
       if (ready) return OD.writeFile(canon, ready);
       OD.wkAsk(canon, hit);
-      if (OD.wkFastFail(canon)) {
+      B('wk asked pend=' + (OD.wkPending[canon] ? 1 : 0) + ' ' + canon);
+      // 82.1: el corte por presupuesto va DESPUES de saber si el fichero es
+      // gordo. Medido en la traza de 82.0: `CUT begin INT_A` seguido de
+      // `CUT cutsimg-FALLO INT_A`, y 138 ms despues el `BIGCREATE
+      // /anim/cuts.img 110MB` durante el SEGUNDO open (el .DAT de la camara).
+      // El primer `RwStreamOpen("ANIM\\CUTS.IMG")` habia entrado por
+      // `wkFastFail` (en partida y con __vcODBlock=0) y devolvia null en 3 ms;
+      // librw no reintenta, asi que la escena quedaba en `anim=0 cam=1`: camara
+      // de cinematica correcta y los 11 personajes apilados en el offset, fuera
+      // de plano. Un fichero >= 8 MB no se aplaza nunca: es ruta critica.
+      const bigFile = (hit.s | 0) >= 8 * 1048576;
+      if (!bigFile && OD.wkFastFail(canon)) {
         OD.noFetch(reqPath, canon, 'presupuesto', t0);
         return null;
       }
-      // T18: en partida la espera se acota a 2 s (antes 30 s dentro de una carga
-      // bloqueante, que es donde se quedó congelado el juego al salir un cop del
-      // coche y pedir su .ifp). Cargando (init, escena desde el menú) se mantiene
-      // larga: ahí sí es la ruta crítica.
-      const inGame = (typeof window !== 'undefined' && window.__vcInGame === true);
+      // T18: con el mundo cargado la espera se acota a 2 s (antes 30 s dentro
+      // de una carga bloqueante, que es donde se quedó congelado el juego al
+      // salir un cop del coche y pedir su .ifp). Cargando (init, escena desde el
+      // menú) se mantiene larga: ahí sí es la ruta crítica. El corte va por
+      // `__vcState >= 9`, no por `__vcInGame`: mapa y pausa lo apagaban y
+      // devolvían los 30 s a media partida.
+      // 82.2: durante una carga BLOQUEANTE el motor ya esta parado y no puede
+      // reintentar, asi que partir la espera en dos solo suma. Medido en INT_A:
+      // `camera.txd` espero 2016 ms (tope de partida), se rindio, y el reintento
+      // espero otros 1962 ms por el mismo fichero de 73 KB.
+      let blkNow = 0;
+      try { blkNow = window.__vcODBlock | 0; } catch (e) {}
+      const live = OD.gameLive() && !blkNow;
       const wt0 = Date.now();
-      const delivered = await OD.wkWait(canon, inGame ? 2000 : 30000);
+      // 82.0: un fichero gordo no puede compartir el tope de 2 s de partida.
+      // Medido en la cinematica INT_A: `anim/cuts.img` son 115 MB y el worker
+      // tardaba 2,16 s; a los 2.000 ms se rendia, `RwStreamOpen` fallaba y la
+      // escena salia sin animaciones ni camara (`CUT loaded anim=0 cam=0`), o
+      // sea, los objetos apilados fuera de plano. Los grandes se esperan como
+      // en la carga (30 s); el resto conserva el corte corto para no congelar
+      // el frame en partida. `bigFile` se calcula arriba, antes del fast-fail.
+      const delivered = await OD.wkWait(canon, bigFile ? 30000 : (live ? 2000 : 30000));
       const wwait = Date.now() - wt0;
+      B('wk wait -> ' + (delivered ? delivered.byteLength : 'nil') + ' ms=' + wwait +
+        ' live=' + (live ? 1 : 0) + ' blk=' + blkNow + ' big=' + (bigFile ? 1 : 0) + ' ' + canon);
       let wpath = null, wmem = 0;
       if (delivered) {
         const mt0 = Date.now();
@@ -1565,15 +2236,19 @@ var OD = {
       }
       delete OD.wkMs[canon];
       if (delivered) return wpath;
-      // El worker no pudo traerlo: en partida se reintenta en otro frame (el
-      // motor lo vuelve a pedir); durante la carga se sigue por el camino de
-      // siempre, que es la ruta crítica y no admite aplazamientos.
-      if (OD.wkInGame()) {
+      // El worker no pudo traerlo: con el mundo cargado se reintenta en otro
+      // frame (el motor lo vuelve a pedir); durante la carga se sigue por el
+      // camino de siempre, que es la ruta crítica y no admite aplazamientos.
+      // 82.3: tras 2 esperas vencidas de ESTE fichero se deja de aplazar y se
+      // baja por el camino bloqueante. Si no, el motor reintenta en bucle y
+      // cada intento cuesta 2 s: 12,5 s de congelacion medidos en INT_A.
+      if (OD.wkInGame() && !bigFile && ((OD.wkTO && OD.wkTO[canon]) || 0) < 2) {
         OD.noFetch(reqPath, canon, 'worker', t0);
         return null;
       }
     }
 
+    B('inflight join=' + (OD.inflight[canon] ? 1 : 0) + ' ' + canon);
     if (OD.inflight[canon]) { await OD.inflight[canon]; return OD.exists(canon) ? canon : null; }
     const job = (async () => {
       OD.misses.push(canon + ' (' + hit.s + ')');
@@ -1611,18 +2286,23 @@ var OD = {
       // Red con reintentos (F1): si un intento se cuelga o falla, se reintenta;
       // tras 3 fallos se devuelve null (fallo suave, como un 404).
       OD.pending[canon] = { t0: Date.now(), last: Date.now(), bytes: 0, try: 0 };
+      B('slot ask active=' + OD.dlActive + ' cola=' + OD.dlQueue.length + ' ' + canon);
       await OD.dlSlot();
+      B('slot got ' + canon);
       try {
         let lastErr = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
           OD.pending[canon].try = attempt;
           OD.pending[canon].last = Date.now();
+          B('net try ' + attempt + ' ' + canon);
           try {
             await OD.dlNetwork(canon, hit, attempt);
             lastErr = null;
+            B('net ok ' + attempt + ' ' + canon);
             break;
           } catch (e) {
             lastErr = e;
+            B('net err ' + attempt + ' ' + ((e && e.message) || e) + ' ' + canon);
             odLog('[od] REINTENTO ' + attempt + '/3 ' + canon + ': ' + (e && e.message || e));
             try { FS.unlink(canon + '.part'); } catch (ee) {}
             await OD.sleep(1000 * attempt);
@@ -1641,6 +2321,7 @@ var OD = {
       try { FS.unlink(canon + '.part'); } catch (ee) {}
     }
     delete OD.inflight[canon];
+    B('job end exists=' + (OD.exists(canon) ? 1 : 0) + ' ' + canon);
     if (OD.exists(canon)) return canon;
     OD.noFetch(reqPath, canon, 'descarga', t0);
     return null;
@@ -1648,8 +2329,31 @@ var OD = {
 };
 
 window.__vcRaf = { n: 0 };
+// 82.0: hercios reales de la pantalla. El motor los usa como tope de fps
+// (glfw.cpp): 60 Hz -> 60, 120 Hz -> 120, 144 Hz -> 144. No hay API estandar,
+// asi que se mide con los intervalos de rAF; se descartan los frames ocultos y
+// los saltos de pestana (fuera de 4-60 ms no es un frame presentado).
+window.__vcHz = 0;
 (function vcRafCount() {
-  window.__vcRaf.n++;
+  const st = window.__vcRaf;
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  try {
+    if (!document.hidden && st.t) {
+      const dt = now - st.t;
+      if (dt >= 4 && dt <= 60) {
+        st.s = st.s || [];
+        st.s.push(dt);
+        if (st.s.length > 41) st.s.shift();
+        if (st.s.length >= 15) {
+          const v = st.s.slice().sort((a, b) => a - b);
+          const hz = Math.round(1000 / v[v.length >> 1]);
+          if (hz >= 30 && hz <= 240) window.__vcHz = hz;
+        }
+      }
+    }
+    st.t = now;
+  } catch (e) {}
+  st.n++;
   try { requestAnimationFrame(vcRafCount); } catch (e) {}
 })();
 

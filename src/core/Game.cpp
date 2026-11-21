@@ -408,7 +408,7 @@ bool CGame::InitialiseStep(const char* datFile)
 {
 	(void)datFile;
 #ifdef __EMSCRIPTEN__
-	{ char ob[96]; snprintf(ob, sizeof(ob), "initstep %d heap %u", s_initStep, (unsigned)emscripten_get_heap_size()); ODTRACES(ob); }
+	{ char ob[96]; snprintf(ob, sizeof(ob), "initstep %d heap %u", s_initStep, (unsigned)emscripten_get_heap_size()); ODTRACES(ob); OdBeacon(ob); }
 #endif
 	switch (s_initStep) {
 	case 0:
@@ -471,37 +471,55 @@ bool CGame::InitialiseStep(const char* datFile)
 		CDma::SyncChannel(0, true);
 #endif
 
+		printf("STEP3 begin\n");
 		CGameLogic::InitAtStartOfGame();
+		printf("STEP3 logic\n");
 		CReferences::Init();
+		printf("STEP3 refs\n");
 		TheCamera.Init();
 		TheCamera.SetRwCamera(Scene.camera);
 		CDebug::DebugInitTextBuffer();
+		printf("STEP3 cam\n");
 		ThePaths.Init();
+		printf("STEP3 paths\n");
 		ThePaths.AllocatePathFindInfoMem(4500);
+		printf("STEP3 pathtree\n");
 		CScriptPaths::Init();
+		printf("STEP3 scriptpaths\n");
 		CWeather::Init();
+		printf("STEP3 weather\n");
 		CCullZones::Init();
+		printf("STEP3 cullzones\n");
 		COcclusion::Init();
+		printf("STEP3 occlusion\n");
 		CCollision::Init();
+		printf("STEP3 collision\n");
 		CSetPieces::Init();
 		CTheZones::Init();
+		printf("STEP3 zones\n");
 		CUserDisplay::Init();
 		CMessages::Init();
 		CMessages::ClearAllMessagesDisplayedByGame();
+		printf("STEP3 messages\n");
 		CRecordDataForGame::Init();
 		CRestart::Initialise();
+		printf("STEP3 restart\n");
 
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Initialise();
+		printf("STEP3 world\n");
 		POP_MEMID();
 
 		PUSH_MEMID(MEMID_TEXTURES);
 		CParticle::Initialise();
+		printf("STEP3 particle\n");
 		POP_MEMID();
 
 		PUSH_MEMID(MEMID_ANIMATION);
 		CAnimManager::Initialise();
+		printf("STEP3 anim\n");
 		CCutsceneMgr::Initialise();
+		printf("STEP3 cutscene\n");
 		POP_MEMID();
 
 		PUSH_MEMID(MEMID_CARS);
@@ -1252,6 +1270,7 @@ extern void OdWebMark(int);
 void CGame::Process(void) 
 {
 	ODMARK(0);
+	WebVehProfFrame();
 #ifdef __EMSCRIPTEN__
 	PedClumpSweep(0);
 #endif
@@ -1794,3 +1813,18 @@ CGame::CanSeeOutSideFromCurrArea(void)
 	return currArea == AREA_MAIN_MAP || currArea == AREA_MALL ||
 		currArea == AREA_MANSION || currArea == AREA_HOTEL;
 }
+
+// T19: arranque determinista para el test e2e. Hace exactamente la misma
+// llamada que el menu del motor al elegir "nueva partida".
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+extern "C" EMSCRIPTEN_KEEPALIVE void TestNewGame(void)
+{
+	// 83.1: la barra va ESCAPADA. Con una sola (`"DATA\GTA_VC.DAT"`) el
+	// compilador se come el `\G` como escape invalido y la cadena llega a
+	// CFileLoader::LoadLevel como `DATAGTA_VC.DAT`: el .DAT del mundo no se
+	// abre, el paso 4 se queda sin lista de niveles y el arranque no termina.
+	// Es la misma llamada que hace main.cpp (linea 2400).
+	CGame::Initialise("DATA\\GTA_VC.DAT");
+}
+#endif

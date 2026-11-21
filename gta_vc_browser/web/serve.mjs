@@ -24,6 +24,8 @@ const MIME = {
   '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.map': 'application/json; charset=utf-8',
   '.wasm': 'application/wasm',
   '.data': 'application/octet-stream',
   '.png': 'image/png',
@@ -67,6 +69,17 @@ function tryStat(abs, req, res, onMiss) {
 function staticServe(req, res) {
   let urlPath = decodeURIComponent(req.url.split('?')[0]);
   if (urlPath === '/') urlPath = '/index.html';
+  // 83.0: los ficheros grandes del manifiesto siguen sueltos en ../streamed
+  // (gen_manifest.py solo empaqueta los pequenos). Sin esta ruta, /streamed/*
+  // da 404 y la descarga inicial falla esos 22 (incluye hud.txd y cuts.img).
+  if (urlPath.startsWith('/streamed/')) {
+    const root = path.normalize(path.join(webRoot, '..', 'streamed'));
+    const abs = path.normalize(path.join(root, urlPath.slice('/streamed/'.length)));
+    if (abs.startsWith(root)) {
+      tryStat(abs, req, res, () => { res.statusCode = 404; res.end('not found'); });
+      return;
+    }
+  }
   const abs = path.normalize(path.join(webRoot, urlPath));
   if (!abs.startsWith(webRoot)) { res.statusCode = 403; res.end(); return; }
   tryStat(abs, req, res, () => {

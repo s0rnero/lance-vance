@@ -64,10 +64,37 @@ PRELOAD="--preload-file $REPO_FWD/gta_vc_browser/bootseed@/"
 # mueve la pila a proposito: los dos vigilantes se disparan con codigo sano.
 # Si hay que volver a instrumentar, que sea sobre una build de prueba aparte y
 # comprobando antes que arranca, no sobre la que juega el jugador.
+# Modo diagnostico REVC_ASAN=1: AddressSanitizer para cazar escrituras fuera
+# de limites. Objetos en build/web-asan (no mezcla con la build normal).
+ASAN_FLAGS=""
+OPT="-O3"
+# 82.4: sin DWARF. Con -g el enlazador deja los simbolos y wasm-opt solo aplica
+# "limited binaryen optimizations" (el .wasm sale ademas con 23 MB). Sin -g se
+# ejecutan todos los pases de -O3 sobre el modulo completo. REVC_DEBUGINFO=1
+# recupera la build con simbolos para cazar una caida con nombres y lineas.
+DBGFLAGS=""
+if [ "${REVC_DEBUGINFO:-0}" = "1" ]; then DBGFLAGS="-g"; fi
+# 80.1: menos ordenes a la GPU por objeto. Va aqui (y no en el codigo de librw)
+# para que librw y el juego vean la misma definicion: cambian el tamano de
+# InstanceDataHeader (campo `vao`) y la ruta de los uniformes.
+#   RW_GL_USE_VAOS  prepara los vertices con 1 orden en vez de 17 por objeto.
+#   RW_GL_USE_UBOS  manda matriz y luces en un bloque, no en 6 ordenes sueltas.
+# 80.2: UBO se queda APAGADO. Con el bloque `Object` reescrito en cada objeto,
+# ANGLE tiene que sincronizar con los dibujos que aun lo estan leyendo: en el
+# log de 80.1 `RenderFadingInEntities` paso de 2,16 a 3,27 ms por llamada (peor)
+# mientras el pase de mundo mejoro con VAO. Los dos juntos no se compensaban.
+GLFASTFLAGS="-DRW_GL_USE_VAOS"
+MEMFLAGS="-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=536870912 -sMAXIMUM_MEMORY=2147483648"
+if [ "${REVC_ASAN:-0}" = "1" ]; then
+  ASAN_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+  OPT="-O1"
+  MEMFLAGS="-sALLOW_MEMORY_GROWTH=0 -sINITIAL_MEMORY=1073741824 -sMAXIMUM_MEMORY=1073741824"
+  BUILD_DIR="gta_vc_browser/build/web-asan"
+fi
 emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE="${REVC_BUILD_TYPE:-RelWithDebInfo}" \
-  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG" \
-  -DCMAKE_C_FLAGS_RELWITHDEBINFO="-O3 -g -DNDEBUG" \
+  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS" \
+  -DCMAKE_C_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS" \
   -DCMAKE_EXECUTABLE_SUFFIX=.html \
   -DCMAKE_MODULE_PATH="$(pwd)/gta_vc_browser/cmake" \
   -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$OUT_DIR" \
@@ -80,7 +107,7 @@ emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DLIBRW_GL3_GFXLIB=GLFW \
   -DLIBRW_TOOLS=OFF \
   -DLIBRW_EXAMPLES=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS="-sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=402653184 -sMAXIMUM_MEMORY=2147483648 -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_EmscriptenTick,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuTap,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace -sJSPI=1 -sJSPI_EXPORTS=main,EmscriptenTick,ViceExt* -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
+  -DCMAKE_EXE_LINKER_FLAGS="$ASAN_FLAGS --profiling-funcs -sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 $MEMFLAGS -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_EmscriptenTick,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuActivate,_ViceExtTouchMenuChange,_ViceExtTouchMenuStep,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace,_TestNewGame -sJSPI=1 -sJSPI_EXPORTS=main,EmscriptenTick,ViceExt*,TestNewGame -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
 
 echo "--- configurado en $BUILD_DIR ---"
 if [ "$CONFIG_ONLY" -eq 1 ]; then exit 0; fi

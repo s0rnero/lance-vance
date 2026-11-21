@@ -190,6 +190,13 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 
 	ms_cutsceneProcessing = true;
 	vcCutscenePublishLoading();   // web: ya no se aplaza ningún fichero
+	// 82.1: la preparación de una cinemática es una carga BLOQUEANTE de verdad:
+	// `RwStreamOpen(CUTS.IMG)`, `CFileMgr::OpenFile` del .DAT, el IFP y el
+	// preload de música abren una vez y NO reintentan en otro frame. Con
+	// `__vcODBlock` a 0 el on-demand los aplazaba en partida (medido: el primer
+	// open de cuts.img devolvía null en 3 ms y la escena quedaba anim=0; y el
+	// `AUDIO\INT_A.MP3` no llegaba a abrirse). Todo este tramo espera fichero.
+	odBlockingPush();
 	ms_wasCutsceneSkipped = false;
 	CTimer::Suspend();
 	if (!bIsEverythingRemovedFromTheWorldForTheBiggestFuckoffCutsceneEver)
@@ -295,6 +302,7 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	CWorld::Players[CWorld::PlayerInFocus].MakePlayerSafe(true);
 
 	CTimer::Resume();
+	odBlockingPop();   // 82.1: fin de la carga bloqueante de la cinemática
 }
 
 void
@@ -461,6 +469,16 @@ CCutsceneMgr::CreateCutsceneObject(int modelId)
 		pColModel->boundingBox.max = CVector(radius, radius, radius);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// 82.0: un modelo que no llego no da error, solo un objeto invisible.
+	// Esta linea dice en el log de que modelo se trata si vuelve a pasar.
+	if (CModelInfo::GetModelInfo(modelId)->GetRwObject() == nil) {
+		char cut[160];
+		snprintf(cut, sizeof cut, "CUTNOOBJ model=%d %s", modelId,
+			CModelInfo::GetModelInfo(modelId)->GetModelName());
+		ODTRACES(cut);
+	}
+#endif
 	pCutsceneObject = new CCutsceneObject();
 	pCutsceneObject->SetModelIndex(modelId);
 	if (ms_useCutsceneShadows)
