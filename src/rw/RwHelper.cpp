@@ -233,10 +233,17 @@ PushRendergroup(const char *name, bool timed)
 #endif
 }
 
+#ifdef __EMSCRIPTEN__
+// 85.1: cierra el lote de instancing antes de terminar el pase (ver
+// gl3render.cpp). Fuera del bloque de tiempos para que su coste no se pierda.
+extern void OdInstanceFlush(void);
+#endif
+
 void
 PopRendergroup(void)
 {
 #ifdef __EMSCRIPTEN__
+	OdInstanceFlush();
 	if (s_rgDepth <= 0) {
 		s_rgUnf++;
 	} else {

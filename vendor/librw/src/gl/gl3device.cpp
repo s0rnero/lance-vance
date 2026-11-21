@@ -147,6 +147,26 @@ static UniformState uniformState;
 static UniformScene uniformScene;
 static UniformObject uniformObject;
 
+// 85.1: firma de las luces activas. Dos atomics con el mismo hash reciben
+// exactamente la misma iluminacion y se pueden juntar en un lote instanciado.
+uint32
+odLightsHash(void)
+{
+	uint32 h = 2166136261u;
+	const uint8 *p = (const uint8*)&uniformObject.ambLight;
+	uint32 n = sizeof(uniformObject.ambLight) +
+	           sizeof(uniformObject.lightParams) +
+	           sizeof(uniformObject.lightPosition) +
+	           sizeof(uniformObject.lightDirection) +
+	           sizeof(uniformObject.lightColor);
+	uint32 i;
+	for(i = 0; i < n; i++){
+		h ^= p[i];
+		h *= 16777619u;
+	}
+	return h;
+}
+
 #ifndef RW_GL_USE_UBOS
 // State
 int32 u_alphaRef;
@@ -173,6 +193,9 @@ int32 u_surfProps;
 
 Shader *defaultShader, *defaultShader_noAT;
 Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
+// 85.1: variantes instanciadas.
+Shader *defaultShader_inst, *defaultShader_noAT_inst;
+Shader *defaultShader_fullLight_inst, *defaultShader_fullLight_noAT_inst;
 
 static bool32 stateDirty = 1;
 static bool32 sceneDirty = 1;
@@ -2168,6 +2191,22 @@ initOpenGL(void)
 	defaultShader_fullLight_noAT = Shader::create(vs_fullLight, fs_noAT);
 	assert(defaultShader_fullLight_noAT);
 
+	// 85.1: variantes instanciadas (matriz del mundo por atributo).
+	const char *vs_inst[] = { shaderDecl, "#define OD_INSTANCED 1\n", header_vert_src, default_vert_src, nil };
+	const char *vs_fullLight_inst[] = { shaderDecl, "#define OD_INSTANCED 1\n#define DIRECTIONALS\n#define POINTLIGHTS\n#define SPOTLIGHTS\n", header_vert_src, default_vert_src, nil };
+	defaultShader_inst = Shader::create(vs_inst, fs);
+	assert(defaultShader_inst);
+	defaultShader_noAT_inst = Shader::create(vs_inst, fs_noAT);
+	assert(defaultShader_noAT_inst);
+	defaultShader_fullLight_inst = Shader::create(vs_fullLight_inst, fs);
+	assert(defaultShader_fullLight_inst);
+	defaultShader_fullLight_noAT_inst = Shader::create(vs_fullLight_inst, fs_noAT);
+	assert(defaultShader_fullLight_noAT_inst);
+	// Si alguna variante no compilo (driver con menos atributos), se deja el
+	// camino de siempre en vez de dibujar con un shader nulo.
+	odSetInstancing(defaultShader_inst && defaultShader_noAT_inst &&
+	                defaultShader_fullLight_inst && defaultShader_fullLight_noAT_inst);
+
 	openIm2D();
 	openIm3D();
 
@@ -2188,6 +2227,14 @@ termOpenGL(void)
 	defaultShader_fullLight = nil;
 	defaultShader_fullLight_noAT->destroy();
 	defaultShader_fullLight_noAT = nil;
+	defaultShader_inst->destroy();
+	defaultShader_inst = nil;
+	defaultShader_noAT_inst->destroy();
+	defaultShader_noAT_inst = nil;
+	defaultShader_fullLight_inst->destroy();
+	defaultShader_fullLight_inst = nil;
+	defaultShader_fullLight_noAT_inst->destroy();
+	defaultShader_fullLight_noAT_inst = nil;
 
 	glDeleteTextures(1, &whitetex);
 	whitetex = 0;

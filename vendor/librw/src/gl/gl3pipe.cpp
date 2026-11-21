@@ -147,6 +147,11 @@ render(rw::ObjPipeline *rwpipe, Atomic *atomic)
 	assert(geo->instData->platform == PLATFORM_GL3);
 	if(geo->instData == nil || geo->instData->platform != PLATFORM_GL3)
 		return;
+	// 85.1: un pipeline distinto (matfx, skin) rompe el lote de instancing:
+	// se vuelca antes para no cambiar el orden de lo ya acumulado.
+	if(pipe->renderCB && pipe->renderCB != defaultRenderCB &&
+	   pipe->renderCB != defaultRenderCBDualPass)
+		odFlushPending();
 	if(pipe->renderCB)
 		pipe->renderCB(atomic, (InstanceDataHeader*)geo->instData);
 }

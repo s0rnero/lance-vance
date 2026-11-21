@@ -55,6 +55,14 @@ enum AttribIndices
 	ATTRIB_TEXCOORDS5,
 	ATTRIB_TEXCOORDS6,
 	ATTRIB_TEXCOORDS7,
+	// 85.1: matriz del mundo por instancia (4 columnas, divisor 1).
+	// 12-15 son las ultimas plazas legales (GL_MAX_VERTEX_ATTRIBS = 16);
+	// VC no usa mas de dos juegos de texcoords (5 y 6), asi que 12-15
+	// estan libres. La 16 daba "Attribute location out of range".
+	ATTRIB_INSTANCE0 = 12,
+	ATTRIB_INSTANCE1 = 13,
+	ATTRIB_INSTANCE2 = 14,
+	ATTRIB_INSTANCE3 = 15,
 };
 
 // default uniform indices
@@ -99,6 +107,9 @@ struct Shader;
 
 extern Shader *defaultShader, *defaultShader_noAT;
 extern Shader *defaultShader_fullLight, *defaultShader_fullLight_noAT;
+// 85.1: variantes con OD_INSTANCED (matriz por atributo).
+extern Shader *defaultShader_inst, *defaultShader_noAT_inst;
+extern Shader *defaultShader_fullLight_inst, *defaultShader_fullLight_noAT_inst;
 
 struct Im3DVertex
 {
@@ -180,6 +191,12 @@ void setViewMatrix(float32*);
 
 // per Object
 void setWorldMatrix(Matrix*);
+// 85.1: hash de las luces activas (para agrupar solo atomics con la misma luz).
+uint32 odLightsHash(void);
+// 85.1: enciende el instancing solo si sus shaders compilaron.
+void odSetInstancing(bool32 on);
+// 85.1: vuelca ya los lotes pendientes (pase nuevo u otro pipeline).
+void odFlushPending(void);
 int32 setLights(WorldLights *lightData);
 
 // per Mesh

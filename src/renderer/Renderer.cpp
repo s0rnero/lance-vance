@@ -167,6 +167,19 @@ OdDrawsFlush(void)
 {
 	char t[520];
 	int i, j, n, tot, now, attr, tmpI, tmpD;
+	{
+		// 85.1: lotes de instancing cerrados y copias dibujadas en la ventana.
+		// Va antes del interruptor de sondas: sin esto no hay forma de saber si
+		// el lote entra (material con alfa, GS o sin VAO lo desactivan).
+		extern int gOdInstBatches, gOdInstInstances, gRwDrawInstances;
+		static int pB, pI, pD;
+		snprintf(t, sizeof t, "ODINSTG lotes=%d copias=%d drawsApi=%d",
+			gOdInstBatches - pB, gOdInstInstances - pI, gRwDrawInstances - pD);
+		ODTRACES(t);
+		pB = gOdInstBatches;
+		pI = gOdInstInstances;
+		pD = gRwDrawInstances;
+	}
 	now = OdDrawsMark();
 	tot = now - s_odDrawPrev;
 	s_odDrawPrev = now;

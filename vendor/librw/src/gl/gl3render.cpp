@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include "../rwbase.h"
 #include "../rwerror.h"
@@ -16,6 +19,12 @@
 #include "rwgl3impl.h"
 
 int gRwDrawInstances = 0;
+// 85.1: instancing por geometria. gOdInstCount > 1 hace que drawInst_simple
+// emita glDrawElementsInstanced; gOdInstBatches/Instances son la traza de que
+// el lote entro de verdad.
+int gOdInstCount = 0;
+int gOdInstBatches = 0;
+int gOdInstInstances = 0;
 
 namespace rw {
 namespace gl3 {
@@ -26,8 +35,16 @@ void
 drawInst_simple(InstanceDataHeader *header, InstanceData *inst)
 {
 	flushCache();
-	glDrawElements(header->primType, inst->numIndex,
-	               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
+	if(::gOdInstCount > 1){
+		glDrawElementsInstanced(header->primType, inst->numIndex,
+		                        GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset,
+		                        ::gOdInstCount);
+		::gOdInstInstances += ::gOdInstCount;
+	}else{
+		glDrawElements(header->primType, inst->numIndex,
+		               GL_UNSIGNED_SHORT, (void*)(uintptr)inst->offset);
+		::gOdInstInstances++;
+	}
 	::gRwDrawInstances++;
 }
 
@@ -273,7 +290,20 @@ defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
 		odMatTrace(m, inst0);
 #endif
 
-		if((vsBits & VSLIGHT_MASK) == 0){
+		if(::gOdInstCount > 1){
+			// 85.1: variante que toma la matriz del mundo del atributo.
+			if((vsBits & VSLIGHT_MASK) == 0){
+				if(getAlphaTest())
+					defaultShader_inst->use();
+				else
+					defaultShader_noAT_inst->use();
+			}else{
+				if(getAlphaTest())
+					defaultShader_fullLight_inst->use();
+				else
+					defaultShader_fullLight_noAT_inst->use();
+			}
+		}else if((vsBits & VSLIGHT_MASK) == 0){
 			if(getAlphaTest())
 				defaultShader->use();
 			else
@@ -300,20 +330,236 @@ defaultRenderCBImpl(Atomic *atomic, InstanceDataHeader *header, bool32 dualPass)
 	teardownVertexInput(header);
 }
 
+// 85.1: instancing por geometria. Los atomics opacos que comparten geometria,
+// juego de luces y estado se acumulan y se dibujan con una sola orden
+// (glDrawElementsInstanced), con la matriz del mundo como atributo por
+// instancia. No se reordena nada que mezcle: solo se acumula lo opaco (que el
+// z-buffer resuelve igual) y el lote se vuelca al cambiar de clave o de pase.
+#define OD_INST_MAXGROUPS 96
+#define OD_INST_MAXPER    256
+
+// Un lote abierto por (geometria, luces, estado). La lista de render va por
+// distancia, asi que los mismos modelos no caen seguidos: se acumulan en
+// varios lotes y se dibujan al cerrar el pase (PopRendergroup).
+struct OdInstGroup {
+	uint32 key;
+	uint32 zw;
+	uint32 cull;
+	int32  n;
+	InstanceDataHeader *header;
+	Atomic *rep;
+};
+
+static bool32 odInstOn = 1;
+static int32  odInstGroupN = 0;
+static OdInstGroup odInstGroups[OD_INST_MAXGROUPS];
+static float  odInstPool[OD_INST_MAXGROUPS][OD_INST_MAXPER*16];
+static GLuint odInstVbo = 0;
+static int32  odInstVboBytes = 0;
+
+void
+odSetInstancing(bool32 on)
+{
+#ifdef __EMSCRIPTEN__
+	// Escape sin recompilar: `window.__vcInstancing = 0` + recargar deja el
+	// camino de siempre. Sirve para separar un fallo de instancing de uno del
+	// juego en una sesion en el movil.
+	on = on && EM_ASM_INT({ return (typeof window.__vcInstancing === 'undefined' ||
+		window.__vcInstancing) ? 1 : 0; });
+#endif
+	odInstOn = on;
+#ifdef __EMSCRIPTEN__
+	printf("[web] instancing=%d\n", (int)on);
+#endif
+}
+
+static uint32
+odInstHash(uint32 h, uint32 v)
+{
+	return (h ^ v) * 16777619u;
+}
+
+static bool32
+odInstCanBatch(Atomic *atomic, InstanceDataHeader *header)
+{
+	int32 i;
+#ifndef RW_GL_USE_VAOS
+	// El atributo de instancia se cuelga del VAO de la geometria.
+	return 0;
+#endif
+	if(!odInstOn || header == nil || header->inst == nil)
+		return 0;
+	if(header->primType != GL_TRIANGLES || header->numMeshes <= 0)
+		return 0;
+	// Solo opaco: lo que mezcla o se desvanece conserva su orden.
+	if(rw::GetRenderState(rw::GSALPHATEST))
+		return 0;
+	if(rw::GetRenderState(rw::ZWRITEENABLE) == 0)
+		return 0;
+	for(i = 0; i < (int32)header->numMeshes; i++){
+		Material *m = header->inst[i].material;
+		if(m == nil || m->color.alpha != 0xFF)
+			return 0;
+		if(header->inst[i].vertexAlpha)
+			return 0;
+	}
+	return 1;
+}
+
+static void odInstDrawGroup(OdInstGroup *g);
+static void odInstFlushAll(void);
+
+static bool32
+odInstSubmit(Atomic *atomic, InstanceDataHeader *header)
+{
+	Matrix *ltm;
+	uint32 key, zw, cull;
+	int32 vsBits, i, gi;
+	OdInstGroup *g;
+
+	if(!odInstCanBatch(atomic, header))
+		return 0;
+
+	ltm = atomic->getFrame()->getLTM();
+	zw = rw::GetRenderState(rw::ZWRITEENABLE) != 0;
+	cull = rw::GetRenderState(rw::CULLMODE);
+	// Las luces son por atomic (posicion). Solo se juntan los que reciben
+	// exactamente el mismo juego de luces; si no, se veria distinto.
+	vsBits = lightingCB(atomic);
+	key = odInstHash((uint32)(uintptr)header, odLightsHash());
+	key = odInstHash(key, (uint32)vsBits);
+	key = odInstHash(key, zw);
+	key = odInstHash(key, cull);
+
+	g = nil;
+	for(i = 0; i < odInstGroupN; i++)
+		if(odInstGroups[i].key == key){
+			g = &odInstGroups[i];
+			break;
+		}
+	if(g == nil){
+		if(odInstGroupN >= OD_INST_MAXGROUPS)
+			odInstFlushAll();
+		g = &odInstGroups[odInstGroupN++];
+		g->key = key;
+		g->zw = zw;
+		g->cull = cull;
+		g->n = 0;
+		g->header = header;
+		g->rep = atomic;
+	}
+	gi = (int32)(g - odInstGroups);
+	if(g->n >= OD_INST_MAXPER){
+		odInstDrawGroup(g);
+		g->n = 0;
+		g->rep = atomic;
+	}
+	convMatrix((RawMatrix*)&odInstPool[gi][g->n*16], ltm);
+	g->n++;
+	return 1;
+}
+
+static void
+odInstDrawGroup(OdInstGroup *g)
+{
+	int32 i, n, bytes, gi;
+	InstanceDataHeader *header;
+	Atomic *rep;
+	uint32 zw, cull;
+
+	if(g == nil || g->n == 0)
+		return;
+	n = g->n;
+	header = g->header;
+	rep = g->rep;
+	zw = g->zw;
+	cull = g->cull;
+	gi = (int32)(g - odInstGroups);
+	g->n = 0;
+	g->rep = nil;
+
+	// El estado del pase pudo cambiar entre el envio y el volcado.
+	rw::SetRenderState(rw::ZWRITEENABLE, zw);
+	rw::SetRenderState(rw::CULLMODE, cull);
+	rw::SetRenderState(rw::GSALPHATEST, 0);
+
+	if(n > 1){
+		if(odInstVbo == 0)
+			glGenBuffers(1, &odInstVbo);
+		glBindBuffer(GL_ARRAY_BUFFER, odInstVbo);
+		bytes = n*16*4;
+		if(bytes > odInstVboBytes){
+			odInstVboBytes = bytes < 4096 ? 4096 : bytes;
+			glBufferData(GL_ARRAY_BUFFER, odInstVboBytes, nil, GL_STREAM_DRAW);
+		}
+		glBufferSubData(GL_ARRAY_BUFFER, 0, bytes, odInstPool[gi]);
+#ifdef RW_GL_USE_VAOS
+		glBindVertexArray(header->vao);
+		for(i = 0; i < 4; i++){
+			GLuint loc = ATTRIB_INSTANCE0 + i;
+			glEnableVertexAttribArray(loc);
+			glVertexAttribPointer(loc, 4, GL_FLOAT, GL_FALSE, 64,
+			                      (void*)(uintptr)(i*16));
+			glVertexAttribDivisor(loc, 1);
+		}
+#endif
+		::gOdInstCount = n;
+		::gOdInstBatches++;
+		defaultRenderCBImpl(rep, header, false);
+		::gOdInstCount = 0;
+#ifdef RW_GL_USE_VAOS
+		for(i = 0; i < 4; i++){
+			glVertexAttribDivisor(ATTRIB_INSTANCE0 + i, 0);
+			glDisableVertexAttribArray(ATTRIB_INSTANCE0 + i);
+		}
+#endif
+	}else{
+		defaultRenderCBImpl(rep, header, false);
+	}
+}
+
+static void
+odInstFlushAll(void)
+{
+	int32 i;
+	for(i = 0; i < odInstGroupN; i++)
+		odInstDrawGroup(&odInstGroups[i]);
+	odInstGroupN = 0;
+}
+
+void
+odFlushPending(void)
+{
+	odInstFlushAll();
+}
+
 void
 defaultRenderCB(Atomic *atomic, InstanceDataHeader *header)
 {
+	if(odInstSubmit(atomic, header))
+		return;
+	// Cualquier dibujo que no se pueda acumular (transparente, otro estado)
+	// conserva el orden: se vuelca el lote antes de dibujarlo.
+	odInstFlushAll();
 	defaultRenderCBImpl(atomic, header, false);
 }
 
 void
 defaultRenderCBDualPass(Atomic *atomic, InstanceDataHeader *header)
 {
+	odInstFlushAll();
 	defaultRenderCBImpl(atomic, header, true);
 }
 
 
 }
+}
+
+// Fuera de namespace: el juego la llama al cerrar cada pase (PopRendergroup).
+void
+OdInstanceFlush(void)
+{
+	rw::gl3::odFlushPending();
 }
 
 #endif
