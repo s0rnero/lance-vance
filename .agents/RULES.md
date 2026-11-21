@@ -12,7 +12,8 @@ These rules apply to any agent working in the codebase. They are the generic, sh
 
 ### 0.1 Git
 
-- Do not interact with Git unless the user explicitly requests it.
+- Commit locally every finished change: the commit is the checkpoint the user can return to.
+- **Never push** (`git push`, pushed tags, any remote write) unless the user explicitly asks for that push. Publishing is the user's decision, not the agent's.
 - If the user asks for a destructive Git operation, confirm before proceeding.
 
 ### 0.2 File Deletion
@@ -191,7 +192,7 @@ There is no automatic history phase. Do not create history records unless explic
 
 | Rule         | Do                                           | Avoid                                           |
 | ------------ | -------------------------------------------- | ----------------------------------------------- |
-| Git          | Wait for explicit request                    | Interacting without permission                  |
+| Git          | Commit local when the change is done         | `git push`, pushed tags, remote writes          |
 | Files        | Report before deleting                       | Deleting without approval                       |
 | Scope        | Changes scoped to the requirement            | Extra submodules/files                          |
 | Scripts      | Ask permission for verification              | Running blocked scripts automatically           |
@@ -208,6 +209,12 @@ There is no automatic history phase. Do not create history records unless explic
 <!-- USER-START -->
 
 ## Local additions (preserved on update)
+
+- **Commit local, never push.** Every finished change is committed in this repository and
+  nothing else: `git push` and pushed tags are forbidden unless the user asks for that
+  exact push. The commit is the checkpoint (and the tag, when the user asks for one);
+  publishing is the user's call, and an agent push has already left work nobody had
+  reviewed on the remote. If a push is ever needed, the user does it.
 
 - **Never use the browser to verify gameplay.** Driving the game through an agent-controlled
   browser (preview, Playwright, screenshots, DOM probes) is forbidden: only the player

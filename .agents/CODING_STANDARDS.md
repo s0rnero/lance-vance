@@ -105,7 +105,7 @@ with consecutive names/descs in `src/animation/AnimManager.cpp` (the engine inde
     Keep `.cpp`/`.h` edits with a binary python script and `assert count == 1` per
     replacement; do not use editors that rewrite line endings.
   - Windows console is cp1252: run python with `PYTHONIOENCODING=utf-8`.
-  - **No commits / `git add` / `push`** unless the user asks.
+  - **Commit local when the change is done; never `push`** (see `.agents/RULES.md` §0.1).
   - **Never kill `node` processes** (other threads run dev servers in this checkout).
 - Anti-patterns already paid for (do not reintroduce):
   - no new control flow inside `LoadAllRequestedModels` (Asyncify);
