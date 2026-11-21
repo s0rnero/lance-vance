@@ -8728,6 +8728,7 @@ CPed::SetPedPositionInCar(void)
 				}
 			}
 		}
+#ifdef VICEEXT_PROP_TRACE
 		CBaseModelInfo *odMi = CModelInfo::GetModelInfo(m_pMyVehicle->GetModelIndex());
 		const char *odNom = odMi ? odMi->GetModelName() : "?";
 		CBaseModelInfo *odPmi = CModelInfo::GetModelInfo(GetModelIndex());
@@ -8743,6 +8744,7 @@ CPed::SetPedPositionInCar(void)
 			m_pMyVehicle->bLowVehicle ? 1 : 0, m_pMyVehicle->bIsVan ? 1 : 0,
 			odSeatLift, odPnom, odNom);
 		ODTRACES(odT);
+#endif
 	}
 #endif
 	SetMatrix(newMat);

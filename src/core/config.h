@@ -705,7 +705,7 @@ enum Config {
 #define VICEEXT_AUDIO_WINDOWS_LOGICAL	// T10 lluvia, retune y reflexiones
 #define VICEEXT_SPLASH_LOGICAL			// T16 gotas de lente: duracion y presupuesto
 #define VICEEXT_ALLOC_GUARD				// T14 cota de texturas por TXD + trazas
-#define VICEEXT_TYRE_TRACE				// T12 sola traza del neumatico
+// #define VICEEXT_TYRE_TRACE			// T12 sola traza del neumatico (apagada 22/11: 2.000 lineas)
 
 #define OD_AIR_TURN_DAMP		0.99f		// T2: factor por tick de 30 Hz
 #define OD_STREAM_VEH_FRAMES	350		// T4: ticks logicos entre recargas de clase
@@ -724,7 +724,13 @@ enum Config {
 #define OD_PSA_STATION_DEAD_MS	8000u		// T22: ms de fallos seguidos antes de morir la emisora
 
 // Plan 49.1: los cinco puntos del jugador tras el 50.0-T1 (ADR-050).
-#define VICEEXT_FOV_TRACE			// T28: FOVLN publica el FOV escalado solo cuando cambia
+// #define VICEEXT_FOV_TRACE			// T28: FOVLN (apagada 22/11: 7.800 lineas en 8 min)
+
+// 22/11 (movil): trazas de depuracion que quedaron encendidas y solo gastan
+// lineas. Se dejan aqui para poder volver a encenderlas con un #define.
+// #define VICEEXT_PROP_TRACE			// SILLACAM, BODYLENS, AMBERGATE
+// #define VICEEXT_PAD_TRACE			// VEX touch enable (una por llamada de la UI)
+// #define VICEEXT_OD_LOD_TRACE			// WORLDLOD/ODLODNIL por entidad (caro)
 #define VICEEXT_DRUNK_FADE_NO_WRAP	// T24: el desvanecido de la embriaguez no desborda el uint8
 #define VICEEXT_CEILING_RAISED		// T25: el techo de vuelo vanilla se levanta al doble
 #define VICEEXT_SPLASH_REARM		// T23: un solo chapuzon por ventana en el agua somera

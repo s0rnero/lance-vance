@@ -2260,9 +2260,11 @@ void CPad::SetTouchControls(bool on)
 		bTouchInput = false;
 		PCTempTouchState.Clear();
 	}
+#ifdef VICEEXT_PAD_TRACE
 	char t[96];
 	snprintf(t, sizeof t, "VEX touch enable=%d autoaim=%d", on ? 1 : 0, bTouchAutoAim ? 1 : 0);
 	ODTRACES(t);
+#endif
 }
 
 void CPad::SetTouchAutoAim(bool on)

@@ -304,19 +304,25 @@ OdCullDiag(CEntity *ent, CSimpleModelInfo *mi, float dist, float cull)
 static void
 OdLodNilDiag(CEntity *ent, CSimpleModelInfo *mi, float dist, float cull)
 {
-	const char *nom = mi->GetModelName();
-	int i;
-	char t[176];
-
+	// Contador siempre (lo lee ODCULLSTAT, es una suma). El nombre con strcmp
+	// solo si se enciende la traza: recorria 48 nombres por entidad y frame.
 	odLodNilN++;
-	for(i = 0; i < odLodNilNameN; i++)
-		if(strcmp(odLodNilNames[i], nom) == 0)
+#ifdef VICEEXT_OD_LOD_TRACE
+	{
+		const char *nom = mi->GetModelName();
+		int i;
+		char t[176];
+
+		for(i = 0; i < odLodNilNameN; i++)
+			if(strcmp(odLodNilNames[i], nom) == 0)
+				return;
+		if(odLodNilNameN >= 48)
 			return;
-	if(odLodNilNameN >= 48)
-		return;
-	odLodNilNames[odLodNilNameN++] = nom;
-	snprintf(t, sizeof t, "ODLODNIL model=%s dist=%.1f cull=%.1f lod0=%.0f", nom, dist, cull, mi->m_lodDistances[0]);
-	ODTRACES(t);
+		odLodNilNames[odLodNilNameN++] = nom;
+		snprintf(t, sizeof t, "ODLODNIL model=%s dist=%.1f cull=%.1f lod0=%.0f", nom, dist, cull, mi->m_lodDistances[0]);
+		ODTRACES(t);
+	}
+#endif
 }
 
 static void
@@ -968,6 +974,7 @@ enum Visbility
 #define CANTIMECULL (!OTHERUNAVAILABLE)
 
 #ifdef __EMSCRIPTEN__
+#ifdef VICEEXT_OD_LOD_TRACE
 static void
 OdTraceWorldLod(CEntity *ent, CSimpleModelInfo *mi, float dist, RpAtomic *a)
 {
@@ -1005,6 +1012,7 @@ OdTraceWorldLod(CEntity *ent, CSimpleModelInfo *mi, float dist, RpAtomic *a)
 		mi->m_lodDistances[0], mi->m_lodDistances[1], mi->m_lodDistances[2]);
 	ODTRACES(t);
 }
+#endif
 #endif
 
 int32
@@ -1119,7 +1127,7 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 		mi->m_isDamaged = true;
 
 	RpAtomic *a = mi->GetAtomicFromDistance(dist);
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_OD_LOD_TRACE)
 	OdTraceWorldLod(ent, mi, dist, a);
 #endif
 	if(a == nil)

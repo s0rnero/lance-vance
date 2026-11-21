@@ -9134,7 +9134,7 @@ CAutomobile::ViceExtSetupBodyLens(void)
 			nfuera = e.fuera;
 			tint = (ndentro > 0 && nfuera == 0) ? 1 : 0;
 		}
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_PROP_TRACE)
 		{
 			char t[200];
 			const char *rfn = found ? GetFrameNodeName(found) : nil;
@@ -9152,7 +9152,7 @@ CAutomobile::ViceExtSetupBodyLens(void)
 		m_aBodyLensTint[m_nBodyLens] = tint;
 		m_nBodyLens++;
 	}
-#ifdef __EMSCRIPTEN__
+#if defined(__EMSCRIPTEN__) && defined(VICEEXT_PROP_TRACE)
 	{
 		char t[160];
 		snprintf(t, sizeof t, "BODYLENS model=%s filas=%d", nm, (int)m_nBodyLens);
