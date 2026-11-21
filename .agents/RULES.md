@@ -216,6 +216,13 @@ There is no automatic history phase. Do not create history records unless explic
   publishing is the user's call, and an agent push has already left work nobody had
   reviewed on the remote. If a push is ever needed, the user does it.
 
+- **Only the player runs the game.** No agent opens a terminal or starts a process that
+  serves or runs the game: `npm run dev`, `npm run serve`, `npm run preview`, the e2e
+  scripts under `gta_vc_browser/test/`, or any browser session that loads the game. The
+  agent may hand the player the exact command and the URL, but the process and the game
+  session are the player's. Making the dev server reachable (`--host`) is a config change,
+  not permission to start it.
+
 - **Never use the browser to verify gameplay.** Driving the game through an agent-controlled
   browser (preview, Playwright, screenshots, DOM probes) is forbidden: only the player
   perceives FPS, sound, feel and timing in this project, and an agent's browser session is
