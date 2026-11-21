@@ -702,8 +702,15 @@ var OD = {
   // ficheros que el motor estaba usando. Un escalón pequeño y reversible: el
   // techo de MEMFS pasa de ~404 a ~420 MB. Si el móvil mata la pestaña, volver
   // a 240 antes que tocar HEAP_HI.
-  CAP: 192 * 1048576,
-  GRACE_MS: 45000,
+  // 21/11 (thrash medido en movil, sesion 21:29-21:32): 5.889 desalojos en dos
+  // minutos (~49/s) con `liveBytes` clavado en el tope de 192 MB: cada fichero
+  // nuevo expulsaba al mas viejo y el motor lo volvia a pedir, de ahi las
+  // recargas de atomos y el tercio de frames fuera de 16,7 ms. Se sube el techo
+  // a 240 (MEMFS ~404 MB, el valor que ya se uso antes del 19/11) y la gracia a
+  // 90 s para que solo salga lo que no se toca en minuto y medio. Si un movil
+  // justo mata la pestaña, volver CAP a 192 y dejar la gracia en 90.
+  CAP: 240 * 1048576,
+  GRACE_MS: 90000,
   HEAP_HI: 520 * 1048576,
   CAP_SOFT: 96 * 1048576,
   heapOver: 0,
@@ -726,7 +733,9 @@ var OD = {
     // Doble del tope: desalojo duro (sin periodo de gracia). MEMFS mantiene
     // vivos los streams abiertos aunque se deslinkee el nombre; reabrir
     // re-descarga (IDB lo sirve sin red). La alternativa es morir por OOM.
-    const hard = force || OD.liveBytes > 2 * OD.CAP;
+    // La valvula de emergencia no puede estar a 2*CAP (480 MB): ahi la pestaña
+    // ya muere en movil antes de que salte. Se dispara a CAP+96 (336 MB).
+    const hard = force || OD.liveBytes > OD.CAP + 96 * 1048576;
     const order = [...OD.live.entries()].sort((a, b) => a[1].t - b[1].t);
     for (const [p, e] of order) {
       if (OD.liveBytes <= cap) break;
