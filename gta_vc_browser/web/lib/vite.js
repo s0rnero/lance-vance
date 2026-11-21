@@ -195,20 +195,6 @@ export function vcWeb(options = {}) {
             if (fs.existsSync(file) && fs.statSync(file).size > 0)
               fs.copyFileSync(file, prev);
           } catch (e) {}
-          // Copia de seguridad incondicional: una partida jugada no se pierde
-          // aunque el cliente no mande marcas PART (el caso de hoy: 9 min de
-          // movil rotados por una recarga posterior).
-          try {
-            if (fs.existsSync(file) && fs.statSync(file).size > 0) {
-              const cab = fs.readFileSync(file, 'utf8').slice(0, 64);
-              const mm = /^(\d{4}-\d\d-\d\d)T(\d\d:\d\d)/.exec(cab);
-              if (mm) {
-                fs.mkdirSync(archiveDir, { recursive: true });
-                const dest = path.join(archiveDir, 'odtrace-' + mm[1] + '_' + mm[2].replace(':', '') + '.log');
-                if (!fs.existsSync(dest)) fs.copyFileSync(file, dest);
-              }
-            }
-          } catch (e) {}
           const guardada = partida >= 1 ? archivaParte(file, tamano(file), partida, nombre)
                                        : archiveSession(file);
           partida = 0;
