@@ -580,7 +580,7 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // guardian a una cada 200 ms (antes: un postMessage por entidad y frame dentro
 // del bucle de ProcessControl) y compila sin DWARF para que wasm-opt aplique
 // todos los pases de -O3. VERSION anterior: 2026-11-20-82.3-T1.
-export const VERSION = '2026-11-21-83.1-T36';
+export const VERSION = '2026-11-21-84.1-T1';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.

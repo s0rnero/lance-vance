@@ -100,6 +100,18 @@ OdTxdRelease(int slot, TxdDef *def, const char *why)
 	odTxdSlotBytes[slot] = 0;
 	odTxdSlotLive[slot] = 0;
 	odTxdFreeN++;
+	{
+		static int odTxdLiveN;
+		if(def->refCount > 0 && strncmp(def->name, "frontend", 8) != 0 && strncmp(def->name, "splash", 6) != 0){
+			odTxdLiveN++;
+			if(odTxdLiveN <= 40 || (odTxdLiveN % 100) == 0){
+				char tl[160];
+				snprintf(tl, sizeof tl, "ODTXDLIVE nom=%.19s refs=%d bytes=%lldKB why=%s n=%d",
+					def->name, def->refCount, (long long)(bytes / 1024), why, odTxdLiveN);
+				ODTRACES(tl);
+			}
+		}
+	}
 	if(odTxdFreeN > 2000 && (odTxdFreeN % 50) != 0)
 		return;
 	char t[224];

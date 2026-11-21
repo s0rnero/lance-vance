@@ -588,7 +588,7 @@ var OD = {
   // `2026-11-17-60.10-T12`.
   // 61.0 T1: la textura paletizada del rines (wheel_lightvan64back) pasa a 32
   // bits sin comprimir. dataTag anterior: `2026-11-18-61.0`.
-  dataTag: '2026-11-19-80.0-T1',
+  dataTag: '2026-11-21-84.0-T1',
   manifest: null,
   db: null,
   inflight: {},
@@ -928,7 +928,8 @@ var OD = {
     try {
       const r = await fetch(OD.cfg.manifestUrl, { cache: 'no-cache' });
       OD.manifest = await r.json();
-    } catch (e) { OD.manifest = {}; }
+      OD.byBase = null;
+    } catch (e) { OD.manifest = {}; OD.byBase = null; }
     setTimeout(() => OD.prefetchLastStation(), 15000);
     try {
       OD.db = await new Promise((res, rej) => {
@@ -1977,7 +1978,7 @@ var OD = {
       // esta en MEMFS sigue mandando: presentSync lo devuelve aunque el
       // manifiesto no lo liste (son los guardados del jugador).
       if (!OD.manifestFor(reqPath) && !OD.presentSync(reqPath)) {
-        try { OD.trace('ODMISS fuera-de-manifest ' + reqPath); } catch (e) {}
+        OD.missNote(reqPath);
         if (dbg) odProbe('ensure -> nil (fuera-de-manifest)');
         return null;
       }
@@ -2060,11 +2061,8 @@ var OD = {
       if (h && h.s) { want = h.s; break; }
     }
     if (!want) {
-      // El motor pide el nombre suelto (SPANISH.GXT con CWD=/TEXT): buscar por nombre.
-      const base = OD.norm(reqPath).split('/').pop();
-      if (OD.manifest) for (const k in OD.manifest) {
-        if (k === base || k.slice(-(base.length + 1)) === '/' + base) { want = OD.manifest[k].s || 0; break; }
-      }
+      const e = OD.baseIndex()[OD.norm(reqPath).split('/').pop()];
+      if (e) want = e.s || 0;
     }
     const odDbg = /generic|wheels|air_vlo/i.test(reqPath);
     const odNote = (res, size) => {
@@ -2114,16 +2112,30 @@ var OD = {
   },
   // 83.1: la misma resolucion que _ensure (ruta tal cual, contra CWD y por
   // nombre suelto) pero SIN await: permite contestar null en el acto.
+  baseIndex() {
+    if (OD.byBase) return OD.byBase;
+    const idx = Object.create(null);
+    if (OD.manifest) for (const k in OD.manifest) {
+      const i = k.lastIndexOf('/');
+      const b = i < 0 ? k : k.slice(i + 1);
+      if (idx[b] === undefined) idx[b] = OD.manifest[k];
+    }
+    OD.byBase = idx;
+    return idx;
+  },
+  missNote(reqPath) {
+    if (!OD.missSeen) OD.missSeen = Object.create(null);
+    if (OD.missSeen[reqPath]) return;
+    OD.missSeen[reqPath] = 1;
+    OD.missNote(reqPath);
+  },
   manifestFor(reqPath) {
     let cwd = '/';
     try { cwd = FS.cwd(); } catch (e) {}
     const cands = [OD.norm(reqPath), OD.norm(cwd + '/' + reqPath)];
     for (const n of cands) if (OD.manifest && OD.manifest[n]) return OD.manifest[n];
-    const base = OD.norm(reqPath).split('/').pop();
-    if (OD.manifest) for (const k in OD.manifest) {
-      if (k === base || k.slice(-(base.length + 1)) === '/' + base) return OD.manifest[k];
-    }
-    return null;
+    const e = OD.baseIndex()[OD.norm(reqPath).split('/').pop()];
+    return e || null;
   },
   async _ensure(reqPath) {
     // El motor abre a veces con ruta relativa al CWD (p. ej. "SPANISH.GXT"
@@ -2142,20 +2154,14 @@ var OD = {
       if (OD.manifest && OD.manifest[n]) { hit = OD.manifest[n]; canon = '/' + hit.p; break; }
     }
     if (!hit) {
-      // El motor pide el nombre sin carpeta (SPANISH.GXT con CWD=/TEXT) o con
-      // otra capitalizacion: probar por nombre suelto contra el manifest.
-      const base = OD.norm(reqPath).split('/').pop();
-      if (OD.manifest) for (const k in OD.manifest) {
-        if (k === base || k.slice(-(base.length + 1)) === '/' + base) {
-          hit = OD.manifest[k]; canon = '/' + hit.p; break;
-        }
-      }
+      const e = OD.baseIndex()[OD.norm(reqPath).split('/').pop()];
+      if (e) { hit = e; canon = '/' + e.p; }
     }
     B('hit ' + (hit ? canon + ' s=' + hit.s : 'nil'));
     if (!hit) {
       // 21/10: el motor pide un fichero que el manifest no tiene -> el
       // motor reintenta en bucle y la carga no acaba. Hay que verlo.
-      try { OD.trace('ODMISS fuera-de-manifest ' + reqPath); } catch (e) {}
+      OD.missNote(reqPath);
       return null;
     }
 

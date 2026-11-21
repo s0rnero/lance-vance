@@ -258,6 +258,92 @@ bool CRenderer::m_loadingPriority;
 float CRenderer::ms_lodDistScale = 1.2f;
 float CRenderer::ms_drawDistCull = 100000.0f;
 
+static int odCullN, odCullBigN, odLodNilN;
+static uint32 odCullFrame;
+static float odCullFarLast = -1.0f, odCullScaleLast = -1.0f;
+static const char *odCullBigNames[48];
+static int odCullBigNameN;
+static const char *odLodNilNames[48];
+static int odLodNilNameN;
+
+static bool
+OdIsFarModel(CEntity *ent, CSimpleModelInfo *mi)
+{
+	return ent->bIsBIGBuilding || mi->m_ignoreDrawDist || mi->m_lodDistances[0] > 2500.0f;
+}
+
+static float
+OdModelRadius(int model)
+{
+	CColModel *c = CModelInfo::GetColModel(model);
+	return c ? c->boundingSphere.radius : 0.0f;
+}
+
+static void
+OdCullDiag(CEntity *ent, CSimpleModelInfo *mi, float dist, float cull)
+{
+	const char *nom;
+	int i;
+	char t[176];
+
+	odCullN++;
+	if(!OdIsFarModel(ent, mi))
+		return;
+	odCullBigN++;
+	nom = mi->GetModelName();
+	for(i = 0; i < odCullBigNameN; i++)
+		if(strcmp(odCullBigNames[i], nom) == 0)
+			return;
+	if(odCullBigNameN >= 48)
+		return;
+	odCullBigNames[odCullBigNameN++] = nom;
+	snprintf(t, sizeof t, "ODCULLBIG model=%s dist=%.1f cull=%.1f", nom, dist, cull);
+	ODTRACES(t);
+}
+
+static void
+OdLodNilDiag(CEntity *ent, CSimpleModelInfo *mi, float dist, float cull)
+{
+	const char *nom = mi->GetModelName();
+	int i;
+	char t[176];
+
+	odLodNilN++;
+	for(i = 0; i < odLodNilNameN; i++)
+		if(strcmp(odLodNilNames[i], nom) == 0)
+			return;
+	if(odLodNilNameN >= 48)
+		return;
+	odLodNilNames[odLodNilNameN++] = nom;
+	snprintf(t, sizeof t, "ODLODNIL model=%s dist=%.1f cull=%.1f lod0=%.0f", nom, dist, cull, mi->m_lodDistances[0]);
+	ODTRACES(t);
+}
+
+static void
+OdCullStat(float far, float scale, float cull)
+{
+	float df = far - odCullFarLast;
+	float ds = scale - odCullScaleLast;
+	char t[176];
+
+	if(df < 0.0f) df = -df;
+	if(ds < 0.0f) ds = -ds;
+	if(df > 0.5f || ds > 0.001f){
+		odCullFarLast = far;
+		odCullScaleLast = scale;
+		snprintf(t, sizeof t, "ODCULL far=%.0f scale=%.2f cull=%.0f", far, scale, cull);
+		ODTRACES(t);
+	}
+	if((++odCullFrame % 120) != 0)
+		return;
+	snprintf(t, sizeof t, "ODCULLSTAT invisCull=%d invisCullGrande=%d lodNil=%d cull=%.0f far=%.0f",
+		odCullN, odCullBigN, odLodNilN, cull, far);
+	ODTRACES(t);
+	odCullN = 0;
+	odCullBigN = 0;
+	odLodNilN = 0;
+}
+
 // unused
 BlockedRange CRenderer::aBlockedRanges[16];
 BlockedRange* CRenderer::pFullBlockedRanges;
@@ -888,7 +974,10 @@ OdTraceWorldLod(CEntity *ent, CSimpleModelInfo *mi, float dist, RpAtomic *a)
 	static CEntity *odEnts[128];
 	static RpAtomic *odAtoms[128];
 	static int odN;
-	int i;
+	const char *nom;
+	char t[220];
+	int i, k, idx;
+
 	for(i = 0; i < odN; i++)
 		if(odEnts[i] == ent)
 			break;
@@ -897,12 +986,24 @@ OdTraceWorldLod(CEntity *ent, CSimpleModelInfo *mi, float dist, RpAtomic *a)
 		odAtoms[odN] = nil;
 		odN++;
 	}
-	if(i < 128 && odAtoms[i] != a){
-		char t[180];
-		odAtoms[i] = a;
-		snprintf(t, sizeof t, "WORLDLOD model=%s dist=%.1f", mi->GetModelName(), dist);
-		ODTRACES(t);
+	if(i >= 128 || odAtoms[i] == a)
+		return;
+	// idx: -2 = el modelo no tiene atomico para esa distancia (DESAPARECE),
+	// -1 = devuelve un puntero que ya no es el de su tabla (recargado),
+	// 0..2 = nivel de detalle que ha elegido.
+	idx = -2;
+	if(a != nil){
+		idx = -1;
+		for(k = 0; k < mi->m_numAtomics; k++)
+			if(mi->m_atomics[k] == a){ idx = k; break; }
 	}
+	odAtoms[i] = a;
+	nom = mi->GetModelName();
+	if(nom == nil) nom = "?";
+	snprintf(t, sizeof t, "WORLDLOD model=%s dist=%.1f idx=%d natom=%d lod=%.0f/%.0f/%.0f",
+		nom, dist, idx, (int)mi->m_numAtomics,
+		mi->m_lodDistances[0], mi->m_lodDistances[1], mi->m_lodDistances[2]);
+	ODTRACES(t);
 }
 #endif
 
@@ -993,8 +1094,14 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 
 	dist = (ent->GetPosition() - ms_vecCameraPosition).Magnitude();
 #ifdef VICEEXT_IMPROVED_TECH_PART
-	if(dist > ms_drawDistCull)
-		return VIS_INVISIBLE;
+	{
+		float odEff = dist - OdModelRadius(ent->m_modelIndex);
+		if(odEff < 0.0f) odEff = 0.0f;
+		if(odEff > ms_drawDistCull && !OdIsFarModel(ent, mi)){
+			OdCullDiag(ent, mi, dist, ms_drawDistCull);
+			return VIS_INVISIBLE;
+		}
+	}
 #endif
 
 #ifndef FIX_BUGS
@@ -1012,10 +1119,12 @@ CRenderer::SetupEntityVisibility(CEntity *ent)
 		mi->m_isDamaged = true;
 
 	RpAtomic *a = mi->GetAtomicFromDistance(dist);
-	if(a){
 #ifdef __EMSCRIPTEN__
-		OdTraceWorldLod(ent, mi, dist, a);
+	OdTraceWorldLod(ent, mi, dist, a);
 #endif
+	if(a == nil)
+		OdLodNilDiag(ent, mi, dist, ms_drawDistCull);
+	if(a){
 		mi->m_isDamaged = false;
 		if(ent->m_rwObject == nil)
 			ent->CreateRwObject();
@@ -1197,8 +1306,14 @@ CRenderer::SetupBigBuildingVisibility(CEntity *ent)
 
 	float dist = (ms_vecCameraPosition-ent->GetPosition()).Magnitude();
 #ifdef VICEEXT_IMPROVED_TECH_PART
-	if(dist > ms_drawDistCull)
-		return VIS_INVISIBLE;
+	{
+		float odEff = dist - OdModelRadius(ent->m_modelIndex);
+		if(odEff < 0.0f) odEff = 0.0f;
+		if(odEff > ms_drawDistCull && !OdIsFarModel(ent, mi)){
+			OdCullDiag(ent, mi, dist, ms_drawDistCull);
+			return VIS_INVISIBLE;
+		}
+	}
 #endif
 	CSimpleModelInfo *nonLOD = mi->GetRelatedModel();
 
@@ -1307,7 +1422,9 @@ CRenderer::ConstructRenderList(void)
 		float lodT = (ms_lodDistScale - 0.925f) / (1.8f - 0.925f);
 		if(lodT < 0.0f) lodT = 0.0f;
 		if(lodT > 1.0f) lodT = 1.0f;
-		ms_drawDistCull = RwCameraGetFarClipPlane(TheCamera.m_pRwCamera) * (0.25f + 0.75f * lodT);
+		float farC = RwCameraGetFarClipPlane(TheCamera.m_pRwCamera);
+		ms_drawDistCull = farC * (0.25f + 0.75f * lodT);
+		OdCullStat(farC, ms_lodDistScale, ms_drawDistCull);
 	}
 #endif
 
