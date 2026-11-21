@@ -84,6 +84,16 @@ if [ "${REVC_DEBUGINFO:-0}" = "1" ]; then DBGFLAGS="-g"; fi
 # log de 80.1 `RenderFadingInEntities` paso de 2,16 a 3,27 ms por llamada (peor)
 # mientras el pase de mundo mejoro con VAO. Los dos juntos no se compensaban.
 GLFASTFLAGS="-DRW_GL_USE_VAOS"
+# 85.0: rendimiento sin tocar el juego. `-msimd128` vectoriza matrices, vectores,
+# fisica y colision (sigue IEEE: misma simulacion, mismos resultados) y `-flto`
+# optimiza en el enlazado. Se apagan con REVC_SIMD=0 / REVC_LTO=0 para comparar
+# contra la build de siempre sin tocar el script.
+PERFFLAGS=""
+[ "${REVC_SIMD:-1}" = "0" ] || PERFFLAGS="$PERFFLAGS -msimd128"
+# LTO apagado por defecto: con `-flto` wasm-ld pierde los simbolos de los
+# EM_JS de src/skel/ondemand.cpp (`undefined symbol: od_sfx_ready`). Se deja el
+# interruptor para intentarlo con REVC_LTO=1 cuando se marquen como usados.
+[ "${REVC_LTO:-0}" = "1" ] && PERFFLAGS="$PERFFLAGS -flto"
 MEMFLAGS="-sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=536870912 -sMAXIMUM_MEMORY=2147483648"
 if [ "${REVC_ASAN:-0}" = "1" ]; then
   ASAN_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
@@ -93,8 +103,8 @@ if [ "${REVC_ASAN:-0}" = "1" ]; then
 fi
 emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE="${REVC_BUILD_TYPE:-RelWithDebInfo}" \
-  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS" \
-  -DCMAKE_C_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS" \
+  -DCMAKE_CXX_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS $PERFFLAGS" \
+  -DCMAKE_C_FLAGS_RELWITHDEBINFO="$OPT $DBGFLAGS -DNDEBUG $ASAN_FLAGS $GLFASTFLAGS $PERFFLAGS" \
   -DCMAKE_EXECUTABLE_SUFFIX=.html \
   -DCMAKE_MODULE_PATH="$(pwd)/gta_vc_browser/cmake" \
   -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$OUT_DIR" \
@@ -107,7 +117,7 @@ emcmake cmake -G Ninja -S . -B "$BUILD_DIR" \
   -DLIBRW_GL3_GFXLIB=GLFW \
   -DLIBRW_TOOLS=OFF \
   -DLIBRW_EXAMPLES=OFF \
-  -DCMAKE_EXE_LINKER_FLAGS="$ASAN_FLAGS --profiling-funcs -sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 $MEMFLAGS -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_EmscriptenTick,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuActivate,_ViceExtTouchMenuChange,_ViceExtTouchMenuStep,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace,_TestNewGame -sJSPI=1 -sJSPI_EXPORTS=main,EmscriptenTick,ViceExt*,TestNewGame -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
+  -DCMAKE_EXE_LINKER_FLAGS="$ASAN_FLAGS $PERFFLAGS --profiling-funcs -sUSE_GLFW=3 -sUSE_WEBGL2=1 -sFULL_ES3=1 $MEMFLAGS -sFORCE_FILESYSTEM=1 -sEXPORTED_FUNCTIONS=_main,_EmscriptenTick,_ViceExtRescanUserMusic,_ViceExtRescanSaves,_ViceExtRescanSkins,_ViceExtTouchFrame,_ViceExtTouchSetEnabled,_ViceExtTouchSetAutoaim,_ViceExtTouchContext,_ViceExtTouchMenuActivate,_ViceExtTouchMenuChange,_ViceExtTouchMenuStep,_ViceExtTouchSkip,_ViceExtTouchPause,_ViceExtTouchOpenMap,_ViceExtTouchWeapon,_ViceExtTouchRadio,_ViceExtTouchAutoAim,_ViceExtTouchVehicleType,_ViceExtTouchNearVehicleType,_ViceExtTouchMissionVehicle,_ViceExtTouchArmedVehicle,_ViceExtTouchUseTouchIcons,_ViceExtTouchMenuOption,_ViceExtTouchPadMode,_ViceExtTextTrace,_TestNewGame -sJSPI=1 -sJSPI_EXPORTS=main,EmscriptenTick,ViceExt*,TestNewGame -lidbfs.js --pre-js $PREJS -Wl,--wrap,fopen -Wl,--wrap,open -Wl,--wrap,stat -Wl,--wrap,access $PRELOAD"
 
 echo "--- configurado en $BUILD_DIR ---"
 if [ "$CONFIG_ONLY" -eq 1 ]; then exit 0; fi
