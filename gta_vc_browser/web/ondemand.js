@@ -596,7 +596,10 @@ var OD = {
   // detras de la chapa (pheonix y taxi primero, luego la flota), y el taxi
   // recupera las 4 caras del faro trasero que tapaba. dataTag anterior:
   // `2026-11-22-89.0-T1`.
-  dataTag: '2026-11-22-91.0-T1',
+  // 92.0: las caras de faro y piloto de 51 coches recuperan la UV del DFF del
+  // PC (la servida tenia la V espejada y caia en el negro del atlas). dataTag
+  // anterior: `2026-11-22-91.0-T1`.
+  dataTag: '2026-11-22-92.0-T1',
   manifest: null,
   db: null,
   inflight: {},

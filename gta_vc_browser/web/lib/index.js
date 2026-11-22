@@ -583,7 +583,10 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // 90.0 (22/11): el forro `od_interior` visible desde fuera se mete detras de la
 // chapa (tope 10 cm, sin tocar chapa ni faros) y el taxi deja de tener 4 caras
 // del faro trasero tapadas. VERSION anterior: 2026-11-22-89.0-T1.
-export const VERSION = '2026-11-22-91.0-T1';
+// 92.0 (22/11): las caras de faro y piloto de 51 coches recuperan la UV del DFF
+// del PC (la servida tenia la V espejada y caia en el negro del atlas).
+// VERSION anterior: 2026-11-22-91.0-T1.
+export const VERSION = '2026-11-22-92.0-T1';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
