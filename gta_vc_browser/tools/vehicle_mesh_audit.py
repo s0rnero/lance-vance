@@ -13,6 +13,14 @@ Uso:
     python tools/vehicle_mesh_audit.py                 # resumen por coche
     python tools/vehicle_mesh_audit.py admiral police  # detalle de modelos
     python tools/vehicle_mesh_audit.py --all           # lista cada pieza mala
+    python tools/vehicle_mesh_audit.py --check         # prueba: exit 1 si hay descuadre
+    python tools/vehicle_mesh_audit.py --check --root tmp/base91/pre91
+
+`--check` es la prueba de regresion: recorre la flota entera, imprime una linea
+por pieza descuadrada con su coche y su marco, y devuelve 1. Con la flota sana
+devuelve 0 y una sola linea de veredicto, asi que sirve tal cual en un script o
+en un `set -e`. `--root` audita otra copia del arbol (una copia previa, un
+backup) con el mismo formato de rutas `<root>/<modelo>.dff`.
 """
 import collections
 import math
@@ -25,6 +33,7 @@ import dff_geom as dg
 import indicator_audit as ia
 
 MODELS = Path(__file__).resolve().parent.parent / "streamed" / "models" / "gta3.img"
+ROOT = MODELS
 MESH = 0x50E
 TRISTRIP = 1
 
@@ -139,7 +148,7 @@ def edge(g, t):
 
 
 def audit(model, detail=False):
-    path = MODELS / (model + ".dff")
+    path = ROOT / (model + ".dff")
     if not path.exists():
         return None
     buf = path.read_bytes()
@@ -174,8 +183,21 @@ def audit(model, detail=False):
 
 
 def main(argv):
-    names = [a for a in argv if not a.startswith("--")]
-    show_all = "--all" in argv
+    global ROOT
+    args = list(argv)
+    if "--root" in args:
+        i = args.index("--root")
+        if i + 1 >= len(args):
+            print("--root necesita un directorio")
+            return 2
+        ROOT = Path(args[i + 1])
+        del args[i:i + 2]
+    names = [a for a in args if not a.startswith("--")]
+    show_all = "--all" in args
+    check = "--check" in args
+    if not ROOT.is_dir():
+        print("no existe el arbol de modelos: %s" % ROOT)
+        return 2
     models = names or ia.vehicle_models()
     report = []
     for model in models:
@@ -202,6 +224,17 @@ def main(argv):
         for r in sorted(broken, key=lambda r: -r["stretched"]):
             print("%-12s %-24s extra=%d falta=%d estirados=%d max=%.2f" % (
                 r["model"], r["frame"], r["extra"], r["missing"], r["stretched"], r["maxEdge"]))
+    if check:
+        for r in sorted(broken, key=lambda r: (r["model"], r["frame"])):
+            print("FALLA %-12s %-24s extra=%d falta=%d estirados=%d max=%.2f %s" % (
+                r["model"], r["frame"], r["extra"], r["missing"], r["stretched"],
+                r["maxEdge"], "; ".join(r["errors"])))
+        if broken:
+            print("VEREDICTO: FALLA - %d piezas dibujan una malla distinta de sus triangulos; "
+                  "reparar con dff_mesh_rebuild.py --all --report" % len(broken))
+            return 1
+        print("VEREDICTO: ok - %d piezas de %d coches dibujan exactamente sus triangulos"
+              % (len(report), len({r["model"] for r in report})))
     return 0
 
 
