@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
-"""Devuelve a las caras de faro/piloto la UV del DFF del PC.
+"""Devuelve a las piezas de faro/piloto la UV del DFF del PC.
 
-Motivo medido (plan 92.0): en el arbol servido hay caras cuya UV es la del DFF
-de retail con la V espejada (`v -> 1-v`). En las lentes eso las lleva de la
-zona roja/blanca del atlas a una zona negra del mismo atlas: el faro se ve
-negro y el piloto solo deja asomar un pico. El atlas del TXD es byte a byte el
-de retail, asi que la diferencia esta en las UV del DFF, no en la textura.
+Motivo medido (plan 92.0): en el arbol servido hay piezas de lampara cuya UV es
+la del DFF de retail con la V espejada (`v -> 1-v`). En las lentes eso las lleva
+de la zona roja/blanca del atlas a una zona negra del mismo atlas: el faro se ve
+negro. El atlas del TXD es byte a byte el de retail, asi que la diferencia esta
+en las UV del DFF, no en la textura.
 
 La herramienta no inventa nada: empareja triangulos por la posicion de sus tres
-vertices con el DFF de referencia (el del PC, `tmp/base421`) y, cuando la UV
-servida es exactamente `(u, 1-v)` de la de referencia, escribe la de
+vertices con el DFF de referencia (el del PC, `tmp/base421`) y escribe la UV de
 referencia. Solo cambia los flotantes de la UV; vertices, triangulos,
 materiales, normales y prelit quedan intactos.
 
+La restauracion es **todo o nada por pieza de lampara**. El primer intento
+(92.0-T1) escribia vertice a vertice y dejaba piezas a medias: el vertice
+compartido con una cara que no se restauraba quedaba con la UV espejada y el
+triangulo interpolaba entre la zona roja y la negra, que es el corte en
+triangulos negros que se vio en los pilotos del cheetah (64 caras mezcladas) y
+de otros 17 modelos. Ahora cada atomic `*light*`/`indicator` se escribe entero
+o no se toca, y solo se toca si **todas** sus caras existen en el DFF del PC:
+una pieza con caras que el trasplante anadio (reveses de lente) se deja como
+esta, porque su UV no tiene referencia con la que compararse.
+
 Solo se restaura cuando la texela de referencia no es mas oscura que la que
-sirve hoy (`--all` restaura todas, sin esa puerta), y nunca se toca un vertice
-que compartan caras con UV distinta (se informa como conflicto).
+sirve hoy (`--all` restaura todas, sin esa puerta).
 
 Uso:
     python tools/dff_lamp_uv_restore.py --check
@@ -79,14 +87,12 @@ def uv_offset(buf, geom):
 
 
 def faces(path):
-    """{(posiciones): [(geom, idx_tri, {vertice: (u,v)})]} de un DFF."""
+    """{(posiciones): [(geom, idx_tri, {vertice: (u,v)}, textura)]} de un DFF."""
     buf = open(path, 'rb').read()
     chunks = geom_chunks(buf)
     out = {}
-    geoms = []
-    for ch in chunks:
+    for gi, ch in enumerate(chunks):
         mats, verts, tris, uvs, norms, flags, colors = dg.parse_geometry(buf, ch)
-        geoms.append((mats, verts, tris, uvs))
         if not uvs or not verts:
             continue
         for ti, t in enumerate(tris):
@@ -94,9 +100,10 @@ def faces(path):
             for k in range(3):
                 p = tuple(round(c, 2) for c in verts[t[k]])
                 corners[p] = uvs[0][t[k]]
-            key = tuple(sorted(corners))
-            out.setdefault(key, []).append((len(geoms) - 1, ti, corners,
-                                            mats[t[3]][1] if t[3] < len(mats) else None))
+            if len(corners) != 3:
+                continue
+            tex = mats[t[3]][1] if t[3] < len(mats) else None
+            out.setdefault(tuple(sorted(corners)), []).append((gi, ti, corners, tex))
     return buf, chunks, out
 
 
@@ -130,92 +137,115 @@ def sample(tex, name, uv):
     return lum(px[y * d['w'] + x])
 
 
+def near(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1]) <= TOL
+
+
+def mirror(uv):
+    return (uv[0], 1.0 - uv[1])
+
+
+def lamp_geoms(buf):
+    """Indices de geometria de lampara segun el nombre del marco del atomic."""
+    frames, geoms, atomics = dg.parse(buf)
+    out = set()
+    for fi, gi in atomics:
+        if fi >= len(frames):
+            continue
+        n = frames[fi]['name'].lower()
+        if 'light' in n or 'indicator' in n:
+            out.add(gi)
+    return out
+
+
 def plan_model(base, served, txd, restore_all=False):
-    """Devuelve (cambios por geometria, informe)."""
+    """Devuelve (escrituras, informe) para un modelo."""
     rbuf, rchunks, rfaces = faces(base)
     sbuf, schunks, sfaces = faces(served)
     tex = texdict(txd) if os.path.exists(txd) else {}
-    uvofs = [uv_offset(sbuf, ch) for ch in schunks]
-    want = {}
-    planned = {}
-    info = {'mirrored': 0, 'restored': 0, 'darker': 0, 'conflict': 0,
-            'unmatched': 0, 'except': []}
-    by_key = {k: v[0] for k, v in rfaces.items()}
-    for key, items in sfaces.items():
-        ref = by_key.get(key)
-        if ref is None:
-            info['unmatched'] += len(items)
-            continue
-        rgi, rti, rcorners, rtex = ref
-        for gi, ti, corners, stex in items:
-            if len(corners) != 3 or len(rcorners) != 3:
-                continue
-            flipped = {}
-            for p, uv in corners.items():
-                if p not in rcorners:
-                    flipped = None
-                    break
-                flipped[p] = (rcorners[p][0], 1.0 - rcorners[p][1])
-            if not flipped:
-                continue
-            if max(abs(corners[p][0] - flipped[p][0]) + abs(corners[p][1] - flipped[p][1])
-                   for p in corners) > TOL:
-                continue
-            info['mirrored'] += 1
-            if not restore_all and tex:
-                now = [sample(tex, stex, uv) for uv in corners.values()]
-                ref_l = [sample(tex, stex, uv) for uv in rcorners.values()]
-                now = [x for x in now if x is not None]
-                ref_l = [x for x in ref_l if x is not None]
-                if now and ref_l and sum(ref_l) / len(ref_l) + LUM_TOL < sum(now) / len(now):
-                    info['darker'] += 1
-                    info['except'].append((gi, ti, sum(now) / len(now), sum(ref_l) / len(ref_l)))
-                    continue
-            planned.setdefault(gi, set()).add(ti)
-            for p, uv in rcorners.items():
-                want.setdefault(gi, {}).setdefault(p, set()).add((round(uv[0], 7), round(uv[1], 7)))
-    # Resolver vertices: se escribe solo si todas las caras que lo usan piden lo mismo.
+    lamps = lamp_geoms(sbuf)
+    info = {'geoms': 0, 'restored': 0, 'reverted': 0, 'blocked': 0,
+            'darker': 0, 'same': 0, 'detail': []}
     edits = []
-    for gi, per_vertex in want.items():
-        off, nverts, ntex = uvofs[gi]
-        if off is None:
-            info['conflict'] += len(per_vertex)
+    for gi, ch in enumerate(schunks):
+        if gi not in lamps:
             continue
-        mats, verts, tris, uvs, norms, flags, colors = dg.parse_geometry(sbuf, schunks[gi])
-        pos_of = [tuple(round(c, 2) for c in v) for v in verts]
-        used = {}
-        for ti, t in enumerate(tris):
-            for k in range(3):
-                used.setdefault(t[k], set()).add(ti)
+        off, nverts, ntex = uv_offset(sbuf, ch)
+        if off is None:
+            continue
+        mats, verts, tris, uvs, norms, flags, colors = dg.parse_geometry(sbuf, ch)
+        if not uvs or not tris:
+            continue
         uv0 = uvs[0]
-        done = {}
-        for p, vals in per_vertex.items():
-            if len(vals) != 1:
-                info['conflict'] += 1
+        pos_of = [tuple(round(c, 2) for c in v) for v in verts]
+        kind = []
+        refuv = {}
+        ambig = False
+        for ti, t in enumerate(tris):
+            corners = {}
+            for k in range(3):
+                corners[pos_of[t[k]]] = uv0[t[k]]
+            if len(corners) != 3:
+                kind.append('nomatch')
                 continue
-            uv = next(iter(vals))
-            vids = [vid for vid in range(len(verts)) if pos_of[vid] == p]
-            if not vids:
-                info['conflict'] += 1
+            cands = rfaces.get(tuple(sorted(corners)))
+            if not cands:
+                kind.append('nomatch')
                 continue
-            for vid in vids:
-                # Ningun vertice compartido con una cara que no se restaura:
-                # escribir ahi cambiaria la UV de una cara que hoy esta bien.
-                if not used.get(vid, set()) <= planned.get(gi, set()):
-                    info['conflict'] += 1
-                    done[vid] = None
-                    continue
-                prev = done.get(vid)
-                if prev is not None and prev != uv:
-                    info['conflict'] += 1
-                    done[vid] = None
-                    continue
-                done[vid] = uv
-        for vid, uv in done.items():
-            if uv is None:
+            pick = next((c for c in cands if c[0] == gi), cands[0])
+            rcorners = pick[2]
+            if len(rcorners) != 3 or any(p not in rcorners for p in corners):
+                kind.append('nomatch')
                 continue
-            edits.append((off + 8 * vid, uv))
+            if all(near(corners[p], rcorners[p]) for p in corners):
+                kind.append('ref')
+            elif all(near(corners[p], mirror(rcorners[p])) for p in corners):
+                kind.append('mirror')
+            else:
+                kind.append('other')
+            for p, uv in rcorners.items():
+                prev = refuv.get(p)
+                if prev is not None and not near(prev, uv):
+                    ambig = True
+                refuv[p] = uv
+        evid = sum(1 for k in kind if k in ('ref', 'mirror'))
+        if not evid:
+            continue
+        info['geoms'] += 1
+        completa = 'nomatch' not in kind and not ambig
+        restorable = completa
+        if restorable and tex and not restore_all:
+            now, ref = [], []
+            for ti, t in enumerate(tris):
+                for k in range(3):
+                    p = pos_of[t[k]]
+                    if p not in refuv:
+                        continue
+                    nx = sample(tex, mats[t[3]][1] if t[3] < len(mats) else None,
+                                uv0[t[k]])
+                    rx = sample(tex, mats[t[3]][1] if t[3] < len(mats) else None,
+                                refuv[p])
+                    if nx is not None:
+                        now.append(nx)
+                    if rx is not None:
+                        ref.append(rx)
+            if now and ref and sum(ref) / len(ref) + LUM_TOL < sum(now) / len(now):
+                restorable = False
+                info['darker'] += 1
+                info['detail'].append((gi, 'mas oscura', round(sum(now) / len(now)),
+                                       round(sum(ref) / len(ref))))
+        if not restorable:
+            info['detail'].append((gi, 'parcial', len(tris), evid))
+        if restorable:
             info['restored'] += 1
+            info['detail'].append((gi, 'restaurada', len(tris)))
+            for vid in range(nverts):
+                p = pos_of[vid]
+                if p in refuv and not near(uv0[vid], refuv[p]):
+                    edits.append((off + 8 * vid, refuv[p]))
+            continue
+        info['blocked'] += 1
+        info['detail'].append((gi, 'bloqueada', len(tris)))
     return edits, info
 
 
@@ -233,7 +263,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--base', default='tmp/base421')
     ap.add_argument('--root', default='streamed/models/gta3.img')
-    ap.add_argument('--out', default='tmp/base92/fix')
+    ap.add_argument('--out', default='tmp/base92/fix2')
     ap.add_argument('--models', default='')
     ap.add_argument('--apply', action='store_true')
     ap.add_argument('--check', action='store_true')
@@ -259,34 +289,25 @@ def main():
         except Exception as e:
             print('%-10s ERROR %s' % (m, e))
             continue
-        for k in ('mirrored', 'restored', 'darker', 'conflict', 'unmatched'):
+        for k in ('geoms', 'restored', 'reverted', 'blocked', 'darker'):
             total[k] = total.get(k, 0) + info[k]
-        if info['mirrored'] or a.verbose:
-            print('%-10s espejadas %3d  restauradas %3d  mas oscuras %3d  conflictos %3d'
-                  % (m, info['mirrored'], info['restored'], info['darker'], info['conflict']))
-            if a.verbose:
-                for gi, ti, now, ref in info['except'][:8]:
-                    print('           g%-2d t%-4d lum hoy %.0f -> retail %.0f' % (gi, ti, now, ref))
+        if info['geoms']:
+            print('%-10s piezas %3d  restauradas %3d  bloqueadas %3d  oscuras %3d  flotantes %3d'
+                  % (m, info['geoms'], info['restored'], info['blocked'],
+                     info['darker'], len(edits)))
+        if a.verbose:
+            for d in info['detail']:
+                print('           g%-2d %s' % (d[0], ' '.join(str(x) for x in d[1:])))
         if a.apply and edits:
             out = os.path.join(a.out, m + '.dff')
             n = apply_edits(served, out, edits)
-            # El vertice compartido que la primera pasada no podia tocar deja de
-            # serlo cuando su vecino ya esta restaurado: se repite hasta que no
-            # queden flotantes que cambiar (tope de 5 vueltas).
-            vueltas = 1
-            src = out
-            for _ in range(4):
-                more, _info = plan_model(base, src, txd, a.all)
-                if not more:
-                    break
-                n = apply_edits(src, out, more)
-                vueltas += 1
-            print('           -> %s (%d flotantes, %d vueltas, %d bytes)'
-                  % (out, len(edits), vueltas, n))
+            print('           -> %s (%d flotantes, %d bytes)' % (out, len(edits), n))
     print('total: %s' % '  '.join('%s %d' % (k, total.get(k, 0))
-                                  for k in ('mirrored', 'restored', 'darker', 'conflict')))
+                                  for k in ('geoms', 'restored', 'reverted',
+                                            'blocked', 'darker')))
     if a.check:
-        return 1 if total.get('mirrored', 0) and total.get('restored', 0) else 0
+        return 1 if total.get('geoms', 0) and (total.get('restored', 0)
+                                               or total.get('reverted', 0)) else 0
     return 0
 
 

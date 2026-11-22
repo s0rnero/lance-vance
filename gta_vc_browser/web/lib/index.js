@@ -586,7 +586,7 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // 92.0 (22/11): las caras de faro y piloto de 51 coches recuperan la UV del DFF
 // del PC (la servida tenia la V espejada y caia en el negro del atlas).
 // VERSION anterior: 2026-11-22-91.0-T1.
-export const VERSION = '2026-11-22-92.0-T1';
+export const VERSION = '2026-11-22-92.0-T2';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.
