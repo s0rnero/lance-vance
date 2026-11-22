@@ -580,7 +580,10 @@ import { restoreSkins, importSkinsFromPicker, skinInfo, deleteSkin } from './ski
 // guardian a una cada 200 ms (antes: un postMessage por entidad y frame dentro
 // del bucle de ProcessControl) y compila sin DWARF para que wasm-opt aplique
 // todos los pases de -O3. VERSION anterior: 2026-11-20-82.3-T1.
-export const VERSION = '2026-11-21-86.1-T1';
+// 90.0 (22/11): el forro `od_interior` visible desde fuera se mete detras de la
+// chapa (tope 10 cm, sin tocar chapa ni faros) y el taxi deja de tener 4 caras
+// del faro trasero tapadas. VERSION anterior: 2026-11-22-89.0-T1.
+export const VERSION = '2026-11-22-91.0-T1';
 
 const DEFAULTS = {
   el: null,                 // div destino (elemento o selector). Obligatorio.

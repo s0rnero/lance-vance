@@ -588,7 +588,15 @@ var OD = {
   // `2026-11-17-60.10-T12`.
   // 61.0 T1: la textura paletizada del rines (wheel_lightvan64back) pasa a 32
   // bits sin comprimir. dataTag anterior: `2026-11-18-61.0`.
-  dataTag: '2026-11-21-84.0-T1',
+  // 89.0: los 74 DFF de la flota recuperan la chapa PC que el 61 recorto
+  // (2.827 caras), los 8 marcos de faro de 7 coches (61 marcos), y las lentes y
+  // forros coplanares quedan a 5 mm (3.287 parejas -> 167). dataTag anterior:
+  // `2026-11-22-88.0-T1`.
+  // 90.0: el forro `od_interior` que asomaba por fuera de la carroceria se mete
+  // detras de la chapa (pheonix y taxi primero, luego la flota), y el taxi
+  // recupera las 4 caras del faro trasero que tapaba. dataTag anterior:
+  // `2026-11-22-89.0-T1`.
+  dataTag: '2026-11-22-91.0-T1',
   manifest: null,
   db: null,
   inflight: {},
