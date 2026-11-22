@@ -377,3 +377,4 @@ gta_vc_browser/web/*.local
 *.RAW
 gta_vc_browser/tmp/
 gta_vc_browser/logs/
+tmp/
